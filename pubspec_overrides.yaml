@@ -1,21 +1,55 @@
 dependency_overrides:
-  astro:
-    path: ../../../utils/astro
+  astro_core:
+    git: https://github.com/enspyrco/astro_core
   astro_types:
-    path: ../../../utils/astro_types
+    git: https://github.com/enspyrco/astro_types
   astro_locator:
-    path: ../../../../dart/utils/astro_locator
+    git: https://github.com/enspyrco/astro_locator
   astro_inspector_screen:
-    path: ../../../utils/astro_inspector_screen
+    git: https://github.com/enspyrco/astro_inspector_screen
   astro_auth:
-    path: ../../../utils/astro_auth
+    git: https://github.com/enspyrco/astro_auth
   astro_error_handling:
-    path: ../../../utils/astro_error_handling
+    git: https://github.com/enspyrco/astro_error_handling
   astro_navigation:
-    path: ../../../utils/astro_navigation
+    git: https://github.com/enspyrco/astro_navigation
   firestore_service_flutterfire:
-    path: ../../../utils/flutterfire/firestore_service_flutterfire
+    git: https://github.com/enspyrco/firestore_service_flutterfire
   firestore_service_interface:
-    path: ../../../../dart/interfaces/firestore_service_interface
+    git: https://github.com/enspyrco/firestore_service_interface
+  firebase_auth_service_interface:
+    git: https://github.com/enspyrco/firebase_auth_service_interface
+  firebase_auth_service_flutterfire:
+    git: https://github.com/enspyrco/firebase_auth_service_flutterfire
   astro_test_utils:
-    path: ../../../utils/astro_test_utils
+    git: https://github.com/enspyrco/astro_test_utils
+  ws_game_server_types:
+    git: https://github.com/enspyrco/ws_game_server_types
+  enspyr_lints:
+    git: https://github.com/enspyrco/enspyr_lints
+  json_utils:
+    git: https://github.com/enspyrco/json_utils
+
+# dependency_overrides:
+#   astro:
+#     path: ../../../utils/astro
+#   astro_types:
+#     path: ../../../utils/astro_types
+#   astro_locator:
+#     path: ../../../../dart/utils/astro_locator
+#   astro_inspector_screen:
+#     path: ../../../utils/astro_inspector_screen
+#   astro_auth:
+#     path: ../../../utils/astro_auth
+#   astro_error_handling:
+#     path: ../../../utils/astro_error_handling
+#   astro_navigation:
+#     path: ../../../utils/astro_navigation
+#   firestore_service_flutterfire:
+#     path: ../../../utils/flutterfire/firestore_service_flutterfire
+#   firestore_service_interface:
+#     path: ../../../../dart/interfaces/firestore_service_interface
+#   astro_test_utils:
+#     git: https://github.com/enspyrco/astro_test_utils
+#   enspyr_lints:
+#     git: https://github.com/enspyrco/enspyr_lints

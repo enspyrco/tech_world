@@ -1,5 +1,5 @@
+import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/game/background/barriers.dart';
-import 'package:test/test.dart';
 
 void main() {
   group('Barriers', () {

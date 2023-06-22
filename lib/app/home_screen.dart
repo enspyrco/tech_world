@@ -1,5 +1,5 @@
-import 'package:astro/astro.dart';
 import 'package:astro_auth/astro_auth.dart';
+import 'package:astro_core/astro_core.dart';
 import 'package:astro_locator/astro_locator.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';

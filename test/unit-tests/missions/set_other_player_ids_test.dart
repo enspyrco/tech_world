@@ -1,6 +1,6 @@
+import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/app/state/app_state.dart';
 import 'package:tech_world/networking/missions/set_other_player_ids.dart';
-import 'package:test/test.dart';
 
 void main() {
   group('SetOtherPlayerIdsReducer', () {
