@@ -57,5 +57,7 @@ app.*.map.json
 # Firebase config file
 lib/firebase_options.dart
 macos/firebase_app_id_file.json
+macos/Runner/GoogleService-Info.plist
 ios/firebase_app_id_file.json
+ios/Runner/GoogleService-Info.plist
 android/app/google-services.json
