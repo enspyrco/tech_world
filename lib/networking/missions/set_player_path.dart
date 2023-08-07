@@ -1,4 +1,4 @@
-import 'package:astro_types/core_types.dart';
+import 'package:types_for_perception/beliefs.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
 import '../../app/state/app_state.dart';

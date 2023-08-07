@@ -1,16 +1,16 @@
 import 'dart:async';
 
-import 'package:astro_auth/astro_auth.dart';
-import 'package:astro_core/astro_core.dart';
-import 'package:astro_error_handling/astro_error_handling.dart';
-import 'package:astro_inspector_screen/astro_inspector_screen.dart';
-import 'package:astro_locator/astro_locator.dart';
-import 'package:astro_navigation/astro_navigation.dart';
-import 'package:astro_types/core_types.dart';
+import 'package:auth_for_perception/auth_for_perception.dart';
+import 'package:core_of_perception/core_of_perception.dart';
+import 'package:error_handling_for_perception/error_handling_for_perception.dart';
+import 'package:inspector_for_perception/inspector_for_perception.dart';
+import 'package:locator_for_perception/locator_for_perception.dart';
+import 'package:navigation_for_perception/navigation_for_perception.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firestore_service_flutterfire/firestore_service_flutterfire.dart';
 import 'package:firestore_service_interface/firestore_service_interface.dart';
 import 'package:flutter/material.dart';
+import 'package:types_for_perception/beliefs.dart';
 
 import 'app/home_screen.dart';
 import 'app/state/app_state.dart';

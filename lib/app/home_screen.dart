@@ -1,6 +1,6 @@
-import 'package:astro_auth/astro_auth.dart';
-import 'package:astro_core/astro_core.dart';
-import 'package:astro_locator/astro_locator.dart';
+import 'package:auth_for_perception/auth_for_perception.dart';
+import 'package:core_of_perception/core_of_perception.dart';
+import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 

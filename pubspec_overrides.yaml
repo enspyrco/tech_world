@@ -1,55 +1,71 @@
 dependency_overrides:
-  astro_core:
-    git: https://github.com/enspyrco/astro_core
-  astro_types:
-    git: https://github.com/enspyrco/astro_types
-  astro_locator:
-    git: https://github.com/enspyrco/astro_locator
-  astro_inspector_screen:
-    git: https://github.com/enspyrco/astro_inspector_screen
-  astro_auth:
-    git: https://github.com/enspyrco/astro_auth
-  astro_error_handling:
-    git: https://github.com/enspyrco/astro_error_handling
-  astro_navigation:
-    git: https://github.com/enspyrco/astro_navigation
-  firestore_service_flutterfire:
-    git: https://github.com/enspyrco/firestore_service_flutterfire
-  firestore_service_interface:
-    git: https://github.com/enspyrco/firestore_service_interface
-  firebase_auth_service_interface:
-    git: https://github.com/enspyrco/firebase_auth_service_interface
-  firebase_auth_service_flutterfire:
-    git: https://github.com/enspyrco/firebase_auth_service_flutterfire
-  astro_test_utils:
-    git: https://github.com/enspyrco/astro_test_utils
+  # core_of_perception:
+  #   git: https://github.com/enspyrco/core_of_perception
+  # types_for_perception:
+  #   git: https://github.com/enspyrco/types_for_perception
+  # locator_for_perception:
+  #   git: https://github.com/enspyrco/locator_for_perception
+  # inspector_for_perception:
+  #   git: https://github.com/enspyrco/inspector_for_perception
+  # auth_for_perception:
+  #   git: https://github.com/enspyrco/auth_for_perception
+  # error_handling_for_perception:
+  #   git: https://github.com/enspyrco/error_handling_for_perception
+  # navigation_for_perception:
+  #   git: https://github.com/enspyrco/navigation_for_perception
+  # firestore_service_interface:
+  #   git: https://github.com/enspyrco/firestore_service_interface
+  # firestore_service_flutterfire:
+  #   git: https://github.com/enspyrco/firestore_service_flutterfire
+  # firebase_auth_service_interface:
+  #   git: https://github.com/enspyrco/firebase_auth_service_interface
+  # firebase_auth_service_flutterfire:
+  #   git: https://github.com/enspyrco/firebase_auth_service_flutterfire
+  # test_utils_for_perception:
+  #   git: https://github.com/enspyrco/test_utils_for_perception
   ws_game_server_types:
     git: https://github.com/enspyrco/ws_game_server_types
   enspyr_lints:
     git: https://github.com/enspyrco/enspyr_lints
+  types_for_auth:
+    git: https://github.com/enspyrco/types_for_auth
   json_utils:
     git: https://github.com/enspyrco/json_utils
 
+# where are we? flutter/experiments/<here>
+
 # dependency_overrides:
-#   astro:
-#     path: ../../../utils/astro
-#   astro_types:
-#     path: ../../../utils/astro_types
-#   astro_locator:
-#     path: ../../../../dart/utils/astro_locator
-#   astro_inspector_screen:
-#     path: ../../../utils/astro_inspector_screen
-#   astro_auth:
-#     path: ../../../utils/astro_auth
-#   astro_error_handling:
-#     path: ../../../utils/astro_error_handling
-#   astro_navigation:
-#     path: ../../../utils/astro_navigation
-#   firestore_service_flutterfire:
-#     path: ../../../utils/flutterfire/firestore_service_flutterfire
-#   firestore_service_interface:
-#     path: ../../../../dart/interfaces/firestore_service_interface
-#   astro_test_utils:
-#     git: https://github.com/enspyrco/astro_test_utils
-#   enspyr_lints:
-#     git: https://github.com/enspyrco/enspyr_lints
+  core_of_perception:
+    path: ../../utils/perception/core_of_perception
+  types_for_perception:
+    path: ../../utils/perception/types_for_perception
+  locator_for_perception:
+    path: ../../utils/perception/locator_for_perception
+  inspector_for_perception:
+    path: ../../utils/perception/inspector_for_perception
+  auth_for_perception:
+    path: ../../utils/perception/auth/auth_for_perception
+  error_handling_for_perception:
+    path: ../../utils/perception/error_handling_for_perception
+  navigation_for_perception:
+    path: ../../utils/perception/navigation_for_perception
+  firestore_service_interface:
+    path: ../../../dart/interfaces/firestore_service_interface
+  firestore_service_flutterfire:
+    path: ../../utils/flutterfire/firestore_service_flutterfire
+  firebase_auth_service_interface:
+    path: ../../../dart/interfaces/firebase_auth_service_interface
+  firebase_auth_service_flutterfire:
+    path: ../../utils/flutterfire/firebase_auth_service_flutterfire
+  builders_for_perception:
+    path: ../../utils/perception/builders_for_perception
+  test_utils_for_perception:
+    path: ../../utils/perception/test_utils_for_perception
+  # ws_game_server_types:
+  #   path: 
+  # enspyr_lints:
+  #   path: 
+  # types_for_auth:
+  #   path: ../../../dart/interfaces/types_for_auth
+  # json_utils:
+  #   path: 

@@ -1,7 +1,6 @@
-import 'package:astro_types/core_types.dart';
-import 'package:astro_types/state_types.dart';
+import 'package:types_for_perception/beliefs.dart';
 
-class ChallengeTaskModel implements AstroState {
+class ChallengeTaskModel implements CoreBeliefs {
   const ChallengeTaskModel({
     required this.title,
     required this.description,

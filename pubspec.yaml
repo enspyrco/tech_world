@@ -18,17 +18,20 @@ dependencies:
   vector_math: ^2.1.4
   
   # astro
-  astro_core: ^0.0.0-a1
-  astro_types: ^0.0.0-a1
-  astro_locator: ^0.0.0-a1
-  astro_inspector_screen: ^0.0.0-a1
-  astro_auth: ^0.0.0-a1
-  astro_error_handling: ^0.0.0-a1
-  astro_navigation: ^0.0.0-a1
+  auth_for_perception: ^0.0.0-a1
+  core_of_perception: ^0.0.0-a1
+  error_handling_for_perception: ^0.0.0-a1
+  inspector_for_perception: ^0.0.0-a1
+  locator_for_perception: ^0.0.0-a1
+  navigation_for_perception: ^0.0.0-a1
+  types_for_perception: ^0.0.0-a1
   
   # firestore
   firestore_service_interface: ^0.0.0-a1
   firestore_service_flutterfire: ^0.0.0-a1
+
+  # types
+  types_for_auth: ^0.0.0-a1
   
   collection: ^1.17.1
   firebase_core: ^2.14.0
@@ -40,7 +43,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   enspyr_lints: ^0.0.0-a1
-  astro_test_utils: ^0.0.0-a1
+  test_utils_for_perception: ^0.0.0-a1
 
 flutter:
   uses-material-design: true

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:astro_locator/astro_locator.dart';
+import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';

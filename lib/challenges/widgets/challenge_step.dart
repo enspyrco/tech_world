@@ -1,5 +1,5 @@
-import 'package:astro_types/core_types.dart';
 import 'package:flutter/material.dart';
+import 'package:types_for_perception/beliefs.dart';
 
 import '../models/challenge_task_model.dart';
 

@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:astro_locator/astro_locator.dart';
-import 'package:astro_types/auth_types.dart';
-import 'package:astro_types/core_types.dart';
+import 'package:locator_for_perception/locator_for_perception.dart';
+import 'package:types_for_auth/types_for_auth.dart';
+import 'package:types_for_perception/beliefs.dart';
 
 import '../../app/state/app_state.dart';
 import '../services/networking_service.dart';

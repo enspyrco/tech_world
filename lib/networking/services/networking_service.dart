@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:astro_types/core_types.dart';
+import 'package:types_for_perception/beliefs.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
