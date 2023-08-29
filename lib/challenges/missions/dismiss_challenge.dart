@@ -1,12 +1,12 @@
-import 'package:types_for_perception/beliefs.dart';
+import 'package:abstractions/beliefs.dart';
 
 import '../../app/state/app_state.dart';
 
-class DismissChallenge extends LandingMission<AppState> {
+class DismissChallenge extends Conclusion<AppState> {
   const DismissChallenge();
 
   @override
-  AppState landingInstructions(AppState state) {
+  AppState update(AppState state) {
     return state.copyWith(challenge: null);
   }
 

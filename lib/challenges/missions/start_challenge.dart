@@ -1,17 +1,17 @@
-import 'package:types_for_perception/beliefs.dart';
+import 'package:abstractions/beliefs.dart';
 
 import '../../app/state/app_state.dart';
 import '../enums/challenge_enum.dart';
 import '../models/challenge_model.dart';
 import '../models/fix_repo_challenge_model.dart';
 
-class StartChallenge extends LandingMission<AppState> {
+class StartChallenge extends Conclusion<AppState> {
   const StartChallenge({required this.challengeType});
 
   final ChallengeEnum challengeType;
 
   @override
-  AppState landingInstructions(AppState state) {
+  AppState update(AppState state) {
     ChallengeModel? challenge;
     if (challengeType == ChallengeEnum.fixRepo) {
       challenge = const FixRepoChallengeModel(

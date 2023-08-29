@@ -1,4 +1,4 @@
-import 'package:types_for_perception/beliefs.dart';
+import 'package:abstractions/beliefs.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
 class Barriers implements CoreBeliefs {

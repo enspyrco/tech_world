@@ -1,15 +1,15 @@
-import 'package:types_for_perception/beliefs.dart';
+import 'package:abstractions/beliefs.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
 import '../../app/state/app_state.dart';
 
-class SetPlayerPath extends LandingMission<AppState> {
+class SetPlayerPath extends Conclusion<AppState> {
   const SetPlayerPath(this.message);
 
   final PlayerPathMessage message;
 
   @override
-  AppState landingInstructions(AppState state) {
+  AppState update(AppState state) {
     return state.copyWith(
         game: state.game.copyWith(
             playerPaths: state.game.playerPaths

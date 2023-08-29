@@ -1,5 +1,5 @@
-import 'package:auth_for_perception/auth_for_perception.dart';
-import 'package:core_of_perception/core_of_perception.dart';
+import 'package:identity_in_perception/identity_in_perception.dart';
+import 'package:percepts/percepts.dart';
 import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
@@ -18,8 +18,8 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OnStateChangeBuilder<AppState, ChallengeModel?>(
-      transformer: (state) => state.challenge,
+    return StreamOfConsciousness<AppState, ChallengeModel?>(
+      infer: (state) => state.challenge,
       builder: (context, challenge) {
         return Scaffold(
           appBar: AppBar(

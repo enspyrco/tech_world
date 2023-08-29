@@ -1,64 +1,27 @@
 dependency_overrides:
-  # core_of_perception:
-  #   git: https://github.com/enspyrco/core_of_perception
-  # types_for_perception:
-  #   git: https://github.com/enspyrco/types_for_perception
-  # locator_for_perception:
-  #   git: https://github.com/enspyrco/locator_for_perception
-  # inspector_for_perception:
-  #   git: https://github.com/enspyrco/inspector_for_perception
-  # auth_for_perception:
-  #   git: https://github.com/enspyrco/auth_for_perception
-  # error_handling_for_perception:
-  #   git: https://github.com/enspyrco/error_handling_for_perception
-  # navigation_for_perception:
-  #   git: https://github.com/enspyrco/navigation_for_perception
-  # firestore_service_interface:
-  #   git: https://github.com/enspyrco/firestore_service_interface
-  # firestore_service_flutterfire:
-  #   git: https://github.com/enspyrco/firestore_service_flutterfire
-  # firebase_auth_service_interface:
-  #   git: https://github.com/enspyrco/firebase_auth_service_interface
-  # firebase_auth_service_flutterfire:
-  #   git: https://github.com/enspyrco/firebase_auth_service_flutterfire
-  # test_utils_for_perception:
-  #   git: https://github.com/enspyrco/test_utils_for_perception
-  ws_game_server_types:
-    git: https://github.com/enspyrco/ws_game_server_types
-  enspyr_lints:
-    git: https://github.com/enspyrco/enspyr_lints
-  types_for_auth:
-    git: https://github.com/enspyrco/types_for_auth
-  json_utils:
-    git: https://github.com/enspyrco/json_utils
-
 # where are we? flutter/experiments/<here>
-
-# dependency_overrides:
-  core_of_perception:
-    path: ../../utils/perception/core_of_perception
-  types_for_perception:
-    path: ../../utils/perception/types_for_perception
+  percepts:
+    path: ../../utils/perception/percepts
+  abstractions:
+    path: ../../utils/perception/abstractions
   locator_for_perception:
     path: ../../utils/perception/locator_for_perception
-  inspector_for_perception:
-    path: ../../utils/perception/inspector_for_perception
-  auth_for_perception:
-    path: ../../utils/perception/auth/auth_for_perception
-  error_handling_for_perception:
-    path: ../../utils/perception/error_handling_for_perception
-  navigation_for_perception:
-    path: ../../utils/perception/navigation_for_perception
+  introspection:
+    path: ../../utils/perception/introspection
+  identity_in_perception:
+    path: ../../utils/perception/identity/identity_in_perception
+  error_correction_in_perception:
+    path: ../../utils/perception/error_correction_in_perception
+  framing_in_perception:
+    path: ../../utils/perception/framing_in_perception
   firestore_service_interface:
     path: ../../../dart/interfaces/firestore_service_interface
-  firestore_service_flutterfire:
-    path: ../../utils/flutterfire/firestore_service_flutterfire
+  flutterfire_firestore_service:
+    path: ../../utils/flutterfire/flutterfire_firestore_service
   firebase_auth_service_interface:
     path: ../../../dart/interfaces/firebase_auth_service_interface
-  firebase_auth_service_flutterfire:
-    path: ../../utils/flutterfire/firebase_auth_service_flutterfire
-  builders_for_perception:
-    path: ../../utils/perception/builders_for_perception
+  flutterfire_firebase_auth_service:
+    path: ../../utils/flutterfire/flutterfire_firebase_auth_service
   test_utils_for_perception:
     path: ../../utils/perception/test_utils_for_perception
   # ws_game_server_types:

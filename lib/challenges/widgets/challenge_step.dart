@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:types_for_perception/beliefs.dart';
+import 'package:abstractions/beliefs.dart';
 
 import '../models/challenge_task_model.dart';
 
@@ -10,6 +10,6 @@ class ChallengeStep extends Step {
 
   final ChallengeTaskModel _task;
 
-  Mission? get startMission => _task.startMission;
-  Mission? get endMission => _task.endMission;
+  Cognition? get startMission => _task.startMission;
+  Cognition? get endMission => _task.endMission;
 }

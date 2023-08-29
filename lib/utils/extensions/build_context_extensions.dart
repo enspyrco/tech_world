@@ -1,6 +1,6 @@
 import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:flutter/widgets.dart';
-import 'package:types_for_perception/beliefs.dart';
+import 'package:abstractions/beliefs.dart';
 
 import '../../app/state/app_state.dart';
 
@@ -10,11 +10,11 @@ import '../../app/state/app_state.dart';
 // problems, eg. breaks hot reload)
 
 extension BuildContextExtension on BuildContext {
-  void land(LandingMission<AppState> mission) {
-    return locate<MissionControl<AppState>>().land(mission);
+  void land(Conclusion<AppState> mission) {
+    return locate<BeliefSystem<AppState>>().conclude(mission);
   }
 
-  Future<void> launch(AwayMission<AppState> mission) {
-    return locate<MissionControl<AppState>>().launch(mission);
+  Future<void> launch(Consideration<AppState> mission) {
+    return locate<BeliefSystem<AppState>>().consider(mission);
   }
 }

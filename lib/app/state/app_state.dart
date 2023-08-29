@@ -1,10 +1,10 @@
-import 'package:auth_for_perception/auth_for_perception.dart';
-import 'package:error_handling_for_perception/error_handling_for_perception.dart';
-import 'package:navigation_for_perception/navigation_for_perception.dart';
-import 'package:types_for_perception/auth_beliefs.dart';
-import 'package:types_for_perception/beliefs.dart';
-import 'package:types_for_perception/error_handling_types.dart';
-import 'package:types_for_perception/navigation_types.dart';
+import 'package:identity_in_perception/identity_in_perception.dart';
+import 'package:error_correction_in_perception/error_correction_in_perception.dart';
+import 'package:framing_in_perception/framing_in_perception.dart';
+import 'package:abstractions/identity.dart';
+import 'package:abstractions/beliefs.dart';
+import 'package:abstractions/error_correction.dart';
+import 'package:abstractions/framing.dart';
 
 import '../../challenges/models/challenge_model.dart';
 import '../../game/game_state.dart';
@@ -12,13 +12,13 @@ import '../../game/game_state.dart';
 class AppState
     implements
         CoreBeliefs,
-        AppStateNavigation,
-        AppStateErrorHandling,
-        AuthConcept {
+        FramingConcept,
+        ErrorCorrectionConcept,
+        IdentityConcept {
   AppState({
     required this.auth,
     required this.error,
-    required this.navigation,
+    required this.framing,
     // required Settings settings,
     // ProfileData? profile,
     required this.game,
@@ -26,11 +26,11 @@ class AppState
   });
 
   @override
-  final AuthBeliefs auth;
+  final IdentityBeliefs auth;
   @override
-  final DefaultErrorHandlingState error;
+  final DefaultErrorCorrectionBeliefs error;
   @override
-  final DefaultNavigationState navigation;
+  final DefaultFramingBeliefs framing;
 
   // final Settings settings;
   // final ProfileData? profile;
@@ -40,22 +40,22 @@ class AppState
 
   static AppState get initial => AppState(
         auth: AuthBeliefSystem.initialBeliefs(),
-        error: DefaultErrorHandlingState.initial,
-        navigation: DefaultNavigationState.initial,
+        error: DefaultErrorCorrectionBeliefs.initial,
+        framing: DefaultFramingBeliefs.initial,
         // settings: Settings.initial,
         game: GameState.initial,
       );
 
   @override
   AppState copyWith({
-    DefaultNavigationState? navigation,
-    DefaultErrorHandlingState? error,
-    AuthBeliefs? auth,
+    DefaultFramingBeliefs? framing,
+    DefaultErrorCorrectionBeliefs? error,
+    IdentityBeliefs? auth,
     GameState? game,
     ChallengeModel? challenge,
   }) =>
       AppState(
-        navigation: navigation ?? this.navigation,
+        framing: framing ?? this.framing,
         auth: auth ?? this.auth,
         error: error ?? this.error,
         game: game ?? this.game,
@@ -64,7 +64,7 @@ class AppState
 
   @override
   toJson() => {
-        'navigation': navigation.toJson(),
+        'navigation': framing.toJson(),
         'auth': auth.toJson(),
         'error': error.toJson(),
         'game': game.toJson(),

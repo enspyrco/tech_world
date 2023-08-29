@@ -2,23 +2,23 @@ import 'dart:async';
 
 import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:types_for_auth/types_for_auth.dart';
-import 'package:types_for_perception/beliefs.dart';
+import 'package:abstractions/beliefs.dart';
 
 import '../../app/state/app_state.dart';
 import '../services/networking_service.dart';
 
-StreamSubscription<Mission>? _subscription;
+StreamSubscription<Cognition>? _subscription;
 
 /// ConnectGameServer is launched when auth state changes to either signedIn
-/// or notSignedIn. The [UpdateGameServerConnection.flightPlan] connects or disconnects
+/// or notSignedIn. The [UpdateGameServerConnection.process] connects or disconnects
 /// based on on the app state.
-class UpdateGameServerConnection extends AwayMission<AppState> {
+class UpdateGameServerConnection extends Consideration<AppState> {
   const UpdateGameServerConnection();
 
   @override
-  Future<void> flightPlan(MissionControl<AppState> missionControl) async {
+  Future<void> process(BeliefSystem<AppState> beliefSystem) async {
     var service = locate<NetworkingService>();
-    var state = missionControl.state;
+    var state = beliefSystem.state;
 
     if (state.auth.user.signedIn == SignedInState.notSignedIn) {
       _subscription?.cancel();
@@ -28,8 +28,8 @@ class UpdateGameServerConnection extends AwayMission<AppState> {
 
     if (state.auth.user.signedIn == SignedInState.signedIn) {
       // listen to the networking service and dispatch any actions
-      _subscription = service.missionsStream
-          .listen(missionControl.land, onError: (Object error) => throw error);
+      _subscription = service.missionsStream.listen(beliefSystem.conclude,
+          onError: (Object error) => throw error);
       // ask the networking service to connect to the server
       service.connect(state.auth.user.uid!);
       return;

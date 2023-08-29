@@ -1,14 +1,14 @@
-import 'package:types_for_perception/beliefs.dart';
+import 'package:abstractions/beliefs.dart';
 
 import '../../app/state/app_state.dart';
 
-class LaunchUrl extends AwayMission<AppState> {
+class LaunchUrl extends Consideration<AppState> {
   const LaunchUrl({required this.url});
 
   final String url;
 
   @override
-  Future<void> flightPlan(MissionControl<AppState> missionControl) async {}
+  Future<void> process(BeliefSystem<AppState> beliefSystem) async {}
 
   @override
   toJson() => {

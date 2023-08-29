@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'astro_base.dart';
+import 'priors.dart';
 
 void main() async {
-  await astroInitialization();
+  await setupPriors();
   runApp(const MaterialApp(home: AstroBase()));
 }

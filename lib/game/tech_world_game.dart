@@ -72,8 +72,9 @@ class TechWorldGame extends FlameGame with KeyboardEvents, TapDetector {
 
       if (_oldState.game.playerPaths != state.game.playerPaths) {
         // get the set of ids corresponding to new player paths
-        var newPaths = {...state.game.playerPaths.entries}
-            .difference({..._oldState.game.playerPaths.entries});
+        // var newPaths = {...state.game.playerPaths.entries}
+        //     .difference({..._oldState.game.playerPaths.entries});
+
         // add movement effects to all relevant player components
         // for (var path in newPaths) {
         //   _otherPlayers[path.key]!.moveOnPath(
