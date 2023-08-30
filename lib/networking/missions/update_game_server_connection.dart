@@ -10,13 +10,13 @@ import '../services/networking_service.dart';
 StreamSubscription<Cognition>? _subscription;
 
 /// ConnectGameServer is launched when auth state changes to either signedIn
-/// or notSignedIn. The [UpdateGameServerConnection.process] connects or disconnects
+/// or notSignedIn. The [UpdateGameServerConnection.consider] connects or disconnects
 /// based on on the app state.
 class UpdateGameServerConnection extends Consideration<AppState> {
   const UpdateGameServerConnection();
 
   @override
-  Future<void> process(BeliefSystem<AppState> beliefSystem) async {
+  Future<void> consider(BeliefSystem<AppState> beliefSystem) async {
     var service = locate<NetworkingService>();
     var state = beliefSystem.state;
 

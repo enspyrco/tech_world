@@ -6,7 +6,7 @@ class DismissChallenge extends Conclusion<AppState> {
   const DismissChallenge();
 
   @override
-  AppState update(AppState state) {
+  AppState conclude(AppState state) {
     return state.copyWith(challenge: null);
   }
 

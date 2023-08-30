@@ -11,7 +11,7 @@ class StartChallenge extends Conclusion<AppState> {
   final ChallengeEnum challengeType;
 
   @override
-  AppState update(AppState state) {
+  AppState conclude(AppState state) {
     ChallengeModel? challenge;
     if (challengeType == ChallengeEnum.fixRepo) {
       challenge = const FixRepoChallengeModel(

@@ -9,7 +9,7 @@ class SetPlayerPath extends Conclusion<AppState> {
   final PlayerPathMessage message;
 
   @override
-  AppState update(AppState state) {
+  AppState conclude(AppState state) {
     return state.copyWith(
         game: state.game.copyWith(
             playerPaths: state.game.playerPaths

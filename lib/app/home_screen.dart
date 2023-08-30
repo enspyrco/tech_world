@@ -52,7 +52,7 @@ class StartChallengeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return FloatingActionButton.small(
       child: const Text('+'),
-      onPressed: () => context.land(
+      onPressed: () => context.conclude(
         const StartChallenge(challengeType: ChallengeEnum.fixRepo),
       ),
     );
@@ -66,7 +66,7 @@ class DismissChallengeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return FloatingActionButton.small(
       child: const Text('X'),
-      onPressed: () => context.land(const DismissChallenge()),
+      onPressed: () => context.conclude(const DismissChallenge()),
     );
   }
 }

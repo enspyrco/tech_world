@@ -8,7 +8,7 @@ class LaunchUrl extends Consideration<AppState> {
   final String url;
 
   @override
-  Future<void> process(BeliefSystem<AppState> beliefSystem) async {}
+  Future<void> consider(BeliefSystem<AppState> beliefSystem) async {}
 
   @override
   toJson() => {

@@ -11,7 +11,7 @@ void main() {
       expect(initialState.auth.user.uid, null);
 
       const mission = SetOtherPlayerIds(testIds);
-      var newState = mission.update(initialState);
+      var newState = mission.conclude(initialState);
 
       expect(newState.game.otherPlayerIds, testIds);
     });

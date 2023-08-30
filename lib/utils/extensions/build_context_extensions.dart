@@ -10,11 +10,11 @@ import '../../app/state/app_state.dart';
 // problems, eg. breaks hot reload)
 
 extension BuildContextExtension on BuildContext {
-  void land(Conclusion<AppState> mission) {
-    return locate<BeliefSystem<AppState>>().conclude(mission);
+  void conclude(Conclusion<AppState> conclusion) {
+    return locate<BeliefSystem<AppState>>().conclude(conclusion);
   }
 
-  Future<void> launch(Consideration<AppState> mission) {
-    return locate<BeliefSystem<AppState>>().consider(mission);
+  Future<void> consider(Consideration<AppState> consideration) {
+    return locate<BeliefSystem<AppState>>().consider(consideration);
   }
 }

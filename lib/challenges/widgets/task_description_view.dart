@@ -18,7 +18,7 @@ class TaskDescriptionView extends StatelessWidget {
           Markdown(
             data: markdown,
             onTapLink: (_, href, __) =>
-                context.launch(LaunchUrl(url: href ?? '')),
+                context.consider(LaunchUrl(url: href ?? '')),
           ),
           Positioned(
               right: 0.0,

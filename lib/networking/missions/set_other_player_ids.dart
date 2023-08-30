@@ -8,7 +8,7 @@ class SetOtherPlayerIds extends Conclusion<AppState> {
   final Set<String> ids;
 
   @override
-  AppState update(AppState state) {
+  AppState conclude(AppState state) {
     return state.copyWith(
         game: state.game
             .copyWith(otherPlayerIds: state.game.otherPlayerIds..addAll(ids)));

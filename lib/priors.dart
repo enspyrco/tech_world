@@ -56,7 +56,7 @@ void initializeApp() {
       launchOnSignedIn: [const UpdateGameServerConnection()],
       launchOnSignedOut: [const UpdateGameServerConnection()]);
   initializeIntrospection<AppState>();
-  initializeNavigationPlugin<AppState>();
+  initializeFraming<AppState>();
 }
 
 class AstroBase extends StatelessWidget {
