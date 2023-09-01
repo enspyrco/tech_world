@@ -18,7 +18,7 @@ class UpdateGameServerConnection extends Consideration<AppState> {
   @override
   Future<void> consider(BeliefSystem<AppState> beliefSystem) async {
     var service = locate<NetworkingService>();
-    var state = beliefSystem.state;
+    var state = beliefSystem.beliefs;
 
     if (state.auth.user.signedIn == SignedInState.notSignedIn) {
       _subscription?.cancel();
