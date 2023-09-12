@@ -7,13 +7,13 @@
       "program": "${workspaceFolder:tech_world}/lib/main.dart"
     },
     {
-      "name": "in-app-inspector",
+      "name": "in-app-introspection",
       "request": "launch",
       "type": "dart",
       "program": "${workspaceFolder:tech_world}/lib/main.dart",
       "toolArgs": [
         "--dart-define",
-        "IN-APP-ASTRO-INSPECTOR=true"
+        "IN-APP-INTROSPECTION=true"
       ]
     },
     {
@@ -23,7 +23,7 @@
       "program": "${workspaceFolder:tech_world}/lib/main.dart",
       "toolArgs": [
         "--dart-define",
-        "DEVTOOLS-ASTRO-INSPECTOR=true"
+        "DEVTOOLS-INTROSPECTION=true"
       ]
     }
   ]
