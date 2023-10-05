@@ -8,7 +8,7 @@ void main() {
       const testIds = {'1', '2'};
 
       final initialState = AppState.initial;
-      expect(initialState.auth.user.uid, null);
+      expect(initialState.identity.userAuthState.uid, null);
 
       const mission = SetOtherPlayerIds(testIds);
       var newState = mission.conclude(initialState);

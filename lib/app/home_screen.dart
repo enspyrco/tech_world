@@ -1,4 +1,4 @@
-import 'package:identity_in_perception/identity_in_perception.dart';
+import 'package:flutterfire_firebase_auth_for_perception/flutterfire_firebase_auth_for_perception.dart';
 import 'package:percepts/percepts.dart';
 import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:flame/game.dart';

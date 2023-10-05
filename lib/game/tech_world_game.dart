@@ -44,8 +44,8 @@ class TechWorldGame extends FlameGame with KeyboardEvents, TapDetector {
 
     // TODO: add try/catch blocks and onError callback
     _appStateChanges.listen((state) {
-      if (_userId != state.auth.user.uid) {
-        _userId = state.auth.user.uid;
+      if (_userId != state.identity.userAuthState.uid) {
+        _userId = state.identity.userAuthState.uid;
       }
 
       if (_oldState.game.otherPlayerIds != state.game.otherPlayerIds) {

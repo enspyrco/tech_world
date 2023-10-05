@@ -20,22 +20,22 @@ class UpdateGameServerConnection extends Consideration<AppState> {
     var service = locate<NetworkingService>();
     var state = beliefSystem.beliefs;
 
-    if (state.auth.user.signedIn == SignedInState.notSignedIn) {
+    if (state.identity.userAuthState.signedIn == SignedInState.notSignedIn) {
       _subscription?.cancel();
       service.disconnect();
       return;
     }
 
-    if (state.auth.user.signedIn == SignedInState.signedIn) {
+    if (state.identity.userAuthState.signedIn == SignedInState.signedIn) {
       // listen to the networking service and dispatch any actions
       _subscription = service.missionsStream.listen(beliefSystem.conclude,
           onError: (Object error) => throw error);
       // ask the networking service to connect to the server
-      service.connect(state.auth.user.uid!);
+      service.connect(state.identity.userAuthState.uid!);
       return;
     }
 
-    throw 'ConnectGameServer AwayMission was launched when state.auth.user.signedIn was ${state.auth.user.signedIn}.\n'
+    throw 'ConnectGameServer AwayMission was launched when state.identity.userAuthState.signedIn was ${state.identity.userAuthState.signedIn}.\n'
         'The mission assumes either SignedInState.signedIn or SignedInState.notSignedIn.\n'
         'Use the Inspector to determine what changed the state.';
   }

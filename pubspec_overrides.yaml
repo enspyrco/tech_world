@@ -8,8 +8,6 @@ dependency_overrides:
     path: ../../utils/perception/locator_for_perception
   introspection:
     path: ../../utils/perception/introspection
-  identity_in_perception:
-    path: ../../utils/perception/identity/identity_in_perception
   error_correction_in_perception:
     path: ../../utils/perception/error_correction_in_perception
   framing_in_perception:
@@ -18,12 +16,12 @@ dependency_overrides:
     path: ../../../dart/interfaces/firestore_service_interface
   flutterfire_firestore_service:
     path: ../../utils/flutterfire/flutterfire_firestore_service
-  firebase_auth_service_interface:
-    path: ../../../dart/interfaces/firebase_auth_service_interface
-  flutterfire_firebase_auth_service:
-    path: ../../utils/flutterfire/flutterfire_firebase_auth_service
   test_utils_for_perception:
     path: ../../utils/perception/test_utils_for_perception
+
+  flutterfire_firebase_auth_for_perception:
+    path: ../../utils/perception/identity/flutterfire_firebase_auth_for_perception
+  
   # ws_game_server_types:
   #   path: 
   # enspyr_lints:
