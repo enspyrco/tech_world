@@ -51,7 +51,7 @@ Future<void> setupPriors() async {
 void initializeApp() {
   /// Perform individual plugin initialization.
   initializeErrorHandling<AppState>();
-  initializeAuthPlugin<AppState>(
+  initializeFlutterfireFirebaseAuth<AppState>(
       initialScreen: const HomeScreen(),
       launchOnSignedIn: [const UpdateGameServerConnection()],
       launchOnSignedOut: [const UpdateGameServerConnection()]);
