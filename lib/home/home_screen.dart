@@ -11,14 +11,14 @@ import '../challenges/models/challenge_model.dart';
 import '../challenges/widgets/challenge_stepper.dart';
 import '../game/tech_world_game.dart';
 import '../utils/extensions/build_context_extensions.dart';
-import 'state/app_state.dart';
+import '../app/app_beliefs.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return StreamOfConsciousness<AppState, ChallengeModel?>(
+    return StreamOfConsciousness<AppBeliefs, ChallengeModel?>(
       infer: (state) => state.challenge,
       builder: (context, challenge) {
         return Scaffold(
@@ -28,8 +28,8 @@ class HomeScreen extends StatelessWidget {
                 const StartChallengeButton()
               else
                 const DismissChallengeButton(),
-              const AvatarMenuButton<AppState>(
-                options: {MenuOption('Sign Out', SigningOut<AppState>())},
+              const AvatarMenuButton<AppBeliefs>(
+                options: {MenuOption('Sign Out', SigningOut<AppBeliefs>())},
               ),
             ],
           ),

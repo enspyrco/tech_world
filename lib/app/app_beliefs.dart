@@ -6,16 +6,16 @@ import 'package:abstractions/error_correction.dart';
 import 'package:abstractions/framing.dart';
 import 'package:percepts/percepts.dart';
 
-import '../../challenges/models/challenge_model.dart';
-import '../../game/game_state.dart';
+import '../challenges/models/challenge_model.dart';
+import '../game/game_state.dart';
 
-class AppState
+class AppBeliefs
     implements
         CoreBeliefs,
         FramingConcept,
         ErrorCorrectionConcept,
         IdentityConcept {
-  AppState({
+  AppBeliefs({
     required this.identity,
     required this.error,
     required this.framing,
@@ -38,7 +38,7 @@ class AppState
   final GameState game;
   final ChallengeModel? challenge;
 
-  static AppState get initial => AppState(
+  static AppBeliefs get initial => AppBeliefs(
         identity: DefaultIdentityBeliefs.initial,
         error: DefaultErrorCorrectionBeliefs.initial,
         framing: DefaultFramingBeliefs.initial,
@@ -47,16 +47,16 @@ class AppState
       );
 
   @override
-  AppState copyWith({
+  AppBeliefs copyWith({
     DefaultFramingBeliefs? framing,
     DefaultErrorCorrectionBeliefs? error,
-    IdentityBeliefs? auth,
+    IdentityBeliefs? identity,
     GameState? game,
     ChallengeModel? challenge,
   }) =>
-      AppState(
+      AppBeliefs(
         framing: framing ?? this.framing,
-        identity: auth ?? this.identity,
+        identity: identity ?? this.identity,
         error: error ?? this.error,
         game: game ?? this.game,
         challenge: challenge ?? this.challenge,

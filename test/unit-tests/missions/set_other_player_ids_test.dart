@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tech_world/app/state/app_state.dart';
+import 'package:tech_world/app/app_beliefs.dart';
 import 'package:tech_world/networking/missions/set_other_player_ids.dart';
 
 void main() {
@@ -7,7 +7,7 @@ void main() {
     test('should update otherPlayerIds', () {
       const testIds = {'1', '2'};
 
-      final initialState = AppState.initial;
+      final initialState = AppBeliefs.initial;
       expect(initialState.identity.userAuthState.uid, null);
 
       const mission = SetOtherPlayerIds(testIds);

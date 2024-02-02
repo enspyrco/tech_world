@@ -1,14 +1,14 @@
 import 'package:abstractions/beliefs.dart';
 
-import '../../app/state/app_state.dart';
+import '../../app/app_beliefs.dart';
 
-class LaunchUrl extends Consideration<AppState> {
+class LaunchUrl extends Consideration<AppBeliefs> {
   const LaunchUrl({required this.url});
 
   final String url;
 
   @override
-  Future<void> consider(BeliefSystem<AppState> beliefSystem) async {}
+  Future<void> consider(BeliefSystem<AppBeliefs> beliefSystem) async {}
 
   @override
   toJson() => {

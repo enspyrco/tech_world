@@ -1,12 +1,12 @@
 import 'package:abstractions/beliefs.dart';
 
-import '../../app/state/app_state.dart';
+import '../../app/app_beliefs.dart';
 
-class DismissChallenge extends Conclusion<AppState> {
+class DismissChallenge extends Conclusion<AppBeliefs> {
   const DismissChallenge();
 
   @override
-  AppState conclude(AppState state) {
+  AppBeliefs conclude(AppBeliefs state) {
     return state.copyWith(challenge: null);
   }
 

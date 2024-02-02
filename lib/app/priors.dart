@@ -12,12 +12,12 @@ import 'package:firestore_service_interface/firestore_service_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:abstractions/beliefs.dart';
 
-import 'app/home_screen.dart';
-import 'app/state/app_state.dart';
-import 'firebase_options.dart';
-import 'game/tech_world_game.dart';
-import 'networking/missions/update_game_server_connection.dart';
-import 'networking/services/networking_service.dart';
+import '../home/home_screen.dart';
+import 'app_beliefs.dart';
+import '../firebase_options.dart';
+import '../game/tech_world_game.dart';
+import '../networking/missions/update_game_server_connection.dart';
+import '../networking/services/networking_service.dart';
 
 Future<void> setupPriors() async {
   /// Setup FlutterFire
@@ -27,36 +27,31 @@ Future<void> setupPriors() async {
   /// Setup Locator so plugins can add SystemChecks & Routes, configure the AppState, etc.
   Locator.add<Habits>(DefaultHabits());
   Locator.add<PageGenerator>(DefaultPageGenerator());
-  Locator.add<AppState>(AppState.initial);
+  Locator.add<AppBeliefs>(AppBeliefs.initial);
 
   ///
   Locator.add<FirestoreService>(FlutterfireFirestoreService());
   Locator.add<NetworkingService>(NetworkingService());
 
-  /// Perform any final initialization by the app such as setting up routes.
-  initializeApp();
-
-  /// Finally, create our BeliefSystem and add to the Locator.
-  final beliefSystem = DefaultBeliefSystem<AppState>(
-      beliefs: locate<AppState>(),
-      errorHandlers: DefaultErrorHandlers<AppState>(),
-      habits: locate<Habits>(),
-      beliefSystemFactory: ParentingBeliefSystem.new);
-  Locator.add<BeliefSystem<AppState>>(beliefSystem);
-
-  Locator.add<TechWorldGame>(
-      TechWorldGame(appStateChanges: beliefSystem.onBeliefUpdate));
-}
-
-void initializeApp() {
-  /// Perform individual plugin initialization.
-  initializeErrorHandling<AppState>();
-  initializeIdentity<AppState>(
+  /// Perform individual plugin initialization
+  initializeErrorHandling<AppBeliefs>();
+  initializeIdentity<AppBeliefs>(
       initialScreen: const HomeScreen(),
       considerOnSignedIn: [const UpdateGameServerConnection()],
       considerOnSignedOut: [const UpdateGameServerConnection()]);
-  initializeIntrospection<AppState>();
-  initializeFraming<AppState>();
+  initializeIntrospection<AppBeliefs>();
+  initializeFraming<AppBeliefs>();
+
+  /// Finally, create our BeliefSystem and add to the Locator.
+  final beliefSystem = DefaultBeliefSystem<AppBeliefs>(
+      beliefs: locate<AppBeliefs>(),
+      errorHandlers: DefaultErrorHandlers<AppBeliefs>(),
+      habits: locate<Habits>(),
+      beliefSystemFactory: ParentingBeliefSystem.new);
+  Locator.add<BeliefSystem<AppBeliefs>>(beliefSystem);
+
+  Locator.add<TechWorldGame>(
+      TechWorldGame(appStateChanges: beliefSystem.onBeliefUpdate));
 }
 
 class OriginOPerception extends StatelessWidget {
@@ -75,9 +70,9 @@ class OriginOPerception extends StatelessWidget {
           ),
         Expanded(
           flex: 1,
-          child: FramingBuilder<AppState>(
+          child: FramingBuilder<AppBeliefs>(
             onInit: (beliefSystem) => beliefSystem.consider(
-              const ObservingIdentity<AppState,
+              const ObservingIdentity<AppBeliefs,
                   FlutterfireFirebaseAuthSubsystem>(),
             ),
           ),

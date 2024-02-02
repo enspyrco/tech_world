@@ -4,7 +4,7 @@ import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:types_for_auth/types_for_auth.dart';
 import 'package:abstractions/beliefs.dart';
 
-import '../../app/state/app_state.dart';
+import '../../app/app_beliefs.dart';
 import '../services/networking_service.dart';
 
 StreamSubscription<Cognition>? _subscription;
@@ -12,11 +12,11 @@ StreamSubscription<Cognition>? _subscription;
 /// ConnectGameServer is launched when auth state changes to either signedIn
 /// or notSignedIn. The [UpdateGameServerConnection.consider] connects or disconnects
 /// based on on the app state.
-class UpdateGameServerConnection extends Consideration<AppState> {
+class UpdateGameServerConnection extends Consideration<AppBeliefs> {
   const UpdateGameServerConnection();
 
   @override
-  Future<void> consider(BeliefSystem<AppState> beliefSystem) async {
+  Future<void> consider(BeliefSystem<AppBeliefs> beliefSystem) async {
     var service = locate<NetworkingService>();
     var state = beliefSystem.beliefs;
 

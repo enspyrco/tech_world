@@ -1,17 +1,17 @@
 import 'package:abstractions/beliefs.dart';
 
-import '../../app/state/app_state.dart';
+import '../../app/app_beliefs.dart';
 import '../enums/challenge_enum.dart';
 import '../models/challenge_model.dart';
 import '../models/fix_repo_challenge_model.dart';
 
-class StartChallenge extends Conclusion<AppState> {
+class StartChallenge extends Conclusion<AppBeliefs> {
   const StartChallenge({required this.challengeType});
 
   final ChallengeEnum challengeType;
 
   @override
-  AppState conclude(AppState state) {
+  AppBeliefs conclude(AppBeliefs state) {
     ChallengeModel? challenge;
     if (challengeType == ChallengeEnum.fixRepo) {
       challenge = const FixRepoChallengeModel(

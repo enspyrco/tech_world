@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
-import '../app/state/app_state.dart';
+import '../app/app_beliefs.dart';
 import '../networking/services/networking_service.dart';
 import '../utils/extensions/list_of_vector2s_extension.dart';
 import 'components/map_component.dart';
@@ -19,12 +19,12 @@ int departureTime = 0;
 
 class TechWorldGame extends FlameGame with KeyboardEvents, TapDetector {
   TechWorldGame({
-    required Stream<AppState> appStateChanges,
+    required Stream<AppBeliefs> appStateChanges,
   }) : _appStateChanges = appStateChanges;
 
   // We listen to each state change & check the parts we care about.
-  final Stream<AppState> _appStateChanges;
-  var _oldState = AppState.initial;
+  final Stream<AppBeliefs> _appStateChanges;
+  var _oldState = AppBeliefs.initial;
 
   // Components that are used to draw the scene.
   PlayerComponent? _player;

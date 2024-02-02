@@ -1,15 +1,15 @@
 import 'package:abstractions/beliefs.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
-import '../../app/state/app_state.dart';
+import '../../app/app_beliefs.dart';
 
-class SetPlayerPath extends Conclusion<AppState> {
+class SetPlayerPath extends Conclusion<AppBeliefs> {
   const SetPlayerPath(this.message);
 
   final PlayerPathMessage message;
 
   @override
-  AppState conclude(AppState state) {
+  AppBeliefs conclude(AppBeliefs state) {
     return state.copyWith(
         game: state.game.copyWith(
             playerPaths: state.game.playerPaths
