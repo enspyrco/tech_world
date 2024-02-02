@@ -1,41 +1,41 @@
 import 'dart:async';
 
-import 'package:astro_locator/astro_locator.dart';
-import 'package:astro_types/auth_types.dart';
-import 'package:astro_types/core_types.dart';
+import 'package:locator_for_perception/locator_for_perception.dart';
+import 'package:types_for_auth/types_for_auth.dart';
+import 'package:abstractions/beliefs.dart';
 
-import '../../app/state/app_state.dart';
+import '../../app/app_beliefs.dart';
 import '../services/networking_service.dart';
 
-StreamSubscription<Mission>? _subscription;
+StreamSubscription<Cognition>? _subscription;
 
 /// ConnectGameServer is launched when auth state changes to either signedIn
-/// or notSignedIn. The [UpdateGameServerConnection.flightPlan] connects or disconnects
+/// or notSignedIn. The [UpdateGameServerConnection.consider] connects or disconnects
 /// based on on the app state.
-class UpdateGameServerConnection extends AwayMission<AppState> {
+class UpdateGameServerConnection extends Consideration<AppBeliefs> {
   const UpdateGameServerConnection();
 
   @override
-  Future<void> flightPlan(MissionControl<AppState> missionControl) async {
+  Future<void> consider(BeliefSystem<AppBeliefs> beliefSystem) async {
     var service = locate<NetworkingService>();
-    var state = missionControl.state;
+    var state = beliefSystem.beliefs;
 
-    if (state.auth.user.signedIn == SignedInState.notSignedIn) {
+    if (state.identity.userAuthState.signedIn == SignedInState.notSignedIn) {
       _subscription?.cancel();
       service.disconnect();
       return;
     }
 
-    if (state.auth.user.signedIn == SignedInState.signedIn) {
+    if (state.identity.userAuthState.signedIn == SignedInState.signedIn) {
       // listen to the networking service and dispatch any actions
-      _subscription = service.missionsStream
-          .listen(missionControl.land, onError: (Object error) => throw error);
+      _subscription = service.missionsStream.listen(beliefSystem.conclude,
+          onError: (Object error) => throw error);
       // ask the networking service to connect to the server
-      service.connect(state.auth.user.uid!);
+      service.connect(state.identity.userAuthState.uid!);
       return;
     }
 
-    throw 'ConnectGameServer AwayMission was launched when state.auth.user.signedIn was ${state.auth.user.signedIn}.\n'
+    throw 'ConnectGameServer AwayMission was launched when state.identity.userAuthState.signedIn was ${state.identity.userAuthState.signedIn}.\n'
         'The mission assumes either SignedInState.signedIn or SignedInState.notSignedIn.\n'
         'Use the Inspector to determine what changed the state.';
   }

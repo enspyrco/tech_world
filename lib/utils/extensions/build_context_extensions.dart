@@ -1,8 +1,8 @@
-import 'package:astro_locator/astro_locator.dart';
-import 'package:astro_types/core_types.dart';
+import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:flutter/widgets.dart';
+import 'package:abstractions/beliefs.dart';
 
-import '../../app/state/app_state.dart';
+import '../../app/app_beliefs.dart';
 
 // Currently uses the locator meaning there is no need to use an extension
 // on BuildContext, however doing so makes it a lot easier if we decide to
@@ -10,11 +10,11 @@ import '../../app/state/app_state.dart';
 // problems, eg. breaks hot reload)
 
 extension BuildContextExtension on BuildContext {
-  void land(LandingMission<AppState> mission) {
-    return locate<MissionControl<AppState>>().land(mission);
+  void conclude(Conclusion<AppBeliefs> conclusion) {
+    return locate<BeliefSystem<AppBeliefs>>().conclude(conclusion);
   }
 
-  Future<void> launch(AwayMission<AppState> mission) {
-    return locate<MissionControl<AppState>>().launch(mission);
+  Future<void> consider(Consideration<AppBeliefs> consideration) {
+    return locate<BeliefSystem<AppBeliefs>>().consider(consideration);
   }
 }

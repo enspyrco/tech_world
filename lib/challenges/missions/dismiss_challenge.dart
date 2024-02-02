@@ -1,12 +1,12 @@
-import 'package:astro_types/core_types.dart';
+import 'package:abstractions/beliefs.dart';
 
-import '../../app/state/app_state.dart';
+import '../../app/app_beliefs.dart';
 
-class DismissChallenge extends LandingMission<AppState> {
+class DismissChallenge extends Conclusion<AppBeliefs> {
   const DismissChallenge();
 
   @override
-  AppState landingInstructions(AppState state) {
+  AppBeliefs conclude(AppBeliefs state) {
     return state.copyWith(challenge: null);
   }
 

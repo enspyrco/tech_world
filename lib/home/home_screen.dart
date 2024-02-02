@@ -1,6 +1,6 @@
-import 'package:astro_auth/astro_auth.dart';
-import 'package:astro_core/astro_core.dart';
-import 'package:astro_locator/astro_locator.dart';
+import 'package:flutterfire_firebase_auth_for_perception/flutterfire_firebase_auth_for_perception.dart';
+import 'package:percepts/percepts.dart';
+import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
@@ -11,15 +11,15 @@ import '../challenges/models/challenge_model.dart';
 import '../challenges/widgets/challenge_stepper.dart';
 import '../game/tech_world_game.dart';
 import '../utils/extensions/build_context_extensions.dart';
-import 'state/app_state.dart';
+import '../app/app_beliefs.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return OnStateChangeBuilder<AppState, ChallengeModel?>(
-      transformer: (state) => state.challenge,
+    return StreamOfConsciousness<AppBeliefs, ChallengeModel?>(
+      infer: (state) => state.challenge,
       builder: (context, challenge) {
         return Scaffold(
           appBar: AppBar(
@@ -28,8 +28,8 @@ class HomeScreen extends StatelessWidget {
                 const StartChallengeButton()
               else
                 const DismissChallengeButton(),
-              const AvatarMenuButton<AppState>(
-                options: {MenuOption('Sign Out', SignOut<AppState>())},
+              const AvatarMenuButton<AppBeliefs>(
+                options: {MenuOption('Sign Out', SigningOut<AppBeliefs>())},
               ),
             ],
           ),
@@ -52,7 +52,7 @@ class StartChallengeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return FloatingActionButton.small(
       child: const Text('+'),
-      onPressed: () => context.land(
+      onPressed: () => context.conclude(
         const StartChallenge(challengeType: ChallengeEnum.fixRepo),
       ),
     );
@@ -66,7 +66,7 @@ class DismissChallengeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return FloatingActionButton.small(
       child: const Text('X'),
-      onPressed: () => context.land(const DismissChallenge()),
+      onPressed: () => context.conclude(const DismissChallenge()),
     );
   }
 }

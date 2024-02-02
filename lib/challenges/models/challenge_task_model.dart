@@ -1,7 +1,6 @@
-import 'package:astro_types/core_types.dart';
-import 'package:astro_types/state_types.dart';
+import 'package:abstractions/beliefs.dart';
 
-class ChallengeTaskModel implements AstroState {
+class ChallengeTaskModel implements CoreBeliefs {
   const ChallengeTaskModel({
     required this.title,
     required this.description,
@@ -15,16 +14,16 @@ class ChallengeTaskModel implements AstroState {
 
   /// null = not started, false = in progress, true = complete
   final bool? complete;
-  final Mission? startMission;
-  final Mission? endMission;
+  final Cognition? startMission;
+  final Cognition? endMission;
 
   @override
   ChallengeTaskModel copyWith({
     String? title,
     String? description,
     bool? complete,
-    Mission? startMission,
-    Mission? endMission,
+    Cognition? startMission,
+    Cognition? endMission,
   }) =>
       ChallengeTaskModel(
         title: title ?? this.title,

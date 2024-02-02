@@ -1,9 +1,9 @@
-import 'package:astro_types/state_types.dart';
+import 'package:abstractions/beliefs.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
 import 'background/barriers.dart';
 
-class GameState implements AstroState {
+class GameState implements CoreBeliefs {
   GameState({
     required this.barriers,
     required this.otherPlayerIds,

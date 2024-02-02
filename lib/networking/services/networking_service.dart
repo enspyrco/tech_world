@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:astro_types/core_types.dart';
+import 'package:abstractions/beliefs.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
-import '../../app/state/app_state.dart';
+import '../../app/app_beliefs.dart';
 import '../../shared/constants.dart' as constants;
 import '../missions/set_other_player_ids.dart';
 import '../missions/set_player_path.dart';
@@ -29,10 +29,10 @@ class NetworkingService {
   late Sink<dynamic> _serverSink;
 
   /// Controls the stream that is used
-  final StreamController<LandingMission<AppState>> _missionsStreamController =
-      StreamController<LandingMission<AppState>>.broadcast();
+  final StreamController<Conclusion<AppBeliefs>> _missionsStreamController =
+      StreamController<Conclusion<AppBeliefs>>.broadcast();
 
-  Stream<LandingMission<AppState>> get missionsStream =>
+  Stream<Conclusion<AppBeliefs>> get missionsStream =>
       _missionsStreamController.stream;
 
   // Create a websocket connected to the server and attach callbacks.
@@ -67,7 +67,7 @@ class NetworkingService {
     _serverSink.add(jsonString);
   }
 
-  LandingMission<AppState> _identify(JsonMap json) {
+  Conclusion<AppBeliefs> _identify(JsonMap json) {
     print('identifying: $json');
     // Check the type of data in the event and respond appropriately.
     if (json['type'] == 'other_player_ids') {

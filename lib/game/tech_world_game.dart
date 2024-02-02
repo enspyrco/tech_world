@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:astro_locator/astro_locator.dart';
+import 'package:locator_for_perception/locator_for_perception.dart';
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';
@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
-import '../app/state/app_state.dart';
+import '../app/app_beliefs.dart';
 import '../networking/services/networking_service.dart';
 import '../utils/extensions/list_of_vector2s_extension.dart';
 import 'components/map_component.dart';
@@ -19,12 +19,12 @@ int departureTime = 0;
 
 class TechWorldGame extends FlameGame with KeyboardEvents, TapDetector {
   TechWorldGame({
-    required Stream<AppState> appStateChanges,
+    required Stream<AppBeliefs> appStateChanges,
   }) : _appStateChanges = appStateChanges;
 
   // We listen to each state change & check the parts we care about.
-  final Stream<AppState> _appStateChanges;
-  var _oldState = AppState.initial;
+  final Stream<AppBeliefs> _appStateChanges;
+  var _oldState = AppBeliefs.initial;
 
   // Components that are used to draw the scene.
   PlayerComponent? _player;
@@ -44,8 +44,8 @@ class TechWorldGame extends FlameGame with KeyboardEvents, TapDetector {
 
     // TODO: add try/catch blocks and onError callback
     _appStateChanges.listen((state) {
-      if (_userId != state.auth.user.uid) {
-        _userId = state.auth.user.uid;
+      if (_userId != state.identity.userAuthState.uid) {
+        _userId = state.identity.userAuthState.uid;
       }
 
       if (_oldState.game.otherPlayerIds != state.game.otherPlayerIds) {
@@ -72,8 +72,9 @@ class TechWorldGame extends FlameGame with KeyboardEvents, TapDetector {
 
       if (_oldState.game.playerPaths != state.game.playerPaths) {
         // get the set of ids corresponding to new player paths
-        var newPaths = {...state.game.playerPaths.entries}
-            .difference({..._oldState.game.playerPaths.entries});
+        // var newPaths = {...state.game.playerPaths.entries}
+        //     .difference({..._oldState.game.playerPaths.entries});
+
         // add movement effects to all relevant player components
         // for (var path in newPaths) {
         //   _otherPlayers[path.key]!.moveOnPath(

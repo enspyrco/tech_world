@@ -1,7 +1,7 @@
-import 'package:astro_types/state_types.dart';
+import 'package:abstractions/beliefs.dart';
 import 'package:ws_game_server_types/ws_game_server_types.dart';
 
-class Barriers implements AstroState {
+class Barriers implements CoreBeliefs {
   const Barriers();
 
   /// TODO: make the fromJson do something once we figure out how Barriers will work.
@@ -31,7 +31,7 @@ class Barriers implements AstroState {
   ];
 
   @override
-  AstroState copyWith() {
+  CoreBeliefs copyWith() {
     // TODO: implement copyWith
     throw UnimplementedError();
   }

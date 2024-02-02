@@ -1,10 +1,10 @@
-import 'package:astro_types/json_types.dart';
-import 'package:astro_types/state_types.dart';
+import 'package:abstractions/beliefs.dart';
+import 'package:ws_game_server_types/ws_game_server_types.dart';
 
 import 'challenge_model.dart';
 import 'challenge_task_model.dart';
 
-class FixRepoChallengeModel with ChallengeModel implements AstroState {
+class FixRepoChallengeModel with ChallengeModel implements CoreBeliefs {
   const FixRepoChallengeModel({required this.repoUrl, required this.tasks});
 
   final String repoUrl;
