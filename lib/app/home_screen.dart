@@ -29,7 +29,7 @@ class HomeScreen extends StatelessWidget {
               else
                 const DismissChallengeButton(),
               const AvatarMenuButton<AppState>(
-                options: {MenuOption('Sign Out', SignOut<AppState>())},
+                options: {MenuOption('Sign Out', SigningOut<AppState>())},
               ),
             ],
           ),

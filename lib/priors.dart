@@ -51,16 +51,16 @@ Future<void> setupPriors() async {
 void initializeApp() {
   /// Perform individual plugin initialization.
   initializeErrorHandling<AppState>();
-  initializeFlutterfireFirebaseAuth<AppState>(
+  initializeIdentity<AppState>(
       initialScreen: const HomeScreen(),
-      launchOnSignedIn: [const UpdateGameServerConnection()],
-      launchOnSignedOut: [const UpdateGameServerConnection()]);
+      considerOnSignedIn: [const UpdateGameServerConnection()],
+      considerOnSignedOut: [const UpdateGameServerConnection()]);
   initializeIntrospection<AppState>();
   initializeFraming<AppState>();
 }
 
-class AstroBase extends StatelessWidget {
-  const AstroBase({Key? key}) : super(key: key);
+class OriginOPerception extends StatelessWidget {
+  const OriginOPerception({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -76,8 +76,10 @@ class AstroBase extends StatelessWidget {
         Expanded(
           flex: 1,
           child: FramingBuilder<AppState>(
-            onInit: (beliefSystem) =>
-                beliefSystem.consider(const ObservingIdentity<AppState>()),
+            onInit: (beliefSystem) => beliefSystem.consider(
+              const ObservingIdentity<AppState,
+                  FlutterfireFirebaseAuthSubsystem>(),
+            ),
           ),
         ),
       ],
