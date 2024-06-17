@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firedart/firedart.dart';
+import 'package:tech_world/auth.dart';
 
 void main() {
   FirebaseAuth.initialize(
@@ -16,76 +17,58 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: MyHomePage(),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key});
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  bool _submitting = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: StreamBuilder(
-          stream: FirebaseAuth.instance.signInState,
-          builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const CircularProgressIndicator();
-            }
-            if (snapshot.data == null) return const CircularProgressIndicator();
-            final bool signedIn = snapshot.data!;
-            if (snapshot.connectionState == ConnectionState.active ||
-                snapshot.connectionState == ConnectionState.done) {
-              if (signedIn) {
-                return Column(
-                  children: [
-                    Text('user ${FirebaseAuth.instance.userId}'),
-                    TextButton(
-                        onPressed: () {
-                          FirebaseAuth.instance.signOut();
-                          setState(() {
-                            _submitting = false;
-                          });
-                        },
-                        child: const Text('Sign Out')),
-                  ],
-                );
-              } else {
-                return (_submitting)
-                    ? const CircularProgressIndicator()
-                    : Column(
-                        children: [
-                          TextField(
-                            onSubmitted: (value) {
-                              FirebaseAuth.instance
-                                  .signUp('$value@email.com', '${value}abc123');
-                              setState(() {
-                                _submitting = true;
-                              });
-                            },
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              FirebaseAuth.instance.signInAnonymously();
-                            },
-                            child: const Text('Sign in Anonymously'),
-                          ),
-                        ],
-                      );
-              }
-            } else {
-              return const CircularProgressIndicator();
-            }
+    return MaterialApp(
+      home: Scaffold(
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            return Row(
+              children: [
+                Visibility(
+                  visible: constraints.maxWidth >= 1200,
+                  child: Expanded(
+                    child: Container(
+                      height: double.infinity,
+                      color: Theme.of(context).colorScheme.primary,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Welcome to Tech World',
+                              style: Theme.of(context).textTheme.headlineMedium,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: constraints.maxWidth >= 1200
+                      ? constraints.maxWidth / 2
+                      : constraints.maxWidth,
+                  child: StreamBuilder<bool>(
+                    stream: FirebaseAuth.instance.signInState,
+                    builder: (context, snapshot) {
+                      if (snapshot.hasData && snapshot.data == true) {
+                        return Column(
+                          children: [
+                            Text('user ${FirebaseAuth.instance.userId}'),
+                            TextButton(
+                                onPressed: () {
+                                  FirebaseAuth.instance.signOut();
+                                },
+                                child: const Text('Sign Out')),
+                          ],
+                        );
+                      } else {
+                        return const AuthGate();
+                      }
+                    },
+                  ),
+                ),
+              ],
+            );
           },
         ),
       ),
