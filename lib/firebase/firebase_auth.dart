@@ -54,9 +54,11 @@ class _AuthGateState extends State<AuthGate> {
   bool isLoading = false;
 
   void setIsLoading() {
-    setState(() {
-      isLoading = !isLoading;
-    });
+    if (mounted) {
+      setState(() {
+        isLoading = !isLoading;
+      });
+    }
   }
 
   @override

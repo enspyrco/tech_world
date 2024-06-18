@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:firedart/firedart.dart';
-import 'package:tech_world/auth.dart';
+import 'package:tech_world/firebase/firebase_auth.dart';
+import 'package:tech_world/firebase/firebase_config.dart';
+import 'package:tech_world/livekit/pages/connect.dart';
 
 void main() {
   FirebaseAuth.initialize(
-    'AIzaSyBha-SvfU-i7Ux5mr5xIAchaEBxWpRSnDU',
+    firebaseWebApiKey,
     VolatileStore(),
   );
-  Firestore.initialize('adventures-in-tech-world-0');
+  Firestore.initialize(firebaseProjectId);
 
   runApp(const MyApp());
 }
@@ -51,16 +53,7 @@ class MyApp extends StatelessWidget {
                     stream: FirebaseAuth.instance.signInState,
                     builder: (context, snapshot) {
                       if (snapshot.hasData && snapshot.data == true) {
-                        return Column(
-                          children: [
-                            Text('user ${FirebaseAuth.instance.userId}'),
-                            TextButton(
-                                onPressed: () {
-                                  FirebaseAuth.instance.signOut();
-                                },
-                                child: const Text('Sign Out')),
-                          ],
-                        );
+                        return const ConnectPage();
                       } else {
                         return const AuthGate();
                       }
