@@ -45,3 +45,4 @@ app.*.map.json
 # Extras
 .firebase/
 lib/firebase/firebase_config.dart
+.DS_Store

@@ -1,8 +1,9 @@
+import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:firedart/firedart.dart';
 import 'package:tech_world/firebase/firebase_auth.dart';
 import 'package:tech_world/firebase/firebase_config.dart';
-import 'package:tech_world/livekit/pages/connect.dart';
+import 'package:tech_world/flame/tech_world_game.dart';
 
 void main() {
   FirebaseAuth.initialize(
@@ -53,7 +54,9 @@ class MyApp extends StatelessWidget {
                     stream: FirebaseAuth.instance.signInState,
                     builder: (context, snapshot) {
                       if (snapshot.hasData && snapshot.data == true) {
-                        return const ConnectPage();
+                        return GameWidget(
+                          game: TechWorldGame(),
+                        ); // ConnectPage();
                       } else {
                         return const AuthGate();
                       }
