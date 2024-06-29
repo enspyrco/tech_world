@@ -1,12 +1,8 @@
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
-import 'package:flame/input.dart';
-import 'package:tech_world/flame/player.dart';
 
-class TechWorldGame extends FlameGame with HasKeyboardHandlerComponents {
-  TechWorldGame();
-
-  late PlayerComponent _player;
+class TechWorldGame extends FlameGame {
+  TechWorldGame({required super.world});
 
   @override
   Future<void> onLoad() async {
@@ -17,9 +13,5 @@ class TechWorldGame extends FlameGame with HasKeyboardHandlerComponents {
     ]);
 
     camera.viewfinder.anchor = Anchor.topLeft;
-
-    _player = PlayerComponent(position: Vector2(100, size.y - 50));
-
-    world.add(_player);
   }
 }

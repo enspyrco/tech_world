@@ -1,8 +1,8 @@
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:firedart/firedart.dart';
-import 'package:tech_world/firebase/firebase_auth.dart';
 import 'package:tech_world/firebase/firebase_config.dart';
+import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 
 void main() {
@@ -12,11 +12,15 @@ void main() {
   );
   Firestore.initialize(firebaseProjectId);
 
-  runApp(const MyApp());
+  final techWorldGame = TechWorldGame(world: TechWorld());
+
+  runApp(MyApp(game: techWorldGame));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({required this.game, super.key});
+
+  final TechWorldGame game;
 
   @override
   Widget build(BuildContext context) {
@@ -50,18 +54,17 @@ class MyApp extends StatelessWidget {
                   width: constraints.maxWidth >= 1200
                       ? constraints.maxWidth / 2
                       : constraints.maxWidth,
-                  child: StreamBuilder<bool>(
-                    stream: FirebaseAuth.instance.signInState,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasData && snapshot.data == true) {
-                        return GameWidget(
-                          game: TechWorldGame(),
-                        ); // ConnectPage();
-                      } else {
-                        return const AuthGate();
-                      }
-                    },
-                  ),
+                  child: GameWidget(game: game),
+                  // StreamBuilder<bool>(
+                  //   stream: FirebaseAuth.instance.signInState,
+                  //   builder: (context, snapshot) {
+                  //     if (snapshot.hasData && snapshot.data == true) {
+                  //       return GameWidget(game: game); // ConnectPage();
+                  //     } else {
+                  //       return const AuthGate();
+                  //     }
+                  //   },
+                  // ),
                 ),
               ],
             );
