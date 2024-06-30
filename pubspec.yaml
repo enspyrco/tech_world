@@ -1,5 +1,5 @@
 name: tech_world
-description: "A world full of tech adventures."
+description: "A world of tech adventures."
 publish_to: 'none'
 version: 0.0.0+1
 
@@ -9,16 +9,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  firedart:
-    git:
-      url: https://github.com/nickmeinhold/firedart.git
-      ref: notify-auth-state-on-listen
   livekit_client: ^2.2.0
   shared_preferences: ^2.2.3
   flutter_webrtc: ^0.10.8
   collection: ^1.18.0
   flame: ^1.18.0
   a_star_algorithm: ^0.3.2
+  firebase_core: ^3.1.1
+  cloud_firestore: ^5.0.2
+  firebase_auth: ^5.1.1
 
 dev_dependencies:
   flutter_test:

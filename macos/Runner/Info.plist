@@ -28,9 +28,5 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
-	<key>NSCameraUsageDescription</key>
-  <string>$(PRODUCT_NAME) uses your camera</string>
-  <key>NSMicrophoneUsageDescription</key>
-  <string>$(PRODUCT_NAME) uses your microphone</string>
 </dict>
 </plist>

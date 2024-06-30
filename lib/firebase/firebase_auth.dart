@@ -1,5 +1,4 @@
-import 'package:firedart/auth/exceptions.dart';
-import 'package:firedart/firedart.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -240,7 +239,7 @@ class _AuthGateState extends State<AuthGate> {
 
     if (email != null) {
       try {
-        await FirebaseAuth.instance.resetPassword(email!);
+        await FirebaseAuth.instance.sendPasswordResetEmail(email: email!);
         if (mounted) {
           ScaffoldSnackbar.of(context).show('Password reset email is sent');
         }
@@ -257,10 +256,11 @@ class _AuthGateState extends State<AuthGate> {
 
     try {
       await FirebaseAuth.instance.signInAnonymously();
-    } on AuthException catch (e) {
-      setState(() {
-        error = e.message;
-      });
+      // }
+      // on AuthException catch (e) {
+      //   setState(() {
+      //     error = e.message;
+      //   });
     } catch (e) {
       setState(() {
         error = '$e';
@@ -273,15 +273,11 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _emailAndPassword() async {
     if (formKey.currentState?.validate() ?? false) {
       if (mode == AuthMode.login) {
-        await FirebaseAuth.instance.signIn(
-          emailController.text,
-          passwordController.text,
-        );
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+            email: emailController.text, password: passwordController.text);
       } else if (mode == AuthMode.register) {
-        await FirebaseAuth.instance.signUp(
-          emailController.text,
-          passwordController.text,
-        );
+        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+            email: emailController.text, password: passwordController.text);
       }
     }
   }

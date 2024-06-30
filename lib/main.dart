@@ -1,16 +1,19 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
-import 'package:firedart/firedart.dart';
-import 'package:tech_world/firebase/firebase_config.dart';
+import 'package:tech_world/firebase/firebase_auth.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:tech_world/livekit/pages/connect.dart';
+import 'firebase_options.dart';
 
-void main() {
-  FirebaseAuth.initialize(
-    firebaseWebApiKey,
-    VolatileStore(),
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
   );
-  Firestore.initialize(firebaseProjectId);
 
   final techWorldGame = TechWorldGame(world: TechWorld());
 
@@ -54,17 +57,18 @@ class MyApp extends StatelessWidget {
                   width: constraints.maxWidth >= 1200
                       ? constraints.maxWidth / 2
                       : constraints.maxWidth,
-                  child: GameWidget(game: game),
-                  // StreamBuilder<bool>(
-                  //   stream: FirebaseAuth.instance.signInState,
-                  //   builder: (context, snapshot) {
-                  //     if (snapshot.hasData && snapshot.data == true) {
-                  //       return GameWidget(game: game); // ConnectPage();
-                  //     } else {
-                  //       return const AuthGate();
-                  //     }
-                  //   },
-                  // ),
+                  child:
+                      // GameWidget(game: game),
+                      StreamBuilder<User?>(
+                    stream: FirebaseAuth.instance.authStateChanges(),
+                    builder: (context, snapshot) {
+                      if (snapshot.hasData) {
+                        return const ConnectPage(); // GameWidget(game: game);
+                      } else {
+                        return const AuthGate();
+                      }
+                    },
+                  ),
                 ),
               ],
             );

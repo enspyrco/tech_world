@@ -1,4 +1,5 @@
-import 'package:firedart/firedart.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tech_world/livekit/exts.dart';
@@ -40,11 +41,12 @@ class _ConnectPageState extends State<ConnectPage> {
   void initState() {
     super.initState();
     _readPrefs();
-    final String uid = FirebaseAuth.instance.userId;
-    Firestore.instance.collection("users").document(uid).stream.listen(
-        (document) {
-      if (document?.map['token'] != null) {
-        _tokenCtrl.text = document?.map['token'];
+    final String uid = FirebaseAuth.instance.currentUser!.uid;
+    FirebaseFirestore.instance.collection("users").doc(uid).snapshots().listen(
+        (snapshot) {
+      Map<String, Object?> map = snapshot.data() ?? {};
+      if (map['token'] != null) {
+        _tokenCtrl.text = map['token'] as String;
       }
     }, onError: (error) {
       print(error);
@@ -323,6 +325,28 @@ class _ConnectPageState extends State<ConnectPage> {
                             ),
                           ),
                         const Text('CONNECT'),
+                      ],
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed:
+                        _busy ? null : () => FirebaseAuth.instance.signOut(),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_busy)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 10),
+                            child: SizedBox(
+                              height: 15,
+                              width: 15,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ),
+                        const Text('SIGN OUT'),
                       ],
                     ),
                   ),
