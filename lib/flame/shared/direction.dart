@@ -2,6 +2,13 @@ import 'dart:math';
 
 import 'package:tech_world/flame/shared/constants.dart';
 
+/// We use an enhanced enum for direction that has up, down, left, right as
+/// well as the diagonals. Each direction has the relevant offsets that are used
+/// to create the [MoveEffect]s that are applied in order to
+/// make the player follow the path.
+/// The [PlayerComponent] is a
+/// [SpriteAnimationGroupComponent] that maps direction to the appropriate
+/// animation.
 enum Direction {
   up(offsetX: 0, offsetY: -gridSquareSizeDouble),
   upLeft(offsetX: -gridSquareSizeDouble, offsetY: -gridSquareSizeDouble),

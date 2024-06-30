@@ -8,6 +8,14 @@ import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 
+/// We create a [TechWorld] component by extending flame's [World] class and
+/// the world world compent adds all other components that make up the game world.
+///
+/// The [TechWorld] component responds to taps by calculating the selected
+/// grid point in minigrid space then passing the player position and selected
+/// grid point to the [PathComponent]. The list of [Direction]s calculated in
+/// the [PathComponent] are then passed to the [Player] component where they
+/// are used to create a set of [MoveEffect]s and set the appropriate animation.
 class TechWorld extends World with TapCallbacks {
   final PlayerComponent _playerComponent =
       PlayerComponent(position: Vector2(0, 0));

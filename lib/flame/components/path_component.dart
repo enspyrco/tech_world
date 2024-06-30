@@ -7,6 +7,14 @@ import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 
+/// We use the a_star_algorithm to calculate a set of points that define a path
+/// that avoids all barriers.
+///
+/// The [PathComponent] takes the barriers and uses the a_star_algorithm to
+/// calculate a set of points between the start (player position) and end
+/// (clicked point). The PathComponent also keeps the set of [RectangleComponent]s
+/// corresponding to the grid points in canvas space, used to draw the path on
+/// the canvas.
 class PathComponent extends Component with HasWorldReference {
   List<Point> _miniGridPoints = [];
   List<Vector2> _largeGridPoints = [];
@@ -19,8 +27,14 @@ class PathComponent extends Component with HasWorldReference {
 
   PathComponent({required BarriersComponent barriers}) : _barriers = barriers;
 
+  /// Use the a_star_algorithm to calculate a set of points that define a
+  /// path that avoids all barriers.
+  ///
+  /// Also calculate a direction for each path segment from the points generated
+  /// by the a_star_algorithm, and use the directions to create a list of
+  /// [MoveEffect]s that will be passed to the [PlayerComponent] to provide
+  /// player movment on taps.
   void calculatePath({required Point<int> start, required Point<int> end}) {
-    print('calculating path from ${start} to ${end}');
     _miniGridPoints = AStar(
       rows: gridSize,
       columns: gridSize,
