@@ -23,3 +23,5 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ADVENTURES_IN_TECH_WORLD_0 }}
           channelId: live
           projectId: adventures-in-tech-world-0
+        env:
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
