@@ -264,11 +264,13 @@ class _RoomPageState extends State<RoomPage> {
               ],
             ),
             Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
+              left: 0,
+              top: 0,
+              child: Container(
+                color: const Color.fromARGB(255, 0, 0, 0),
                 child: SizedBox(
                   height: 120,
+                  width: participantTracks.length * 180.0,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     itemCount: math.max(0, participantTracks.length),
@@ -279,7 +281,9 @@ class _RoomPageState extends State<RoomPage> {
                           ParticipantWidget.widgetFor(participantTracks[index]),
                     ),
                   ),
-                )),
+                ),
+              ),
+            ),
           ],
         ),
       );

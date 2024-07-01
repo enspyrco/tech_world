@@ -22,8 +22,8 @@ class PathComponent extends Component with HasWorldReference {
   List<Direction> _pathDirections = [];
   final BarriersComponent _barriers;
   final _paint = Paint()..color = const Color.fromARGB(50, 255, 255, 255);
-  final _startPaint = Paint()..color = const Color.fromARGB(255, 0, 255, 255);
-  final _endPaint = Paint()..color = const Color.fromARGB(255, 255, 255, 0);
+  final _startPaint = Paint()..color = const Color.fromARGB(150, 0, 255, 255);
+  final _endPaint = Paint()..color = const Color.fromARGB(150, 255, 255, 0);
 
   PathComponent({required BarriersComponent barriers}) : _barriers = barriers;
 
@@ -58,9 +58,6 @@ class PathComponent extends Component with HasWorldReference {
           directionFrom[_miniGridPoints[i + 1] - _miniGridPoints[i]] ??
               Direction.none);
     }
-
-    print(_largeGridPoints);
-    print(_pathDirections);
   }
 
   void drawPath() {
