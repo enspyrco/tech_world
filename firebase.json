@@ -1,21 +1,13 @@
 {
-  "firestore": {
-    "rules": ".firebase/firestore.rules",
-    "indexes": ".firebase/firestore.indexes.json"
-  },
   "hosting": {
-    "predeploy": "flutter build web && cp web/index.auto build/web/index.html",
-    "public": "build/web",
+    "source": ".",
     "ignore": [
       "firebase.json",
       "**/.*",
       "**/node_modules/**"
     ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
+    "frameworksBackend": {
+      "region": "us-central1"
+    }
   }
 }
