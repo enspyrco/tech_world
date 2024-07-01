@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:tech_world/globals.dart';
 import 'package:tech_world/livekit/method_channels/replay_kit_channel.dart';
 
 import '../exts.dart';
@@ -247,10 +249,12 @@ class _RoomPageState extends State<RoomPage> {
             Column(
               children: [
                 Expanded(
-                    child: participantTracks.isNotEmpty
-                        ? ParticipantWidget.widgetFor(participantTracks.first,
-                            showStatsLayer: true)
-                        : Container()),
+                  child: GameWidget(game: techWorldGame),
+                ),
+                // participantTracks.isNotEmpty
+                //     ? ParticipantWidget.widgetFor(participantTracks.first,
+                //         showStatsLayer: true)
+                //     : Container()),
                 if (widget.room.localParticipant != null)
                   SafeArea(
                     top: false,
@@ -267,12 +271,12 @@ class _RoomPageState extends State<RoomPage> {
                   height: 120,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
-                    itemCount: math.max(0, participantTracks.length - 1),
+                    itemCount: math.max(0, participantTracks.length),
                     itemBuilder: (BuildContext context, int index) => SizedBox(
                       width: 180,
                       height: 120,
-                      child: ParticipantWidget.widgetFor(
-                          participantTracks[index + 1]),
+                      child:
+                          ParticipantWidget.widgetFor(participantTracks[index]),
                     ),
                   ),
                 )),

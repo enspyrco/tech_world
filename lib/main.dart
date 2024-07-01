@@ -1,9 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/firebase/firebase_auth.dart';
-import 'package:tech_world/flame/tech_world.dart';
-import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/livekit/pages/connect.dart';
 import 'firebase_options.dart';
@@ -15,15 +12,11 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  final techWorldGame = TechWorldGame(world: TechWorld());
-
-  runApp(MyApp(game: techWorldGame));
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({required this.game, super.key});
-
-  final TechWorldGame game;
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -57,9 +50,7 @@ class MyApp extends StatelessWidget {
                   width: constraints.maxWidth >= 1200
                       ? constraints.maxWidth / 2
                       : constraints.maxWidth,
-                  child:
-                      // GameWidget(game: game),
-                      StreamBuilder<User?>(
+                  child: StreamBuilder<User?>(
                     stream: FirebaseAuth.instance.authStateChanges(),
                     builder: (context, snapshot) {
                       if (snapshot.hasData) {
