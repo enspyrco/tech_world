@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:tech_world/auth/auth_gate.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:tech_world/auth/user.dart';
+import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/players_service.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';

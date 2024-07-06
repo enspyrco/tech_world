@@ -1,5 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
-import 'package:tech_world/auth/user.dart';
+import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world_networking_types/tech_world_networking_types.dart';
 
 /// When a user signs in the [User] member is updated but the only time the
