@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 0.0.0+1
 
 environment:
-  sdk: '>=3.4.3 <4.0.0'
+  sdk: ^3.0.0
 
 dependencies:
   flutter:
@@ -17,7 +17,8 @@ dependencies:
   cloud_firestore: ^5.0.2
   firebase_auth: ^5.1.1
   tech_world_networking_types:
-    path: ../tech_world_networking_types
+    # path: ../../dart/interfaces/tech_world_networking_types
+    git: https://github.com/enspyrco/tech_world_networking_types
   web_socket_channel: ^3.0.0 # used by networking service
 
 dev_dependencies:

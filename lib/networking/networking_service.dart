@@ -20,6 +20,7 @@ class NetworkingService {
       {required PlayersService playersService,
       required Stream<AuthUser> authUserStream})
       : _playersService = playersService {
+    _connect();
     _authUserStreamSubscription = authUserStream.listen((authUser) {
       if (authUser is SignedOutUser) {
         _announceDeparture(authUser);
@@ -38,8 +39,8 @@ class NetworkingService {
   Sink<Object?>? _serverSink;
 
   // Create a websocket connected to the server and attach callbacks.
-  void _connect(AuthUser user) {
-    print('$user connecting to $_uriString');
+  void _connect() {
+    print('connecting to $_uriString');
     _webSocket = WebSocketChannel.connect(Uri.parse(_uriString));
     _serverStream = _webSocket!.stream;
     _serverSink = _webSocket!.sink;
@@ -57,8 +58,13 @@ class NetworkingService {
   }
 
   // Announce our arrival to the set of clients running the game.
-  void _announceArrival(AuthUser user) =>
-      _serverSink?.add(jsonEncode(ArrivalMessage(user.id).toJson()));
+  void _announceArrival(AuthUser authUser) => _serverSink?.add(
+        jsonEncode(
+          ArrivalMessage(NetworkUser(
+                  id: authUser.id, displayName: authUser.displayName))
+              .toJson(),
+        ),
+      );
 
   // Announce our departure to the set of clients running the game.
   void _announceDeparture(AuthUser user) =>
