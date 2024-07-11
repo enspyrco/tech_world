@@ -1,6 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:tech_world/auth/auth_service.dart';
+import 'package:tech_world/utils/locator.dart';
 
 /// Helper class to show a snackbar using the passed context.
 class ScaffoldSnackbar {
@@ -239,7 +240,7 @@ class _AuthGateState extends State<AuthGate> {
 
     if (email != null) {
       try {
-        await FirebaseAuth.instance.sendPasswordResetEmail(email: email!);
+        await locate<AuthService>().sendPasswordReset(email: email!);
         if (mounted) {
           ScaffoldSnackbar.of(context).show('Password reset email is sent');
         }
@@ -255,7 +256,7 @@ class _AuthGateState extends State<AuthGate> {
     setIsLoading();
 
     try {
-      await FirebaseAuth.instance.signInAnonymously();
+      await locate<AuthService>().signInAnonymously();
       // }
       // on AuthException catch (e) {
       //   setState(() {
@@ -273,10 +274,10 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _emailAndPassword() async {
     if (formKey.currentState?.validate() ?? false) {
       if (mode == AuthMode.login) {
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        await locate<AuthService>().signInWithEmailAndPassword(
             email: emailController.text, password: passwordController.text);
       } else if (mode == AuthMode.register) {
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        await locate<AuthService>().createUserWithEmailAndPassword(
             email: emailController.text, password: passwordController.text);
       }
     }

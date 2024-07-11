@@ -6,6 +6,7 @@ import 'package:flame/effects.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
+import 'package:tech_world_networking_types/tech_world_networking_types.dart';
 
 /// The [PlayerComponent] uses the path points to calculate a list of
 /// [Direction]s that are used to create a list of [MoveEffect]s
@@ -18,9 +19,24 @@ import 'package:tech_world/flame/tech_world_game.dart';
 /// The anchor point draws the 32x64 sprite in the appropriate place that
 /// corresponds to the grid point that matches the position of the component.
 class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
-    with KeyboardHandler, HasGameReference<TechWorldGame> {
-  PlayerComponent({required super.position});
+    with KeyboardHandler, HasGameReference<TechWorldGame>
+    implements User {
+  PlayerComponent({
+    required super.position,
+    required this.id,
+    required this.displayName,
+  });
 
+  PlayerComponent.from(User user)
+      : id = user.id,
+        displayName = user.displayName {
+    super.position = Vector2.zero();
+  }
+
+  @override
+  String id;
+  @override
+  String displayName;
   List<MoveEffect> _moveEffects = [];
   List<Direction> _directions = [];
   int _pathSegmentNum = 0;
