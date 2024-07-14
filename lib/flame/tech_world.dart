@@ -29,10 +29,9 @@ class TechWorld extends World with TapCallbacks {
       required Stream<String> userRemoved,
       required Stream<PlayerPath> playerPaths})
       : _userPlayerComponent = PlayerComponent(
-          position: Vector2(0, 0),
-          id: authUser.id,
-          displayName: authUser.displayName,
-        ) {
+            position: Vector2(0, 0),
+            id: authUser.id,
+            displayName: authUser.displayName) {
     userAddedSubscription = userAdded.listen((networkUser) =>
         _otherPlayerComponents.add(PlayerComponent.from(networkUser)));
     userRemovedSubscription = userRemoved.listen((id) =>
@@ -71,12 +70,10 @@ class TechWorld extends World with TapCallbacks {
 
     _userPlayerComponent.move(_pathComponent.directions);
 
-    final message = PlayerPathMessage(
-      userId: _userPlayerComponent.id,
-      points: _pathComponent.largeGridPoints
-          .map<Double2>((gridPoint) => Double2(x: gridPoint.x, y: gridPoint.y))
-          .toList(),
-    );
-    locate<NetworkingService>().publish(message);
+    final pathPoints = _pathComponent.largeGridPoints
+        .map<Double2>((gridPoint) => Double2(x: gridPoint.x, y: gridPoint.y))
+        .toList();
+    locate<NetworkingService>()
+        .publishPath(uid: _userPlayerComponent.id, points: pathPoints);
   }
 }
