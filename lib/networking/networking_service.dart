@@ -7,7 +7,7 @@ import 'package:tech_world/networking/constants.dart' as constants;
 import 'package:tech_world_networking_types/tech_world_networking_types.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-const _uriString = constants.usCentral1ServerUrl;
+const _uriString = constants.localServerUrl;
 
 /// The core of th [NetworkingService] is a websocket connected to a CloudRun
 /// instance.
@@ -70,11 +70,19 @@ class NetworkingService {
   void _announceDeparture(AuthUser user) =>
       _serverSink?.add(jsonEncode(DepartureMessage(user.id).toJson()));
 
-  void publish(ServerMessage message) {
+  void _publish(ServerMessage message) {
     // record time and send data via websocket
     // _departureTime = DateTime.now().millisecondsSinceEpoch;
     final jsonString = jsonEncode(message.toJson());
     _serverSink?.add(jsonString);
+  }
+
+  publishPath({required String uid, required List<Double2> points}) {
+    final message = PlayerPathMessage(
+      userId: uid,
+      points: points,
+    );
+    _publish(message);
   }
 
   void _identify(JsonMap json) {
