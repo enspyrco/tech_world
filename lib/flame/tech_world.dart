@@ -24,20 +24,20 @@ import 'package:tech_world_networking_types/tech_world_networking_types.dart';
 /// are used to create a set of [MoveEffect]s and set the appropriate animation.
 class TechWorld extends World with TapCallbacks {
   TechWorld(
-      {required AuthUser authUser,
+      {required Stream<AuthUser> authStateChanges,
       required Stream<NetworkUser> userAdded,
       required Stream<String> userRemoved,
       required Stream<PlayerPath> playerPaths})
-      : _userAddedStream = userAdded,
+      : _authStateChanges = authStateChanges,
+        _userAddedStream = userAdded,
         _userRemovedStream = userRemoved,
-        _playerPathsStream = playerPaths,
-        _userPlayerComponent = PlayerComponent(
-          position: Vector2(0, 0),
-          id: authUser.id,
-          displayName: authUser.displayName,
-        );
+        _playerPathsStream = playerPaths;
 
-  final PlayerComponent _userPlayerComponent;
+  final PlayerComponent _userPlayerComponent = PlayerComponent(
+    position: Vector2(0, 0),
+    id: '',
+    displayName: '',
+  );
   final Set<PlayerComponent> _otherPlayerComponents = {};
   final GridComponent _gridComponent = GridComponent();
   final BarriersComponent _barriersComponent = BarriersComponent();
@@ -46,6 +46,8 @@ class TechWorld extends World with TapCallbacks {
   final Stream<NetworkUser> _userAddedStream;
   final Stream<String> _userRemovedStream;
   final Stream<PlayerPath> _playerPathsStream;
+  final Stream<AuthUser> _authStateChanges;
+  StreamSubscription<AuthUser>? _authStateChangesSubscription;
   StreamSubscription<NetworkUser>? _userAddedSubscription;
   StreamSubscription<String>? _userRemovedSubscription;
   StreamSubscription<PlayerPath>? _playerPathsSubscription;
@@ -59,6 +61,12 @@ class TechWorld extends World with TapCallbacks {
     await add(_barriersComponent);
     await add(_userPlayerComponent);
 
+    _authStateChangesSubscription = _authStateChanges.listen((authUser) {
+      if (authUser is! PlaceholderUser && authUser is! SignedOutUser) {
+        _userPlayerComponent.id = authUser.id;
+        _userPlayerComponent.displayName = authUser.displayName;
+      }
+    });
     _userAddedSubscription = _userAddedStream.listen((networkUser) {
       final playerComponent = PlayerComponent.from(networkUser);
       _otherPlayerComponents.add(playerComponent);
@@ -98,5 +106,6 @@ class TechWorld extends World with TapCallbacks {
     _userAddedSubscription?.cancel();
     _userRemovedSubscription?.cancel();
     _playerPathsSubscription?.cancel();
+    _authStateChangesSubscription?.cancel();
   }
 }
