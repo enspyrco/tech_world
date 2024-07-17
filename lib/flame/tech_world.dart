@@ -28,23 +28,27 @@ class TechWorld extends World with TapCallbacks {
       required Stream<NetworkUser> userAdded,
       required Stream<String> userRemoved,
       required Stream<PlayerPath> playerPaths})
-      : _userPlayerComponent = PlayerComponent(
-            position: Vector2(0, 0),
-            id: authUser.id,
-            displayName: authUser.displayName) {
-    userAddedSubscription = userAdded.listen((networkUser) =>
-        _otherPlayerComponents.add(PlayerComponent.from(networkUser)));
-    userRemovedSubscription = userRemoved.listen((id) =>
-        _otherPlayerComponents.removeWhere((player) => player.id == id));
-  }
+      : _userAddedStream = userAdded,
+        _userRemovedStream = userRemoved,
+        _playerPathsStream = playerPaths,
+        _userPlayerComponent = PlayerComponent(
+          position: Vector2(0, 0),
+          id: authUser.id,
+          displayName: authUser.displayName,
+        );
 
   final PlayerComponent _userPlayerComponent;
-  final List<PlayerComponent> _otherPlayerComponents = [];
+  final Set<PlayerComponent> _otherPlayerComponents = {};
   final GridComponent _gridComponent = GridComponent();
   final BarriersComponent _barriersComponent = BarriersComponent();
   late PathComponent _pathComponent;
-  late StreamSubscription<NetworkUser> userAddedSubscription;
-  late StreamSubscription<String> userRemovedSubscription;
+
+  final Stream<NetworkUser> _userAddedStream;
+  final Stream<String> _userRemovedStream;
+  final Stream<PlayerPath> _playerPathsStream;
+  StreamSubscription<NetworkUser>? _userAddedSubscription;
+  StreamSubscription<String>? _userRemovedSubscription;
+  StreamSubscription<PlayerPath>? _playerPathsSubscription;
 
   @override
   Future<void> onLoad() async {
@@ -54,6 +58,19 @@ class TechWorld extends World with TapCallbacks {
     await add(_pathComponent);
     await add(_barriersComponent);
     await add(_userPlayerComponent);
+
+    _userAddedSubscription = _userAddedStream.listen((networkUser) {
+      final playerComponent = PlayerComponent.from(networkUser);
+      _otherPlayerComponents.add(playerComponent);
+      add(playerComponent);
+    });
+    _userRemovedSubscription = _userRemovedStream.listen((id) {
+      final playerComponent =
+          _otherPlayerComponents.firstWhere((player) => player.id == id);
+      _otherPlayerComponents.remove(playerComponent);
+      remove(playerComponent);
+    });
+    _playerPathsSubscription = _playerPathsStream.listen((path) {});
   }
 
   @override
@@ -75,5 +92,11 @@ class TechWorld extends World with TapCallbacks {
         .toList();
     locate<NetworkingService>()
         .publishPath(uid: _userPlayerComponent.id, points: pathPoints);
+  }
+
+  dispose() {
+    _userAddedSubscription?.cancel();
+    _userRemovedSubscription?.cancel();
+    _playerPathsSubscription?.cancel();
   }
 }
