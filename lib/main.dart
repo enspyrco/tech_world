@@ -19,14 +19,21 @@ void main() async {
   );
 
   final playersService = PlayersService();
-  Locator.add<PlayersService>(playersService);
   final authService = AuthService();
-  Locator.add<AuthService>(authService);
-  Locator.add<NetworkingService>(
-    NetworkingService(
-        playersService: playersService,
-        authUserStream: authService.authStateChanges),
+  final networkingService = NetworkingService(
+    playersService: playersService,
+    authUserStream: authService.authStateChanges,
   );
+  final techWorld = TechWorld(
+      authStateChanges: authService.authStateChanges,
+      playerPaths: playersService.playerPaths,
+      userAdded: playersService.userAdded,
+      userRemoved: playersService.userRemoved);
+
+  Locator.add<PlayersService>(playersService);
+  Locator.add<AuthService>(authService);
+  Locator.add<NetworkingService>(networkingService);
+  Locator.add<TechWorld>(techWorld);
 
   runApp(const MyApp());
 }
@@ -71,16 +78,8 @@ class MyApp extends StatelessWidget {
                     builder: (context, snapshot) {
                       if (snapshot.hasData &&
                           snapshot.data! is! SignedOutUser) {
-                        final playersService = locate<PlayersService>();
                         return GameWidget(
-                          game: TechWorldGame(
-                            world: TechWorld(
-                              authUser: snapshot.data!,
-                              playerPaths: playersService.playerPaths,
-                              userAdded: playersService.userAdded,
-                              userRemoved: playersService.userRemoved,
-                            ),
-                          ),
+                          game: TechWorldGame(world: locate<TechWorld>()),
                         ); // ConnectPage();
                       } else {
                         return const AuthGate();
