@@ -6,14 +6,11 @@ import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world_networking_types/tech_world_networking_types.dart';
 
 class PlayersService {
-  PlayersService(); // {required AuthUser authUser} : _userPlayer = PlayerComponent.from(authUser);
+  PlayersService();
   final Map<String, PlayerComponent> _otherPlayersMap = {};
-  // PlayerComponent? _userPlayer;
-  StreamController<NetworkUser> userAddedController =
-      StreamController<NetworkUser>();
-  StreamController<String> userRemovedController = StreamController<String>();
-  StreamController<PlayerPath> playerPathController =
-      StreamController<PlayerPath>();
+  final userAddedController = StreamController<NetworkUser>.broadcast();
+  final userRemovedController = StreamController<String>.broadcast();
+  final playerPathController = StreamController<PlayerPath>.broadcast();
 
   Stream<NetworkUser> get userAdded => userAddedController.stream;
   Stream<String> get userRemoved => userRemovedController.stream;
