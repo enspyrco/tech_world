@@ -12,10 +12,6 @@ class AuthService {
   User get user => _user;
   String get userId => _user.id;
   bool get signedIn => !(_user is PlaceholderUser || _user is SignedOutUser);
-
-  Future<void> sendPasswordReset({required String email}) =>
-      FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-
   Stream<AuthUser> get authStateChanges async* {
     await for (final firebaseUser in FirebaseAuth.instance.authStateChanges()) {
       if (firebaseUser == null) {
@@ -24,10 +20,12 @@ class AuthService {
         _user = AuthUser(
             id: firebaseUser.uid, displayName: firebaseUser.displayName ?? '');
       }
-
       yield _user;
     }
   }
+
+  Future<void> sendPasswordReset({required String email}) =>
+      FirebaseAuth.instance.sendPasswordResetEmail(email: email);
 
   Future<void> signInAnonymously() async {
     final credential = await FirebaseAuth.instance.signInAnonymously();

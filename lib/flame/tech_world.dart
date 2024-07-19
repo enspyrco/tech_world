@@ -26,7 +26,7 @@ class TechWorld extends World with TapCallbacks {
   TechWorld(
       {required Stream<AuthUser> authStateChanges,
       required Stream<NetworkUser> userAdded,
-      required Stream<String> userRemoved,
+      required Stream<NetworkUser> userRemoved,
       required Stream<PlayerPath> playerPaths})
       : _authStateChanges = authStateChanges,
         _userAddedStream = userAdded,
@@ -44,12 +44,12 @@ class TechWorld extends World with TapCallbacks {
   late PathComponent _pathComponent;
 
   final Stream<NetworkUser> _userAddedStream;
-  final Stream<String> _userRemovedStream;
+  final Stream<NetworkUser> _userRemovedStream;
   final Stream<PlayerPath> _playerPathsStream;
   final Stream<AuthUser> _authStateChanges;
   StreamSubscription<AuthUser>? _authStateChangesSubscription;
   StreamSubscription<NetworkUser>? _userAddedSubscription;
-  StreamSubscription<String>? _userRemovedSubscription;
+  StreamSubscription<NetworkUser>? _userRemovedSubscription;
   StreamSubscription<PlayerPath>? _playerPathsSubscription;
 
   @override
@@ -72,9 +72,9 @@ class TechWorld extends World with TapCallbacks {
       _otherPlayerComponents.add(playerComponent);
       add(playerComponent);
     });
-    _userRemovedSubscription = _userRemovedStream.listen((id) {
-      final playerComponent =
-          _otherPlayerComponents.firstWhere((player) => player.id == id);
+    _userRemovedSubscription = _userRemovedStream.listen((networkUser) {
+      final playerComponent = _otherPlayerComponents
+          .firstWhere((player) => player.id == networkUser.id);
       _otherPlayerComponents.remove(playerComponent);
       remove(playerComponent);
     });

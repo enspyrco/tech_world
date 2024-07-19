@@ -4,9 +4,9 @@ import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
-import 'package:tech_world/flame/players_service.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
+import 'package:tech_world/networking/constants.dart' as constants;
 import 'package:tech_world/networking/networking_service.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -18,19 +18,17 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  final playersService = PlayersService();
   final authService = AuthService();
   final networkingService = NetworkingService(
-    playersService: playersService,
+    uriString: constants.localServerUrl,
     authUserStream: authService.authStateChanges,
   );
   final techWorld = TechWorld(
       authStateChanges: authService.authStateChanges,
-      playerPaths: playersService.playerPaths,
-      userAdded: playersService.userAdded,
-      userRemoved: playersService.userRemoved);
+      playerPaths: networkingService.playerPaths,
+      userAdded: networkingService.userAdded,
+      userRemoved: networkingService.userRemoved);
 
-  Locator.add<PlayersService>(playersService);
   Locator.add<AuthService>(authService);
   Locator.add<NetworkingService>(networkingService);
   Locator.add<TechWorld>(techWorld);
@@ -78,9 +76,10 @@ class MyApp extends StatelessWidget {
                     builder: (context, snapshot) {
                       if (snapshot.hasData &&
                           snapshot.data! is! SignedOutUser) {
-                        return GameWidget(
+                        return // const ConnectPage();
+                            GameWidget(
                           game: TechWorldGame(world: locate<TechWorld>()),
-                        ); // ConnectPage();
+                        );
                       } else {
                         return const AuthGate();
                       }

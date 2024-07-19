@@ -26,6 +26,7 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^4.0.0
+  stream_channel: ^2.1.2 # for mocking the web_socket_channel connected to the server
 
 flutter:
   uses-material-design: true

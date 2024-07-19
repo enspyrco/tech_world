@@ -1,26 +1,26 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flame/components.dart';
 import 'package:tech_world/auth/auth_user.dart';
-import 'package:tech_world/flame/players_service.dart';
-import 'package:tech_world/networking/constants.dart' as constants;
+import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world_networking_types/tech_world_networking_types.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-const _uriString = constants.localServerUrl;
-
-/// The core of th [NetworkingService] is a websocket connected to a CloudRun
-/// instance.
+/// The core of th [NetworkingService] is a websocket connected to the game server.
 ///
-/// Incoming events are [_identify]'d, converted to missions and pushed into the
-/// stream controlled by [_missionsStreamController].  A middleware ensures the
-/// missions are dispatched to the [Store].
+/// When the [NetworkingService] is created it connects to the websocket server
+/// at [uriString], unless a pre-made [WebSocketChannel] is supplied (for tests).
+///
+/// Incoming events are [_identify]'d and pushed into the appropriate stream.
+///
+///
 class NetworkingService {
   NetworkingService(
-      {required PlayersService playersService,
-      required Stream<AuthUser> authUserStream})
-      : _playersService = playersService {
-    _connect();
+      {required Stream<AuthUser> authUserStream,
+      required String uriString,
+      WebSocketChannel? webSocketChannel}) {
+    _connect(uriString: uriString, webSocketChannel: webSocketChannel);
     _authUserStreamSubscription = authUserStream.listen((authUser) {
       if (authUser is SignedOutUser) {
         _announceDeparture(authUser);
@@ -31,17 +31,41 @@ class NetworkingService {
   }
 
   // int _departureTime = 0;
-  final PlayersService _playersService;
+  Set<NetworkUser> _otherNetworkUsers = {};
+  final _userAddedController = StreamController<NetworkUser>.broadcast();
+  final _userRemovedController = StreamController<NetworkUser>.broadcast();
+  final _playerPathController = StreamController<PlayerPath>.broadcast();
   late StreamSubscription<AuthUser> _authUserStreamSubscription;
   WebSocketChannel? _webSocket;
   StreamSubscription<dynamic>? _serverSubscription;
   Stream<Object?>? _serverStream;
   Sink<Object?>? _serverSink;
 
+  Stream<NetworkUser> get userAdded => _userAddedController.stream;
+  Stream<NetworkUser> get userRemoved => _userRemovedController.stream;
+  Stream<PlayerPath> get playerPaths => _playerPathController.stream;
+
+  publishPath({required String uid, required List<Double2> points}) {
+    final message = PlayerPathMessage(
+      userId: uid,
+      points: points,
+    );
+    _publish(message);
+  }
+
+  void _publish(ServerMessage message) {
+    // record time and send data via websocket
+    // _departureTime = DateTime.now().millisecondsSinceEpoch;
+    final jsonString = jsonEncode(message.toJson());
+    _serverSink?.add(jsonString);
+  }
+
   // Create a websocket connected to the server and attach callbacks.
-  void _connect() {
-    print('connecting to $_uriString');
-    _webSocket = WebSocketChannel.connect(Uri.parse(_uriString));
+  void _connect(
+      {required String uriString, WebSocketChannel? webSocketChannel}) {
+    print('connecting to $uriString');
+    _webSocket =
+        webSocketChannel ?? WebSocketChannel.connect(Uri.parse(uriString));
     _serverStream = _webSocket!.stream;
     _serverSink = _webSocket!.sink;
 
@@ -57,12 +81,27 @@ class NetworkingService {
     );
   }
 
+  void _identify(JsonMap json) {
+    print('identifying: $json');
+    // Check the type of data in the event and respond appropriately.
+    if (json['type'] == 'other_players') {
+      final message = OtherUsersMessage.fromJson(json);
+      _inspectAndUpdate(message.users);
+    } else if (json['type'] == 'player_path') {
+      final message = PlayerPathMessage.fromJson(json);
+      // if (message.userId == _userId) {
+      //   print('ws: ${DateTime.now().millisecondsSinceEpoch - _departureTime}');
+      // }
+      _addPathToPlayer(message.userId, message.points);
+    }
+  }
+
   // Announce our arrival to the set of clients running the game.
   void _announceArrival(AuthUser authUser) => _serverSink?.add(
         jsonEncode(
-          ArrivalMessage(NetworkUser(
-                  id: authUser.id, displayName: authUser.displayName))
-              .toJson(),
+          ArrivalMessage(
+            NetworkUser(id: authUser.id, displayName: authUser.displayName),
+          ).toJson(),
         ),
       );
 
@@ -70,34 +109,32 @@ class NetworkingService {
   void _announceDeparture(AuthUser user) =>
       _serverSink?.add(jsonEncode(DepartureMessage(user.id).toJson()));
 
-  void _publish(ServerMessage message) {
-    // record time and send data via websocket
-    // _departureTime = DateTime.now().millisecondsSinceEpoch;
-    final jsonString = jsonEncode(message.toJson());
-    _serverSink?.add(jsonString);
-  }
-
-  publishPath({required String uid, required List<Double2> points}) {
-    final message = PlayerPathMessage(
-      userId: uid,
-      points: points,
-    );
-    _publish(message);
-  }
-
-  void _identify(JsonMap json) {
-    print('identifying: $json');
-    // Check the type of data in the event and respond appropriately.
-    if (json['type'] == 'other_players') {
-      final message = OtherPlayersMessage.fromJson(json);
-      _playersService.inspectAndUpdate(message.users);
-    } else if (json['type'] == 'player_path') {
-      final message = PlayerPathMessage.fromJson(json);
-      // if (message.userId == _userId) {
-      //   print('ws: ${DateTime.now().millisecondsSinceEpoch - _departureTime}');
-      // }
-      _playersService.addPathToPlayer(message.userId, message.points);
+  void _inspectAndUpdate(Set<NetworkUser> newNetworkUsers) {
+    if (newNetworkUsers.length > _otherNetworkUsers.length) {
+      Set<NetworkUser> differenceSet =
+          newNetworkUsers.difference(_otherNetworkUsers);
+      for (final user in differenceSet) {
+        _userAddedController.add(user);
+      }
+      _otherNetworkUsers = newNetworkUsers;
+    } else if (_otherNetworkUsers.length > newNetworkUsers.length) {
+      Set<NetworkUser> differenceSet =
+          _otherNetworkUsers.difference(newNetworkUsers);
+      for (final user in differenceSet) {
+        _userRemovedController.add(user);
+      }
+      _otherNetworkUsers = newNetworkUsers;
     }
+  }
+
+  void _addPathToPlayer(String playerId, List<Double2> points) {
+    _playerPathController.add(
+      PlayerPath(
+        playerId: playerId,
+        largeGridPoints:
+            points.map<Vector2>((point) => Vector2(point.x, point.y)).toList(),
+      ),
+    );
   }
 
   Future<void> _disconnect() async {

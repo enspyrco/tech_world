@@ -6,6 +6,12 @@ class AuthUser implements User {
   final String id;
   @override
   final String displayName;
+
+  @override
+  bool operator ==(Object other) => other is User && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
 }
 
 /// Holds the details of the [AuthUser] that has signed out so the [id] can be used
