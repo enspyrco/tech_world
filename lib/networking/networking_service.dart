@@ -32,10 +32,10 @@ class NetworkingService {
 
   // int _departureTime = 0;
   Set<NetworkUser> _otherNetworkUsers = {};
-  final _userAddedController = StreamController<NetworkUser>.broadcast();
-  final _userRemovedController = StreamController<NetworkUser>.broadcast();
-  final _playerPathController = StreamController<PlayerPath>.broadcast();
-  late StreamSubscription<AuthUser> _authUserStreamSubscription;
+  final _userAddedController = StreamController<NetworkUser>();
+  final _userRemovedController = StreamController<NetworkUser>();
+  final _playerPathController = StreamController<PlayerPath>();
+  StreamSubscription<AuthUser>? _authUserStreamSubscription;
   WebSocketChannel? _webSocket;
   StreamSubscription<dynamic>? _serverSubscription;
   Stream<Object?>? _serverStream;
@@ -148,6 +148,6 @@ class NetworkingService {
 
   Future<void> dispose() async {
     await _disconnect();
-    await _authUserStreamSubscription.cancel();
+    await _authUserStreamSubscription?.cancel();
   }
 }
