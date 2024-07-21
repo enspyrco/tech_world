@@ -107,14 +107,14 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
 
   /// Create a list of [MoveEffect]s that each add the next [MoveEffect]
   /// when the previous has finished.
-  void move(List<Direction> directions) {
+  void move(List<Direction> directions, List<Vector2> largeGridPoints) {
     _pathSegmentNum = 0;
     _moveEffects = [];
     _directions = directions;
-    for (final direction in directions) {
+    for (final largeGridPoint in largeGridPoints) {
       _moveEffects.add(
-        MoveByEffect(
-          Vector2(direction.offsetX, direction.offsetY),
+        MoveToEffect(
+          largeGridPoint,
           EffectController(duration: 0.2),
           onComplete: () {
             playing = false;

@@ -79,7 +79,8 @@ class TechWorld extends World with TapCallbacks {
       }
     });
     _playerPathsSubscription = _playerPathsStream.listen((PlayerPath path) {
-      _otherPlayerComponentsMap[path.playerId]?.move(path.directions);
+      _otherPlayerComponentsMap[path.playerId]
+          ?.move(path.directions, path.largeGridPoints);
     });
   }
 
@@ -95,7 +96,8 @@ class TechWorld extends World with TapCallbacks {
 
     _pathComponent.drawPath();
 
-    _userPlayerComponent.move(_pathComponent.directions);
+    _userPlayerComponent.move(
+        _pathComponent.directions, _pathComponent.largeGridPoints);
 
     final pathPoints = _pathComponent.largeGridPoints
         .map<Double2>((gridPoint) => Double2(x: gridPoint.x, y: gridPoint.y))
