@@ -602,7 +602,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "01b4a4ab561e7eb7d80442e6a7f2958f36570e95"
+      resolved-ref: "83ed6e7cc405631cfb758e8f08def8b515ed768e"
       url: "https://github.com/enspyrco/tech_world_networking_types"
     source: git
     version: "0.0.0+1"

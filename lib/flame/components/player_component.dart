@@ -108,6 +108,7 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
   /// Create a list of [MoveEffect]s that each add the next [MoveEffect]
   /// when the previous has finished.
   void move(List<Direction> directions, List<Vector2> largeGridPoints) {
+    removeAllEffects();
     _pathSegmentNum = 0;
     _moveEffects = [];
     _directions = directions;
@@ -135,5 +136,15 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     playing = true;
     add(_moveEffects[_pathSegmentNum]);
     _pathSegmentNum++;
+  }
+
+  void removeAllEffects() {
+    // Create a list of effects to remove
+    final effectsToRemove = children.whereType<Effect>().toList();
+
+    // Remove each effect
+    for (final effect in effectsToRemove) {
+      effect.removeFromParent();
+    }
   }
 }
