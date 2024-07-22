@@ -20,7 +20,7 @@ void main() async {
 
   final authService = AuthService();
   final networkingService = NetworkingService(
-    uriString: constants.localServerUrl,
+    uriString: constants.usEast1ComputeEngine,
     authUserStream: authService.authStateChanges,
   );
   final techWorld = TechWorld(

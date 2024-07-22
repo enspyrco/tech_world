@@ -38,7 +38,7 @@ class TechWorld extends World with TapCallbacks {
     id: '',
     displayName: '',
   );
-  final Set<PlayerComponent> _otherPlayerComponents = {};
+  final Map<String, PlayerComponent> _otherPlayerComponentsMap = {};
   final GridComponent _gridComponent = GridComponent();
   final BarriersComponent _barriersComponent = BarriersComponent();
   late PathComponent _pathComponent;
@@ -69,16 +69,19 @@ class TechWorld extends World with TapCallbacks {
     });
     _userAddedSubscription = _userAddedStream.listen((networkUser) {
       final playerComponent = PlayerComponent.from(networkUser);
-      _otherPlayerComponents.add(playerComponent);
+      _otherPlayerComponentsMap[networkUser.id] = playerComponent;
       add(playerComponent);
     });
     _userRemovedSubscription = _userRemovedStream.listen((networkUser) {
-      final playerComponent = _otherPlayerComponents
-          .firstWhere((player) => player.id == networkUser.id);
-      _otherPlayerComponents.remove(playerComponent);
-      remove(playerComponent);
+      final playerComponent = _otherPlayerComponentsMap.remove(networkUser.id);
+      if (playerComponent != null) {
+        remove(playerComponent);
+      }
     });
-    _playerPathsSubscription = _playerPathsStream.listen((path) {});
+    _playerPathsSubscription = _playerPathsStream.listen((PlayerPath path) {
+      _otherPlayerComponentsMap[path.playerId]
+          ?.move(path.directions, path.largeGridPoints);
+    });
   }
 
   @override
@@ -93,13 +96,18 @@ class TechWorld extends World with TapCallbacks {
 
     _pathComponent.drawPath();
 
-    _userPlayerComponent.move(_pathComponent.directions);
+    _userPlayerComponent.move(
+        _pathComponent.directions, _pathComponent.largeGridPoints);
 
     final pathPoints = _pathComponent.largeGridPoints
         .map<Double2>((gridPoint) => Double2(x: gridPoint.x, y: gridPoint.y))
         .toList();
-    locate<NetworkingService>()
-        .publishPath(uid: _userPlayerComponent.id, points: pathPoints);
+
+    locate<NetworkingService>().publishPath(
+      uid: _userPlayerComponent.id,
+      points: pathPoints,
+      directions: _pathComponent.directions,
+    );
   }
 
   dispose() {

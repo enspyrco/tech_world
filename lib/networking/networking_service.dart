@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flame/components.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world_networking_types/tech_world_networking_types.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -45,11 +46,16 @@ class NetworkingService {
   Stream<NetworkUser> get userRemoved => _userRemovedController.stream;
   Stream<PlayerPath> get playerPaths => _playerPathController.stream;
 
-  publishPath({required String uid, required List<Double2> points}) {
+  publishPath({
+    required String uid,
+    required List<Double2> points,
+    required List<Direction> directions,
+  }) {
     final message = PlayerPathMessage(
-      userId: uid,
-      points: points,
-    );
+        userId: uid,
+        points: points,
+        directions:
+            directions.map<String>((direction) => direction.name).toList());
     _publish(message);
   }
 
@@ -92,7 +98,17 @@ class NetworkingService {
       // if (message.userId == _userId) {
       //   print('ws: ${DateTime.now().millisecondsSinceEpoch - _departureTime}');
       // }
-      _addPathToPlayer(message.userId, message.points);
+      _addPathToPlayer(
+        message.userId,
+        message.points,
+        message.directions
+            .map<Direction>(
+              (directionString) =>
+                  Direction.values.asNameMap()[directionString] ??
+                  Direction.none,
+            )
+            .toList(),
+      );
     }
   }
 
@@ -127,13 +143,15 @@ class NetworkingService {
     }
   }
 
-  void _addPathToPlayer(String playerId, List<Double2> points) {
+  void _addPathToPlayer(
+      String playerId, List<Double2> points, List<Direction> directions) {
     _playerPathController.add(
       PlayerPath(
-        playerId: playerId,
-        largeGridPoints:
-            points.map<Vector2>((point) => Vector2(point.x, point.y)).toList(),
-      ),
+          playerId: playerId,
+          largeGridPoints: points
+              .map<Vector2>((point) => Vector2(point.x, point.y))
+              .toList(),
+          directions: directions),
     );
   }
 
