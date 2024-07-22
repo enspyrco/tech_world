@@ -17,10 +17,11 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 ///
 ///
 class NetworkingService {
-  NetworkingService(
-      {required Stream<AuthUser> authUserStream,
-      required String uriString,
-      WebSocketChannel? webSocketChannel}) {
+  NetworkingService({
+    required Stream<AuthUser> authUserStream,
+    required String uriString,
+    WebSocketChannel? webSocketChannel,
+  }) {
     _connect(uriString: uriString, webSocketChannel: webSocketChannel);
     _authUserStreamSubscription = authUserStream.listen((authUser) {
       if (authUser is SignedOutUser) {
