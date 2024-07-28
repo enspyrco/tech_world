@@ -1,11 +1,10 @@
-import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/tech_world.dart';
-import 'package:tech_world/flame/tech_world_game.dart';
+import 'package:tech_world/livekit/pages/connect.dart';
 import 'package:tech_world/networking/constants.dart' as constants;
 import 'package:tech_world/networking/networking_service.dart';
 import 'firebase_options.dart';
@@ -76,10 +75,10 @@ class MyApp extends StatelessWidget {
                     builder: (context, snapshot) {
                       if (snapshot.hasData &&
                           snapshot.data! is! SignedOutUser) {
-                        return // const ConnectPage();
-                            GameWidget(
-                          game: TechWorldGame(world: locate<TechWorld>()),
-                        );
+                        return const ConnectPage();
+                        //     GameWidget(
+                        //   game: TechWorldGame(world: locate<TechWorld>()),
+                        // );
                       } else {
                         return const AuthGate();
                       }

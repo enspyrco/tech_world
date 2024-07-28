@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/livekit/exts.dart';
+import 'package:tech_world/livekit/pages/final_page.dart';
 
 import 'room.dart';
 
@@ -213,7 +214,8 @@ class _PreJoinPageState extends State<PreJoinPage> {
 
       await Navigator.push<void>(
         context,
-        MaterialPageRoute(builder: (_) => RoomPage(room, listener)),
+        MaterialPageRoute(
+            builder: (_) => FinalPage(room: room, listener: listener)),
       );
     } catch (error) {
       print('Could not connect $error');
