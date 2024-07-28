@@ -260,10 +260,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_webrtc
-      sha256: "3f115def06fb80df7c2e9f97b7d73c1b43a973211fc56df69638a663529f56c6"
+      sha256: d305793e6737c59a81c45b18484e1f985710827704eeb9092573387efcbae272
       url: "https://pub.dev"
     source: hosted
-    version: "0.11.4"
+    version: "0.11.5"
   http:
     dependency: transitive
     description:
@@ -324,10 +324,10 @@ packages:
     dependency: "direct main"
     description:
       name: livekit_client
-      sha256: "0c369b25e56910650184049cc713bb38a920cbe2e0d10db83fac400a3c393e2b"
+      sha256: e6b1e8a3cdcae95f7e62c0371590648444bac245fce3a1bcfb4ec05889ad82f3
       url: "https://pub.dev"
     source: hosted
-    version: "2.2.1"
+    version: "2.2.2"
   logging:
     dependency: transitive
     description:
@@ -602,7 +602,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: "83ed6e7cc405631cfb758e8f08def8b515ed768e"
+      resolved-ref: e75995457d043d9eb5b556ebea516e8c05794260
       url: "https://github.com/enspyrco/tech_world_networking_types"
     source: git
     version: "0.0.0+1"

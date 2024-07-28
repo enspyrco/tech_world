@@ -2,12 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
-import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/method_channels/replay_kit_channel.dart';
-import 'package:tech_world/utils/locator.dart';
 
 import '../exts.dart';
 import '../utils.dart';
@@ -249,13 +246,11 @@ class _RoomPageState extends State<RoomPage> {
           children: [
             Column(
               children: [
-                Expanded(
-                  child: GameWidget(game: locate<TechWorldGame>()),
-                ),
-                // participantTracks.isNotEmpty
-                //     ? ParticipantWidget.widgetFor(participantTracks.first,
-                //         showStatsLayer: true)
-                //     : Container()),
+                // Expanded(
+                //     child: participantTracks.isNotEmpty
+                //         ? ParticipantWidget.widgetFor(participantTracks.first,
+                //             showStatsLayer: true)
+                //         : Container()),
                 if (widget.room.localParticipant != null)
                   SafeArea(
                     top: false,
