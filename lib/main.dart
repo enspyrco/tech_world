@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
@@ -19,7 +20,9 @@ void main() async {
 
   final authService = AuthService();
   final networkingService = NetworkingService(
-    uriString: constants.computeEngineUrl,
+    uriString: kReleaseMode
+        ? constants.secureComputeEngineUrl
+        : constants.devComputeEngineUrl,
     authUserStream: authService.authStateChanges,
   );
   final techWorld = TechWorld(
