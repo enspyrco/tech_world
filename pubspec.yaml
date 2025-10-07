@@ -21,6 +21,7 @@ dependencies:
     # path: ../../dart/interfaces/tech_world_networking_types
     git: https://github.com/enspyrco/tech_world_networking_types
   web_socket_channel: ^3.0.0 # used by networking service
+  collection: ^1.19.1
 
 dev_dependencies:
   flutter_test:
