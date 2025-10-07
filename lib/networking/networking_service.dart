@@ -25,7 +25,9 @@ class NetworkingService {
     _connect(uriString: uriString, webSocketChannel: webSocketChannel);
     _authUserStreamSubscription = authUserStream.listen((authUser) {
       if (authUser is SignedOutUser) {
-        _announceDeparture(authUser);
+        if (authUser.id != '') {
+          _announceDeparture(authUser);
+        }
       } else {
         _announceArrival(authUser);
       }
