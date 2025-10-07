@@ -46,3 +46,6 @@ app.*.map.json
 .firebase/
 lib/firebase/firebase_config.dart
 .DS_Store
+
+# dotenv environment variables file
+.env

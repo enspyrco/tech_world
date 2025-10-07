@@ -2,12 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/livekit/exts.dart';
 import 'package:tech_world/livekit/pages/final_page.dart';
-
-import 'room.dart';
 
 class JoinArgs {
   JoinArgs({
@@ -272,8 +269,7 @@ class _PreJoinPageState extends State<PreJoinPage> {
                               child: _videoTrack != null
                                   ? VideoTrackRenderer(
                                       _videoTrack!,
-                                      fit: RTCVideoViewObjectFit
-                                          .RTCVideoViewObjectFitContain,
+                                      fit: VideoViewFit.cover,
                                     )
                                   : Container(
                                       alignment: Alignment.center,

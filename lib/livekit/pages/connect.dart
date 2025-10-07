@@ -1,10 +1,10 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tech_world/livekit/exts.dart';
 import 'package:tech_world/livekit/pages/prejoin.dart';
 import 'package:tech_world/livekit/widgets/text_field.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class ConnectPage extends StatefulWidget {
   //
@@ -32,25 +32,17 @@ class _ConnectPageState extends State<ConnectPage> {
   bool _simulcast = true;
   bool _adaptiveStream = true;
   bool _dynacast = true;
-  bool _busy = false;
+  bool _busy = true;
   bool _e2ee = false;
   bool _multiCodec = false;
   String _preferredCodec = 'Preferred Codec';
+  String _token = '';
 
   @override
   void initState() {
     super.initState();
     _readPrefs();
-    final String uid = FirebaseAuth.instance.currentUser!.uid;
-    FirebaseFirestore.instance.collection("users").doc(uid).snapshots().listen(
-        (snapshot) {
-      Map<String, Object?> map = snapshot.data() ?? {};
-      if (map['token'] != null) {
-        _tokenCtrl.text = map['token'] as String;
-      }
-    }, onError: (error) {
-      print(error);
-    });
+    _callRetrieveToken();
   }
 
   @override
@@ -60,7 +52,23 @@ class _ConnectPageState extends State<ConnectPage> {
     super.dispose();
   }
 
-  // Read saved URL and Token
+  Future<void> _callRetrieveToken() async {
+    final functions = FirebaseFunctions.instance;
+    try {
+      final result =
+          await functions.httpsCallable('retrieveLiveKitToken').call();
+      print(result.data);
+      setState(() {
+        _token = result.data;
+        _busy = false;
+        _tokenCtrl.text = 'Fresh token retrieved';
+      });
+    } on FirebaseFunctionsException catch (e) {
+      print('Error: ${e.message}');
+    }
+  }
+
+  // Read saved preferences for LiveKit connection
   Future<void> _readPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     _uriCtrl.text = 'wss://testing-g5wrpk39.livekit.cloud';
@@ -75,7 +83,7 @@ class _ConnectPageState extends State<ConnectPage> {
     });
   }
 
-  // Save URL and Token
+  // Save preferences for LiveKit connection
   Future<void> _writePrefs() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_storeKeyUri, _uriCtrl.text);
@@ -90,18 +98,13 @@ class _ConnectPageState extends State<ConnectPage> {
   Future<void> _connect(BuildContext ctx) async {
     //
     try {
-      setState(() {
-        _busy = true;
-      });
-
-      // Save URL and Token for convenience
+      // Save preferences for LiveKit connection for convenience
       await _writePrefs();
 
       print('Connecting with url: ${_uriCtrl.text}, '
           'token: ${_tokenCtrl.text}...');
 
       var url = _uriCtrl.text;
-      var token = _tokenCtrl.text;
       var e2eeKey = _sharedKeyCtrl.text;
 
       await Navigator.push<void>(
@@ -110,7 +113,7 @@ class _ConnectPageState extends State<ConnectPage> {
             builder: (_) => PreJoinPage(
                   args: JoinArgs(
                     url: url,
-                    token: token,
+                    token: _token,
                     e2ee: _e2ee,
                     e2eeKey: e2eeKey,
                     simulcast: _simulcast,
