@@ -19,7 +19,7 @@ void main() async {
 
   final authService = AuthService();
   final networkingService = NetworkingService(
-    uriString: constants.usCentral1CloudRunUrl,
+    uriString: constants.computeEngineUrl,
     authUserStream: authService.authStateChanges,
   );
   final techWorld = TechWorld(
