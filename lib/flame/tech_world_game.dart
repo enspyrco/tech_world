@@ -26,8 +26,8 @@ class TechWorldGame extends FlameGame {
     // Add some children.
     final backgroundSprite = Sprite(await images.load('single_room.png'));
     background = SpriteComponent(sprite: backgroundSprite);
-    root.add(background);
+    world.add(background);
 
-    camera.viewfinder.anchor = Anchor.topLeft;
+    camera.viewfinder.anchor = Anchor.center;
   }
 }

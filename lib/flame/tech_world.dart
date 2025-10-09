@@ -10,6 +10,7 @@ import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
+import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/networking/networking_service.dart';
 import 'package:tech_world/utils/locator.dart';
 import 'package:tech_world_networking_types/tech_world_networking_types.dart';
@@ -38,6 +39,7 @@ class TechWorld extends World with TapCallbacks {
     id: '',
     displayName: '',
   );
+
   final Map<String, PlayerComponent> _otherPlayerComponentsMap = {};
   final GridComponent _gridComponent = GridComponent();
   final BarriersComponent _barriersComponent = BarriersComponent();
@@ -60,6 +62,8 @@ class TechWorld extends World with TapCallbacks {
     await add(_pathComponent);
     await add(_barriersComponent);
     await add(_userPlayerComponent);
+
+    (findGame() as TechWorldGame?)?.camera.follow(_userPlayerComponent);
 
     _authStateChangesSubscription = _authStateChanges.listen((authUser) {
       if (authUser is! PlaceholderUser && authUser is! SignedOutUser) {
@@ -87,8 +91,9 @@ class TechWorld extends World with TapCallbacks {
   @override
   void onTapDown(TapDownEvent event) {
     super.onTapDown(event);
-    int miniGridX = (event.canvasPosition.x / gridSquareSize).floor();
-    int miniGridY = (event.canvasPosition.y / gridSquareSize).floor();
+    final worldPosition = event.localPosition;
+    int miniGridX = (worldPosition.x / gridSquareSize).floor();
+    int miniGridY = (worldPosition.y / gridSquareSize).floor();
 
     _pathComponent.calculatePath(
         start: _userPlayerComponent.miniGridPosition,

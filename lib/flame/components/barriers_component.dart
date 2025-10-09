@@ -8,7 +8,7 @@ import 'package:tech_world/flame/shared/constants.dart';
 /// through and adds RectangleComponents for each point so the barrier are
 /// drawn on screen. The points are part of the minigrid - a 2d grid of integers
 /// that A* operates on.
-class BarriersComponent extends Component with HasWorldReference {
+class BarriersComponent extends PositionComponent with HasWorldReference {
   BarriersComponent();
 
   final Paint _paint = Paint()..color = const Color.fromRGBO(0, 0, 255, 1);
@@ -46,7 +46,7 @@ class BarriersComponent extends Component with HasWorldReference {
             position: Vector2(points[i].x * gridSquareSizeDouble,
                 points[i].y * gridSquareSizeDouble),
             size: Vector2.array([gridSquareSizeDouble, gridSquareSizeDouble]),
-            anchor: Anchor.topLeft,
+            anchor: Anchor.center,
             paint: _paint),
       );
     }

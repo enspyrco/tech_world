@@ -5,7 +5,7 @@ import 'package:tech_world/flame/shared/constants.dart';
 
 /// The [GridComponent] is made up of a set of one pixel wide [RectangleComponent]s
 /// that allow drawing the grid on the canvas.
-class GridComponent extends Component with HasWorldReference {
+class GridComponent extends PositionComponent with HasWorldReference {
   final Paint _paint = Paint()..color = const Color.fromRGBO(255, 0, 255, 1);
 
   @override
