@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
@@ -9,7 +8,6 @@ import 'package:tech_world/livekit/method_channels/replay_kit_channel.dart';
 import '../exts.dart';
 import '../utils.dart';
 import '../widgets/controls.dart';
-import '../widgets/participant.dart';
 import '../widgets/participant_info.dart';
 
 class RoomPage extends StatefulWidget {
@@ -242,44 +240,14 @@ class _RoomPageState extends State<RoomPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        body: Stack(
+        body: Column(
           children: [
-            Column(
-              children: [
-                // Expanded(
-                //     child: participantTracks.isNotEmpty
-                //         ? ParticipantWidget.widgetFor(participantTracks.first,
-                //             showStatsLayer: true)
-                //         : Container()),
-                if (widget.room.localParticipant != null)
-                  SafeArea(
-                    top: false,
-                    child: ControlsWidget(
-                        widget.room, widget.room.localParticipant!),
-                  )
-              ],
-            ),
-            Positioned(
-              left: 0,
-              top: 0,
-              child: Container(
-                color: const Color.fromARGB(255, 0, 0, 0),
-                child: SizedBox(
-                  height: 120,
-                  width: participantTracks.length * 180.0,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: math.max(0, participantTracks.length),
-                    itemBuilder: (BuildContext context, int index) => SizedBox(
-                      width: 180,
-                      height: 120,
-                      child:
-                          ParticipantWidget.widgetFor(participantTracks[index]),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            if (widget.room.localParticipant != null)
+              SafeArea(
+                top: false,
+                child:
+                    ControlsWidget(widget.room, widget.room.localParticipant!),
+              )
           ],
         ),
       );

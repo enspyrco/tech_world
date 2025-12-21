@@ -54,6 +54,16 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<NetworkUser>? _userRemovedSubscription;
   StreamSubscription<PlayerPath>? _playerPathsSubscription;
 
+  // Position tracking for proximity detection
+  Point<int> get localPlayerPosition => _userPlayerComponent.miniGridPosition;
+  String get localPlayerId => _userPlayerComponent.id;
+
+  Map<String, Point<int>> get otherPlayerPositions {
+    return _otherPlayerComponentsMap.map(
+      (id, component) => MapEntry(id, component.miniGridPosition),
+    );
+  }
+
   @override
   Future<void> onLoad() async {
     _pathComponent = PathComponent(barriers: _barriersComponent);
