@@ -1,0 +1,19 @@
+#!/bin/bash
+
+# Pre-commit hook for tech_world
+# Runs Flutter analyzer before allowing commits
+
+echo "Running Flutter analyzer..."
+
+# Run analyzer with fatal-infos (fail on any issues)
+flutter analyze --fatal-infos
+
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Commit blocked: Flutter analyzer found issues."
+    echo "Fix the issues above before committing."
+    exit 1
+fi
+
+echo "✅ Analyzer passed"
+exit 0
