@@ -6,7 +6,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/livekit/pages/connect.dart';
-import 'package:tech_world/networking/constants.dart' as constants;
 import 'package:tech_world/networking/networking_service.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -20,9 +19,8 @@ void main() async {
 
   final authService = AuthService();
   final networkingService = NetworkingService(
-    uriString: kReleaseMode
-        ? constants.secureComputeEngineUrl
-        : constants.devComputeEngineUrl,
+    uriString:
+        kReleaseMode ? 'wss://adventures-in-tech.world' : 'ws://127.0.0.1:8080',
     authUserStream: authService.authStateChanges,
   );
   final techWorld = TechWorld(
