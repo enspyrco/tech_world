@@ -62,8 +62,28 @@ const firebaseProjectId = '<your_project_id>';
 
 ## Testing
 
-- Tests use fake WebSocket implementations in `test/test-doubles/`
-- `FakeWebSocketChannel` and `FakeWebSocketSink` for mocking network
+```bash
+flutter test                          # run all tests
+flutter test --coverage               # with coverage
+flutter analyze --fatal-infos         # static analysis
+```
+
+### Test Structure
+- `test/networking_service_test.dart` - NetworkingService unit tests
+- `test/utils/locator_test.dart` - Service locator tests
+- `test/proximity/proximity_service_test.dart` - Proximity detection tests
+- `test/livekit/widgets/bot_bubble_test.dart` - BotBubble widget tests
+- `test/test-doubles/` - Fake WebSocket implementations for mocking
+
+### CI/CD
+
+GitHub Actions run on PRs and pushes to main:
+1. `flutter analyze --fatal-infos` - Static analysis
+2. `flutter test --coverage` - Run tests with coverage
+3. Coverage reported on PRs via `github-actions-report-lcov`
+4. Deploy to Firebase Hosting (50% coverage threshold)
+
+Workflows: `.github/workflows/firebase-hosting-*.yml`
 
 ## Claude Bot (AI Tutor)
 
