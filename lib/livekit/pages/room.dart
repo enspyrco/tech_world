@@ -79,13 +79,13 @@ class _RoomPageState extends State<RoomPage> {
   void _setUpListeners() => _listener
     ..on<RoomDisconnectedEvent>((event) async {
       if (event.reason != null) {
-        print('Room disconnected: reason => ${event.reason}');
+        debugPrint('Room disconnected: reason => ${event.reason}');
       }
       WidgetsBindingCompatible.instance?.addPostFrameCallback(
           (timeStamp) => Navigator.popUntil(context, (route) => route.isFirst));
     })
     ..on<ParticipantEvent>((event) {
-      print('Participant event');
+      debugPrint('Participant event');
       // sort participants on many track events as noted in documentation linked above
       _sortParticipants();
     })
@@ -93,7 +93,7 @@ class _RoomPageState extends State<RoomPage> {
       context.showRecordingStatusChangedDialog(event.activeRecording);
     })
     ..on<RoomAttemptReconnectEvent>((event) {
-      print(
+      debugPrint(
           'Attempting to reconnect ${event.attempt}/${event.maxAttemptsRetry}, '
           '(${event.nextRetryDelaysInMs}ms delay until next attempt)');
     })
@@ -103,29 +103,29 @@ class _RoomPageState extends State<RoomPage> {
     ..on<TrackUnsubscribedEvent>((_) => _sortParticipants())
     ..on<TrackE2EEStateEvent>(_onE2EEStateEvent)
     ..on<ParticipantNameUpdatedEvent>((event) {
-      print(
+      debugPrint(
           'Participant name updated: ${event.participant.identity}, name => ${event.name}');
       _sortParticipants();
     })
     ..on<ParticipantMetadataUpdatedEvent>((event) {
-      print(
+      debugPrint(
           'Participant metadata updated: ${event.participant.identity}, metadata => ${event.metadata}');
     })
     ..on<RoomMetadataChangedEvent>((event) {
-      print('Room metadata changed: ${event.metadata}');
+      debugPrint('Room metadata changed: ${event.metadata}');
     })
     ..on<DataReceivedEvent>((event) {
       String decoded = 'Failed to decode';
       try {
         decoded = utf8.decode(event.data);
       } catch (e) {
-        print('Failed to decode: $e');
+        debugPrint('Failed to decode: $e');
       }
       context.showDataReceivedDialog(decoded);
     })
     ..on<AudioPlaybackStatusChanged>((event) async {
       if (!widget.room.canPlaybackAudio) {
-        print('Audio playback failed for iOS Safari ..........');
+        debugPrint('Audio playback failed for iOS Safari ..........');
         bool? yesno = await context.showPlayAudioManuallyDialog();
         if (yesno == true) {
           await widget.room.startAudio();
@@ -140,14 +140,14 @@ class _RoomPageState extends State<RoomPage> {
     try {
       await widget.room.localParticipant?.setCameraEnabled(true);
     } catch (error) {
-      print('could not publish video: $error');
+      debugPrint('could not publish video: $error');
       if (!mounted) return;
       await context.showErrorDialog(error);
     }
     try {
       await widget.room.localParticipant?.setMicrophoneEnabled(true);
     } catch (error) {
-      print('could not publish audio: $error');
+      debugPrint('could not publish audio: $error');
       if (!mounted) return;
       await context.showErrorDialog(error);
     }
@@ -158,7 +158,7 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   void _onE2EEStateEvent(TrackE2EEStateEvent e2eeState) {
-    print('e2ee state: $e2eeState');
+    debugPrint('e2ee state: $e2eeState');
   }
 
   void _sortParticipants() {

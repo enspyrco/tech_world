@@ -124,7 +124,7 @@ class _ControlsWidgetState extends State<ControlsWidget> {
         position = newPosition;
       });
     } catch (error) {
-      print('could not restart track: $error');
+      debugPrint('could not restart track: $error');
       return;
     }
   }
@@ -137,10 +137,10 @@ class _ControlsWidgetState extends State<ControlsWidget> {
           builder: (context) => ScreenSelectDialog(),
         );
         if (source == null) {
-          print('cancelled screenshare');
+          debugPrint('cancelled screenshare');
           return;
         }
-        print('DesktopCapturerSource: ${source.id}');
+        debugPrint('DesktopCapturerSource: ${source.id}');
         var track = await LocalVideoTrack.createScreenShareTrack(
           ScreenShareCaptureOptions(
             sourceId: source.id,
@@ -149,7 +149,7 @@ class _ControlsWidgetState extends State<ControlsWidget> {
         );
         await participant.publishVideoTrack(track);
       } catch (e) {
-        print('could not publish video: $e');
+        debugPrint('could not publish video: $e');
       }
       return;
     }
@@ -164,7 +164,7 @@ class _ControlsWidgetState extends State<ControlsWidget> {
       try {
         //   await FlutterBackground.disableBackgroundExecution();
       } catch (error) {
-        print('error disabling screen share: $error');
+        debugPrint('error disabling screen share: $error');
       }
     }
   }
@@ -191,7 +191,7 @@ class _ControlsWidgetState extends State<ControlsWidget> {
   void _onTapSimulateScenario() async {
     final result = await context.showSimulateScenarioDialog();
     if (result != null) {
-      print('$result');
+      debugPrint('$result');
 
       if (SimulateScenarioResult.e2eeKeyRatchet == result) {
         await widget.room.e2eeManager?.ratchetKey();

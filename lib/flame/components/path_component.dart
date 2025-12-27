@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:a_star_algorithm/a_star_algorithm.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flame/components.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/shared/constants.dart';
@@ -43,7 +44,7 @@ class PathComponent extends Component with HasWorldReference {
       barriers: _barriers.points,
     ).findThePath().toList();
 
-    print(_miniGridPoints);
+    debugPrint('$_miniGridPoints');
 
     _largeGridPoints = [];
     _pathDirections = [];

@@ -57,14 +57,14 @@ class _ConnectPageState extends State<ConnectPage> {
     try {
       final result =
           await functions.httpsCallable('retrieveLiveKitToken').call();
-      print(result.data);
+      debugPrint(result.data);
       setState(() {
         _token = result.data;
         _busy = false;
         _tokenCtrl.text = 'Fresh token retrieved';
       });
     } on FirebaseFunctionsException catch (e) {
-      print('Error: ${e.message}');
+      debugPrint('Error: ${e.message}');
     }
   }
 
@@ -101,7 +101,7 @@ class _ConnectPageState extends State<ConnectPage> {
       // Save preferences for LiveKit connection for convenience
       await _writePrefs();
 
-      print('Connecting with url: ${_uriCtrl.text}, '
+      debugPrint('Connecting with url: ${_uriCtrl.text}, '
           'token: ${_tokenCtrl.text}...');
 
       var url = _uriCtrl.text;
@@ -127,7 +127,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 )),
       );
     } catch (error) {
-      print('Could not connect $error');
+      debugPrint('Could not connect $error');
       if (!mounted) return;
       await context.showErrorDialog(error);
     } finally {

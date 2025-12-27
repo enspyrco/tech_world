@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
@@ -72,7 +73,7 @@ class NetworkingService {
   // Create a websocket connected to the server and attach callbacks.
   void _connect(
       {required String uriString, WebSocketChannel? webSocketChannel}) {
-    print('connecting to $uriString');
+    debugPrint('connecting to $uriString');
     _webSocket =
         webSocketChannel ?? WebSocketChannel.connect(Uri.parse(uriString));
     _serverStream = _webSocket!.stream;
@@ -84,14 +85,14 @@ class NetworkingService {
         _identify(jsonDecode(data as String) as JsonMap);
       },
       onError: (dynamic err) =>
-          print('${DateTime.now()} > CONNECTION ERROR: $err'),
-      onDone: () => print(
+          debugPrint('${DateTime.now()} > CONNECTION ERROR: $err'),
+      onDone: () => debugPrint(
           '${DateTime.now()} > CONNECTION DONE! closeCode=${_webSocket?.closeCode}, closeReason= ${_webSocket?.closeReason}'),
     );
   }
 
   void _identify(JsonMap json) {
-    print('identifying: $json');
+    debugPrint('identifying: $json');
     // Check the type of data in the event and respond appropriately.
     if (json['type'] == 'other_players') {
       final message = OtherUsersMessage.fromJson(json);
@@ -99,7 +100,7 @@ class NetworkingService {
     } else if (json['type'] == 'player_path') {
       final message = PlayerPathMessage.fromJson(json);
       // if (message.userId == _userId) {
-      //   print('ws: ${DateTime.now().millisecondsSinceEpoch - _departureTime}');
+      //   debugPrint('ws: ${DateTime.now().millisecondsSinceEpoch - _departureTime}');
       // }
       _addPathToPlayer(
         message.userId,
@@ -159,7 +160,7 @@ class NetworkingService {
   }
 
   Future<void> _disconnect() async {
-    print('disconnecting from websocket server...');
+    debugPrint('disconnecting from websocket server...');
     await _serverSubscription?.cancel();
     if (_webSocket != null) {
       _serverSink?.close();

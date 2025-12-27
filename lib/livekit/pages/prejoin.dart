@@ -217,7 +217,7 @@ class _PreJoinPageState extends State<PreJoinPage> {
             builder: (_) => FinalPage(room: room, listener: listener)),
       );
     } catch (error) {
-      print('Could not connect $error');
+      debugPrint('Could not connect $error');
       if (!mounted) return;
       await this.context.showErrorDialog(error);
     } finally {
