@@ -112,6 +112,12 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     _pathSegmentNum = 0;
     _moveEffects = [];
     _directions = directions;
+
+    // If no directions but we have points, just set position directly (e.g., bot spawn)
+    if (directions.isEmpty && largeGridPoints.isNotEmpty) {
+      position = largeGridPoints.first;
+      return;
+    }
     for (final largeGridPoint in largeGridPoints) {
       _moveEffects.add(
         MoveToEffect(

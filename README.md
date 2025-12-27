@@ -1,6 +1,6 @@
 # Tech World
 
-A multiplayer 2D virtual world game built with Flutter and the Flame game engine. Players can move around, see other players in real-time, and connect via LiveKit video chat.
+An educational multiplayer 2D virtual world game where players solve coding challenges together. Built with Flutter and the Flame game engine, Tech World combines real-time collaboration, proximity-based video chat, and an AI tutor to create an engaging learn-to-code experience.
 
 ## Features
 
@@ -19,11 +19,13 @@ A multiplayer 2D virtual world game built with Flutter and the Flame game engine
 ## Setup
 
 1. Install dependencies:
+
    ```bash
    flutter pub get
    ```
 
 2. Create Firebase configuration file at `lib/firebase/firebase_config.dart`:
+
    ```dart
    const firebaseWebApiKey = '<your_web_api_key>';
    const firebaseProjectId = '<your_project_id>';
@@ -65,6 +67,40 @@ flutter test test/networking_service_test.dart  # Run specific test
 - `a_star_algorithm`: Pathfinding
 - `web_socket_channel`: WebSocket communication
 - `tech_world_networking_types`: Shared message types
+
+## Claude Bot (AI Tutor)
+
+Tech World includes an AI tutor bot powered by Claude that helps players learn to code.
+
+### Current State
+
+- Bot appears in the game world as a player named "Claude"
+- Shows a blue bubble with "C" when players are nearby (proximity detection)
+- Bot files: `lib/livekit/widgets/bot_bubble.dart`, server-side in `bot_user.dart`
+
+### Planned Features
+
+**Core Tutoring:**
+
+- Hint system - Players approach Claude when stuck, describe their problem, get guided hints (not solutions)
+- Code review - Players paste their solution, Claude gives feedback on style, edge cases, efficiency
+- Concept explainer - Answer questions like "What's recursion?" or "How do promises work?"
+
+**Challenge Integration:**
+
+- Challenge stations - Different areas of the map have coding terminals with themed challenges (e.g., "Array Alley", "Recursion Ridge")
+- Difficulty scaling - Claude adapts challenge difficulty based on player history
+- Collaborative mode - When 2+ players are near a challenge, Claude facilitates pair programming
+
+**Multiplayer Synergy:**
+
+- Matchmaking by skill - Claude notices players struggling with similar concepts and suggests they team up
+- Code battles - Claude referees live coding competitions between nearby players
+
+**Voice Integration:**
+
+- Leverage existing LiveKit infrastructure for voice conversations with Claude
+- Speech-to-text → Claude API → text-to-speech pipeline
 
 ## Future Work
 

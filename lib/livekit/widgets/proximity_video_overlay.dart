@@ -5,8 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tech_world.dart';
+import 'package:tech_world/livekit/widgets/bot_bubble.dart';
 import 'package:tech_world/livekit/widgets/video_bubble.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
+
+/// The bot user ID - must match the server's bot_user.dart
+const _botUserId = 'bot-claude';
+const _botDisplayName = 'Claude';
 
 /// Overlay that displays video bubbles above players when they are in proximity.
 class ProximityVideoOverlay extends StatefulWidget {
@@ -107,28 +112,45 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
 
         // Add bubbles for nearby players
         for (final entry in _nearbyPlayerPositions.entries) {
+          final screenPosition = _gridToScreen(
+            entry.value,
+            localPlayerGridPos,
+            viewportCenter,
+          );
+
+          // Only show if on screen
+          if (!_isOnScreen(screenPosition, constraints)) continue;
+
+          // Special handling for bot - show BotBubble instead of VideoBubble
+          if (entry.key == _botUserId) {
+            bubbles.add(
+              Positioned(
+                left: screenPosition.dx - widget.bubbleSize / 2,
+                top: screenPosition.dy - widget.bubbleSize - 20,
+                child: BotBubble(
+                  key: ValueKey(entry.key),
+                  name: _botDisplayName,
+                  size: widget.bubbleSize,
+                ),
+              ),
+            );
+            continue;
+          }
+
+          // Regular participant handling
           final participant = _findParticipant(entry.key);
           if (participant != null) {
-            final screenPosition = _gridToScreen(
-              entry.value,
-              localPlayerGridPos,
-              viewportCenter,
-            );
-
-            // Only show if on screen
-            if (_isOnScreen(screenPosition, constraints)) {
-              bubbles.add(
-                Positioned(
-                  left: screenPosition.dx - widget.bubbleSize / 2,
-                  top: screenPosition.dy - widget.bubbleSize - 20,
-                  child: VideoBubble(
-                    key: ValueKey(entry.key),
-                    participant: participant,
-                    size: widget.bubbleSize,
-                  ),
+            bubbles.add(
+              Positioned(
+                left: screenPosition.dx - widget.bubbleSize / 2,
+                top: screenPosition.dy - widget.bubbleSize - 20,
+                child: VideoBubble(
+                  key: ValueKey(entry.key),
+                  participant: participant,
+                  size: widget.bubbleSize,
                 ),
-              );
-            }
+              ),
+            );
           }
         }
 
