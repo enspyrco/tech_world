@@ -107,8 +107,9 @@ class _ConnectPageState extends State<ConnectPage> {
       var url = _uriCtrl.text;
       var e2eeKey = _sharedKeyCtrl.text;
 
+      if (!mounted) return;
       await Navigator.push<void>(
-        ctx,
+        context,
         MaterialPageRoute(
             builder: (_) => PreJoinPage(
                   args: JoinArgs(
@@ -127,7 +128,8 @@ class _ConnectPageState extends State<ConnectPage> {
       );
     } catch (error) {
       print('Could not connect $error');
-      await ctx.showErrorDialog(error);
+      if (!mounted) return;
+      await context.showErrorDialog(error);
     } finally {
       setState(() {
         _busy = false;

@@ -3,6 +3,7 @@
 /// - Only one object of a certain type can be added/located
 /// - The Locator is a currently singleton, but the object it creates allows
 ///   the service locator pattern.
+library locator;
 
 /// add a service:
 ///   `Locator.add<ServiceType>(Service());`

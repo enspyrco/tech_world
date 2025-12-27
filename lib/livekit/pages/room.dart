@@ -118,8 +118,8 @@ class _RoomPageState extends State<RoomPage> {
       String decoded = 'Failed to decode';
       try {
         decoded = utf8.decode(event.data);
-      } catch (_) {
-        print('Failed to decode: $_');
+      } catch (e) {
+        print('Failed to decode: $e');
       }
       context.showDataReceivedDialog(decoded);
     })
@@ -141,12 +141,14 @@ class _RoomPageState extends State<RoomPage> {
       await widget.room.localParticipant?.setCameraEnabled(true);
     } catch (error) {
       print('could not publish video: $error');
+      if (!mounted) return;
       await context.showErrorDialog(error);
     }
     try {
       await widget.room.localParticipant?.setMicrophoneEnabled(true);
     } catch (error) {
       print('could not publish audio: $error');
+      if (!mounted) return;
       await context.showErrorDialog(error);
     }
   }

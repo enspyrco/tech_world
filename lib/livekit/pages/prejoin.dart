@@ -52,7 +52,7 @@ class _PreJoinPageState extends State<PreJoinPage> {
 
   MediaDevice? _selectedVideoDevice;
   MediaDevice? _selectedAudioDevice;
-  VideoParameters _selectedVideoParameters = VideoParametersPresets.h720_169;
+  final VideoParameters _selectedVideoParameters = VideoParametersPresets.h720_169;
 
   @override
   void initState() {
@@ -178,6 +178,7 @@ class _PreJoinPageState extends State<PreJoinPage> {
       await room.connect(
         args.url,
         args.token,
+        // ignore: deprecated_member_use
         roomOptions: RoomOptions(
           adaptiveStream: args.adaptiveStream,
           dynacast: args.dynacast,
@@ -209,14 +210,16 @@ class _PreJoinPageState extends State<PreJoinPage> {
         ),
       );
 
+      if (!mounted) return;
       await Navigator.push<void>(
-        context,
+        this.context,
         MaterialPageRoute(
             builder: (_) => FinalPage(room: room, listener: listener)),
       );
     } catch (error) {
       print('Could not connect $error');
-      await context.showErrorDialog(error);
+      if (!mounted) return;
+      await this.context.showErrorDialog(error);
     } finally {
       setState(() {
         _busy = false;
@@ -227,7 +230,8 @@ class _PreJoinPageState extends State<PreJoinPage> {
   void _actionBack(BuildContext context) async {
     await _setEnableVideo(false);
     await _setEnableAudio(false);
-    Navigator.of(context).pop();
+    if (!mounted) return;
+    Navigator.of(this.context).pop();
   }
 
   @override
