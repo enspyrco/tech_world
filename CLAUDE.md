@@ -13,6 +13,13 @@ flutter test
 flutter test test/networking_service_test.dart  # single test
 ```
 
+## Git Hooks
+
+Enable the pre-commit hook (runs `flutter analyze --fatal-infos`):
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Key Files
 
 - `lib/main.dart`: App entry point, initializes Firebase and services, registers with `Locator`
