@@ -16,6 +16,7 @@ export const retrieveLiveKitToken = onCall(async (request) => {
   const user = request.auth?.token; // This object includes user information such as uid
   const email = user?.email ?? "Guest";
   const uid = user?.uid ?? "guest";
+  const roomName = request.data.roomName || "room";
 
   let livekitName = email;
   if (livekitName == null) {
@@ -32,7 +33,7 @@ export const retrieveLiveKitToken = onCall(async (request) => {
     },
   );
 
-  at.addGrant({ roomJoin: true, room: "room" });
+  at.addGrant({ roomJoin: true, room: roomName });
 
   const token = await at.toJwt();
 

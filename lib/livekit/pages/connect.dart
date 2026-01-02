@@ -19,6 +19,7 @@ class ConnectPage extends StatefulWidget {
 class _ConnectPageState extends State<ConnectPage> {
   //
   static const _storeKeyUri = 'uri';
+  static const _storeKeyRoomName = 'room-name';
   static const _storeKeySimulcast = 'simulcast';
   static const _storeKeyAdaptiveStream = 'adaptive-stream';
   static const _storeKeyDynacast = 'dynacast';
@@ -27,6 +28,7 @@ class _ConnectPageState extends State<ConnectPage> {
   static const _storeKeyMultiCodec = 'multi-codec';
 
   final _uriCtrl = TextEditingController();
+  final _roomNameCtrl = TextEditingController();
   final _tokenCtrl = TextEditingController();
   final _sharedKeyCtrl = TextEditingController();
   bool _simulcast = true;
@@ -35,6 +37,7 @@ class _ConnectPageState extends State<ConnectPage> {
   bool _busy = true;
   bool _e2ee = false;
   bool _multiCodec = false;
+  bool _showAdvanced = false;
   String _preferredCodec = 'Preferred Codec';
   String _token = '';
 
@@ -48,6 +51,7 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void dispose() {
     _uriCtrl.dispose();
+    _roomNameCtrl.dispose();
     _tokenCtrl.dispose();
     super.dispose();
   }
@@ -55,8 +59,9 @@ class _ConnectPageState extends State<ConnectPage> {
   Future<void> _callRetrieveToken() async {
     final functions = FirebaseFunctions.instance;
     try {
-      final result =
-          await functions.httpsCallable('retrieveLiveKitToken').call();
+      final result = await functions.httpsCallable('retrieveLiveKitToken').call(
+        {'roomName': _roomNameCtrl.text},
+      );
       debugPrint(result.data);
       setState(() {
         _token = result.data;
@@ -72,6 +77,7 @@ class _ConnectPageState extends State<ConnectPage> {
   Future<void> _readPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     _uriCtrl.text = 'wss://testing-g5wrpk39.livekit.cloud';
+    _roomNameCtrl.text = prefs.getString(_storeKeyRoomName) ?? 'room';
     _sharedKeyCtrl.text = 'APIeu5vYtzejccQ';
     _tokenCtrl.text = 'retrieving...';
     setState(() {
@@ -87,6 +93,7 @@ class _ConnectPageState extends State<ConnectPage> {
   Future<void> _writePrefs() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_storeKeyUri, _uriCtrl.text);
+    await prefs.setString(_storeKeyRoomName, _roomNameCtrl.text);
     await prefs.setString(_storeKeySharedKey, _sharedKeyCtrl.text);
     await prefs.setBool(_storeKeySimulcast, _simulcast);
     await prefs.setBool(_storeKeyAdaptiveStream, _adaptiveStream);
@@ -187,178 +194,151 @@ class _ConnectPageState extends State<ConnectPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Room name field (always visible)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 25),
+                    padding: const EdgeInsets.only(bottom: 16),
                     child: LKTextField(
-                      label: 'Server URL',
-                      ctrl: _uriCtrl,
+                      label: 'Room Name',
+                      ctrl: _roomNameCtrl,
                     ),
                   ),
+                  // Connect button
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 25),
-                    child: LKTextField(
-                      label: 'Token',
-                      ctrl: _tokenCtrl,
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: ElevatedButton(
+                      onPressed: _busy ? null : () => _connect(context),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_busy)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 10),
+                              child: SizedBox(
+                                height: 15,
+                                width: 15,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                          const Text('CONNECT'),
+                        ],
+                      ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 25),
-                    child: LKTextField(
-                      label: 'Shared Key',
-                      ctrl: _sharedKeyCtrl,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('E2EE'),
-                        Switch(
-                          value: _e2ee,
-                          onChanged: (value) => _setE2EE(value),
+                  // Advanced toggle and Sign Out row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton.icon(
+                        onPressed: () =>
+                            setState(() => _showAdvanced = !_showAdvanced),
+                        icon: Icon(
+                          _showAdvanced
+                              ? Icons.expand_less
+                              : Icons.expand_more,
+                          size: 18,
                         ),
-                      ],
-                    ),
+                        label: const Text('Advanced'),
+                      ),
+                      TextButton(
+                        onPressed: () => FirebaseAuth.instance.signOut(),
+                        child: const Text('Sign Out'),
+                      ),
+                    ],
                   ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Simulcast'),
-                        Switch(
-                          value: _simulcast,
-                          onChanged: (value) => _setSimulcast(value),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Adaptive Stream'),
-                        Switch(
-                          value: _adaptiveStream,
-                          onChanged: (value) => _setAdaptiveStream(value),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 5),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Dynacast'),
-                        Switch(
-                          value: _dynacast,
-                          onChanged: (value) => _setDynacast(value),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: EdgeInsets.only(bottom: _multiCodec ? 5 : 25),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Multi Codec'),
-                        Switch(
-                          value: _multiCodec,
-                          onChanged: (value) => _setMultiCodec(value),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (_multiCodec)
+                  // Advanced options (collapsible)
+                  if (_showAdvanced) ...[
+                    const SizedBox(height: 16),
                     Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: LKTextField(
+                        label: 'Server URL',
+                        ctrl: _uriCtrl,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: LKTextField(
+                        label: 'Token',
+                        ctrl: _tokenCtrl,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: LKTextField(
+                        label: 'Shared Key',
+                        ctrl: _sharedKeyCtrl,
+                      ),
+                    ),
+                    _buildSwitchRow('E2EE', _e2ee, _setE2EE),
+                    _buildSwitchRow('Simulcast', _simulcast, _setSimulcast),
+                    _buildSwitchRow(
+                        'Adaptive Stream', _adaptiveStream, _setAdaptiveStream),
+                    _buildSwitchRow('Dynacast', _dynacast, _setDynacast),
+                    _buildSwitchRow('Multi Codec', _multiCodec, _setMultiCodec),
+                    if (_multiCodec)
+                      Padding(
                         padding: const EdgeInsets.only(bottom: 5),
                         child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Preferred Codec:'),
-                              DropdownButton<String>(
-                                value: _preferredCodec,
-                                icon: const Icon(
-                                  Icons.arrow_drop_down,
-                                  color: Colors.blue,
-                                ),
-                                elevation: 16,
-                                style: const TextStyle(color: Colors.blue),
-                                underline: Container(
-                                  height: 2,
-                                  color: Colors.blueAccent,
-                                ),
-                                onChanged: (String? value) {
-                                  // This is called when the user selects an item.
-                                  setState(() {
-                                    _preferredCodec = value!;
-                                  });
-                                },
-                                items: [
-                                  'Preferred Codec',
-                                  'AV1',
-                                  'VP9',
-                                  'VP8',
-                                  'H264'
-                                ].map<DropdownMenuItem<String>>((String value) {
-                                  return DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(value),
-                                  );
-                                }).toList(),
-                              )
-                            ])),
-                  ElevatedButton(
-                    onPressed: _busy ? null : () => _connect(context),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_busy)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 10),
-                            child: SizedBox(
-                              height: 15,
-                              width: 15,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Preferred Codec:'),
+                            DropdownButton<String>(
+                              value: _preferredCodec,
+                              icon: const Icon(
+                                Icons.arrow_drop_down,
+                                color: Colors.blue,
                               ),
-                            ),
-                          ),
-                        const Text('CONNECT'),
-                      ],
-                    ),
-                  ),
-                  ElevatedButton(
-                    onPressed:
-                        _busy ? null : () => FirebaseAuth.instance.signOut(),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_busy)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 10),
-                            child: SizedBox(
-                              height: 15,
-                              width: 15,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
+                              elevation: 16,
+                              style: const TextStyle(color: Colors.blue),
+                              underline: Container(
+                                height: 2,
+                                color: Colors.blueAccent,
                               ),
+                              onChanged: (String? value) {
+                                setState(() {
+                                  _preferredCodec = value!;
+                                });
+                              },
+                              items: [
+                                'Preferred Codec',
+                                'AV1',
+                                'VP9',
+                                'VP8',
+                                'H264'
+                              ].map<DropdownMenuItem<String>>((String value) {
+                                return DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(value),
+                                );
+                              }).toList(),
                             ),
-                          ),
-                        const Text('SIGN OUT'),
-                      ],
-                    ),
-                  ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ),
           ),
         ),
       );
+
+  Widget _buildSwitchRow(String label, bool value, Function(bool?) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
 }
