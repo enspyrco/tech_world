@@ -8,41 +8,105 @@ import 'package:tech_world/config/server_config.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/networking/networking_service.dart';
+import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
-  final authService = AuthService();
-  final networkingService = NetworkingService(
-    uriString: ServerConfig.gameServerUrl,
-    authUserStream: authService.authStateChanges,
-  );
-  final techWorld = TechWorld(
-      authStateChanges: authService.authStateChanges,
-      playerPaths: networkingService.playerPaths,
-      userAdded: networkingService.userAdded,
-      userRemoved: networkingService.userRemoved);
-  final techWorldGame = TechWorldGame(world: techWorld);
-
-  Locator.add<AuthService>(authService);
-  Locator.add<NetworkingService>(networkingService);
-  Locator.add<TechWorld>(techWorld);
-  Locator.add<TechWorldGame>(techWorldGame);
-
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _initialized = false;
+  String _loadingMessage = 'Initializing...';
+  double? _progress;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    // Stage 1: Initialize Firebase
+    setState(() {
+      _loadingMessage = 'Connecting to Firebase...';
+      _progress = 0.2;
+    });
+
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
+    // Stage 2: Initialize services
+    setState(() {
+      _loadingMessage = 'Setting up services...';
+      _progress = 0.5;
+    });
+
+    final authService = AuthService();
+    final networkingService = NetworkingService(
+      uriString: ServerConfig.gameServerUrl,
+      authUserStream: authService.authStateChanges,
+    );
+
+    // Stage 3: Initialize game world
+    setState(() {
+      _loadingMessage = 'Loading game world...';
+      _progress = 0.7;
+    });
+
+    final techWorld = TechWorld(
+        authStateChanges: authService.authStateChanges,
+        playerPaths: networkingService.playerPaths,
+        userAdded: networkingService.userAdded,
+        userRemoved: networkingService.userRemoved);
+    final techWorldGame = TechWorldGame(world: techWorld);
+
+    // Stage 4: Register services
+    setState(() {
+      _loadingMessage = 'Almost ready...';
+      _progress = 0.9;
+    });
+
+    Locator.add<AuthService>(authService);
+    Locator.add<NetworkingService>(networkingService);
+    Locator.add<TechWorld>(techWorld);
+    Locator.add<TechWorldGame>(techWorldGame);
+
+    // Complete
+    setState(() {
+      _loadingMessage = 'Ready!';
+      _progress = 1.0;
+    });
+
+    // Brief delay to show completion
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    setState(() {
+      _initialized = true;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (!_initialized) {
+      return MaterialApp(
+        home: LoadingScreen(
+          message: _loadingMessage,
+          progress: _progress,
+        ),
+      );
+    }
+
     return MaterialApp(
       home: Scaffold(
         body: LayoutBuilder(
