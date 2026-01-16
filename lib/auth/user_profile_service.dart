@@ -4,7 +4,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// This is used as a backup for display names since Apple only provides
 /// the name on the first sign-in.
 class UserProfileService {
-  final _collection = FirebaseFirestore.instance.collection('users');
+  UserProfileService({CollectionReference<Map<String, dynamic>>? collection})
+      : _collection =
+            collection ?? FirebaseFirestore.instance.collection('users');
+
+  final CollectionReference<Map<String, dynamic>> _collection;
 
   /// Save user profile to Firestore.
   /// Only updates fields that are non-empty to avoid overwriting existing data.
