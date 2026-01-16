@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
+import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/grid_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
@@ -46,11 +49,14 @@ class TechWorld extends World with TapCallbacks {
   final BarriersComponent _barriersComponent = BarriersComponent();
   late PathComponent _pathComponent;
 
-  // Bot bubble component - shown when player is near the bot
+  // Bubble components - shown when player is near other players
   static const _botUserId = 'bot-claude';
   static const _botDisplayName = 'Claude';
   static const _proximityThreshold = 3; // grid squares
-  BotBubbleComponent? _botBubble;
+  static final _bubbleOffset =
+      Vector2(16, -20); // center horizontally, above sprite
+  final Map<String, PositionComponent> _playerBubbles = {};
+  Point<int>? _lastPlayerGridPosition; // track to skip unnecessary updates
 
   final Stream<NetworkUser> _userAddedStream;
   final Stream<NetworkUser> _userRemovedStream;
@@ -74,41 +80,82 @@ class TechWorld extends World with TapCallbacks {
   @override
   void update(double dt) {
     super.update(dt);
-    _updateBotBubbleVisibility();
+    _updatePlayerBubbles();
   }
 
-  void _updateBotBubbleVisibility() {
-    final botComponent = _otherPlayerComponentsMap[_botUserId];
-    if (botComponent == null) {
-      // Bot not in game, remove bubble if present
-      _botBubble?.removeFromParent();
-      _botBubble = null;
+  void _updatePlayerBubbles() {
+    final playerGrid = _userPlayerComponent.miniGridPosition;
+
+    // Skip update if player hasn't moved to a new grid position
+    if (_lastPlayerGridPosition == playerGrid) {
+      // Still update positions of existing bubbles
+      _updateBubblePositions();
       return;
     }
+    _lastPlayerGridPosition = playerGrid;
 
-    // Calculate Chebyshev distance (max of x/y difference)
-    final botGrid = botComponent.miniGridPosition;
-    final playerGrid = _userPlayerComponent.miniGridPosition;
-    final distance = max(
-      (botGrid.x - playerGrid.x).abs(),
-      (botGrid.y - playerGrid.y).abs(),
-    );
+    // Check each other player for proximity
+    final nearbyPlayerIds = <String>{};
 
-    final isNearby = distance <= _proximityThreshold;
+    for (final entry in _otherPlayerComponentsMap.entries) {
+      final playerId = entry.key;
+      final playerComponent = entry.value;
 
-    if (isNearby && _botBubble == null) {
-      // Show bubble - position it above the bot
-      _botBubble = BotBubbleComponent(name: _botDisplayName);
-      _botBubble!.position = botComponent.position + Vector2(16, -20);
-      add(_botBubble!);
-    } else if (isNearby && _botBubble != null) {
-      // Update bubble position to follow bot
-      _botBubble!.position = botComponent.position + Vector2(16, -20);
-    } else if (!isNearby && _botBubble != null) {
-      // Hide bubble
-      _botBubble!.removeFromParent();
-      _botBubble = null;
+      // Calculate Chebyshev distance (max of x/y difference)
+      final otherGrid = playerComponent.miniGridPosition;
+      final distance = max(
+        (otherGrid.x - playerGrid.x).abs(),
+        (otherGrid.y - playerGrid.y).abs(),
+      );
+
+      final isNearby = distance <= _proximityThreshold;
+
+      if (isNearby) {
+        nearbyPlayerIds.add(playerId);
+
+        if (!_playerBubbles.containsKey(playerId)) {
+          // Create bubble for this player
+          final bubble = _createBubbleForPlayer(playerId, playerComponent);
+          bubble.position = playerComponent.position + _bubbleOffset;
+          _playerBubbles[playerId] = bubble;
+          add(bubble);
+        }
+      }
     }
+
+    // Remove bubbles for players no longer nearby
+    final toRemove = <String>[];
+    for (final playerId in _playerBubbles.keys) {
+      if (!nearbyPlayerIds.contains(playerId)) {
+        _playerBubbles[playerId]?.removeFromParent();
+        toRemove.add(playerId);
+      }
+    }
+    for (final playerId in toRemove) {
+      _playerBubbles.remove(playerId);
+    }
+
+    _updateBubblePositions();
+  }
+
+  void _updateBubblePositions() {
+    for (final entry in _playerBubbles.entries) {
+      final playerComponent = _otherPlayerComponentsMap[entry.key];
+      if (playerComponent != null) {
+        entry.value.position = playerComponent.position + _bubbleOffset;
+      }
+    }
+  }
+
+  PositionComponent _createBubbleForPlayer(
+      String playerId, PlayerComponent playerComponent) {
+    if (playerId == _botUserId) {
+      return BotBubbleComponent(name: _botDisplayName);
+    }
+    return PlayerBubbleComponent(
+      displayName: playerComponent.displayName,
+      playerId: playerId,
+    );
   }
 
   @override
@@ -129,6 +176,7 @@ class TechWorld extends World with TapCallbacks {
       }
     });
     _userAddedSubscription = _userAddedStream.listen((networkUser) {
+      debugPrint('Adding user: ${networkUser.id}');
       final playerComponent = PlayerComponent.from(networkUser);
       _otherPlayerComponentsMap[networkUser.id] = playerComponent;
       add(playerComponent);
@@ -140,6 +188,8 @@ class TechWorld extends World with TapCallbacks {
       }
     });
     _playerPathsSubscription = _playerPathsStream.listen((PlayerPath path) {
+      debugPrint(
+          'Received path for ${path.playerId}, component exists: ${_otherPlayerComponentsMap.containsKey(path.playerId)}');
       _otherPlayerComponentsMap[path.playerId]
           ?.move(path.directions, path.largeGridPoints);
     });
