@@ -21,15 +21,9 @@ class DefaultFirebaseOptions {
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for android - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return android;
       case TargetPlatform.iOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for ios - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return ios;
       case TargetPlatform.macOS:
         return macos;
       case TargetPlatform.windows:
@@ -50,20 +44,38 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBha-SvfU-i7Ux5mr5xIAchaEBxWpRSnDU',
-    appId: '1:614230417388:web:b5c1d42c5924fb76246ac9',
+    apiKey: 'AIzaSyDhV44RI4PWf2ryoXq1h2EdqffQi3Ic_X0',
+    appId: '1:614230417388:web:fcb71d2a30fd7615246ac9',
     messagingSenderId: '614230417388',
     projectId: 'adventures-in-tech-world-0',
     authDomain: 'adventures-in-tech-world-0.firebaseapp.com',
-    storageBucket: 'adventures-in-tech-world-0.appspot.com',
+    storageBucket: 'adventures-in-tech-world-0.firebasestorage.app',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyABbMDsGLMuKZPXD04uMmtyG3eJg0cFBFw',
-    appId: '1:614230417388:ios:dbe285440a6bdc3b246ac9',
+    appId: '1:614230417388:ios:2dbbc66a8cb5e783246ac9',
     messagingSenderId: '614230417388',
     projectId: 'adventures-in-tech-world-0',
-    storageBucket: 'adventures-in-tech-world-0.appspot.com',
-    iosBundleId: 'co.enspyr.techWorld.RunnerTests',
+    storageBucket: 'adventures-in-tech-world-0.firebasestorage.app',
+    iosBundleId: 'com.example.techWorld',
   );
+
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: 'AIzaSyABbMDsGLMuKZPXD04uMmtyG3eJg0cFBFw',
+    appId: '1:614230417388:ios:7a8907f854976dae246ac9',
+    messagingSenderId: '614230417388',
+    projectId: 'adventures-in-tech-world-0',
+    storageBucket: 'adventures-in-tech-world-0.firebasestorage.app',
+    iosBundleId: 'co.enspyr.techWorld',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyCA7dVjYsgdDf8pQdnd0lRXdFEdq4-Ca2k',
+    appId: '1:614230417388:android:5bae8495326ad93d246ac9',
+    messagingSenderId: '614230417388',
+    projectId: 'adventures-in-tech-world-0',
+    storageBucket: 'adventures-in-tech-world-0.firebasestorage.app',
+  );
+
 }

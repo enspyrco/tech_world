@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "614230417388",
+    "project_id": "adventures-in-tech-world-0",
+    "storage_bucket": "adventures-in-tech-world-0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:614230417388:android:5bae8495326ad93d246ac9",
+        "android_client_info": {
+          "package_name": "co.enspyr.tech_world"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "614230417388-k5gk56q0ssmj880egv1b1blq5nag3rs1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCA7dVjYsgdDf8pQdnd0lRXdFEdq4-Ca2k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "614230417388-k5gk56q0ssmj880egv1b1blq5nag3rs1.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "614230417388-gq4kv2jvoeavlv7lh71crlql28rpii71.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.adventuresInTechWorld.RunnerTests"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
