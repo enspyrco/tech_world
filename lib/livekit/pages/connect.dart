@@ -44,8 +44,12 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   void initState() {
     super.initState();
-    _readPrefs();
-    _callRetrieveToken();
+    _initializeAndRetrieveToken();
+  }
+
+  Future<void> _initializeAndRetrieveToken() async {
+    await _readPrefs();
+    await _callRetrieveToken();
   }
 
   @override
@@ -59,10 +63,11 @@ class _ConnectPageState extends State<ConnectPage> {
   Future<void> _callRetrieveToken() async {
     final functions = FirebaseFunctions.instance;
     try {
+      debugPrint('Retrieving token for room: "${_roomNameCtrl.text}"');
       final result = await functions.httpsCallable('retrieveLiveKitToken').call(
         {'roomName': _roomNameCtrl.text},
       );
-      debugPrint(result.data);
+      debugPrint('Token retrieved for room: "${_roomNameCtrl.text}"');
       setState(() {
         _token = result.data;
         _busy = false;
@@ -235,9 +240,7 @@ class _ConnectPageState extends State<ConnectPage> {
                         onPressed: () =>
                             setState(() => _showAdvanced = !_showAdvanced),
                         icon: Icon(
-                          _showAdvanced
-                              ? Icons.expand_less
-                              : Icons.expand_more,
+                          _showAdvanced ? Icons.expand_less : Icons.expand_more,
                           size: 18,
                         ),
                         label: const Text('Advanced'),
