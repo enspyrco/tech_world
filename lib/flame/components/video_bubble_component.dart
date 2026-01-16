@@ -10,29 +10,29 @@ import 'package:livekit_client/livekit_client.dart';
 /// A Flame component that renders a circular video bubble with a player's video feed.
 ///
 /// This component captures frames from a WebRTC video track and renders them
-/// as a circular clipped image in the game world.
+/// as a circular clipped image in the game world, with optional shader effects.
 ///
-/// ## Implementation Notes
+/// ## Implementation
 ///
-/// This uses the frame capture approach - one of several possible methods:
-///
-/// ### Current: Frame Capture (Option 1)
+/// Uses frame capture approach for full Flame integration:
 /// - Captures RGBA frames from MediaStreamTrack.captureFrame()
 /// - Converts to dart:ui.Image for rendering
-/// - Pros: Full Flame integration, can apply effects/shaders
-/// - Cons: CPU overhead from pixel copying, ~15-30fps realistic
+/// - Can apply custom fragment shaders via ImageFilter.shader (Impeller)
+/// - Supports physics, particles, occlusion - full game object
 ///
-/// ### Alternative: Hybrid Layer (Option 2)
-/// - Use TextureLayer positioned to match game coordinates
-/// - Pros: Native GPU performance, no frame copying
-/// - Cons: Video renders "on top", can't apply Flame effects
+/// ## Shader Effects
 ///
-/// ### Alternative: Custom Engine Integration (Option 3)
-/// - Modify Flame to support TextureLayer in components
-/// - Pros: Best of both worlds if feasible
-/// - Cons: Requires Flame modifications or custom fork
+/// With Impeller (now default), custom fragment shaders can be applied:
+/// - Glow effects when speaking
+/// - Color grading / tinting
+/// - Distortion effects
+/// - Any GPU-accelerated pixel manipulation
 ///
-/// For future exploration, see: https://github.com/aspect/tech_world/issues/XX
+/// Load a shader and pass it to enable effects:
+/// ```dart
+/// final program = await FragmentProgram.fromAsset('shaders/video_bubble.frag');
+/// videoBubble.setShader(program.fragmentShader());
+/// ```
 class VideoBubbleComponent extends PositionComponent {
   VideoBubbleComponent({
     required this.participant,
@@ -53,9 +53,34 @@ class VideoBubbleComponent extends PositionComponent {
   async.Timer? _captureTimer;
   bool _isCapturing = false;
 
+  // Shader support
+  ui.FragmentShader? _shader;
+  double _time = 0;
+  double _glowIntensity = 0.5;
+  Color _glowColor = Colors.green;
+  double _speakingLevel = 0.0;
+
   // Track stats for debugging
   int _framesCaptured = 0;
   int _framesDropped = 0;
+
+  /// Set a custom fragment shader for effects.
+  ///
+  /// The shader should follow ImageFilter.shader requirements:
+  /// - First uniform: vec2 u_size
+  /// - At least one sampler2D uniform
+  void setShader(ui.FragmentShader shader) {
+    _shader = shader;
+  }
+
+  /// Set the glow intensity (0.0 - 1.0)
+  set glowIntensity(double value) => _glowIntensity = value.clamp(0.0, 1.0);
+
+  /// Set the glow color
+  set glowColor(Color value) => _glowColor = value;
+
+  /// Set the speaking level for pulse effects (0.0 - 1.0)
+  set speakingLevel(double value) => _speakingLevel = value.clamp(0.0, 1.0);
 
   @override
   Future<void> onLoad() async {
@@ -69,6 +94,12 @@ class VideoBubbleComponent extends PositionComponent {
     _currentFrame?.dispose();
     _currentFrame = null;
     super.onRemove();
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _time += dt;
   }
 
   void _startFrameCapture() {
@@ -159,6 +190,29 @@ class VideoBubbleComponent extends PositionComponent {
     return completer.future;
   }
 
+  void _updateShaderUniforms() {
+    if (_shader == null) return;
+
+    // Update shader uniforms
+    // Index 0-1: u_size (vec2) - required by ImageFilter.shader
+    _shader!.setFloat(0, bubbleSize);
+    _shader!.setFloat(1, bubbleSize);
+
+    // Index 2: u_time
+    _shader!.setFloat(2, _time);
+
+    // Index 3: u_glow_intensity
+    _shader!.setFloat(3, _glowIntensity);
+
+    // Index 4-6: u_glow_color (vec3)
+    _shader!.setFloat(4, _glowColor.r);
+    _shader!.setFloat(5, _glowColor.g);
+    _shader!.setFloat(6, _glowColor.b);
+
+    // Index 7: u_speaking
+    _shader!.setFloat(7, _speakingLevel);
+  }
+
   @override
   void render(Canvas canvas) {
     final center = Offset(size.x / 2, size.y / 2);
@@ -170,13 +224,30 @@ class VideoBubbleComponent extends PositionComponent {
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
     canvas.drawCircle(center + const Offset(0, 2), radius, shadowPaint);
 
-    // Clip to circle for video
-    canvas.save();
-    final clipPath = Path()
-      ..addOval(Rect.fromCircle(center: center, radius: radius));
-    canvas.clipPath(clipPath);
-
     if (_currentFrame != null) {
+      // Update shader uniforms if shader is set
+      _updateShaderUniforms();
+
+      // Create paint with optional shader filter
+      final paint = Paint();
+
+      // Apply shader via ImageFilter if available and supported
+      if (_shader != null && ui.ImageFilter.isShaderFilterSupported) {
+        paint.imageFilter = ui.ImageFilter.shader(_shader!);
+      }
+
+      // Use saveLayer to apply the shader to the entire video rendering
+      canvas.saveLayer(
+        Rect.fromCircle(center: center, radius: radius + 10), // Extra for glow
+        paint,
+      );
+
+      // Clip to circle for video
+      canvas.save();
+      final clipPath = Path()
+        ..addOval(Rect.fromCircle(center: center, radius: radius));
+      canvas.clipPath(clipPath);
+
       // Draw the video frame, scaled to fit the bubble
       final srcRect = Rect.fromLTWH(
         0,
@@ -205,8 +276,16 @@ class VideoBubbleComponent extends PositionComponent {
       );
 
       canvas.drawImageRect(_currentFrame!, srcRect, dstRect, Paint());
+
+      canvas.restore(); // Restore from clip
+      canvas.restore(); // Restore from saveLayer (applies shader)
     } else {
       // Fallback: draw colored background with initial (like PlayerBubbleComponent)
+      canvas.save();
+      final clipPath = Path()
+        ..addOval(Rect.fromCircle(center: center, radius: radius));
+      canvas.clipPath(clipPath);
+
       final bgPaint = Paint()..color = Colors.grey[800]!;
       canvas.drawCircle(center, radius, bgPaint);
 
@@ -230,16 +309,18 @@ class VideoBubbleComponent extends PositionComponent {
           center.dy - textPainter.height / 2,
         ),
       );
+
+      canvas.restore();
     }
 
-    canvas.restore();
-
-    // Draw border (outside the clip)
-    final borderPaint = Paint()
-      ..color = _currentFrame != null ? Colors.green : Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawCircle(center, radius, borderPaint);
+    // Draw border (outside the clip) - only if no shader (shader handles its own border/glow)
+    if (_shader == null || !ui.ImageFilter.isShaderFilterSupported) {
+      final borderPaint = Paint()
+        ..color = _currentFrame != null ? Colors.green : Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      canvas.drawCircle(center, radius, borderPaint);
+    }
   }
 
   String _getInitial() {
@@ -255,5 +336,7 @@ class VideoBubbleComponent extends PositionComponent {
         'framesDropped': _framesDropped,
         'hasCurrentFrame': _currentFrame != null,
         'targetFps': targetFps,
+        'shaderEnabled':
+            _shader != null && ui.ImageFilter.isShaderFilterSupported,
       };
 }

@@ -2,35 +2,61 @@
 
 This document explores different approaches for rendering WebRTC video feeds within the Flame game engine.
 
-## Current Implementation: Frame Capture (Option 1)
+## Current Implementation: Frame Capture + Impeller Shaders (Option 1)
 
-**File:** `lib/flame/components/video_bubble_component.dart`
+**Files:**
+- `lib/flame/components/video_bubble_component.dart`
+- `shaders/video_bubble.frag`
 
-Uses `MediaStreamTrack.captureFrame()` to grab RGBA frames and convert them to `dart:ui.Image` for rendering as a Flame component.
+Uses `MediaStreamTrack.captureFrame()` to grab RGBA frames, converts to `dart:ui.Image`, then applies custom fragment shaders via `ImageFilter.shader()` (Impeller-only).
 
 ### How it works
 1. Timer captures frames at target FPS (default 15)
 2. `captureFrame()` returns raw RGBA bytes
 3. Bytes decoded to `ui.Image` via `ImageDescriptor.raw()`
-4. Image drawn to canvas with circular clip
+4. Image drawn to canvas with `saveLayer` + `Paint.imageFilter`
+5. Custom GLSL shader processes the pixels (glow, effects, etc.)
+
+### Shader Effects Available
+- **Glow**: Configurable color and intensity around the bubble edge
+- **Speaking pulse**: Animated glow when player is speaking
+- **Vignette**: Subtle darkening at edges
+- **Color shifts**: Dynamic energy effects
+
+### Usage
+```dart
+// Load shader once at startup
+final program = await FragmentProgram.fromAsset('shaders/video_bubble.frag');
+
+// Create component with shader
+final bubble = VideoBubbleComponent(
+  participant: participant,
+  displayName: 'Player',
+);
+bubble.setShader(program.fragmentShader());
+bubble.glowColor = Colors.cyan;
+bubble.glowIntensity = 0.7;
+bubble.speakingLevel = audioLevel; // Update from audio analysis
+```
 
 ### Pros
 - Full Flame integration - video is a real game component
-- Can apply Flame effects, shaders, particles
+- Custom GPU shaders for effects (Impeller required, now default)
 - Participates in Flame's z-ordering and camera system
-- Works with collision detection if needed
+- Works with collision detection, physics, particles
+- Can have game objects occlude/cover the video
 
 ### Cons
-- CPU overhead from copying pixels every frame
+- CPU overhead from frame copying (~15-30fps realistic)
 - Memory pressure from creating new images
-- Realistic max ~15-30fps for small bubbles
 - Latency from capture → decode → render pipeline
+- Shader effects only work with Impeller
 
 ### Performance Tips
 - Keep bubble size small (64-80px)
 - Use lower target FPS (10-15) for many players
 - Dispose old frames promptly
-- Consider pooling/reusing image buffers
+- Shader complexity impacts GPU performance
 
 ---
 

@@ -56,3 +56,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+  shaders:
+    - shaders/video_bubble.frag
