@@ -24,6 +24,8 @@ jobs:
         run: flutter analyze --fatal-infos
       - name: Run tests with coverage
         run: flutter test --coverage
+      - name: Install lcov
+        run: sudo apt-get install -y lcov
       - name: Report coverage on PR
         uses: zgosalvez/github-actions-report-lcov@v4
         with:
