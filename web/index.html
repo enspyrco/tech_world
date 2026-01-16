@@ -1,7 +1,7 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-  <!--
+    <head>
+        <!--
     If you are serving your web app in a path other than the root, change the
     href value below to reflect the base path you are serving from.
 
@@ -14,25 +14,163 @@
     This is a placeholder for base href that will be replaced by the value of
     the `--base-href` argument provided to `flutter build`.
   -->
-  <base href="$FLUTTER_BASE_HREF">
+        <base href="$FLUTTER_BASE_HREF" />
 
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+        <meta charset="UTF-8" />
+        <meta content="IE=Edge" http-equiv="X-UA-Compatible" />
+        <meta
+            name="description"
+            content="Tech World - Multiplayer virtual world game"
+        />
 
-  <!-- iOS meta tags & icons -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="tech_world">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+        <!-- iOS meta tags & icons -->
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+        <meta name="apple-mobile-web-app-title" content="Tech World" />
+        <link rel="apple-touch-icon" href="icons/Icon-192.png" />
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+        <!-- Favicon -->
+        <link rel="icon" type="image/png" href="favicon.png" />
 
-  <title>Tech World</title>
-  <link rel="manifest" href="manifest.json">
-</head>
-<body>
-  <script src="flutter_bootstrap.js" async></script>
-</body>
+        <title>Tech World</title>
+        <link rel="manifest" href="manifest.json" />
+
+        <style>
+            body {
+                margin: 0;
+                background-color: #1a1a2e;
+            }
+            .loading-container {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                background-color: #1a1a2e;
+                z-index: 9999;
+                transition: opacity 0.3s ease-out;
+            }
+            .loading-container.hidden {
+                opacity: 0;
+                pointer-events: none;
+            }
+            .loading-logo {
+                font-size: 32px;
+                font-weight: bold;
+                color: #fff;
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                margin-bottom: 30px;
+            }
+            .progress-container {
+                width: 200px;
+                height: 4px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 2px;
+                overflow: hidden;
+            }
+            .progress-bar {
+                height: 100%;
+                background: #4ade80;
+                border-radius: 2px;
+                width: 0%;
+                transition: width 0.3s ease-out;
+            }
+            .progress-bar.indeterminate {
+                width: 30%;
+                animation: indeterminate 1.5s ease-in-out infinite;
+            }
+            .loading-text {
+                margin-top: 16px;
+                color: #888;
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                font-size: 13px;
+            }
+            @keyframes indeterminate {
+                0% {
+                    transform: translateX(-100%);
+                }
+                100% {
+                    transform: translateX(400%);
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div id="loading" class="loading-container">
+            <div class="loading-logo">Tech World</div>
+            <div class="progress-container">
+                <div id="progress-bar" class="progress-bar indeterminate"></div>
+            </div>
+            <div id="loading-text" class="loading-text">Loading...</div>
+        </div>
+
+        <script>
+            // Loading progress management
+            var progressBar = null;
+            var loadingText = null;
+
+            function setProgress(percent, text) {
+                if (!progressBar)
+                    progressBar = document.getElementById("progress-bar");
+                if (!loadingText)
+                    loadingText = document.getElementById("loading-text");
+
+                if (progressBar) {
+                    progressBar.classList.remove("indeterminate");
+                    progressBar.style.width = percent + "%";
+                }
+                if (loadingText && text) {
+                    loadingText.textContent = text;
+                }
+            }
+
+            function hideLoading() {
+                setProgress(100, "Ready!");
+                setTimeout(function () {
+                    var loading = document.getElementById("loading");
+                    if (loading) {
+                        loading.classList.add("hidden");
+                        setTimeout(function () {
+                            loading.remove();
+                        }, 300);
+                    }
+                }, 200);
+            }
+
+            // Track loading stages
+            setProgress(10, "Initializing...");
+
+            // Watch for Flutter initialization
+            window.addEventListener("load", function () {
+                setProgress(30, "Loading Flutter engine...");
+
+                var checkInterval = setInterval(function () {
+                    var glassPane = document.querySelector("flt-glass-pane");
+                    if (glassPane) {
+                        clearInterval(checkInterval);
+                        setProgress(80, "Starting game...");
+
+                        // Give app time to render first frame
+                        setTimeout(hideLoading, 500);
+                    }
+                }, 100);
+
+                // Fallback: hide loading after 10 seconds max
+                setTimeout(function () {
+                    clearInterval(checkInterval);
+                    hideLoading();
+                }, 10000);
+            });
+        </script>
+
+        <script src="flutter_bootstrap.js" async></script>
+    </body>
 </html>
