@@ -20,8 +20,9 @@ void main() async {
 
   final authService = AuthService();
   final networkingService = NetworkingService(
-    uriString:
-        kReleaseMode ? 'wss://adventures-in-tech.world' : 'ws://127.0.0.1:8080',
+    uriString: kReleaseMode
+        ? 'wss://adventures-in-tech.world'
+        : 'ws://192.168.1.108:8080',
     authUserStream: authService.authStateChanges,
   );
   final techWorld = TechWorld(
