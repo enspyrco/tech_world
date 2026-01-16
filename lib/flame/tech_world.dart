@@ -50,7 +50,10 @@ class TechWorld extends World with TapCallbacks {
   static const _botUserId = 'bot-claude';
   static const _botDisplayName = 'Claude';
   static const _proximityThreshold = 3; // grid squares
+  static final _botBubbleOffset =
+      Vector2(16, -20); // center horizontally, above sprite
   BotBubbleComponent? _botBubble;
+  Point<int>? _lastPlayerGridPosition; // track to skip unnecessary updates
 
   final Stream<NetworkUser> _userAddedStream;
   final Stream<NetworkUser> _userRemovedStream;
@@ -83,12 +86,19 @@ class TechWorld extends World with TapCallbacks {
       // Bot not in game, remove bubble if present
       _botBubble?.removeFromParent();
       _botBubble = null;
+      _lastPlayerGridPosition = null;
       return;
     }
 
+    // Skip update if player hasn't moved to a new grid position
+    final playerGrid = _userPlayerComponent.miniGridPosition;
+    if (_lastPlayerGridPosition == playerGrid && _botBubble != null) {
+      return;
+    }
+    _lastPlayerGridPosition = playerGrid;
+
     // Calculate Chebyshev distance (max of x/y difference)
     final botGrid = botComponent.miniGridPosition;
-    final playerGrid = _userPlayerComponent.miniGridPosition;
     final distance = max(
       (botGrid.x - playerGrid.x).abs(),
       (botGrid.y - playerGrid.y).abs(),
@@ -99,11 +109,11 @@ class TechWorld extends World with TapCallbacks {
     if (isNearby && _botBubble == null) {
       // Show bubble - position it above the bot
       _botBubble = BotBubbleComponent(name: _botDisplayName);
-      _botBubble!.position = botComponent.position + Vector2(16, -20);
+      _botBubble!.position = botComponent.position + _botBubbleOffset;
       add(_botBubble!);
     } else if (isNearby && _botBubble != null) {
       // Update bubble position to follow bot
-      _botBubble!.position = botComponent.position + Vector2(16, -20);
+      _botBubble!.position = botComponent.position + _botBubbleOffset;
     } else if (!isNearby && _botBubble != null) {
       // Hide bubble
       _botBubble!.removeFromParent();
