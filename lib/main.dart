@@ -1,10 +1,10 @@
 import 'package:flame/game.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/config/server_config.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/networking/networking_service.dart';
@@ -20,8 +20,7 @@ void main() async {
 
   final authService = AuthService();
   final networkingService = NetworkingService(
-    uriString:
-        kReleaseMode ? 'wss://adventures-in-tech.world' : 'ws://127.0.0.1:8080',
+    uriString: ServerConfig.gameServerUrl,
     authUserStream: authService.authStateChanges,
   );
   final techWorld = TechWorld(
@@ -29,10 +28,12 @@ void main() async {
       playerPaths: networkingService.playerPaths,
       userAdded: networkingService.userAdded,
       userRemoved: networkingService.userRemoved);
+  final techWorldGame = TechWorldGame(world: techWorld);
 
   Locator.add<AuthService>(authService);
   Locator.add<NetworkingService>(networkingService);
   Locator.add<TechWorld>(techWorld);
+  Locator.add<TechWorldGame>(techWorldGame);
 
   runApp(const MyApp());
 }
@@ -78,7 +79,7 @@ class MyApp extends StatelessWidget {
                       if (snapshot.hasData &&
                           snapshot.data! is! SignedOutUser) {
                         return GameWidget(
-                          game: TechWorldGame(world: locate<TechWorld>()),
+                          game: locate<TechWorldGame>(),
                         );
                       } else {
                         return const AuthGate();
