@@ -49,7 +49,7 @@ class TechWorld extends World with TapCallbacks {
   // Bot bubble component - shown when player is near the bot
   static const _botUserId = 'bot-claude';
   static const _botDisplayName = 'Claude';
-  static const _proximityThreshold = 3; // grid squares
+  static const _proximityThreshold = 2; // grid squares
   static final _botBubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
   BotBubbleComponent? _botBubble;
