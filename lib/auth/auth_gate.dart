@@ -1,5 +1,9 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
@@ -52,6 +56,8 @@ class _AuthGateState extends State<AuthGate> {
   AuthMode mode = AuthMode.login;
 
   bool isLoading = false;
+
+  bool get _isApplePlatform => !kIsWeb && (Platform.isIOS || Platform.isMacOS);
 
   void setIsLoading() {
     if (mounted) {
@@ -194,6 +200,39 @@ class _AuthGateState extends State<AuthGate> {
                               ],
                             ),
                           ),
+                          const SizedBox(height: 20),
+                          const Divider(),
+                          const SizedBox(height: 10),
+                          // Show Apple Sign In on Apple platforms
+                          if (_isApplePlatform)
+                            SizedBox(
+                              width: double.infinity,
+                              height: 50,
+                              child: SignInWithAppleButton(
+                                onPressed: _signInWithApple,
+                              ),
+                            ),
+                          // Show Google Sign In on all platforms
+                          if (_isApplePlatform) const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton.icon(
+                              onPressed: isLoading ? null : _signInWithGoogle,
+                              icon: Image.network(
+                                'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                                height: 24,
+                                width: 24,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(Icons.g_mobiledata),
+                              ),
+                              label: const Text('Sign in with Google'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: Colors.black87,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -280,6 +319,32 @@ class _AuthGateState extends State<AuthGate> {
         await locate<AuthService>().createUserWithEmailAndPassword(
             email: emailController.text, password: passwordController.text);
       }
+    }
+  }
+
+  Future<void> _signInWithApple() async {
+    setIsLoading();
+    try {
+      await locate<AuthService>().signInWithApple();
+    } catch (e) {
+      setState(() {
+        error = '$e';
+      });
+    } finally {
+      setIsLoading();
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setIsLoading();
+    try {
+      await locate<AuthService>().signInWithGoogle();
+    } catch (e) {
+      setState(() {
+        error = '$e';
+      });
+    } finally {
+      setIsLoading();
     }
   }
 }
