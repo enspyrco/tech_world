@@ -1,0 +1,21 @@
+flutter_native_splash:
+  # Tech World brand color
+  color: "#1a1a2e"
+
+  # Logo image
+  image: assets/icon/app_icon.png
+
+  # Branding mode positions the image at the bottom (like Android 12+)
+  # We want it centered
+  color_dark: "#1a1a2e"
+  image_dark: assets/icon/app_icon.png
+
+  # Android 12+ specific settings
+  android_12:
+    color: "#1a1a2e"
+    image: assets/icon/app_icon.png
+    color_dark: "#1a1a2e"
+    image_dark: assets/icon/app_icon.png
+
+  # Web is handled separately by index.html
+  web: false
