@@ -1,10 +1,10 @@
 import 'package:flame/game.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/config/server_config.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/networking/networking_service.dart';
@@ -20,9 +20,7 @@ void main() async {
 
   final authService = AuthService();
   final networkingService = NetworkingService(
-    uriString: kReleaseMode
-        ? 'wss://adventures-in-tech.world'
-        : 'ws://192.168.1.108:8080',
+    uriString: ServerConfig.gameServerUrl,
     authUserStream: authService.authStateChanges,
   );
   final techWorld = TechWorld(
