@@ -89,7 +89,6 @@ app.*.map.json
 **/macos/Flutter/ephemeral
 
 # Web
-lib/generated_plugin_registrant.dart
 
 # Firebase
 .firebase/

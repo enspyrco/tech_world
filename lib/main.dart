@@ -29,10 +29,12 @@ void main() async {
       playerPaths: networkingService.playerPaths,
       userAdded: networkingService.userAdded,
       userRemoved: networkingService.userRemoved);
+  final techWorldGame = TechWorldGame(world: techWorld);
 
   Locator.add<AuthService>(authService);
   Locator.add<NetworkingService>(networkingService);
   Locator.add<TechWorld>(techWorld);
+  Locator.add<TechWorldGame>(techWorldGame);
 
   runApp(const MyApp());
 }
@@ -78,7 +80,7 @@ class MyApp extends StatelessWidget {
                       if (snapshot.hasData &&
                           snapshot.data! is! SignedOutUser) {
                         return GameWidget(
-                          game: TechWorldGame(world: locate<TechWorld>()),
+                          game: locate<TechWorldGame>(),
                         );
                       } else {
                         return const AuthGate();

@@ -5,6 +5,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
+import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/grid_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
@@ -45,6 +46,12 @@ class TechWorld extends World with TapCallbacks {
   final BarriersComponent _barriersComponent = BarriersComponent();
   late PathComponent _pathComponent;
 
+  // Bot bubble component - shown when player is near the bot
+  static const _botUserId = 'bot-claude';
+  static const _botDisplayName = 'Claude';
+  static const _proximityThreshold = 3; // grid squares
+  BotBubbleComponent? _botBubble;
+
   final Stream<NetworkUser> _userAddedStream;
   final Stream<NetworkUser> _userRemovedStream;
   final Stream<PlayerPath> _playerPathsStream;
@@ -62,6 +69,46 @@ class TechWorld extends World with TapCallbacks {
     return _otherPlayerComponentsMap.map(
       (id, component) => MapEntry(id, component.miniGridPosition),
     );
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _updateBotBubbleVisibility();
+  }
+
+  void _updateBotBubbleVisibility() {
+    final botComponent = _otherPlayerComponentsMap[_botUserId];
+    if (botComponent == null) {
+      // Bot not in game, remove bubble if present
+      _botBubble?.removeFromParent();
+      _botBubble = null;
+      return;
+    }
+
+    // Calculate Chebyshev distance (max of x/y difference)
+    final botGrid = botComponent.miniGridPosition;
+    final playerGrid = _userPlayerComponent.miniGridPosition;
+    final distance = max(
+      (botGrid.x - playerGrid.x).abs(),
+      (botGrid.y - playerGrid.y).abs(),
+    );
+
+    final isNearby = distance <= _proximityThreshold;
+
+    if (isNearby && _botBubble == null) {
+      // Show bubble - position it above the bot
+      _botBubble = BotBubbleComponent(name: _botDisplayName);
+      _botBubble!.position = botComponent.position + Vector2(16, -20);
+      add(_botBubble!);
+    } else if (isNearby && _botBubble != null) {
+      // Update bubble position to follow bot
+      _botBubble!.position = botComponent.position + Vector2(16, -20);
+    } else if (!isNearby && _botBubble != null) {
+      // Hide bubble
+      _botBubble!.removeFromParent();
+      _botBubble = null;
+    }
   }
 
   @override
