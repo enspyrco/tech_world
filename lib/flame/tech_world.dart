@@ -52,6 +52,7 @@ class TechWorld extends World with TapCallbacks {
   // Bubble components - shown when player is near other players
   static const _botUserId = 'bot-claude';
   static const _botDisplayName = 'Claude';
+  static const _localPlayerBubbleKey = '_local_player_';
   static const _proximityThreshold = 3; // grid squares
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
@@ -123,6 +124,20 @@ class TechWorld extends World with TapCallbacks {
       }
     }
 
+    // Show local player's bubble if near anyone
+    if (nearbyPlayerIds.isNotEmpty) {
+      if (!_playerBubbles.containsKey(_localPlayerBubbleKey)) {
+        final localBubble = PlayerBubbleComponent(
+          displayName: _userPlayerComponent.displayName,
+          playerId: _userPlayerComponent.id,
+        );
+        localBubble.position = _userPlayerComponent.position + _bubbleOffset;
+        _playerBubbles[_localPlayerBubbleKey] = localBubble;
+        add(localBubble);
+      }
+      nearbyPlayerIds.add(_localPlayerBubbleKey);
+    }
+
     // Remove bubbles for players no longer nearby
     final toRemove = <String>[];
     for (final playerId in _playerBubbles.keys) {
@@ -140,9 +155,13 @@ class TechWorld extends World with TapCallbacks {
 
   void _updateBubblePositions() {
     for (final entry in _playerBubbles.entries) {
-      final playerComponent = _otherPlayerComponentsMap[entry.key];
-      if (playerComponent != null) {
-        entry.value.position = playerComponent.position + _bubbleOffset;
+      if (entry.key == _localPlayerBubbleKey) {
+        entry.value.position = _userPlayerComponent.position + _bubbleOffset;
+      } else {
+        final playerComponent = _otherPlayerComponentsMap[entry.key];
+        if (playerComponent != null) {
+          entry.value.position = playerComponent.position + _bubbleOffset;
+        }
       }
     }
   }
