@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flame/components.dart';
+import 'package:pathfinding/core/grid.dart' as pf;
 import 'package:tech_world/flame/shared/constants.dart';
 
 /// A [BarriersComponent] keeps a list of points that the player cannot walk
@@ -52,8 +53,24 @@ class BarriersComponent extends PositionComponent with HasWorldReference {
     Point(17, 7),
   ];
 
-  /// Returns barriers as tuples for a_star_algorithm compatibility
+  /// Returns barriers as tuples for compatibility
   List<(int, int)> get tuples => _points.map((p) => (p.x, p.y)).toList();
+
+  /// Creates a pathfinding Grid with barriers marked as unwalkable.
+  /// Note: Grid must be cloned before each pathfinding call.
+  pf.Grid createGrid() {
+    // Create matrix: 0 = walkable, 1 = obstacle
+    final matrix = List.generate(
+      gridSize,
+      (_) => List.filled(gridSize, 0),
+    );
+
+    for (final point in _points) {
+      matrix[point.y][point.x] = 1;
+    }
+
+    return pf.Grid(gridSize, gridSize, matrix);
+  }
 
   /// Add [RectangleComponent]s to draw each barrier in the large grid that is
   /// in canvas space.
