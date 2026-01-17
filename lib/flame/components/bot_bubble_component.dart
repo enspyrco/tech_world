@@ -1,11 +1,13 @@
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
+import 'package:tech_world/flame/shared/tech_world_config.dart';
 
 /// A Flame component that renders a circular bubble with an initial above a player.
 /// This is rendered in the game world so it moves correctly with the camera.
 class BotBubbleComponent extends PositionComponent {
   BotBubbleComponent({
     required this.name,
+    required this.target,
     this.bubbleSize = 80,
   }) : super(
           size: Vector2.all(bubbleSize),
@@ -14,6 +16,15 @@ class BotBubbleComponent extends PositionComponent {
 
   final String name;
   final double bubbleSize;
+
+  /// The component this bubble follows.
+  final PositionComponent target;
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    position = target.position + TechWorldConfig.bubbleOffset;
+  }
 
   @override
   void render(Canvas canvas) {
