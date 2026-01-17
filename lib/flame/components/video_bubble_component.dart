@@ -1,5 +1,5 @@
 import 'dart:async' show Completer;
-import 'dart:async' as async show Timer;
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -7,32 +7,27 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 
+import '../../native/video_frame_ffi.dart' as ffi;
+
 /// A Flame component that renders a circular video bubble with a player's video feed.
 ///
-/// This component captures frames from a WebRTC video track and renders them
-/// as a circular clipped image in the game world, with optional shader effects.
+/// This component captures frames from a WebRTC video track using FFI
+/// (zero-copy shared memory) and renders them as a circular clipped image
+/// in the game world, with optional shader effects.
 ///
 /// ## Implementation
 ///
-/// Uses frame capture approach for full Flame integration:
-/// - Captures RGBA frames from MediaStreamTrack.captureFrame()
-/// - Converts to dart:ui.Image for rendering
+/// Uses VideoFrameCapture FFI for direct frame access (no disk I/O):
+/// - Native code registers as RTCVideoRenderer on the video track
+/// - Frames are written to shared memory buffer
+/// - Dart reads pixels directly via FFI pointer
+/// - Converts BGRA to RGBA and creates dart:ui.Image
 /// - Can apply custom fragment shaders via ImageFilter.shader (Impeller)
-/// - Supports physics, particles, occlusion - full game object
 ///
-/// ## Shader Effects
+/// ## Platform Support
 ///
-/// With Impeller (now default), custom fragment shaders can be applied:
-/// - Glow effects when speaking
-/// - Color grading / tinting
-/// - Distortion effects
-/// - Any GPU-accelerated pixel manipulation
-///
-/// Load a shader and pass it to enable effects:
-/// ```dart
-/// final program = await FragmentProgram.fromAsset('shaders/video_bubble.frag');
-/// videoBubble.setShader(program.fragmentShader());
-/// ```
+/// Currently only macOS is supported. Other platforms fall back to
+/// displaying a placeholder with the user's initial.
 class VideoBubbleComponent extends PositionComponent {
   VideoBubbleComponent({
     required this.participant,
@@ -50,8 +45,9 @@ class VideoBubbleComponent extends PositionComponent {
   final int targetFps;
 
   ui.Image? _currentFrame;
-  async.Timer? _captureTimer;
-  bool _isCapturing = false;
+  VideoTrack? _videoTrack;
+  ffi.VideoFrameCapture? _capture;
+  bool _captureInitialized = false;
 
   // Shader support
   ui.FragmentShader? _shader;
@@ -63,12 +59,16 @@ class VideoBubbleComponent extends PositionComponent {
   // Track stats for debugging
   int _framesCaptured = 0;
   int _framesDropped = 0;
+  DateTime? _lastFrameTime;
+  final Duration _minFrameInterval = const Duration(milliseconds: 50);
+
+  // Retry tracking for FFI capture initialization
+  int _captureRetryCount = 0;
+  static const int _maxCaptureRetries = 10;
+  double _timeSinceLastRetry = 0;
+  static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
 
   /// Set a custom fragment shader for effects.
-  ///
-  /// The shader should follow ImageFilter.shader requirements:
-  /// - First uniform: vec2 u_size
-  /// - At least one sampler2D uniform
   void setShader(ui.FragmentShader shader) {
     _shader = shader;
   }
@@ -85,12 +85,12 @@ class VideoBubbleComponent extends PositionComponent {
   @override
   Future<void> onLoad() async {
     super.onLoad();
-    _startFrameCapture();
+    _initializeCapture();
   }
 
   @override
   void onRemove() {
-    _stopFrameCapture();
+    _disposeCapture();
     _currentFrame?.dispose();
     _currentFrame = null;
     super.onRemove();
@@ -100,57 +100,154 @@ class VideoBubbleComponent extends PositionComponent {
   void update(double dt) {
     super.update(dt);
     _time += dt;
+
+    // Try to initialize capture if not yet done (with retry backoff)
+    if (!_captureInitialized && _captureRetryCount < _maxCaptureRetries) {
+      _timeSinceLastRetry += dt;
+      if (_timeSinceLastRetry >= _retryIntervalSeconds) {
+        _timeSinceLastRetry = 0;
+        _initializeCapture();
+      }
+    }
+
+    // Check for new frames
+    _checkForNewFrame();
   }
 
-  void _startFrameCapture() {
-    final interval = Duration(milliseconds: 1000 ~/ targetFps);
-    _captureTimer = async.Timer.periodic(interval, (_) => _captureFrame());
-  }
+  void _initializeCapture() {
+    if (_captureInitialized) return;
 
-  void _stopFrameCapture() {
-    _captureTimer?.cancel();
-    _captureTimer = null;
-  }
+    _captureRetryCount++;
 
-  Future<void> _captureFrame() async {
-    if (_isCapturing) {
-      _framesDropped++;
+    // Only macOS is supported for now
+    if (!Platform.isMacOS) {
+      _captureInitialized = true;
+      debugPrint('VideoBubbleComponent: FFI capture only supported on macOS');
       return;
     }
 
-    final videoTrack = _getVideoTrack();
-    if (videoTrack == null) return;
+    final track = _getVideoTrack();
+    if (track == null) {
+      if (_captureRetryCount >= _maxCaptureRetries) {
+        debugPrint(
+            'VideoBubbleComponent: No video track after $_captureRetryCount retries');
+      }
+      return;
+    }
 
-    _isCapturing = true;
+    if (_videoTrack == track && _capture != null) {
+      return; // Already attached
+    }
+
+    _disposeCapture();
+    _videoTrack = track;
+
+    // Get the WebRTC track ID (not the LiveKit sid)
+    final trackId = track.mediaStreamTrack.id;
+    if (trackId == null || trackId.isEmpty) {
+      debugPrint(
+          'VideoBubbleComponent: Track has no mediaStreamTrack.id, cannot capture');
+      return;
+    }
+
+    debugPrint(
+        'VideoBubbleComponent: Creating FFI capture for track $trackId (sid: ${track.sid}), attempt $_captureRetryCount');
+
+    // List available tracks for debugging (before attempting create)
+    final availableTracks = ffi.VideoFrameCapture.listTracks();
+    debugPrint(
+        'VideoBubbleComponent: Available native tracks: $availableTracks');
+
+    _capture = ffi.VideoFrameCapture.create(
+      trackId,
+      targetFps: targetFps,
+      maxWidth: 640,
+      maxHeight: 480,
+    );
+
+    if (_capture != null) {
+      debugPrint('VideoBubbleComponent: FFI capture created successfully');
+      _captureInitialized = true;
+    } else {
+      debugPrint(
+          'VideoBubbleComponent: Failed to create FFI capture, will retry');
+    }
+  }
+
+  void _disposeCapture() {
+    _capture?.dispose();
+    _capture = null;
+    _videoTrack = null;
+    _captureInitialized = false;
+  }
+
+  void _checkForNewFrame() {
+    if (_capture == null) return;
+
+    // Check if a new frame is available
+    if (!_capture!.hasNewFrame) return;
+
+    // Throttle frame processing
+    final now = DateTime.now();
+    if (_lastFrameTime != null &&
+        now.difference(_lastFrameTime!) < _minFrameInterval) {
+      _framesDropped++;
+      return;
+    }
+    _lastFrameTime = now;
+
+    // Process the frame
+    _processFrame();
+  }
+
+  Future<void> _processFrame() async {
+    if (_capture == null) return;
 
     try {
-      // Get the underlying MediaStreamTrack from the LiveKit track
-      final mediaStreamTrack = videoTrack.mediaStreamTrack;
+      final width = _capture!.width;
+      final height = _capture!.height;
 
-      // Capture frame as RGBA bytes
-      final buffer = await mediaStreamTrack.captureFrame();
-      final bytes = buffer.asUint8List();
+      if (width == 0 || height == 0) {
+        _framesDropped++;
+        return;
+      }
 
-      // We need to know the dimensions - get from track settings
-      // The frame is RGBA, so we need width/height to decode
-      final settings = mediaStreamTrack.getSettings();
-      final width = settings['width'] as int? ?? 640;
-      final height = settings['height'] as int? ?? 480;
+      // Get the BGRA pixel data directly via FFI (zero-copy)
+      final bgraBytes = _capture!.getPixels();
+      if (bgraBytes == null) {
+        _framesDropped++;
+        return;
+      }
 
-      // Decode RGBA bytes to ui.Image
-      final image = await _decodeRgbaImage(bytes, width, height);
+      // Mark the frame as consumed so native can write the next one
+      _capture!.markConsumed();
+
+      // Convert BGRA to RGBA for ui.Image
+      final rgbaBytes = _bgraToRgba(bgraBytes);
+
+      // Decode to ui.Image
+      final image = await _decodeRgbaImage(rgbaBytes, width, height);
 
       // Dispose old frame and set new one
       _currentFrame?.dispose();
       _currentFrame = image;
       _framesCaptured++;
     } catch (e) {
-      // Frame capture can fail if track is not ready or disposed
-      debugPrint('VideoBubbleComponent: Frame capture failed: $e');
+      debugPrint('VideoBubbleComponent: Frame processing failed: $e');
       _framesDropped++;
-    } finally {
-      _isCapturing = false;
     }
+  }
+
+  /// Convert BGRA byte array to RGBA
+  Uint8List _bgraToRgba(Uint8List bgra) {
+    final rgba = Uint8List(bgra.length);
+    for (var i = 0; i < bgra.length; i += 4) {
+      rgba[i] = bgra[i + 2]; // R from B position in BGRA
+      rgba[i + 1] = bgra[i + 1]; // G stays same
+      rgba[i + 2] = bgra[i]; // B from R position in BGRA
+      rgba[i + 3] = bgra[i + 3]; // A stays same
+    }
+    return rgba;
   }
 
   VideoTrack? _getVideoTrack() {
@@ -168,9 +265,7 @@ class VideoBubbleComponent extends PositionComponent {
       Uint8List bytes, int width, int height) async {
     final completer = Completer<ui.Image>();
 
-    // Create an immutable buffer from the RGBA data
     ui.ImmutableBuffer.fromUint8List(bytes).then((buffer) {
-      // Decode as raw RGBA pixels
       final descriptor = ui.ImageDescriptor.raw(
         buffer,
         width: width,
@@ -193,23 +288,13 @@ class VideoBubbleComponent extends PositionComponent {
   void _updateShaderUniforms() {
     if (_shader == null) return;
 
-    // Update shader uniforms
-    // Index 0-1: u_size (vec2) - required by ImageFilter.shader
     _shader!.setFloat(0, bubbleSize);
     _shader!.setFloat(1, bubbleSize);
-
-    // Index 2: u_time
     _shader!.setFloat(2, _time);
-
-    // Index 3: u_glow_intensity
     _shader!.setFloat(3, _glowIntensity);
-
-    // Index 4-6: u_glow_color (vec3)
     _shader!.setFloat(4, _glowColor.r);
     _shader!.setFloat(5, _glowColor.g);
     _shader!.setFloat(6, _glowColor.b);
-
-    // Index 7: u_speaking
     _shader!.setFloat(7, _speakingLevel);
   }
 
@@ -225,30 +310,23 @@ class VideoBubbleComponent extends PositionComponent {
     canvas.drawCircle(center + const Offset(0, 2), radius, shadowPaint);
 
     if (_currentFrame != null) {
-      // Update shader uniforms if shader is set
       _updateShaderUniforms();
 
-      // Create paint with optional shader filter
       final paint = Paint();
-
-      // Apply shader via ImageFilter if available and supported
       if (_shader != null && ui.ImageFilter.isShaderFilterSupported) {
         paint.imageFilter = ui.ImageFilter.shader(_shader!);
       }
 
-      // Use saveLayer to apply the shader to the entire video rendering
       canvas.saveLayer(
-        Rect.fromCircle(center: center, radius: radius + 10), // Extra for glow
+        Rect.fromCircle(center: center, radius: radius + 10),
         paint,
       );
 
-      // Clip to circle for video
       canvas.save();
       final clipPath = Path()
         ..addOval(Rect.fromCircle(center: center, radius: radius));
       canvas.clipPath(clipPath);
 
-      // Draw the video frame, scaled to fit the bubble
       final srcRect = Rect.fromLTWH(
         0,
         0,
@@ -256,15 +334,12 @@ class VideoBubbleComponent extends PositionComponent {
         _currentFrame!.height.toDouble(),
       );
 
-      // Calculate destination rect to cover the circle (center crop)
       final aspectRatio = _currentFrame!.width / _currentFrame!.height;
       double dstWidth, dstHeight;
       if (aspectRatio > 1) {
-        // Wider than tall - fit height, crop width
         dstHeight = bubbleSize;
         dstWidth = bubbleSize * aspectRatio;
       } else {
-        // Taller than wide - fit width, crop height
         dstWidth = bubbleSize;
         dstHeight = bubbleSize / aspectRatio;
       }
@@ -277,10 +352,10 @@ class VideoBubbleComponent extends PositionComponent {
 
       canvas.drawImageRect(_currentFrame!, srcRect, dstRect, Paint());
 
-      canvas.restore(); // Restore from clip
-      canvas.restore(); // Restore from saveLayer (applies shader)
+      canvas.restore();
+      canvas.restore();
     } else {
-      // Fallback: draw colored background with initial (like PlayerBubbleComponent)
+      // Fallback: draw colored background with initial
       canvas.save();
       final clipPath = Path()
         ..addOval(Rect.fromCircle(center: center, radius: radius));
@@ -289,7 +364,6 @@ class VideoBubbleComponent extends PositionComponent {
       final bgPaint = Paint()..color = Colors.grey[800]!;
       canvas.drawCircle(center, radius, bgPaint);
 
-      // Draw initial
       final textPainter = TextPainter(
         text: TextSpan(
           text: _getInitial(),
@@ -313,7 +387,6 @@ class VideoBubbleComponent extends PositionComponent {
       canvas.restore();
     }
 
-    // Draw border (outside the clip) - only if no shader (shader handles its own border/glow)
     if (_shader == null || !ui.ImageFilter.isShaderFilterSupported) {
       final borderPaint = Paint()
         ..color = _currentFrame != null ? Colors.green : Colors.white
@@ -335,6 +408,7 @@ class VideoBubbleComponent extends PositionComponent {
         'framesCaptured': _framesCaptured,
         'framesDropped': _framesDropped,
         'hasCurrentFrame': _currentFrame != null,
+        'captureActive': _capture?.isActive ?? false,
         'targetFps': targetFps,
         'shaderEnabled':
             _shader != null && ui.ImageFilter.isShaderFilterSupported,

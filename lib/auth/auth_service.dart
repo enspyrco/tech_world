@@ -148,22 +148,23 @@ class AuthService {
   }
 
   /// Sign in with Google - works on Android, iOS, macOS, and Web.
+  /// Uses google_sign_in 7.x API with singleton pattern.
   Future<void> signInWithGoogle() async {
+    final signIn = GoogleSignIn.instance;
+
+    // Initialize if not already done (safe to call multiple times)
+    await signIn.initialize();
+
     // Trigger the authentication flow
-    final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+    // In google_sign_in 7.x, cancellation throws GoogleSignInCanceledException
+    final googleUser = await signIn.authenticate();
 
-    if (googleUser == null) {
-      // User cancelled the sign-in
-      return;
-    }
+    // Get the ID token from authentication (access token is now separate)
+    final googleAuth = googleUser.authentication;
 
-    // Obtain the auth details from the request
-    final GoogleSignInAuthentication googleAuth =
-        await googleUser.authentication;
-
-    // Create a new credential
+    // Create a new credential using ID token
+    // Note: accessToken is optional for Firebase Auth
     final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
       idToken: googleAuth.idToken,
     );
 

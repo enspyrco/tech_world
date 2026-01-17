@@ -1,16 +1,15 @@
-/// Current Limitations
-///
-/// - Only one object of a certain type can be added/located
-/// - The Locator is a currently singleton, but the object it creates allows
-///   the service locator pattern.
-library locator;
+// Current Limitations
+//
+// - Only one object of a certain type can be added/located
+// - The Locator is a currently singleton, but the object it creates allows
+//   the service locator pattern.
+//
+// add a service:
+//   Locator.add<ServiceType>(Service());
+// locate a service:
+//   var service = locate<ServiceType>();
 
-/// add a service:
-///   `Locator.add<ServiceType>(Service());`
-/// locate a service:
-///   `var service = locate<ServiceType>();`
-
-/// A global variable for more readable calls eg. locate<Type>();
+/// A global variable for more readable calls eg. `locate<Type>()`
 final locate = Locator.instance;
 
 /// The singleton Locator class

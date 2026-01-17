@@ -13,19 +13,20 @@ dependencies:
   flutter_webrtc: ^1.2.0 # Required for controls.dart
   shared_preferences: ^2.2.3 # currently used by livekit code
   flame: ^1.18.0
-  a_star_algorithm: ^0.3.2
+  a_star_algorithm: ^0.4.1
   firebase_core: ^4.1.1
   cloud_firestore: ^6.0.2
   firebase_auth: ^6.1.0
-  sign_in_with_apple: ^6.1.4
+  sign_in_with_apple: ^7.0.1
   crypto: ^3.0.6
-  google_sign_in: ^6.2.2
+  google_sign_in: ^7.2.0
   cloud_functions: ^6.0.2
   tech_world_networking_types:
     # path: ../../dart/interfaces/tech_world_networking_types
     git: https://github.com/enspyrco/tech_world_networking_types
   web_socket_channel: ^3.0.0 # used by networking service
   collection: ^1.19.1
+  ffi: ^2.1.5
 
 dev_dependencies:
   flutter_test:
@@ -33,7 +34,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
 
-  flutter_lints: ^4.0.0
+  flutter_lints: ^6.0.0
   stream_channel: ^2.1.2 # for mocking the web_socket_channel connected to the server
   flutter_launcher_icons: ^0.14.4
   fake_cloud_firestore: ^4.0.1

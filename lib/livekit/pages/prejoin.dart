@@ -52,7 +52,8 @@ class _PreJoinPageState extends State<PreJoinPage> {
 
   MediaDevice? _selectedVideoDevice;
   MediaDevice? _selectedAudioDevice;
-  final VideoParameters _selectedVideoParameters = VideoParametersPresets.h720_169;
+  final VideoParameters _selectedVideoParameters =
+      VideoParametersPresets.h720_169;
 
   @override
   void initState() {
@@ -94,7 +95,7 @@ class _PreJoinPageState extends State<PreJoinPage> {
     setState(() {});
   }
 
-  Future<void> _setEnableVideo(value) async {
+  Future<void> _setEnableVideo(bool value) async {
     _enableVideo = value;
     if (!_enableVideo) {
       await _videoTrack?.stop();
@@ -105,7 +106,7 @@ class _PreJoinPageState extends State<PreJoinPage> {
     setState(() {});
   }
 
-  Future<void> _setEnableAudio(value) async {
+  Future<void> _setEnableAudio(bool value) async {
     _enableAudio = value;
     if (!_enableAudio) {
       await _audioTrack?.stop();
@@ -152,7 +153,7 @@ class _PreJoinPageState extends State<PreJoinPage> {
     super.dispose();
   }
 
-  _join(BuildContext context) async {
+  Future<void> _join(BuildContext context) async {
     _busy = true;
 
     setState(() {});
