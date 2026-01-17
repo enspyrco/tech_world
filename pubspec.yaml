@@ -4,7 +4,7 @@ publish_to: "none"
 version: 0.0.0+1
 
 environment:
-  sdk: ^3.0.0
+  sdk: ^3.6.0
 
 dependencies:
   flutter:
@@ -27,6 +27,7 @@ dependencies:
   web_socket_channel: ^3.0.0 # used by networking service
   collection: ^1.19.1
   ffi: ^2.1.5
+  web: ^1.1.0 # For web video capture APIs
 
 dev_dependencies:
   flutter_test:

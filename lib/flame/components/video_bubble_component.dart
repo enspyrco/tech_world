@@ -5,31 +5,36 @@ import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
+    show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 
 import '../../native/video_frame_capture.dart' as ffi;
+import '../../native/web_video_capture.dart' as web_capture;
 
 /// A Flame component that renders a circular video bubble with a player's video feed.
 ///
-/// This component captures frames from a WebRTC video track using FFI
-/// (zero-copy shared memory) and renders them as a circular clipped image
-/// in the game world, with optional shader effects.
+/// This component captures frames from a WebRTC video track and renders them
+/// as a circular clipped image in the game world, with optional shader effects.
 ///
-/// ## Implementation
+/// ## Platform Implementation
 ///
+/// ### macOS (FFI)
 /// Uses VideoFrameCapture FFI for direct frame access (no disk I/O):
 /// - Native code registers as RTCVideoRenderer on the video track
 /// - Frames are written to shared memory buffer
 /// - Dart reads pixels directly via FFI pointer
 /// - Converts BGRA to RGBA and creates dart:ui.Image
-/// - Can apply custom fragment shaders via ImageFilter.shader (Impeller)
 ///
-/// ## Platform Support
+/// ### Web
+/// Uses createImageBitmap + createImageFromImageBitmap for GPU-efficient capture:
+/// - Finds the HTMLVideoElement created by flutter_webrtc
+/// - Uses requestVideoFrameCallback for frame-accurate capture
+/// - createImageBitmap provides GPU-to-GPU transfer
+/// - createImageFromImageBitmap converts to Flutter ui.Image
 ///
-/// Currently only macOS is supported. Other platforms fall back to
-/// displaying a placeholder with the user's initial.
+/// ### Other platforms
+/// Falls back to displaying a placeholder with the user's initial.
 class VideoBubbleComponent extends PositionComponent {
   VideoBubbleComponent({
     required this.participant,
@@ -48,7 +53,13 @@ class VideoBubbleComponent extends PositionComponent {
 
   ui.Image? _currentFrame;
   VideoTrack? _videoTrack;
+
+  // Native FFI capture (macOS)
   ffi.VideoFrameCapture? _capture;
+
+  // Web capture
+  dynamic _webCapture; // WebVideoFrameCapture on web, null otherwise
+
   bool _captureInitialized = false;
 
   // Shader support
@@ -64,7 +75,7 @@ class VideoBubbleComponent extends PositionComponent {
   DateTime? _lastFrameTime;
   final Duration _minFrameInterval = const Duration(milliseconds: 50);
 
-  // Retry tracking for FFI capture initialization
+  // Retry tracking for capture initialization
   int _captureRetryCount = 0;
   static const int _maxCaptureRetries = 10;
   double _timeSinceLastRetry = 0;
@@ -140,16 +151,78 @@ class VideoBubbleComponent extends PositionComponent {
 
     _captureRetryCount++;
 
-    // FFI capture only supported on macOS (not web or other platforms)
-    if (kIsWeb || !_isMacOS) {
+    if (kIsWeb) {
+      _initializeWebCapture();
+    } else if (_isMacOS) {
+      _initializeNativeCapture();
+    } else {
+      // Unsupported platform
       _captureInitialized = true;
-      return;
     }
+  }
+
+  bool _webCaptureInitializing = false;
+
+  void _initializeWebCapture() {
+    // Prevent concurrent initialization attempts
+    if (_webCaptureInitializing) return;
 
     final track = _getVideoTrack();
     if (track == null) {
+      debugPrint('WebCapture: No video track found for $displayName');
       return;
     }
+
+    // Get the underlying MediaStreamTrack
+    final mediaStreamTrack = track.mediaStreamTrack;
+    debugPrint('WebCapture: Got MediaStreamTrack for $displayName');
+
+    // Mark as initializing and start async process
+    _webCaptureInitializing = true;
+    _initializeWebCaptureAsync(track, mediaStreamTrack);
+  }
+
+  Future<void> _initializeWebCaptureAsync(
+      VideoTrack track, dynamic mediaStreamTrack) async {
+    try {
+      // On web, mediaStreamTrack is MediaStreamTrackWeb which has jsTrack
+      // We need to access the underlying web.MediaStreamTrack
+      dynamic jsTrack;
+      try {
+        // Use dynamic to access jsTrack property (only exists on web)
+        jsTrack = (mediaStreamTrack as dynamic).jsTrack;
+        debugPrint('WebCapture: Got jsTrack for $displayName');
+      } catch (e) {
+        debugPrint('WebCapture: Could not get jsTrack: $e');
+        _webCaptureInitializing = false;
+        return;
+      }
+
+      // Create capture from the JS track
+      final capture = await web_capture.WebVideoFrameCapture.createFromTrack(
+        jsTrack,
+      );
+
+      if (capture == null) {
+        debugPrint('WebCapture: Failed to create capture for $displayName');
+        _webCaptureInitializing = false;
+        return;
+      }
+
+      debugPrint('WebCapture: Capture initialized for $displayName');
+      _webCapture = capture;
+      _videoTrack = track;
+      capture.startCapture();
+      _captureInitialized = true;
+    } catch (e) {
+      debugPrint('WebCapture: Error initializing capture: $e');
+      _webCaptureInitializing = false;
+    }
+  }
+
+  void _initializeNativeCapture() {
+    final track = _getVideoTrack();
+    if (track == null) return;
 
     if (_videoTrack == track && _capture != null) {
       return; // Already attached
@@ -160,9 +233,7 @@ class VideoBubbleComponent extends PositionComponent {
 
     // Get the WebRTC track ID (not the LiveKit sid)
     final trackId = track.mediaStreamTrack.id;
-    if (trackId == null || trackId.isEmpty) {
-      return;
-    }
+    if (trackId == null || trackId.isEmpty) return;
 
     _capture = ffi.VideoFrameCapture.create(
       trackId,
@@ -177,13 +248,63 @@ class VideoBubbleComponent extends PositionComponent {
   }
 
   void _disposeCapture() {
+    // Dispose native capture
     _capture?.dispose();
     _capture = null;
+
+    // Dispose web capture
+    if (_webCapture != null) {
+      (_webCapture as web_capture.WebVideoFrameCapture).dispose();
+      _webCapture = null;
+    }
+
     _videoTrack = null;
     _captureInitialized = false;
   }
 
   void _checkForNewFrame() {
+    if (kIsWeb) {
+      _checkForNewWebFrame();
+    } else {
+      _checkForNewNativeFrame();
+    }
+  }
+
+  void _checkForNewWebFrame() {
+    if (_webCapture == null) return;
+
+    final capture = _webCapture as web_capture.WebVideoFrameCapture;
+    if (!capture.hasNewFrame) return;
+
+    // Throttle frame processing
+    final now = DateTime.now();
+    if (_lastFrameTime != null &&
+        now.difference(_lastFrameTime!) < _minFrameInterval) {
+      _framesDropped++;
+      return;
+    }
+    _lastFrameTime = now;
+
+    // Get the frame directly (already a ui.Image)
+    final newFrame = capture.consumeFrame();
+    if (newFrame == null) {
+      _framesDropped++;
+      return;
+    }
+
+    // Swap frames
+    final oldFrame = _currentFrame;
+    _currentFrame = newFrame;
+    _framesCaptured++;
+    oldFrame?.dispose();
+
+    // First frame received - no longer loading
+    if (_isLoading) {
+      _isLoading = false;
+    }
+  }
+
+  void _checkForNewNativeFrame() {
     if (_capture == null) return;
 
     // Check if a new frame is available
@@ -199,10 +320,10 @@ class VideoBubbleComponent extends PositionComponent {
     _lastFrameTime = now;
 
     // Process the frame
-    _processFrame();
+    _processNativeFrame();
   }
 
-  Future<void> _processFrame() async {
+  Future<void> _processNativeFrame() async {
     if (_capture == null) return;
 
     try {
@@ -447,9 +568,13 @@ class VideoBubbleComponent extends PositionComponent {
         'framesCaptured': _framesCaptured,
         'framesDropped': _framesDropped,
         'hasCurrentFrame': _currentFrame != null,
-        'captureActive': _capture?.isActive ?? false,
+        'captureActive': kIsWeb
+            ? (_webCapture as web_capture.WebVideoFrameCapture?)?.isActive ??
+                false
+            : _capture?.isActive ?? false,
         'targetFps': targetFps,
         'shaderEnabled':
             _shader != null && ui.ImageFilter.isShaderFilterSupported,
+        'platform': kIsWeb ? 'web' : (_isMacOS ? 'macOS' : 'other'),
       };
 }
