@@ -140,14 +140,17 @@ class _MyAppState extends State<MyApp> {
                   child: StreamBuilder<AuthUser>(
                     stream: locate<AuthService>().authStateChanges,
                     builder: (context, snapshot) {
-                      if (snapshot.hasData &&
-                          snapshot.data! is! SignedOutUser) {
+                      if (!snapshot.hasData) {
+                        return const LoadingScreen(
+                          message: 'Checking authentication...',
+                        );
+                      }
+                      if (snapshot.data! is! SignedOutUser) {
                         return GameWidget(
                           game: locate<TechWorldGame>(),
                         );
-                      } else {
-                        return const AuthGate();
                       }
+                      return const AuthGate();
                     },
                   ),
                 ),
