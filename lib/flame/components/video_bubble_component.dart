@@ -1,13 +1,14 @@
 import 'dart:async' show Completer;
-import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 
-import '../../native/video_frame_ffi.dart' as ffi;
+import '../../native/video_frame_capture.dart' as ffi;
 
 /// A Flame component that renders a circular video bubble with a player's video feed.
 ///
@@ -68,6 +69,10 @@ class VideoBubbleComponent extends PositionComponent {
   double _timeSinceLastRetry = 0;
   static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
 
+  // Platform check that works on web (where dart:io is not available)
+  static bool get _isMacOS =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+
   /// Set a custom fragment shader for effects.
   void setShader(ui.FragmentShader shader) {
     _shader = shader;
@@ -119,8 +124,8 @@ class VideoBubbleComponent extends PositionComponent {
 
     _captureRetryCount++;
 
-    // Only macOS is supported for now
-    if (!Platform.isMacOS) {
+    // FFI capture only supported on macOS (not web or other platforms)
+    if (kIsWeb || !_isMacOS) {
       _captureInitialized = true;
       debugPrint('VideoBubbleComponent: FFI capture only supported on macOS');
       return;
