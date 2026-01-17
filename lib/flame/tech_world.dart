@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:async' show StreamSubscription, unawaited;
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -80,6 +80,7 @@ class TechWorld extends World with TapCallbacks {
   @override
   void update(double dt) {
     super.update(dt);
+
     _bubbleManager.update(
       localPlayerPosition: _userPlayerComponent.miniGridPosition,
       localPlayerDisplayName: _userPlayerComponent.displayName,
@@ -145,12 +146,10 @@ class TechWorld extends World with TapCallbacks {
     if (connected) {
       debugPrint('LiveKit connected successfully');
 
-      // Enable camera and microphone
-      await _liveKitService!.setCameraEnabled(true);
-      await _liveKitService!.setMicrophoneEnabled(true);
-
-      // Refresh local player bubble now that camera is enabled
-      _refreshBubble(TechWorldConfig.localPlayerBubbleKey, isLocal: true);
+      // Enable camera and microphone in the background (don't block game loop)
+      // The localTrackPublished stream will notify us when tracks are ready
+      unawaited(_liveKitService!.setCameraEnabled(true));
+      unawaited(_liveKitService!.setMicrophoneEnabled(true));
     } else {
       debugPrint('LiveKit connection failed');
     }
@@ -217,6 +216,7 @@ class TechWorld extends World with TapCallbacks {
   @override
   void onTapDown(TapDownEvent event) {
     super.onTapDown(event);
+
     final worldPosition = event.localPosition;
     int miniGridX = (worldPosition.x / gridSquareSize).floor();
     int miniGridY = (worldPosition.y / gridSquareSize).floor();
