@@ -50,7 +50,7 @@ class NetworkingService {
   Stream<NetworkUser> get userRemoved => _userRemovedController.stream;
   Stream<PlayerPath> get playerPaths => _playerPathController.stream;
 
-  publishPath({
+  void publishPath({
     required String uid,
     required List<Double2> points,
     required List<Direction> directions,

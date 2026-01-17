@@ -8,6 +8,7 @@ An educational multiplayer 2D virtual world game where players solve coding chal
 - A* pathfinding for player navigation
 - Firebase Authentication for user management
 - LiveKit integration for proximity-based video chat
+- **In-game video bubbles** - Render video feeds directly in the Flame game world using zero-copy FFI frame capture (macOS)
 - Cross-platform support (macOS, web, etc.)
 
 ## Prerequisites
@@ -57,6 +58,7 @@ flutter test test/networking_service_test.dart  # Run specific test
   - `PathComponent`: A* pathfinding calculations
 - **networking/**: WebSocket connection management (`NetworkingService`)
 - **livekit/**: Video chat integration for proximity-based calls
+- **native/**: FFI bindings for native video frame capture
 - **utils/locator.dart**: Simple service locator pattern
 
 ## Dependencies

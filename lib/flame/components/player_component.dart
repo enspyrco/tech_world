@@ -43,7 +43,6 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
 
   @override
   FutureOr<void> onLoad() {
-    current = Direction.down;
     anchor = Anchor.centerLeft;
 
     final upAnimation = SpriteAnimation.fromFrameData(
@@ -95,12 +94,19 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
       Direction.left: leftAnimation,
       Direction.right: rightAnimation,
     };
+    current = Direction.down; // Set after animations is initialized
     return super.onLoad();
   }
 
   // We round the player position before calculating the miniGrid position,
   // as position values are doubles and do not necessarily hold exact values.
   Point<int> get miniGridPosition => Point(
+        position.x.round() ~/ gridSquareSize,
+        position.y.round() ~/ gridSquareSize,
+      );
+
+  /// Returns mini grid position as tuple (for a_star_algorithm compatibility)
+  (int, int) get miniGridTuple => (
         position.x.round() ~/ gridSquareSize,
         position.y.round() ~/ gridSquareSize,
       );

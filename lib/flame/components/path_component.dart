@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'dart:ui';
 
 import 'package:a_star_algorithm/a_star_algorithm.dart';
@@ -17,7 +16,7 @@ import 'package:tech_world/flame/shared/direction.dart';
 /// corresponding to the grid points in canvas space, used to draw the path on
 /// the canvas.
 class PathComponent extends Component with HasWorldReference {
-  List<Point> _miniGridPoints = [];
+  List<(int, int)> _miniGridPoints = [];
   List<Vector2> _largeGridPoints = [];
   List<RectangleComponent> _pathRectangles = [];
   List<Direction> _pathDirections = [];
@@ -35,13 +34,13 @@ class PathComponent extends Component with HasWorldReference {
   /// by the a_star_algorithm, and use the directions to create a list of
   /// [MoveEffect]s that will be passed to the [PlayerComponent] to provide
   /// player movment on taps.
-  void calculatePath({required Point<int> start, required Point<int> end}) {
+  void calculatePath({required (int, int) start, required (int, int) end}) {
     _miniGridPoints = AStar(
       rows: gridSize,
       columns: gridSize,
       start: start,
       end: end,
-      barriers: _barriers.points,
+      barriers: _barriers.tuples,
     ).findThePath().toList();
 
     debugPrint('$_miniGridPoints');
@@ -49,15 +48,15 @@ class PathComponent extends Component with HasWorldReference {
     _largeGridPoints = [];
     _pathDirections = [];
     for (int i = 0; i < _miniGridPoints.length; i++) {
-      _largeGridPoints.add(Vector2.array([
-        _miniGridPoints[i].x * gridSquareSizeDouble,
-        _miniGridPoints[i].y * gridSquareSizeDouble
-      ]));
+      final (x, y) = _miniGridPoints[i];
+      _largeGridPoints.add(
+          Vector2.array([x * gridSquareSizeDouble, y * gridSquareSizeDouble]));
 
       if (i == _miniGridPoints.length - 1) break;
-      _pathDirections.add(
-          directionFrom[_miniGridPoints[i + 1] - _miniGridPoints[i]] ??
-              Direction.none);
+      final (x1, y1) = _miniGridPoints[i];
+      final (x2, y2) = _miniGridPoints[i + 1];
+      final delta = (x2 - x1, y2 - y1);
+      _pathDirections.add(directionFromTuple[delta] ?? Direction.none);
     }
   }
 
@@ -66,18 +65,17 @@ class PathComponent extends Component with HasWorldReference {
       world.remove(rectangle);
     }
 
-    _pathRectangles = _miniGridPoints
-        .map<RectangleComponent>(
-          (point) => RectangleComponent(
-            position: Vector2.array([
-              point.x * gridSquareSizeDouble,
-              point.y * gridSquareSizeDouble
-            ]),
-            size: Vector2.all(gridSquareSizeDouble),
-            paint: _paint,
-          ),
-        )
-        .toList();
+    _pathRectangles = _miniGridPoints.map<RectangleComponent>(
+      (point) {
+        final (x, y) = point;
+        return RectangleComponent(
+          position: Vector2.array(
+              [x * gridSquareSizeDouble, y * gridSquareSizeDouble]),
+          size: Vector2.all(gridSquareSizeDouble),
+          paint: _paint,
+        );
+      },
+    ).toList();
 
     // color the start and end points
     if (_pathRectangles.isNotEmpty) {

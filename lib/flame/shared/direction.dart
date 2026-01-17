@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:tech_world/flame/shared/constants.dart';
 
 /// We use an enhanced enum for direction that has up, down, left, right as
@@ -29,13 +27,14 @@ enum Direction {
   final double offsetY;
 }
 
-final Map<Point, Direction> directionFrom = {
-  const Point(0, -1): Direction.up,
-  const Point(1, -1): Direction.upRight,
-  const Point(-1, 1): Direction.downLeft,
-  const Point(0, 1): Direction.down,
-  const Point(-1, -1): Direction.upLeft,
-  const Point(1, 1): Direction.downRight,
-  const Point(-1, 0): Direction.left,
-  const Point(1, 0): Direction.right,
+/// Map from tuple deltas to Direction (used by a_star_algorithm which uses (int, int) tuples)
+const Map<(int, int), Direction> directionFromTuple = {
+  (0, -1): Direction.up,
+  (1, -1): Direction.upRight,
+  (-1, 1): Direction.downLeft,
+  (0, 1): Direction.down,
+  (-1, -1): Direction.upLeft,
+  (1, 1): Direction.downRight,
+  (-1, 0): Direction.left,
+  (1, 0): Direction.right,
 };

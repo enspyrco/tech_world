@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Colors;
 
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
+import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
@@ -12,9 +15,11 @@ import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/grid_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
+import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
+import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/networking/networking_service.dart';
 import 'package:tech_world/utils/locator.dart';
 import 'package:tech_world_networking_types/tech_world_networking_types.dart';
@@ -58,6 +63,10 @@ class TechWorld extends World with TapCallbacks {
       Vector2(16, -20); // center horizontally, above sprite
   final Map<String, PositionComponent> _playerBubbles = {};
   Point<int>? _lastPlayerGridPosition; // track to skip unnecessary updates
+
+  // LiveKit integration for video bubbles
+  LiveKitService? _liveKitService;
+  ui.FragmentProgram? _shaderProgram; // Keep reference for creating new shaders
 
   final Stream<NetworkUser> _userAddedStream;
   final Stream<NetworkUser> _userRemovedStream;
@@ -127,10 +136,7 @@ class TechWorld extends World with TapCallbacks {
     // Show local player's bubble if near anyone
     if (nearbyPlayerIds.isNotEmpty) {
       if (!_playerBubbles.containsKey(_localPlayerBubbleKey)) {
-        final localBubble = PlayerBubbleComponent(
-          displayName: _userPlayerComponent.displayName,
-          playerId: _userPlayerComponent.id,
-        );
+        final localBubble = _createLocalPlayerBubble();
         localBubble.position = _userPlayerComponent.position + _bubbleOffset;
         _playerBubbles[_localPlayerBubbleKey] = localBubble;
         add(localBubble);
@@ -171,10 +177,210 @@ class TechWorld extends World with TapCallbacks {
     if (playerId == _botUserId) {
       return BotBubbleComponent(name: _botDisplayName);
     }
+
+    // Check if this player has a LiveKit participant with video
+    final participant = _liveKitService?.getParticipant(playerId);
+    if (participant != null && _hasVideoTrack(participant)) {
+      debugPrint('Creating VideoBubbleComponent for $playerId');
+      final videoBubble = VideoBubbleComponent(
+        participant: participant,
+        displayName: playerComponent.displayName,
+        bubbleSize: 64,
+        targetFps: 15,
+      );
+
+      // Apply shader if loaded
+      if (_shaderProgram != null) {
+        videoBubble.setShader(_shaderProgram!.fragmentShader());
+      }
+
+      return videoBubble;
+    }
+
+    // Fallback to static bubble
     return PlayerBubbleComponent(
       displayName: playerComponent.displayName,
       playerId: playerId,
     );
+  }
+
+  /// Check if participant has an active video track
+  bool _hasVideoTrack(Participant participant) {
+    for (final publication in participant.videoTrackPublications) {
+      if (publication.track != null && publication.subscribed) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Load the video bubble shader program
+  Future<void> _loadVideoBubbleShader() async {
+    try {
+      _shaderProgram =
+          await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
+      debugPrint('Video bubble shader loaded successfully');
+      debugPrint(
+          'ImageFilter.shader supported: ${ui.ImageFilter.isShaderFilterSupported}');
+    } catch (e) {
+      debugPrint('Failed to load video bubble shader: $e');
+    }
+  }
+
+  /// Connect to LiveKit room
+  Future<void> _connectToLiveKit(String userId, String displayName) async {
+    if (_liveKitService != null) {
+      debugPrint('LiveKit already initialized');
+      return;
+    }
+
+    debugPrint('Initializing LiveKit for user: $userId');
+    _liveKitService = LiveKitService(
+      userId: userId,
+      displayName: displayName,
+    );
+
+    // Listen for participant events to update video bubbles
+    _liveKitService!.participantJoined.listen((participant) {
+      debugPrint('LiveKit participant joined: ${participant.identity}');
+      _refreshBubbleForPlayer(participant.identity);
+    });
+
+    _liveKitService!.speakingChanged.listen((event) {
+      final (participant, isSpeaking) = event;
+      _updateBubbleSpeakingState(participant.identity, isSpeaking);
+    });
+
+    // Connect to room
+    final connected = await _liveKitService!.connect();
+    if (connected) {
+      debugPrint('LiveKit connected successfully');
+
+      // Enable camera and microphone
+      await _liveKitService!.setCameraEnabled(true);
+      await _liveKitService!.setMicrophoneEnabled(true);
+
+      // Add test video bubbles now that we have camera
+      await _addTestVideoBubbles();
+    } else {
+      debugPrint('LiveKit connection failed');
+    }
+  }
+
+  /// Refresh a player's bubble (recreate if video is now available)
+  void _refreshBubbleForPlayer(String playerId) {
+    final existingBubble = _playerBubbles[playerId];
+    if (existingBubble == null) return; // No bubble to refresh
+
+    // If it's already a video bubble, no need to refresh
+    if (existingBubble is VideoBubbleComponent) return;
+
+    // Get player component
+    final playerComponent = _otherPlayerComponentsMap[playerId];
+    if (playerComponent == null) return;
+
+    // Remove old bubble
+    existingBubble.removeFromParent();
+
+    // Create new bubble (might be video bubble now)
+    final newBubble = _createBubbleForPlayer(playerId, playerComponent);
+    newBubble.position = playerComponent.position + _bubbleOffset;
+    _playerBubbles[playerId] = newBubble;
+    add(newBubble);
+  }
+
+  /// Update speaking state on video bubbles
+  void _updateBubbleSpeakingState(String participantId, bool isSpeaking) {
+    final bubble = _playerBubbles[participantId];
+    if (bubble is VideoBubbleComponent) {
+      bubble.speakingLevel = isSpeaking ? 1.0 : 0.0;
+    }
+  }
+
+  /// Create bubble for local player (video if available, otherwise static)
+  PositionComponent _createLocalPlayerBubble() {
+    final localParticipant = _liveKitService?.localParticipant;
+
+    if (localParticipant != null && _hasVideoTrack(localParticipant)) {
+      debugPrint('Creating local VideoBubbleComponent');
+      final videoBubble = VideoBubbleComponent(
+        participant: localParticipant,
+        displayName: _userPlayerComponent.displayName,
+        bubbleSize: 64,
+        targetFps: 15,
+      );
+
+      // Apply shader if loaded
+      if (_shaderProgram != null) {
+        videoBubble.setShader(_shaderProgram!.fragmentShader());
+      }
+
+      // Local player gets a cyan glow
+      videoBubble.glowColor = Colors.cyan;
+
+      return videoBubble;
+    }
+
+    // Fallback to static bubble
+    return PlayerBubbleComponent(
+      displayName: _userPlayerComponent.displayName,
+      playerId: _userPlayerComponent.id,
+    );
+  }
+
+  /// Add test bubbles to verify video capture and shader effects work
+  /// These use the actual camera feed from the local LiveKit participant
+  Future<void> _addTestVideoBubbles() async {
+    final localParticipant = _liveKitService?.localParticipant;
+    if (localParticipant == null) {
+      debugPrint('No local participant - skipping test video bubbles');
+      return;
+    }
+
+    // Wait a moment for video track to be ready
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (!_hasVideoTrack(localParticipant)) {
+      debugPrint('No video track yet - skipping test video bubbles');
+      return;
+    }
+
+    debugPrint('Creating test video bubbles with actual camera feed');
+
+    // Create test bubbles at different positions near the player
+    final positions = [
+      Vector2(100, 50), // Right of spawn
+      Vector2(-100, 50), // Left of spawn
+      Vector2(0, -100), // Above spawn
+    ];
+
+    final colors = [
+      Colors.cyan,
+      Colors.green,
+      Colors.orange,
+    ];
+
+    for (var i = 0; i < positions.length; i++) {
+      final bubble = VideoBubbleComponent(
+        participant: localParticipant,
+        displayName: 'Test ${i + 1}',
+        bubbleSize: 80,
+        targetFps: 15,
+      );
+
+      // Each bubble needs its own shader instance
+      if (_shaderProgram != null) {
+        bubble.setShader(_shaderProgram!.fragmentShader());
+      }
+
+      bubble.glowColor = colors[i];
+      bubble.glowIntensity = 0.8;
+      bubble.position = positions[i];
+
+      await add(bubble);
+    }
+
+    debugPrint('Added ${positions.length} test video bubbles with camera feed');
   }
 
   @override
@@ -188,10 +394,16 @@ class TechWorld extends World with TapCallbacks {
 
     (findGame() as TechWorldGame?)?.camera.follow(_userPlayerComponent);
 
-    _authStateChangesSubscription = _authStateChanges.listen((authUser) {
+    // Load the video bubble shader
+    await _loadVideoBubbleShader();
+
+    _authStateChangesSubscription = _authStateChanges.listen((authUser) async {
       if (authUser is! PlaceholderUser && authUser is! SignedOutUser) {
         _userPlayerComponent.id = authUser.id;
         _userPlayerComponent.displayName = authUser.displayName;
+
+        // Connect to LiveKit when user is authenticated
+        await _connectToLiveKit(authUser.id, authUser.displayName);
       }
     });
     _userAddedSubscription = _userAddedStream.listen((networkUser) {
@@ -222,8 +434,7 @@ class TechWorld extends World with TapCallbacks {
     int miniGridY = (worldPosition.y / gridSquareSize).floor();
 
     _pathComponent.calculatePath(
-        start: _userPlayerComponent.miniGridPosition,
-        end: Point(miniGridX, miniGridY));
+        start: _userPlayerComponent.miniGridTuple, end: (miniGridX, miniGridY));
 
     _pathComponent.drawPath();
 
@@ -241,10 +452,11 @@ class TechWorld extends World with TapCallbacks {
     );
   }
 
-  dispose() {
+  void dispose() {
     _userAddedSubscription?.cancel();
     _userRemovedSubscription?.cancel();
     _playerPathsSubscription?.cancel();
     _authStateChangesSubscription?.cancel();
+    _liveKitService?.dispose();
   }
 }

@@ -62,9 +62,74 @@ Note: The Flame game world (`TechWorldGame`/`TechWorld`) is currently commented 
 
 ### LiveKit Integration
 
+- `LiveKitService` (`lib/livekit/livekit_service.dart`) manages room connection and participant tracking
+- Connects to LiveKit room, tracks remote participants via streams
 - `ConnectPage` calls Firebase Function `retrieveLiveKitToken` to get auth token
 - Token generated in `functions/src/index.ts` using `livekit-server-sdk`
 - Requires `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in Firebase Functions environment
+
+### Video Bubble Component (In-Game Video Rendering)
+
+Renders LiveKit video feeds as circular bubbles inside the Flame game world using zero-copy FFI frame capture.
+
+**Architecture:**
+
+```
+LiveKit VideoTrack → Native RTCVideoRenderer → Shared Memory Buffer → Dart FFI → ui.Image → Flame Canvas
+```
+
+**Key Files:**
+
+- `lib/flame/components/video_bubble_component.dart` - Flame component that renders video as circular bubble
+- `lib/native/video_frame_ffi.dart` - Dart FFI bindings for native frame capture
+- `macos/Runner/VideoFrameCapture.h` - Native C API header
+- `macos/Runner/VideoFrameCapture.m` - Native Objective-C implementation using `FlutterWebRTCPlugin`
+
+**How It Works:**
+
+1. `VideoBubbleComponent` takes a LiveKit `Participant` and renders their video
+2. Native Objective-C code accesses the WebRTC track via `[FlutterWebRTCPlugin sharedSingleton]`
+3. Registers as `RTCVideoRenderer` on the video track using the WebRTC track ID (`mediaStreamTrack.id`)
+4. Frames are written to a shared memory buffer (40-byte header + BGRA pixels)
+5. Dart reads pixels directly via FFI pointer (zero-copy)
+6. Converts BGRA → RGBA and creates `dart:ui.Image`
+7. Renders as circular clipped image with optional Impeller shader effects
+
+**Important:** The track ID used for FFI capture is `track.mediaStreamTrack.id` (WebRTC ID like `TR_xxx`), not `track.sid` (LiveKit session ID).
+
+**Platform Support:** macOS only (other platforms show placeholder with initial)
+
+**Usage:**
+
+```dart
+final bubble = VideoBubbleComponent(
+  participant: remoteParticipant,
+  displayName: 'Player Name',
+  bubbleSize: 64,
+  targetFps: 15,
+);
+world.add(bubble);
+```
+
+**Shader Effects:**
+
+```dart
+bubble.setShader(myFragmentShader);
+bubble.glowIntensity = 0.8;
+bubble.glowColor = Colors.blue;
+bubble.speakingLevel = audioLevel; // For pulse effects
+```
+
+**Debugging FFI Capture:**
+
+```dart
+// List all tracks available to native code
+final tracks = VideoFrameCapture.listTracks();
+print('Available tracks: $tracks');
+
+// Check capture stats
+print(bubble.debugStats);
+```
 
 ### Firebase Functions
 

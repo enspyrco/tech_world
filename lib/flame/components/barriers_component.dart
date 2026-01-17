@@ -14,7 +14,7 @@ class BarriersComponent extends PositionComponent with HasWorldReference {
   final Paint _paint = Paint()..color = const Color.fromRGBO(0, 0, 255, 1);
 
   /// The list of [Point]s that make up the barriers in the minigrid space
-  final List<Point<int>> points = const [
+  final List<Point<int>> _points = const [
     Point(4, 7),
     Point(4, 8),
     Point(4, 9),
@@ -52,15 +52,18 @@ class BarriersComponent extends PositionComponent with HasWorldReference {
     Point(17, 7),
   ];
 
+  /// Returns barriers as tuples for a_star_algorithm compatibility
+  List<(int, int)> get tuples => _points.map((p) => (p.x, p.y)).toList();
+
   /// Add [RectangleComponent]s to draw each barrier in the large grid that is
   /// in canvas space.
   @override
   onLoad() {
-    for (int i = 0; i < points.length; i++) {
+    for (int i = 0; i < _points.length; i++) {
       world.add(
         RectangleComponent(
-            position: Vector2(points[i].x * gridSquareSizeDouble,
-                points[i].y * gridSquareSizeDouble),
+            position: Vector2(_points[i].x * gridSquareSizeDouble,
+                _points[i].y * gridSquareSizeDouble),
             size: Vector2.array([gridSquareSizeDouble, gridSquareSizeDouble]),
             anchor: Anchor.center,
             paint: _paint),
