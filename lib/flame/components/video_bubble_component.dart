@@ -73,7 +73,7 @@ class VideoBubbleComponent extends PositionComponent {
   int _captureRetryCount = 0;
   static const int _maxCaptureRetries = 10;
   double _timeSinceLastRetry = 0;
-  static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
+  static const double _retryIntervalSeconds = 0.1; // Retry every 100ms
 
   // Loading state
   bool _isLoading = true;
@@ -130,12 +130,17 @@ class VideoBubbleComponent extends PositionComponent {
       _loadingRotation += _loadingSpinSpeed * dt;
     }
 
-    // Try to initialize capture if not yet done (with retry backoff)
+    // Try to initialize capture if not yet done
     if (!_captureInitialized && _captureRetryCount < _maxCaptureRetries) {
-      _timeSinceLastRetry += dt;
-      if (_timeSinceLastRetry >= _retryIntervalSeconds) {
-        _timeSinceLastRetry = 0;
+      // Try immediately on first update, then retry at intervals
+      if (_captureRetryCount == 0) {
         _initializeCapture();
+      } else {
+        _timeSinceLastRetry += dt;
+        if (_timeSinceLastRetry >= _retryIntervalSeconds) {
+          _timeSinceLastRetry = 0;
+          _initializeCapture();
+        }
       }
     }
 
