@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:tech_world/flame/shared/tech_world_config.dart';
 
 import '../../native/video_frame_capture.dart' as ffi;
 
@@ -34,6 +35,7 @@ class VideoBubbleComponent extends PositionComponent {
   VideoBubbleComponent({
     required this.participant,
     required this.displayName,
+    required this.target,
     this.bubbleSize = 64,
     this.targetFps = 15,
   }) : super(
@@ -45,6 +47,9 @@ class VideoBubbleComponent extends PositionComponent {
   final String displayName;
   final double bubbleSize;
   final int targetFps;
+
+  /// The component this bubble follows.
+  final PositionComponent target;
 
   ui.Image? _currentFrame;
   VideoTrack? _videoTrack;
@@ -116,6 +121,9 @@ class VideoBubbleComponent extends PositionComponent {
   void update(double dt) {
     super.update(dt);
     _time += dt;
+
+    // Update position to follow target
+    position = target.position + TechWorldConfig.bubbleOffset;
 
     // Update loading animation
     if (_isLoading) {
