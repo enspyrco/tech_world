@@ -1,20 +1,23 @@
 import 'dart:ui';
 
-import 'package:a_star_algorithm/a_star_algorithm.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flame/components.dart';
+import 'package:pathfinding/core/grid.dart' as pf;
+import 'package:pathfinding/core/util.dart' as pf_util;
+import 'package:pathfinding/finders/jps.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 
-/// We use the a_star_algorithm to calculate a set of points that define a path
-/// that avoids all barriers.
+/// Uses Jump Point Search (JPS) to calculate a set of points that define a
+/// path that avoids all barriers.
 ///
-/// The [PathComponent] takes the barriers and uses the a_star_algorithm to
-/// calculate a set of points between the start (player position) and end
-/// (clicked point). The PathComponent also keeps the set of [RectangleComponent]s
-/// corresponding to the grid points in canvas space, used to draw the path on
-/// the canvas.
+/// JPS is ~5x faster than A* on uniform-cost grids by "jumping" over
+/// intermediate nodes in straight lines.
+///
+/// The [PathComponent] takes the barriers and uses JPS to calculate a set of
+/// points between the start (player position) and end (clicked point).
+/// The PathComponent also keeps the set of [RectangleComponent]s corresponding
+/// to the grid points in canvas space, used to draw the path on the canvas.
 class PathComponent extends Component with HasWorldReference {
   List<(int, int)> _miniGridPoints = [];
   List<Vector2> _largeGridPoints = [];
@@ -25,25 +28,50 @@ class PathComponent extends Component with HasWorldReference {
   final _startPaint = Paint()..color = const Color.fromARGB(150, 0, 255, 255);
   final _endPaint = Paint()..color = const Color.fromARGB(150, 255, 255, 0);
 
+  // JPS finder instance (reusable)
+  final _jps = JumpPointFinder();
+
+  // Cached grid (created once from barriers)
+  pf.Grid? _grid;
+
   PathComponent({required BarriersComponent barriers}) : _barriers = barriers;
 
-  /// Use the a_star_algorithm to calculate a set of points that define a
+  /// Use Jump Point Search to calculate a set of points that define a
   /// path that avoids all barriers.
   ///
-  /// Also calculate a direction for each path segment from the points generated
-  /// by the a_star_algorithm, and use the directions to create a list of
-  /// [MoveEffect]s that will be passed to the [PlayerComponent] to provide
-  /// player movment on taps.
+  /// JPS returns sparse "jump points" (waypoints), so we expand them into
+  /// a step-by-step path. Also calculate a direction for each path segment
+  /// to create [MoveEffect]s for the [PlayerComponent].
   void calculatePath({required (int, int) start, required (int, int) end}) {
-    _miniGridPoints = AStar(
-      rows: gridSize,
-      columns: gridSize,
-      start: start,
-      end: end,
-      barriers: _barriers.tuples,
-    ).findThePath().toList();
+    // Clamp coordinates to valid grid bounds
+    final clampedStart = (
+      start.$1.clamp(0, gridSize - 1),
+      start.$2.clamp(0, gridSize - 1),
+    );
+    final clampedEnd = (
+      end.$1.clamp(0, gridSize - 1),
+      end.$2.clamp(0, gridSize - 1),
+    );
 
-    debugPrint('$_miniGridPoints');
+    // Create grid on first use
+    _grid ??= _barriers.createGrid();
+
+    // Clone grid before pathfinding (JPS modifies grid state)
+    final jumpPoints = _jps.findPath(
+      clampedStart.$1,
+      clampedStart.$2,
+      clampedEnd.$1,
+      clampedEnd.$2,
+      _grid!.clone(),
+    );
+
+    // Expand sparse jump points into full step-by-step path
+    // JPS returns waypoints like [(0,0), (3,3), (5,5)] - we need step-by-step
+    final expandedPath = _expandPath(jumpPoints);
+
+    // Convert path format: List<List<int>> [[x,y], ...] -> List<(int, int)>
+    _miniGridPoints =
+        expandedPath.map<(int, int)>((p) => (p[0], p[1])).toList();
 
     _largeGridPoints = [];
     _pathDirections = [];
@@ -90,4 +118,43 @@ class PathComponent extends Component with HasWorldReference {
 
   List<Vector2> get largeGridPoints => _largeGridPoints;
   List<Direction> get directions => _pathDirections;
+
+  /// Expand sparse jump points into a step-by-step path.
+  ///
+  /// JPS returns waypoints (jump points) where each consecutive pair may be
+  /// more than 1 cell apart. This method interpolates between each pair using
+  /// Bresenham's line algorithm to produce a path where each step is exactly
+  /// 1 cell (including diagonals).
+  List<List<int>> _expandPath(List<dynamic> jumpPoints) {
+    if (jumpPoints.isEmpty) return [];
+    if (jumpPoints.length == 1) {
+      return [
+        [jumpPoints[0][0] as int, jumpPoints[0][1] as int]
+      ];
+    }
+
+    final List<List<int>> expanded = [];
+
+    for (int i = 0; i < jumpPoints.length - 1; i++) {
+      final x0 = jumpPoints[i][0] as int;
+      final y0 = jumpPoints[i][1] as int;
+      final x1 = jumpPoints[i + 1][0] as int;
+      final y1 = jumpPoints[i + 1][1] as int;
+
+      // Get all cells on the line between these two points
+      final line = pf_util.getLine(x0, y0, x1, y1) as List<dynamic>;
+
+      // Add all points except the last one (to avoid duplicates)
+      // The last point of this segment is the first point of the next
+      for (int j = 0; j < line.length - 1; j++) {
+        expanded.add([line[j][0] as int, line[j][1] as int]);
+      }
+    }
+
+    // Add the final destination point
+    final last = jumpPoints.last;
+    expanded.add([last[0] as int, last[1] as int]);
+
+    return expanded;
+  }
 }

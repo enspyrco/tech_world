@@ -13,7 +13,7 @@ dependencies:
   flutter_webrtc: ^1.2.0 # Required for controls.dart
   shared_preferences: ^2.2.3 # currently used by livekit code
   flame: ^1.18.0
-  a_star_algorithm: ^0.4.1
+  pathfinding: ^3.0.1
   firebase_core: ^4.1.1
   cloud_firestore: ^6.0.2
   firebase_auth: ^6.1.0
