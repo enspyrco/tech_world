@@ -136,7 +136,9 @@ class TechWorld extends World with TapCallbacks {
     // Show local player's bubble if near anyone
     if (nearbyPlayerIds.isNotEmpty) {
       if (!_playerBubbles.containsKey(_localPlayerBubbleKey)) {
+        debugPrint('Creating local player bubble (nearby: $nearbyPlayerIds)');
         final localBubble = _createLocalPlayerBubble();
+        debugPrint('Local bubble created: ${localBubble.runtimeType}');
         localBubble.position = _userPlayerComponent.position + _bubbleOffset;
         _playerBubbles[_localPlayerBubbleKey] = localBubble;
         add(localBubble);
@@ -207,8 +209,16 @@ class TechWorld extends World with TapCallbacks {
   /// Check if participant has an active video track
   bool _hasVideoTrack(Participant participant) {
     for (final publication in participant.videoTrackPublications) {
-      if (publication.track != null && publication.subscribed) {
-        return true;
+      if (publication.track != null) {
+        // For local participant, check if track is published
+        // For remote participant, check if track is subscribed
+        if (participant is LocalParticipant) {
+          return true; // Local tracks are always "active" when present
+        } else {
+          if (publication.subscribed) {
+            return true;
+          }
+        }
       }
     }
     return false;
@@ -259,6 +269,9 @@ class TechWorld extends World with TapCallbacks {
       // Enable camera and microphone
       await _liveKitService!.setCameraEnabled(true);
       await _liveKitService!.setMicrophoneEnabled(true);
+
+      // Refresh local player bubble now that camera is enabled
+      _refreshLocalPlayerBubble();
     } else {
       debugPrint('LiveKit connection failed');
     }
@@ -283,6 +296,26 @@ class TechWorld extends World with TapCallbacks {
     final newBubble = _createBubbleForPlayer(playerId, playerComponent);
     newBubble.position = playerComponent.position + _bubbleOffset;
     _playerBubbles[playerId] = newBubble;
+    add(newBubble);
+  }
+
+  /// Refresh local player bubble (recreate if video is now available)
+  void _refreshLocalPlayerBubble() {
+    final existingBubble = _playerBubbles[_localPlayerBubbleKey];
+    if (existingBubble == null) return; // No bubble to refresh
+
+    // If it's already a video bubble, no need to refresh
+    if (existingBubble is VideoBubbleComponent) return;
+
+    debugPrint('Refreshing local player bubble after camera enabled');
+
+    // Remove old bubble
+    existingBubble.removeFromParent();
+
+    // Create new bubble (should be video bubble now)
+    final newBubble = _createLocalPlayerBubble();
+    newBubble.position = _userPlayerComponent.position + _bubbleOffset;
+    _playerBubbles[_localPlayerBubbleKey] = newBubble;
     add(newBubble);
   }
 
