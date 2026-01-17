@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 
@@ -107,7 +107,6 @@ class VideoBubbleComponent extends PositionComponent {
   /// Notify that the video track is ready (called when track subscription event fires)
   /// This triggers immediate capture initialization instead of waiting for retry timer.
   void notifyTrackReady() {
-    debugPrint('VideoBubbleComponent: Track ready notification received');
     if (!_captureInitialized) {
       _initializeCapture();
     }
@@ -144,16 +143,11 @@ class VideoBubbleComponent extends PositionComponent {
     // FFI capture only supported on macOS (not web or other platforms)
     if (kIsWeb || !_isMacOS) {
       _captureInitialized = true;
-      debugPrint('VideoBubbleComponent: FFI capture only supported on macOS');
       return;
     }
 
     final track = _getVideoTrack();
     if (track == null) {
-      if (_captureRetryCount >= _maxCaptureRetries) {
-        debugPrint(
-            'VideoBubbleComponent: No video track after $_captureRetryCount retries');
-      }
       return;
     }
 
@@ -167,18 +161,8 @@ class VideoBubbleComponent extends PositionComponent {
     // Get the WebRTC track ID (not the LiveKit sid)
     final trackId = track.mediaStreamTrack.id;
     if (trackId == null || trackId.isEmpty) {
-      debugPrint(
-          'VideoBubbleComponent: Track has no mediaStreamTrack.id, cannot capture');
       return;
     }
-
-    debugPrint(
-        'VideoBubbleComponent: Creating FFI capture for track $trackId (sid: ${track.sid}), attempt $_captureRetryCount');
-
-    // List available tracks for debugging (before attempting create)
-    final availableTracks = ffi.VideoFrameCapture.listTracks();
-    debugPrint(
-        'VideoBubbleComponent: Available native tracks: $availableTracks');
 
     _capture = ffi.VideoFrameCapture.create(
       trackId,
@@ -188,11 +172,7 @@ class VideoBubbleComponent extends PositionComponent {
     );
 
     if (_capture != null) {
-      debugPrint('VideoBubbleComponent: FFI capture created successfully');
       _captureInitialized = true;
-    } else {
-      debugPrint(
-          'VideoBubbleComponent: Failed to create FFI capture, will retry');
     }
   }
 
@@ -258,11 +238,8 @@ class VideoBubbleComponent extends PositionComponent {
       // First frame received - no longer loading
       if (_isLoading) {
         _isLoading = false;
-        debugPrint(
-            'VideoBubbleComponent: First frame received, loading complete');
       }
     } catch (e) {
-      debugPrint('VideoBubbleComponent: Frame processing failed: $e');
       _framesDropped++;
     }
   }
@@ -280,12 +257,7 @@ class VideoBubbleComponent extends PositionComponent {
   }
 
   VideoTrack? _getVideoTrack() {
-    // Try to get the camera video track from the participant
-    debugPrint(
-        'VideoBubbleComponent: Looking for video track, participant: ${participant.identity}, publications: ${participant.videoTrackPublications.length}');
     for (final publication in participant.videoTrackPublications) {
-      debugPrint(
-          'VideoBubbleComponent: Publication: sid=${publication.sid}, subscribed=${publication.subscribed}, track=${publication.track}');
       final track = publication.track;
       if (track != null && track.kind == TrackType.VIDEO) {
         return track as VideoTrack;

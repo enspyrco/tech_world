@@ -183,7 +183,6 @@ class TechWorld extends World with TapCallbacks {
     // Check if this player has a LiveKit participant with video
     final participant = _liveKitService?.getParticipant(playerId);
     if (participant != null && _hasVideoTrack(participant)) {
-      debugPrint('Creating VideoBubbleComponent for $playerId');
       final videoBubble = VideoBubbleComponent(
         participant: participant,
         displayName: playerComponent.displayName,
@@ -229,11 +228,8 @@ class TechWorld extends World with TapCallbacks {
     try {
       _shaderProgram =
           await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
-      debugPrint('Video bubble shader loaded successfully');
-      debugPrint(
-          'ImageFilter.shader supported: ${ui.ImageFilter.isShaderFilterSupported}');
     } catch (e) {
-      debugPrint('Failed to load video bubble shader: $e');
+      // Shader loading failed - video bubbles will render without effects
     }
   }
 
