@@ -259,9 +259,6 @@ class TechWorld extends World with TapCallbacks {
       // Enable camera and microphone
       await _liveKitService!.setCameraEnabled(true);
       await _liveKitService!.setMicrophoneEnabled(true);
-
-      // Add test video bubbles now that we have camera
-      await _addTestVideoBubbles();
     } else {
       debugPrint('LiveKit connection failed');
     }
@@ -326,61 +323,6 @@ class TechWorld extends World with TapCallbacks {
       displayName: _userPlayerComponent.displayName,
       playerId: _userPlayerComponent.id,
     );
-  }
-
-  /// Add test bubbles to verify video capture and shader effects work
-  /// These use the actual camera feed from the local LiveKit participant
-  Future<void> _addTestVideoBubbles() async {
-    final localParticipant = _liveKitService?.localParticipant;
-    if (localParticipant == null) {
-      debugPrint('No local participant - skipping test video bubbles');
-      return;
-    }
-
-    // Wait a moment for video track to be ready
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    if (!_hasVideoTrack(localParticipant)) {
-      debugPrint('No video track yet - skipping test video bubbles');
-      return;
-    }
-
-    debugPrint('Creating test video bubbles with actual camera feed');
-
-    // Create test bubbles at different positions near the player
-    final positions = [
-      Vector2(100, 50), // Right of spawn
-      Vector2(-100, 50), // Left of spawn
-      Vector2(0, -100), // Above spawn
-    ];
-
-    final colors = [
-      Colors.cyan,
-      Colors.green,
-      Colors.orange,
-    ];
-
-    for (var i = 0; i < positions.length; i++) {
-      final bubble = VideoBubbleComponent(
-        participant: localParticipant,
-        displayName: 'Test ${i + 1}',
-        bubbleSize: 80,
-        targetFps: 15,
-      );
-
-      // Each bubble needs its own shader instance
-      if (_shaderProgram != null) {
-        bubble.setShader(_shaderProgram!.fragmentShader());
-      }
-
-      bubble.glowColor = colors[i];
-      bubble.glowIntensity = 0.8;
-      bubble.position = positions[i];
-
-      await add(bubble);
-    }
-
-    debugPrint('Added ${positions.length} test video bubbles with camera feed');
   }
 
   @override
