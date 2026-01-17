@@ -1,10 +1,11 @@
 import 'dart:async' show Completer;
+import 'dart:math' show pi;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
+    show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
 
@@ -69,6 +70,11 @@ class VideoBubbleComponent extends PositionComponent {
   double _timeSinceLastRetry = 0;
   static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
 
+  // Loading state
+  bool _isLoading = true;
+  double _loadingRotation = 0.0;
+  static const double _loadingSpinSpeed = 3.0; // radians per second
+
   // Platform check that works on web (where dart:io is not available)
   static bool get _isMacOS =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
@@ -88,12 +94,6 @@ class VideoBubbleComponent extends PositionComponent {
   set speakingLevel(double value) => _speakingLevel = value.clamp(0.0, 1.0);
 
   @override
-  Future<void> onLoad() async {
-    super.onLoad();
-    _initializeCapture();
-  }
-
-  @override
   void onRemove() {
     _disposeCapture();
     _currentFrame?.dispose();
@@ -101,10 +101,27 @@ class VideoBubbleComponent extends PositionComponent {
     super.onRemove();
   }
 
+  /// Whether the component is still waiting for the first video frame
+  bool get isWaitingForFrame => _isLoading;
+
+  /// Notify that the video track is ready (called when track subscription event fires)
+  /// This triggers immediate capture initialization instead of waiting for retry timer.
+  void notifyTrackReady() {
+    debugPrint('VideoBubbleComponent: Track ready notification received');
+    if (!_captureInitialized) {
+      _initializeCapture();
+    }
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
     _time += dt;
+
+    // Update loading animation
+    if (_isLoading) {
+      _loadingRotation += _loadingSpinSpeed * dt;
+    }
 
     // Try to initialize capture if not yet done (with retry backoff)
     if (!_captureInitialized && _captureRetryCount < _maxCaptureRetries) {
@@ -237,6 +254,13 @@ class VideoBubbleComponent extends PositionComponent {
       _currentFrame?.dispose();
       _currentFrame = image;
       _framesCaptured++;
+
+      // First frame received - no longer loading
+      if (_isLoading) {
+        _isLoading = false;
+        debugPrint(
+            'VideoBubbleComponent: First frame received, loading complete');
+      }
     } catch (e) {
       debugPrint('VideoBubbleComponent: Frame processing failed: $e');
       _framesDropped++;
@@ -257,7 +281,11 @@ class VideoBubbleComponent extends PositionComponent {
 
   VideoTrack? _getVideoTrack() {
     // Try to get the camera video track from the participant
+    debugPrint(
+        'VideoBubbleComponent: Looking for video track, participant: ${participant.identity}, publications: ${participant.videoTrackPublications.length}');
     for (final publication in participant.videoTrackPublications) {
+      debugPrint(
+          'VideoBubbleComponent: Publication: sid=${publication.sid}, subscribed=${publication.subscribed}, track=${publication.track}');
       final track = publication.track;
       if (track != null && track.kind == TrackType.VIDEO) {
         return track as VideoTrack;
@@ -390,6 +418,11 @@ class VideoBubbleComponent extends PositionComponent {
       );
 
       canvas.restore();
+
+      // Draw loading spinner overlay if still loading
+      if (_isLoading) {
+        _drawLoadingSpinner(canvas, center, radius);
+      }
     }
 
     if (_shader == null || !ui.ImageFilter.isShaderFilterSupported) {
@@ -399,6 +432,35 @@ class VideoBubbleComponent extends PositionComponent {
         ..strokeWidth = 2;
       canvas.drawCircle(center, radius, borderPaint);
     }
+  }
+
+  /// Draw a spinning loading indicator arc
+  void _drawLoadingSpinner(Canvas canvas, Offset center, double radius) {
+    final spinnerRadius = radius * 0.6;
+    final spinnerRect = Rect.fromCircle(center: center, radius: spinnerRadius);
+
+    // Draw a spinning arc
+    final spinnerPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(_loadingRotation);
+    canvas.translate(-center.dx, -center.dy);
+
+    // Draw arc (270 degrees, leaving a gap)
+    canvas.drawArc(
+      spinnerRect,
+      0,
+      pi * 1.5, // 270 degrees
+      false,
+      spinnerPaint,
+    );
+
+    canvas.restore();
   }
 
   String _getInitial() {

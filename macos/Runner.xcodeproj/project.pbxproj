@@ -30,7 +30,6 @@
 		4CEE76F465ED9C4B1EDFEB0F /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8A1ECA5E5612ABF6B643D6D6 /* Pods_RunnerTests.framework */; };
 		941DC72E54C70A5A5666DA4B /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 598BAE501C2BA2BD569BDA98 /* Pods_Runner.framework */; };
 		BEAD1C71CDEF99F882B3C3DA /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 2DDF9CFFB3738DE220896F85 /* GoogleService-Info.plist */; };
-		VFC00004000000000001 /* VideoFrameCapture.m in Sources */ = {isa = PBXBuildFile; fileRef = VFC00005000000000001 /* VideoFrameCapture.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -91,8 +90,6 @@
 		CB2AC404D225246F2703C44D /* Pods-Runner.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.debug.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"; sourceTree = "<group>"; };
 		D19850B4C014D64EEB325C6C /* Pods-Runner.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.release.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"; sourceTree = "<group>"; };
 		D3DBCD0070CE74D2D34B8A6F /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
-		VFC00005000000000001 /* VideoFrameCapture.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VideoFrameCapture.m; sourceTree = "<group>"; };
-		VFC00006000000000001 /* VideoFrameCapture.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VideoFrameCapture.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -183,8 +180,6 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
-				VFC00006000000000001 /* VideoFrameCapture.h */,
-				VFC00005000000000001 /* VideoFrameCapture.m */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -466,7 +461,6 @@
 				33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
-				VFC00004000000000001 /* VideoFrameCapture.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

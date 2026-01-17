@@ -37,6 +37,10 @@ class LiveKitService {
       StreamController<RemoteParticipant>.broadcast();
   final _speakingChangedController =
       StreamController<(Participant, bool)>.broadcast();
+  final _trackSubscribedController =
+      StreamController<(Participant, VideoTrack)>.broadcast();
+  final _localTrackPublishedController =
+      StreamController<LocalTrackPublication>.broadcast();
 
   /// Stream of participants that joined the room
   Stream<RemoteParticipant> get participantJoined =>
@@ -49,6 +53,14 @@ class LiveKitService {
   /// Stream of speaking state changes (participant, isSpeaking)
   Stream<(Participant, bool)> get speakingChanged =>
       _speakingChangedController.stream;
+
+  /// Stream of video track subscription events (participant, videoTrack)
+  Stream<(Participant, VideoTrack)> get trackSubscribed =>
+      _trackSubscribedController.stream;
+
+  /// Stream of local track publication events (fires when camera/mic is published)
+  Stream<LocalTrackPublication> get localTrackPublished =>
+      _localTrackPublishedController.stream;
 
   /// Current room instance
   Room? get room => _room;
@@ -207,6 +219,11 @@ class LiveKitService {
       ..on<TrackSubscribedEvent>((event) {
         debugPrint(
             'LiveKitService: Track subscribed: ${event.participant.identity} - ${event.track.kind}');
+        // Emit video track subscription events
+        if (event.track is VideoTrack) {
+          _trackSubscribedController
+              .add((event.participant, event.track as VideoTrack));
+        }
       })
       ..on<TrackUnsubscribedEvent>((event) {
         debugPrint(
@@ -221,6 +238,11 @@ class LiveKitService {
       ..on<RoomDisconnectedEvent>((event) {
         debugPrint('LiveKitService: Room disconnected: ${event.reason}');
         _isConnected = false;
+      })
+      ..on<LocalTrackPublishedEvent>((event) {
+        debugPrint(
+            'LiveKitService: Local track published: ${event.publication.kind}');
+        _localTrackPublishedController.add(event.publication);
       });
   }
 
@@ -230,5 +252,7 @@ class LiveKitService {
     _participantJoinedController.close();
     _participantLeftController.close();
     _speakingChangedController.close();
+    _trackSubscribedController.close();
+    _localTrackPublishedController.close();
   }
 }
