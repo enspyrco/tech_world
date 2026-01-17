@@ -76,6 +76,8 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<NetworkUser>? _userAddedSubscription;
   StreamSubscription<NetworkUser>? _userRemovedSubscription;
   StreamSubscription<PlayerPath>? _playerPathsSubscription;
+  StreamSubscription<(Participant, VideoTrack)>? _trackSubscribedSubscription;
+  StreamSubscription<LocalTrackPublication>? _localTrackPublishedSubscription;
 
   // Position tracking for proximity detection
   Point<int> get localPlayerPosition => _userPlayerComponent.miniGridPosition;
@@ -136,9 +138,7 @@ class TechWorld extends World with TapCallbacks {
     // Show local player's bubble if near anyone
     if (nearbyPlayerIds.isNotEmpty) {
       if (!_playerBubbles.containsKey(_localPlayerBubbleKey)) {
-        debugPrint('Creating local player bubble (nearby: $nearbyPlayerIds)');
         final localBubble = _createLocalPlayerBubble();
-        debugPrint('Local bubble created: ${localBubble.runtimeType}');
         localBubble.position = _userPlayerComponent.position + _bubbleOffset;
         _playerBubbles[_localPlayerBubbleKey] = localBubble;
         add(localBubble);
@@ -183,7 +183,6 @@ class TechWorld extends World with TapCallbacks {
     // Check if this player has a LiveKit participant with video
     final participant = _liveKitService?.getParticipant(playerId);
     if (participant != null && _hasVideoTrack(participant)) {
-      debugPrint('Creating VideoBubbleComponent for $playerId');
       final videoBubble = VideoBubbleComponent(
         participant: participant,
         displayName: playerComponent.displayName,
@@ -229,11 +228,8 @@ class TechWorld extends World with TapCallbacks {
     try {
       _shaderProgram =
           await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
-      debugPrint('Video bubble shader loaded successfully');
-      debugPrint(
-          'ImageFilter.shader supported: ${ui.ImageFilter.isShaderFilterSupported}');
     } catch (e) {
-      debugPrint('Failed to load video bubble shader: $e');
+      // Shader loading failed - video bubbles will render without effects
     }
   }
 
@@ -259,6 +255,22 @@ class TechWorld extends World with TapCallbacks {
     _liveKitService!.speakingChanged.listen((event) {
       final (participant, isSpeaking) = event;
       _updateBubbleSpeakingState(participant.identity, isSpeaking);
+    });
+
+    // Listen for track subscription events to trigger capture init immediately
+    _trackSubscribedSubscription =
+        _liveKitService!.trackSubscribed.listen((event) {
+      final (participant, _) = event;
+      _notifyBubbleTrackReady(participant.identity);
+    });
+
+    // Listen for local track publication to refresh local bubble when camera is ready
+    _localTrackPublishedSubscription =
+        _liveKitService!.localTrackPublished.listen((publication) {
+      if (publication.kind == TrackType.VIDEO) {
+        debugPrint('TechWorld: Local video track published, refreshing bubble');
+        _refreshLocalPlayerBubble();
+      }
     });
 
     // Connect to room
@@ -324,6 +336,15 @@ class TechWorld extends World with TapCallbacks {
     final bubble = _playerBubbles[participantId];
     if (bubble is VideoBubbleComponent) {
       bubble.speakingLevel = isSpeaking ? 1.0 : 0.0;
+    }
+  }
+
+  /// Notify a video bubble that its track is ready for capture
+  void _notifyBubbleTrackReady(String participantId) {
+    final bubble = _playerBubbles[participantId];
+    if (bubble is VideoBubbleComponent) {
+      debugPrint('TechWorld: Notifying bubble track ready for $participantId');
+      bubble.notifyTrackReady();
     }
   }
 
@@ -432,6 +453,8 @@ class TechWorld extends World with TapCallbacks {
     _userRemovedSubscription?.cancel();
     _playerPathsSubscription?.cancel();
     _authStateChangesSubscription?.cancel();
+    _trackSubscribedSubscription?.cancel();
+    _localTrackPublishedSubscription?.cancel();
     _liveKitService?.dispose();
   }
 }

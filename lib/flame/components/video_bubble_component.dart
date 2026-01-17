@@ -1,4 +1,5 @@
 import 'dart:async' show Completer;
+import 'dart:math' show pi;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -69,6 +70,11 @@ class VideoBubbleComponent extends PositionComponent {
   double _timeSinceLastRetry = 0;
   static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
 
+  // Loading state
+  bool _isLoading = true;
+  double _loadingRotation = 0.0;
+  static const double _loadingSpinSpeed = 3.0; // radians per second
+
   // Platform check that works on web (where dart:io is not available)
   static bool get _isMacOS =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
@@ -88,12 +94,6 @@ class VideoBubbleComponent extends PositionComponent {
   set speakingLevel(double value) => _speakingLevel = value.clamp(0.0, 1.0);
 
   @override
-  Future<void> onLoad() async {
-    super.onLoad();
-    _initializeCapture();
-  }
-
-  @override
   void onRemove() {
     _disposeCapture();
     _currentFrame?.dispose();
@@ -101,10 +101,26 @@ class VideoBubbleComponent extends PositionComponent {
     super.onRemove();
   }
 
+  /// Whether the component is still waiting for the first video frame
+  bool get isWaitingForFrame => _isLoading;
+
+  /// Notify that the video track is ready (called when track subscription event fires)
+  /// This triggers immediate capture initialization instead of waiting for retry timer.
+  void notifyTrackReady() {
+    if (!_captureInitialized) {
+      _initializeCapture();
+    }
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
     _time += dt;
+
+    // Update loading animation
+    if (_isLoading) {
+      _loadingRotation += _loadingSpinSpeed * dt;
+    }
 
     // Try to initialize capture if not yet done (with retry backoff)
     if (!_captureInitialized && _captureRetryCount < _maxCaptureRetries) {
@@ -127,16 +143,11 @@ class VideoBubbleComponent extends PositionComponent {
     // FFI capture only supported on macOS (not web or other platforms)
     if (kIsWeb || !_isMacOS) {
       _captureInitialized = true;
-      debugPrint('VideoBubbleComponent: FFI capture only supported on macOS');
       return;
     }
 
     final track = _getVideoTrack();
     if (track == null) {
-      if (_captureRetryCount >= _maxCaptureRetries) {
-        debugPrint(
-            'VideoBubbleComponent: No video track after $_captureRetryCount retries');
-      }
       return;
     }
 
@@ -150,18 +161,8 @@ class VideoBubbleComponent extends PositionComponent {
     // Get the WebRTC track ID (not the LiveKit sid)
     final trackId = track.mediaStreamTrack.id;
     if (trackId == null || trackId.isEmpty) {
-      debugPrint(
-          'VideoBubbleComponent: Track has no mediaStreamTrack.id, cannot capture');
       return;
     }
-
-    debugPrint(
-        'VideoBubbleComponent: Creating FFI capture for track $trackId (sid: ${track.sid}), attempt $_captureRetryCount');
-
-    // List available tracks for debugging (before attempting create)
-    final availableTracks = ffi.VideoFrameCapture.listTracks();
-    debugPrint(
-        'VideoBubbleComponent: Available native tracks: $availableTracks');
 
     _capture = ffi.VideoFrameCapture.create(
       trackId,
@@ -171,11 +172,7 @@ class VideoBubbleComponent extends PositionComponent {
     );
 
     if (_capture != null) {
-      debugPrint('VideoBubbleComponent: FFI capture created successfully');
       _captureInitialized = true;
-    } else {
-      debugPrint(
-          'VideoBubbleComponent: Failed to create FFI capture, will retry');
     }
   }
 
@@ -237,8 +234,12 @@ class VideoBubbleComponent extends PositionComponent {
       _currentFrame?.dispose();
       _currentFrame = image;
       _framesCaptured++;
+
+      // First frame received - no longer loading
+      if (_isLoading) {
+        _isLoading = false;
+      }
     } catch (e) {
-      debugPrint('VideoBubbleComponent: Frame processing failed: $e');
       _framesDropped++;
     }
   }
@@ -256,7 +257,6 @@ class VideoBubbleComponent extends PositionComponent {
   }
 
   VideoTrack? _getVideoTrack() {
-    // Try to get the camera video track from the participant
     for (final publication in participant.videoTrackPublications) {
       final track = publication.track;
       if (track != null && track.kind == TrackType.VIDEO) {
@@ -390,6 +390,11 @@ class VideoBubbleComponent extends PositionComponent {
       );
 
       canvas.restore();
+
+      // Draw loading spinner overlay if still loading
+      if (_isLoading) {
+        _drawLoadingSpinner(canvas, center, radius);
+      }
     }
 
     if (_shader == null || !ui.ImageFilter.isShaderFilterSupported) {
@@ -399,6 +404,35 @@ class VideoBubbleComponent extends PositionComponent {
         ..strokeWidth = 2;
       canvas.drawCircle(center, radius, borderPaint);
     }
+  }
+
+  /// Draw a spinning loading indicator arc
+  void _drawLoadingSpinner(Canvas canvas, Offset center, double radius) {
+    final spinnerRadius = radius * 0.6;
+    final spinnerRect = Rect.fromCircle(center: center, radius: spinnerRadius);
+
+    // Draw a spinning arc
+    final spinnerPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(_loadingRotation);
+    canvas.translate(-center.dx, -center.dy);
+
+    // Draw arc (270 degrees, leaving a gap)
+    canvas.drawArc(
+      spinnerRect,
+      0,
+      pi * 1.5, // 270 degrees
+      false,
+      spinnerPaint,
+    );
+
+    canvas.restore();
   }
 
   String _getInitial() {

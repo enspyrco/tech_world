@@ -31,6 +31,10 @@ target 'Runner' do
   use_modular_headers!
 
   flutter_install_all_macos_pods File.dirname(File.realpath(__FILE__))
+
+  # Local pod for FFI video frame capture
+  pod 'VideoFrameCapture', :path => 'VideoFrameCapture'
+
   target 'RunnerTests' do
     inherit! :search_paths
   end
