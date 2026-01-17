@@ -21,6 +21,7 @@ void main() {
       uriString: '',
       authUserStream: authUserController.stream,
       webSocketChannel: fakeWebSocketChannel,
+      roomId: 'test_room',
     );
 
     // When a user signs in / signs out, the authUserStream passed into the
@@ -35,7 +36,7 @@ void main() {
       serverController.stream,
       emitsInOrder(
         [
-          '{"type":"arrival","user":{"id":"id","displayName":"displayName"}}',
+          '{"type":"arrival","user":{"id":"id","displayName":"displayName"},"roomId":"test_room"}',
           '{"type":"departure","userId":"id"}'
         ],
       ),
@@ -51,6 +52,7 @@ void main() {
       uriString: '',
       authUserStream: StreamController<AuthUser>().stream,
       webSocketChannel: fakeWebSocketChannel,
+      roomId: 'test_room',
     );
 
     // First we have the server send OtherUsersMessage with one user, then
@@ -78,7 +80,9 @@ void main() {
     );
   });
 
-  test('when server sends PlayerPathMessage, it is emitted through playerPaths stream', () async {
+  test(
+      'when server sends PlayerPathMessage, it is emitted through playerPaths stream',
+      () async {
     final serverController = StreamController<String>.broadcast();
     final fakeWebSocketChannel =
         FakeWebSocketChannel(serverController.stream, serverController.sink);
@@ -87,6 +91,7 @@ void main() {
       uriString: '',
       authUserStream: StreamController<AuthUser>().stream,
       webSocketChannel: fakeWebSocketChannel,
+      roomId: 'test_room',
     );
 
     // Set up a future to capture the emitted PlayerPath
@@ -96,6 +101,7 @@ void main() {
     final pathMessage = {
       'type': 'player_path',
       'userId': 'player123',
+      'roomId': 'test_room',
       'points': [
         {'x': 0.0, 'y': 0.0},
         {'x': 1.0, 'y': 1.0},
@@ -112,10 +118,12 @@ void main() {
     expect(playerPath.largeGridPoints[0], equals(Vector2(0.0, 0.0)));
     expect(playerPath.largeGridPoints[1], equals(Vector2(1.0, 1.0)));
     expect(playerPath.largeGridPoints[2], equals(Vector2(2.0, 2.0)));
-    expect(playerPath.directions, equals([Direction.downRight, Direction.downRight]));
+    expect(playerPath.directions,
+        equals([Direction.downRight, Direction.downRight]));
   });
 
-  test('publishPath sends correctly formatted PlayerPathMessage to server', () async {
+  test('publishPath sends correctly formatted PlayerPathMessage to server',
+      () async {
     final serverController = StreamController<String>.broadcast();
     final messageSink = StreamController<String>();
     final fakeWebSocketChannel =
@@ -125,6 +133,7 @@ void main() {
       uriString: '',
       authUserStream: StreamController<AuthUser>().stream,
       webSocketChannel: fakeWebSocketChannel,
+      roomId: 'test_room',
     );
 
     // Capture the message sent to the server
@@ -142,11 +151,13 @@ void main() {
     final decoded = jsonDecode(sentMessage) as Map<String, dynamic>;
     expect(decoded['type'], equals('player_path'));
     expect(decoded['userId'], equals('player456'));
+    expect(decoded['roomId'], equals('test_room'));
     expect(decoded['points'], hasLength(2));
     expect(decoded['directions'], equals(['downRight']));
   });
 
-  test('does not send departure message when SignedOutUser has empty id', () async {
+  test('does not send departure message when SignedOutUser has empty id',
+      () async {
     final authUserController = StreamController<AuthUser>();
     final serverController = StreamController<String>.broadcast();
     final messageSink = StreamController<String>();
@@ -157,6 +168,7 @@ void main() {
       uriString: '',
       authUserStream: authUserController.stream,
       webSocketChannel: fakeWebSocketChannel,
+      roomId: 'test_room',
     );
 
     // Collect all messages sent within a short time window

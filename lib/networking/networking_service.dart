@@ -21,8 +21,9 @@ class NetworkingService {
   NetworkingService({
     required Stream<AuthUser> authUserStream,
     required String uriString,
+    required String roomId,
     WebSocketChannel? webSocketChannel,
-  }) {
+  }) : _roomId = roomId {
     _connect(uriString: uriString, webSocketChannel: webSocketChannel);
     _authUserStreamSubscription = authUserStream.listen((authUser) {
       if (authUser is SignedOutUser) {
@@ -34,6 +35,8 @@ class NetworkingService {
       }
     });
   }
+
+  final String _roomId;
 
   // int _departureTime = 0;
   Set<NetworkUser> _otherNetworkUsers = {};
@@ -57,6 +60,7 @@ class NetworkingService {
   }) {
     final message = PlayerPathMessage(
         userId: uid,
+        roomId: _roomId,
         points: points,
         directions:
             directions.map<String>((direction) => direction.name).toList());
@@ -121,6 +125,7 @@ class NetworkingService {
         jsonEncode(
           ArrivalMessage(
             NetworkUser(id: authUser.id, displayName: authUser.displayName),
+            roomId: _roomId,
           ).toJson(),
         ),
       );

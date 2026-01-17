@@ -5,6 +5,7 @@ import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/config/server_config.dart';
+import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/networking/networking_service.dart';
@@ -56,6 +57,7 @@ class _MyAppState extends State<MyApp> {
     final networkingService = NetworkingService(
       uriString: ServerConfig.gameServerUrl,
       authUserStream: authService.authStateChanges,
+      roomId: defaultMap.id,
     );
 
     // Stage 3: Initialize game world
