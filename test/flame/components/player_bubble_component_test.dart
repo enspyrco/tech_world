@@ -3,11 +3,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 
 void main() {
+  late PositionComponent mockTarget;
+
+  setUp(() {
+    mockTarget = PositionComponent(position: Vector2(100, 100));
+  });
+
   group('PlayerBubbleComponent', () {
     test('uses displayName initial when displayName is not empty', () {
       final component = PlayerBubbleComponent(
         displayName: 'Alice',
         playerId: 'user-123',
+        target: mockTarget,
       );
 
       // Access the private method via the component's behavior
@@ -19,6 +26,7 @@ void main() {
       final component = PlayerBubbleComponent(
         displayName: 'Bob',
         playerId: 'user-456',
+        target: mockTarget,
       );
 
       expect(component.bubbleSize, equals(48));
@@ -29,6 +37,7 @@ void main() {
       final component = PlayerBubbleComponent(
         displayName: 'Charlie',
         playerId: 'user-789',
+        target: mockTarget,
         bubbleSize: 64,
       );
 
@@ -40,6 +49,7 @@ void main() {
       final component = PlayerBubbleComponent(
         displayName: 'Diana',
         playerId: 'user-101',
+        target: mockTarget,
       );
 
       expect(component.anchor, equals(Anchor.bottomCenter));
@@ -49,6 +59,7 @@ void main() {
       final component = PlayerBubbleComponent(
         displayName: '',
         playerId: 'xyz-player',
+        target: mockTarget,
       );
 
       expect(component.playerId, equals('xyz-player'));
@@ -58,10 +69,21 @@ void main() {
       final component = PlayerBubbleComponent(
         displayName: '',
         playerId: '',
+        target: mockTarget,
       );
 
       expect(component.displayName, isEmpty);
       expect(component.playerId, isEmpty);
+    });
+
+    test('stores target reference', () {
+      final component = PlayerBubbleComponent(
+        displayName: 'Eve',
+        playerId: 'user-111',
+        target: mockTarget,
+      );
+
+      expect(component.target, equals(mockTarget));
     });
   });
 }

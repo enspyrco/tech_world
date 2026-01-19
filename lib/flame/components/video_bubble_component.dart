@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:tech_world/flame/shared/tech_world_config.dart';
 
 import '../../native/video_frame_capture.dart' as ffi;
 import '../../native/web_video_capture.dart' as web_capture;
@@ -39,6 +40,7 @@ class VideoBubbleComponent extends PositionComponent {
   VideoBubbleComponent({
     required this.participant,
     required this.displayName,
+    required this.target,
     this.bubbleSize = 64,
     this.targetFps = 15,
   }) : super(
@@ -50,6 +52,9 @@ class VideoBubbleComponent extends PositionComponent {
   final String displayName;
   final double bubbleSize;
   final int targetFps;
+
+  /// The component this bubble follows.
+  final PositionComponent target;
 
   ui.Image? _currentFrame;
   VideoTrack? _videoTrack;
@@ -79,7 +84,7 @@ class VideoBubbleComponent extends PositionComponent {
   int _captureRetryCount = 0;
   static const int _maxCaptureRetries = 10;
   double _timeSinceLastRetry = 0;
-  static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
+  static const double _retryIntervalSeconds = 0.1; // Retry every 100ms
 
   // Loading state
   bool _isLoading = true;
@@ -128,17 +133,25 @@ class VideoBubbleComponent extends PositionComponent {
     super.update(dt);
     _time += dt;
 
+    // Update position to follow target
+    position = target.position + TechWorldConfig.bubbleOffset;
+
     // Update loading animation
     if (_isLoading) {
       _loadingRotation += _loadingSpinSpeed * dt;
     }
 
-    // Try to initialize capture if not yet done (with retry backoff)
+    // Try to initialize capture if not yet done
     if (!_captureInitialized && _captureRetryCount < _maxCaptureRetries) {
-      _timeSinceLastRetry += dt;
-      if (_timeSinceLastRetry >= _retryIntervalSeconds) {
-        _timeSinceLastRetry = 0;
+      // Try immediately on first update, then retry at intervals
+      if (_captureRetryCount == 0) {
         _initializeCapture();
+      } else {
+        _timeSinceLastRetry += dt;
+        if (_timeSinceLastRetry >= _retryIntervalSeconds) {
+          _timeSinceLastRetry = 0;
+          _initializeCapture();
+        }
       }
     }
 
