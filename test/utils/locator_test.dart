@@ -57,6 +57,38 @@ void main() {
       expect(locate<_TestService>().name, equals('service1'));
       expect(locate<_AnotherService>().value, equals(42));
     });
+
+    test('remove removes registered object', () {
+      final testObject = _RemovableService('removable');
+      Locator.add<_RemovableService>(testObject);
+
+      // Verify it's registered
+      expect(Locator.maybeLocate<_RemovableService>(), same(testObject));
+
+      // Remove it
+      Locator.remove<_RemovableService>();
+
+      // Verify it's gone
+      expect(Locator.maybeLocate<_RemovableService>(), isNull);
+    });
+
+    test('remove does not throw when type not registered', () {
+      // Should not throw
+      expect(() => Locator.remove<_NeverRegisteredService>(), returnsNormally);
+    });
+
+    test('maybeLocate returns object when registered', () {
+      final testObject = _MaybeService('maybe');
+      Locator.add<_MaybeService>(testObject);
+
+      final located = Locator.maybeLocate<_MaybeService>();
+      expect(located, same(testObject));
+    });
+
+    test('maybeLocate returns null when not registered', () {
+      final located = Locator.maybeLocate<_NotRegisteredService>();
+      expect(located, isNull);
+    });
   });
 }
 
@@ -71,3 +103,17 @@ class _AnotherService {
 }
 
 class _UnregisteredService {}
+
+class _RemovableService {
+  _RemovableService(this.name);
+  final String name;
+}
+
+class _NeverRegisteredService {}
+
+class _MaybeService {
+  _MaybeService(this.name);
+  final String name;
+}
+
+class _NotRegisteredService {}

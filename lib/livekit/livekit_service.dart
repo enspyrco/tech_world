@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:tech_world/flame/shared/direction.dart';
+import 'package:tech_world/flame/shared/player_path.dart';
 
 /// Service that manages LiveKit room connection and participant tracking.
 ///
@@ -67,6 +70,51 @@ class LiveKitService {
 
   /// Stream of data channel messages received from other participants
   Stream<DataChannelMessage> get dataReceived => _dataReceivedController.stream;
+
+  /// Stream of player position updates received from other participants.
+  ///
+  /// Filters dataReceived for 'position' topic and parses into PlayerPath.
+  Stream<PlayerPath> get positionReceived => dataReceived
+      .where((msg) => msg.topic == 'position')
+      .map((msg) {
+        final json = msg.json;
+        if (json == null) return null;
+        return _parsePlayerPath(json);
+      })
+      .where((path) => path != null)
+      .cast<PlayerPath>();
+
+  PlayerPath? _parsePlayerPath(Map<String, dynamic> json) {
+    try {
+      final playerId = json['playerId'] as String?;
+      final pointsJson = json['points'] as List<dynamic>?;
+      final directionsJson = json['directions'] as List<dynamic>?;
+
+      if (playerId == null || pointsJson == null || directionsJson == null) {
+        return null;
+      }
+
+      final points = pointsJson
+          .map((p) => Vector2(
+                (p['x'] as num).toDouble(),
+                (p['y'] as num).toDouble(),
+              ))
+          .toList();
+
+      final directions = directionsJson
+          .map((d) => Direction.values.asNameMap()[d] ?? Direction.none)
+          .toList();
+
+      return PlayerPath(
+        playerId: playerId,
+        largeGridPoints: points,
+        directions: directions,
+      );
+    } catch (e) {
+      debugPrint('LiveKitService: Failed to parse player path: $e');
+      return null;
+    }
+  }
 
   /// Current room instance
   Room? get room => _room;
@@ -238,6 +286,26 @@ class LiveKitService {
       reliable: reliable,
       destinationIdentities: destinationIdentities,
       topic: topic,
+    );
+  }
+
+  /// Publish the local player's position to other participants.
+  ///
+  /// Uses unreliable delivery for lower latency since positions update frequently.
+  Future<void> publishPosition({
+    required List<Vector2> points,
+    required List<Direction> directions,
+  }) async {
+    final message = {
+      'playerId': userId,
+      'points': points.map((p) => {'x': p.x, 'y': p.y}).toList(),
+      'directions': directions.map((d) => d.name).toList(),
+    };
+
+    await publishJson(
+      message,
+      topic: 'position',
+      reliable: false, // Positions can use unreliable for lower latency
     );
   }
 
