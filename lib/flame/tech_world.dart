@@ -11,6 +11,7 @@ import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
+import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/grid_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
@@ -50,13 +51,13 @@ class TechWorld extends World with TapCallbacks {
   );
 
   final Map<String, PlayerComponent> _otherPlayerComponentsMap = {};
+  BotCharacterComponent? _botCharacterComponent;
   final GridComponent _gridComponent = GridComponent();
   final BarriersComponent _barriersComponent = BarriersComponent();
   late PathComponent _pathComponent;
 
   // Bubble components - shown when player is near other players
   static const _botUserId = 'bot-claude';
-  static const _botDisplayName = 'Claude';
   static const _localPlayerBubbleKey = '_local_player_';
   static const _proximityThreshold = 3; // grid squares
   static final _bubbleOffset =
@@ -84,9 +85,14 @@ class TechWorld extends World with TapCallbacks {
   String get localPlayerId => _userPlayerComponent.id;
 
   Map<String, Point<int>> get otherPlayerPositions {
-    return _otherPlayerComponentsMap.map(
+    final positions = _otherPlayerComponentsMap.map(
       (id, component) => MapEntry(id, component.miniGridPosition),
     );
+    // Include bot position if bot character exists
+    if (_botCharacterComponent != null) {
+      positions[_botUserId] = _botCharacterComponent!.miniGridPosition;
+    }
+    return positions;
   }
 
   @override
@@ -135,6 +141,27 @@ class TechWorld extends World with TapCallbacks {
       }
     }
 
+    // Check proximity to bot character
+    if (_botCharacterComponent != null) {
+      final botGrid = _botCharacterComponent!.miniGridPosition;
+      final botDistance = max(
+        (botGrid.x - playerGrid.x).abs(),
+        (botGrid.y - playerGrid.y).abs(),
+      );
+
+      if (botDistance <= _proximityThreshold) {
+        nearbyPlayerIds.add(_botUserId);
+
+        if (!_playerBubbles.containsKey(_botUserId)) {
+          // Create status bubble for bot
+          final bubble = BotBubbleComponent();
+          bubble.position = _botCharacterComponent!.position + _bubbleOffset;
+          _playerBubbles[_botUserId] = bubble;
+          add(bubble);
+        }
+      }
+    }
+
     // Show local player's bubble if near anyone
     if (nearbyPlayerIds.isNotEmpty) {
       if (!_playerBubbles.containsKey(_localPlayerBubbleKey)) {
@@ -165,6 +192,11 @@ class TechWorld extends World with TapCallbacks {
     for (final entry in _playerBubbles.entries) {
       if (entry.key == _localPlayerBubbleKey) {
         entry.value.position = _userPlayerComponent.position + _bubbleOffset;
+      } else if (entry.key == _botUserId) {
+        if (_botCharacterComponent != null) {
+          entry.value.position =
+              _botCharacterComponent!.position + _bubbleOffset;
+        }
       } else {
         final playerComponent = _otherPlayerComponentsMap[entry.key];
         if (playerComponent != null) {
@@ -176,10 +208,6 @@ class TechWorld extends World with TapCallbacks {
 
   PositionComponent _createBubbleForPlayer(
       String playerId, PlayerComponent playerComponent) {
-    if (playerId == _botUserId) {
-      return BotBubbleComponent(name: _botDisplayName);
-    }
-
     // Check if this player has a LiveKit participant with video
     final participant = _liveKitService?.getParticipant(playerId);
     if (participant != null && _hasVideoTrack(participant)) {
@@ -404,21 +432,45 @@ class TechWorld extends World with TapCallbacks {
     });
     _userAddedSubscription = _userAddedStream.listen((networkUser) {
       debugPrint('Adding user: ${networkUser.id}');
-      final playerComponent = PlayerComponent.from(networkUser);
-      _otherPlayerComponentsMap[networkUser.id] = playerComponent;
-      add(playerComponent);
+      if (networkUser.id == _botUserId) {
+        // Create bot character component instead of player component
+        _botCharacterComponent = BotCharacterComponent(
+          position: Vector2.zero(),
+          id: networkUser.id,
+          displayName: networkUser.displayName,
+        );
+        add(_botCharacterComponent!);
+      } else {
+        final playerComponent = PlayerComponent.from(networkUser);
+        _otherPlayerComponentsMap[networkUser.id] = playerComponent;
+        add(playerComponent);
+      }
     });
     _userRemovedSubscription = _userRemovedStream.listen((networkUser) {
-      final playerComponent = _otherPlayerComponentsMap.remove(networkUser.id);
-      if (playerComponent != null) {
-        remove(playerComponent);
+      if (networkUser.id == _botUserId) {
+        if (_botCharacterComponent != null) {
+          remove(_botCharacterComponent!);
+          _botCharacterComponent = null;
+        }
+      } else {
+        final playerComponent = _otherPlayerComponentsMap.remove(networkUser.id);
+        if (playerComponent != null) {
+          remove(playerComponent);
+        }
       }
     });
     _playerPathsSubscription = _playerPathsStream.listen((PlayerPath path) {
       debugPrint(
           'Received path for ${path.playerId}, component exists: ${_otherPlayerComponentsMap.containsKey(path.playerId)}');
-      _otherPlayerComponentsMap[path.playerId]
-          ?.move(path.directions, path.largeGridPoints);
+      if (path.playerId == _botUserId) {
+        // Set bot position directly (bot doesn't animate movement)
+        if (_botCharacterComponent != null && path.largeGridPoints.isNotEmpty) {
+          _botCharacterComponent!.position = path.largeGridPoints.first;
+        }
+      } else {
+        _otherPlayerComponentsMap[path.playerId]
+            ?.move(path.directions, path.largeGridPoints);
+      }
     });
   }
 

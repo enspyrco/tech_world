@@ -17,6 +17,7 @@ class TechWorldGame extends FlameGame {
       'NPC12.png',
       'NPC13.png',
       'single_room.png',
+      'claude_bot.png',
     ]);
 
     // Add a snapshot component.
