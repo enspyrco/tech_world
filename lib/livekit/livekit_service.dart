@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
@@ -41,6 +42,8 @@ class LiveKitService {
       StreamController<(Participant, VideoTrack)>.broadcast();
   final _localTrackPublishedController =
       StreamController<LocalTrackPublication>.broadcast();
+  final _dataReceivedController =
+      StreamController<DataChannelMessage>.broadcast();
 
   /// Stream of participants that joined the room
   Stream<RemoteParticipant> get participantJoined =>
@@ -61,6 +64,9 @@ class LiveKitService {
   /// Stream of local track publication events (fires when camera/mic is published)
   Stream<LocalTrackPublication> get localTrackPublished =>
       _localTrackPublishedController.stream;
+
+  /// Stream of data channel messages received from other participants
+  Stream<DataChannelMessage> get dataReceived => _dataReceivedController.stream;
 
   /// Current room instance
   Room? get room => _room;
@@ -191,6 +197,50 @@ class LiveKitService {
     return _room!.remoteParticipants[identity];
   }
 
+  /// Publish data to the room via data channel.
+  ///
+  /// [data] is the raw bytes to send.
+  /// [reliable] when true, uses reliable (ordered) delivery (default: true).
+  /// [destinationIdentities] when provided, sends only to specific participants.
+  /// [topic] optional topic string to categorize the message.
+  Future<void> publishData(
+    List<int> data, {
+    bool reliable = true,
+    List<String>? destinationIdentities,
+    String? topic,
+  }) async {
+    if (_room?.localParticipant == null) {
+      debugPrint('LiveKitService: Cannot publish data - not connected');
+      return;
+    }
+
+    await _room!.localParticipant!.publishData(
+      data,
+      reliable: reliable,
+      destinationIdentities: destinationIdentities,
+      topic: topic,
+    );
+    debugPrint('LiveKitService: Published data, topic: $topic');
+  }
+
+  /// Publish a JSON message to the room via data channel.
+  ///
+  /// Convenience method that encodes [json] as UTF-8 bytes.
+  Future<void> publishJson(
+    Map<String, dynamic> json, {
+    bool reliable = true,
+    List<String>? destinationIdentities,
+    String? topic,
+  }) async {
+    final data = utf8.encode(jsonEncode(json));
+    await publishData(
+      data,
+      reliable: reliable,
+      destinationIdentities: destinationIdentities,
+      topic: topic,
+    );
+  }
+
   Future<String?> _retrieveToken() async {
     try {
       debugPrint('LiveKitService: Retrieving token for room "$roomName"');
@@ -243,6 +293,15 @@ class LiveKitService {
         debugPrint(
             'LiveKitService: Local track published: ${event.publication.kind}');
         _localTrackPublishedController.add(event.publication);
+      })
+      ..on<DataReceivedEvent>((event) {
+        debugPrint(
+            'LiveKitService: Data received from: ${event.participant?.identity}, topic: ${event.topic}');
+        _dataReceivedController.add(DataChannelMessage(
+          senderId: event.participant?.identity,
+          topic: event.topic,
+          data: event.data,
+        ));
       });
   }
 
@@ -254,5 +313,40 @@ class LiveKitService {
     _speakingChangedController.close();
     _trackSubscribedController.close();
     _localTrackPublishedController.close();
+    _dataReceivedController.close();
   }
+}
+
+/// A message received via LiveKit data channel.
+class DataChannelMessage {
+  DataChannelMessage({
+    required this.senderId,
+    required this.topic,
+    required this.data,
+  });
+
+  /// Identity of the sender, or null if sent from server API.
+  final String? senderId;
+
+  /// Optional topic categorizing the message.
+  final String? topic;
+
+  /// Raw bytes of the message payload.
+  final List<int> data;
+
+  /// Decode data as UTF-8 JSON.
+  Map<String, dynamic>? get json {
+    try {
+      return jsonDecode(utf8.decode(data)) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Decode data as UTF-8 string.
+  String get text => utf8.decode(data);
+
+  @override
+  String toString() =>
+      'DataChannelMessage(senderId: $senderId, topic: $topic, data: ${data.length} bytes)';
 }
