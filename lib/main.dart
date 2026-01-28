@@ -10,6 +10,7 @@ import 'package:tech_world/config/server_config.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
+import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/networking/networking_service.dart';
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
@@ -31,6 +32,8 @@ class _MyAppState extends State<MyApp> {
   bool _initialized = false;
   String _loadingMessage = 'Initializing...';
   double? _progress;
+  LiveKitService? _liveKitService;
+  ChatService? _chatService;
 
   @override
   void initState() {
@@ -81,13 +84,13 @@ class _MyAppState extends State<MyApp> {
       _progress = 0.9;
     });
 
-    final chatService = ChatService();
-
     Locator.add<AuthService>(authService);
     Locator.add<NetworkingService>(networkingService);
     Locator.add<TechWorld>(techWorld);
     Locator.add<TechWorldGame>(techWorldGame);
-    Locator.add<ChatService>(chatService);
+
+    // Listen for auth changes to set up LiveKit when user signs in
+    authService.authStateChanges.listen(_onAuthStateChanged);
 
     // Complete
     setState(() {
@@ -101,6 +104,43 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       _initialized = true;
     });
+  }
+
+  Future<void> _onAuthStateChanged(AuthUser user) async {
+    if (user is SignedOutUser) {
+      // User signed out - disconnect LiveKit
+      _liveKitService?.dispose();
+      _chatService?.dispose();
+      _liveKitService = null;
+      _chatService = null;
+      Locator.remove<LiveKitService>();
+      Locator.remove<ChatService>();
+      debugPrint('User signed out - LiveKit disconnected');
+    } else {
+      // User signed in - create and connect LiveKit
+      debugPrint('User signed in: ${user.id} (${user.displayName})');
+
+      _liveKitService = LiveKitService(
+        userId: user.id,
+        displayName: user.displayName,
+        roomName: defaultMap.id,
+      );
+
+      _chatService = ChatService(liveKitService: _liveKitService!);
+
+      Locator.add<LiveKitService>(_liveKitService!);
+      Locator.add<ChatService>(_chatService!);
+
+      // Connect to LiveKit
+      final connected = await _liveKitService!.connect();
+      debugPrint('LiveKit connected: $connected');
+
+      if (connected) {
+        // Enable camera and microphone
+        await _liveKitService!.setCameraEnabled(true);
+        await _liveKitService!.setMicrophoneEnabled(true);
+      }
+    }
   }
 
   @override
@@ -167,10 +207,20 @@ class _MyAppState extends State<MyApp> {
                         snapshot.data is SignedOutUser) {
                       return const SizedBox.shrink();
                     }
+                    // ChatService is created when user signs in
+                    final chatService = Locator.maybeLocate<ChatService>();
+                    if (chatService == null) {
+                      return SizedBox(
+                        width: constraints.maxWidth >= 800 ? 320 : 280,
+                        child: const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    }
                     return SizedBox(
                       width: constraints.maxWidth >= 800 ? 320 : 280,
                       child: ChatPanel(
-                        chatService: locate<ChatService>(),
+                        chatService: chatService,
                       ),
                     );
                   },

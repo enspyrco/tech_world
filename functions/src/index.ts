@@ -33,7 +33,13 @@ export const retrieveLiveKitToken = onCall(async (request) => {
     },
   );
 
-  at.addGrant({ roomJoin: true, room: roomName });
+  at.addGrant({
+    roomJoin: true,
+    room: roomName,
+    canPublish: true,
+    canPublishData: true,
+    canSubscribe: true,
+  });
 
   const token = await at.toJwt();
 

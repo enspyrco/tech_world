@@ -54,4 +54,14 @@ class Locator {
 
     _objectOfType[T] = object;
   }
+
+  /// Removes an entry from the _objectOfType map.
+  static void remove<T>() {
+    _objectOfType.remove(T);
+  }
+
+  /// Attempts to locate an object of type T, returns null if not found.
+  static T? maybeLocate<T>() {
+    return _objectOfType[T] as T?;
+  }
 }
