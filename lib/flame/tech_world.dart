@@ -268,11 +268,14 @@ class TechWorld extends World with TapCallbacks {
       return;
     }
 
-    debugPrint('Initializing LiveKit for user: $userId');
-    _liveKitService = LiveKitService(
-      userId: userId,
-      displayName: displayName,
-    );
+    // Get LiveKitService from Locator (created in main.dart when user signs in)
+    _liveKitService = Locator.maybeLocate<LiveKitService>();
+    if (_liveKitService == null) {
+      debugPrint('LiveKitService not available yet');
+      return;
+    }
+
+    debugPrint('TechWorld: Using LiveKitService from Locator');
 
     // Listen for participant events to update video bubbles
     _liveKitService!.participantJoined.listen((participant) {
@@ -301,19 +304,14 @@ class TechWorld extends World with TapCallbacks {
       }
     });
 
-    // Connect to room
-    final connected = await _liveKitService!.connect();
-    if (connected) {
-      debugPrint('LiveKit connected successfully');
-
-      // Enable camera and microphone
+    // Check if already connected, otherwise wait for connection
+    if (_liveKitService!.isConnected) {
+      debugPrint('LiveKit already connected');
       await _liveKitService!.setCameraEnabled(true);
       await _liveKitService!.setMicrophoneEnabled(true);
-
-      // Refresh local player bubble now that camera is enabled
       _refreshLocalPlayerBubble();
     } else {
-      debugPrint('LiveKit connection failed');
+      debugPrint('Waiting for LiveKit connection...');
     }
   }
 
