@@ -79,6 +79,9 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<PlayerPath>? _playerPathsSubscription;
   StreamSubscription<(Participant, VideoTrack)>? _trackSubscribedSubscription;
   StreamSubscription<LocalTrackPublication>? _localTrackPublishedSubscription;
+  StreamSubscription<PlayerPath>? _liveKitPositionSubscription;
+  StreamSubscription<RemoteParticipant>? _participantJoinedSubscription;
+  StreamSubscription<RemoteParticipant>? _participantLeftSubscription;
 
   // Position tracking for proximity detection
   Point<int> get localPlayerPosition => _userPlayerComponent.miniGridPosition;
@@ -277,10 +280,71 @@ class TechWorld extends World with TapCallbacks {
 
     debugPrint('TechWorld: Using LiveKitService from Locator');
 
-    // Listen for participant events to update video bubbles
-    _liveKitService!.participantJoined.listen((participant) {
+    // Subscribe to position updates from other players via LiveKit
+    _liveKitPositionSubscription =
+        _liveKitService!.positionReceived.listen((PlayerPath path) {
+      debugPrint('LiveKit position received for ${path.playerId}');
+      // Don't process our own position
+      if (path.playerId == userId) return;
+
+      if (path.playerId == _botUserId) {
+        // Set bot position directly (bot doesn't animate movement)
+        if (_botCharacterComponent != null && path.largeGridPoints.isNotEmpty) {
+          _botCharacterComponent!.position = path.largeGridPoints.first;
+        }
+      } else {
+        // If player component doesn't exist, create it
+        if (!_otherPlayerComponentsMap.containsKey(path.playerId)) {
+          debugPrint('Creating player component for ${path.playerId} from position data');
+          final playerComponent = PlayerComponent(
+            position: path.largeGridPoints.isNotEmpty
+                ? path.largeGridPoints.first
+                : Vector2.zero(),
+            id: path.playerId,
+            displayName: path.playerId, // Use ID as fallback display name
+          );
+          _otherPlayerComponentsMap[path.playerId] = playerComponent;
+          add(playerComponent);
+        }
+        _otherPlayerComponentsMap[path.playerId]
+            ?.move(path.directions, path.largeGridPoints);
+      }
+    });
+
+    // Listen for participant join/leave to manage player presence
+    _participantJoinedSubscription =
+        _liveKitService!.participantJoined.listen((participant) {
       debugPrint('LiveKit participant joined: ${participant.identity}');
       _refreshBubbleForPlayer(participant.identity);
+
+      // Create player component if it doesn't exist
+      if (participant.identity != _botUserId &&
+          !_otherPlayerComponentsMap.containsKey(participant.identity)) {
+        final playerComponent = PlayerComponent(
+          position: Vector2.zero(),
+          id: participant.identity,
+          displayName: participant.name.isNotEmpty
+              ? participant.name
+              : participant.identity,
+        );
+        _otherPlayerComponentsMap[participant.identity] = playerComponent;
+        add(playerComponent);
+      }
+    });
+
+    _participantLeftSubscription =
+        _liveKitService!.participantLeft.listen((participant) {
+      debugPrint('LiveKit participant left: ${participant.identity}');
+
+      // Remove player component and bubble
+      final playerComponent =
+          _otherPlayerComponentsMap.remove(participant.identity);
+      if (playerComponent != null) {
+        remove(playerComponent);
+      }
+
+      final bubble = _playerBubbles.remove(participant.identity);
+      bubble?.removeFromParent();
     });
 
     _liveKitService!.speakingChanged.listen((event) {
@@ -487,6 +551,14 @@ class TechWorld extends World with TapCallbacks {
     _userPlayerComponent.move(
         _pathComponent.directions, _pathComponent.largeGridPoints);
 
+    // Publish position via LiveKit data channel
+    _liveKitService?.publishPosition(
+      points: _pathComponent.largeGridPoints,
+      directions: _pathComponent.directions,
+    );
+
+    // Also publish via WebSocket for backwards compatibility
+    // TODO: Remove once all clients use LiveKit for positions
     final pathPoints = _pathComponent.largeGridPoints
         .map<Double2>((gridPoint) => Double2(x: gridPoint.x, y: gridPoint.y))
         .toList();
@@ -505,6 +577,9 @@ class TechWorld extends World with TapCallbacks {
     _authStateChangesSubscription?.cancel();
     _trackSubscribedSubscription?.cancel();
     _localTrackPublishedSubscription?.cancel();
+    _liveKitPositionSubscription?.cancel();
+    _participantJoinedSubscription?.cancel();
+    _participantLeftSubscription?.cancel();
     _liveKitService?.dispose();
   }
 }
