@@ -6,12 +6,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
-import 'package:tech_world/config/server_config.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
-import 'package:tech_world/networking/networking_service.dart';
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -59,11 +57,6 @@ class _MyAppState extends State<MyApp> {
     });
 
     final authService = AuthService();
-    final networkingService = NetworkingService(
-      uriString: ServerConfig.gameServerUrl,
-      authUserStream: authService.authStateChanges,
-      roomId: defaultMap.id,
-    );
 
     // Stage 3: Initialize game world
     setState(() {
@@ -72,10 +65,8 @@ class _MyAppState extends State<MyApp> {
     });
 
     final techWorld = TechWorld(
-        authStateChanges: authService.authStateChanges,
-        playerPaths: networkingService.playerPaths,
-        userAdded: networkingService.userAdded,
-        userRemoved: networkingService.userRemoved);
+      authStateChanges: authService.authStateChanges,
+    );
     final techWorldGame = TechWorldGame(world: techWorld);
 
     // Stage 4: Register services
@@ -85,7 +76,6 @@ class _MyAppState extends State<MyApp> {
     });
 
     Locator.add<AuthService>(authService);
-    Locator.add<NetworkingService>(networkingService);
     Locator.add<TechWorld>(techWorld);
     Locator.add<TechWorldGame>(techWorldGame);
 
