@@ -5,10 +5,12 @@ An educational multiplayer 2D virtual world game where players solve coding chal
 ## Features
 
 - Real-time multiplayer movement using WebSocket connections
-- A* pathfinding for player navigation
+- **Room-aware multiplayer** - Players only see others in the same room/map
+- Jump Point Search (JPS) pathfinding for fast player navigation
+- **Predefined maps** - Multiple map layouts (Open Arena, L-Room, Four Corners, Simple Maze)
 - Firebase Authentication for user management
 - LiveKit integration for proximity-based video chat
-- **In-game video bubbles** - Render video feeds directly in the Flame game world using zero-copy FFI frame capture (macOS)
+- **In-game video bubbles** - Render video feeds directly in the Flame game world using zero-copy FFI frame capture (macOS, web)
 - Cross-platform support (macOS, web, etc.)
 
 ## Prerequisites
@@ -55,7 +57,8 @@ flutter test test/networking_service_test.dart  # Run specific test
 - **flame/**: Flame game engine components
   - `TechWorld`: Main world component, handles taps and player movement
   - `PlayerComponent`: Animated player sprites with pathfinding
-  - `PathComponent`: A* pathfinding calculations
+  - `PathComponent`: Jump Point Search (JPS) pathfinding calculations
+  - `maps/`: Predefined map definitions (`GameMap`, `predefined_maps.dart`)
 - **networking/**: WebSocket connection management (`NetworkingService`)
 - **livekit/**: Video chat integration for proximity-based calls
 - **native/**: FFI bindings for native video frame capture
@@ -66,7 +69,7 @@ flutter test test/networking_service_test.dart  # Run specific test
 - `flame`: Game engine
 - `livekit_client`: Video chat
 - `firebase_core`, `firebase_auth`, `cloud_firestore`: Firebase integration
-- `a_star_algorithm`: Pathfinding
+- `jump_point_search`: Fast pathfinding for uniform-cost grids
 - `web_socket_channel`: WebSocket communication
 - `tech_world_networking_types`: Shared message types
 

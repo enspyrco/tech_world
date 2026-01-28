@@ -100,3 +100,6 @@ lib/firebase/firebase_config.dart
 
 # Coverage
 coverage/
+
+# MCP config (contains credentials)
+.mcp.json
