@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// A circular bubble that displays a bot's initial.
+/// A circular bubble that displays the Claude bot mascot (Clawd).
 /// Styled similarly to VideoBubble's no-video state.
 class BotBubble extends StatelessWidget {
   const BotBubble({
@@ -12,6 +12,9 @@ class BotBubble extends StatelessWidget {
   final String name;
   final double size;
 
+  // Clawd's orange color
+  static const clawdOrange = Color(0xFFD97757);
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -20,7 +23,7 @@ class BotBubble extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(
-          color: Colors.blue,
+          color: clawdOrange,
           width: 2,
         ),
         boxShadow: [
@@ -33,14 +36,20 @@ class BotBubble extends StatelessWidget {
       ),
       child: ClipOval(
         child: Container(
-          color: Colors.blueGrey[700],
+          color: const Color(0xFF2D2D2D),
           child: Center(
-            child: Text(
-              _getInitial(),
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: size * 0.4,
-                fontWeight: FontWeight.bold,
+            child: Image.asset(
+              'assets/images/claude_bot.png',
+              width: size * 0.7,
+              height: size * 0.7,
+              filterQuality: FilterQuality.none, // Keep pixel art crisp
+              errorBuilder: (context, error, stackTrace) => Text(
+                _getInitial(),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: size * 0.4,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ),

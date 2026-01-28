@@ -4,30 +4,6 @@ import 'package:tech_world/livekit/widgets/bot_bubble.dart';
 
 void main() {
   group('BotBubble', () {
-    testWidgets('displays first letter of name as uppercase', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: BotBubble(name: 'claude'),
-          ),
-        ),
-      );
-
-      expect(find.text('C'), findsOneWidget);
-    });
-
-    testWidgets('displays ? for empty name', (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: BotBubble(name: ''),
-          ),
-        ),
-      );
-
-      expect(find.text('?'), findsOneWidget);
-    });
-
     testWidgets('uses default size of 80', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
@@ -56,7 +32,7 @@ void main() {
       expect(container.constraints?.maxHeight, equals(120));
     });
 
-    testWidgets('has circular shape with blue border', (tester) async {
+    testWidgets('has circular shape with orange border', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
@@ -84,18 +60,21 @@ void main() {
       expect(find.byType(ClipOval), findsOneWidget);
     });
 
-    testWidgets('text is white and bold', (tester) async {
+    testWidgets('attempts to load claude_bot.png image', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: BotBubble(name: 'Test'),
+            body: BotBubble(name: 'Claude'),
           ),
         ),
       );
 
-      final text = tester.widget<Text>(find.text('T'));
-      expect(text.style?.color, equals(Colors.white));
-      expect(text.style?.fontWeight, equals(FontWeight.bold));
+      // The Image.asset widget should be present
+      expect(find.byType(Image), findsOneWidget);
+    });
+
+    test('clawdOrange constant is correct', () {
+      expect(BotBubble.clawdOrange.toARGB32(), equals(0xFFD97757));
     });
   });
 }
