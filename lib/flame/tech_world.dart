@@ -302,9 +302,19 @@ class TechWorld extends World with TapCallbacks {
       debugPrint('LiveKit participant joined: ${participant.identity}');
       _refreshBubbleForPlayer(participant.identity);
 
-      // Create player component if it doesn't exist
-      if (participant.identity != _botUserId &&
-          !_otherPlayerComponentsMap.containsKey(participant.identity)) {
+      // Create component based on participant type
+      if (participant.identity == _botUserId) {
+        // Create bot character component at default position
+        if (_botCharacterComponent == null) {
+          _botCharacterComponent = BotCharacterComponent(
+            position: Vector2(200, 200),
+            id: participant.identity,
+            displayName: 'Claude',
+          );
+          add(_botCharacterComponent!);
+        }
+      } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
+        // Create player component for regular players
         final playerComponent = PlayerComponent(
           position: Vector2.zero(),
           id: participant.identity,
@@ -321,11 +331,18 @@ class TechWorld extends World with TapCallbacks {
         _liveKitService!.participantLeft.listen((participant) {
       debugPrint('LiveKit participant left: ${participant.identity}');
 
-      // Remove player component and bubble
-      final playerComponent =
-          _otherPlayerComponentsMap.remove(participant.identity);
-      if (playerComponent != null) {
-        remove(playerComponent);
+      // Remove component based on participant type
+      if (participant.identity == _botUserId) {
+        if (_botCharacterComponent != null) {
+          remove(_botCharacterComponent!);
+          _botCharacterComponent = null;
+        }
+      } else {
+        final playerComponent =
+            _otherPlayerComponentsMap.remove(participant.identity);
+        if (playerComponent != null) {
+          remove(playerComponent);
+        }
       }
 
       final bubble = _playerBubbles.remove(participant.identity);
