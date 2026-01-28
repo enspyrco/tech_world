@@ -55,6 +55,20 @@ Note: The Flame game world (`TechWorldGame`/`TechWorld`) is currently commented 
 - `NetworkingService` connects to WebSocket game server
 - Dev: `ws://127.0.0.1:8080`, Prod: `wss://adventures-in-tech.world` (auto-selects via `kReleaseMode`)
 - Message types from `tech_world_networking_types` package (external Git dependency)
+- **Room-aware multiplayer**: `NetworkingService` accepts a `roomId` parameter. Players only see others in the same room. The `roomId` is included in `ArrivalMessage` and `PlayerPathMessage`.
+
+### Maps
+
+Predefined maps are defined in `lib/flame/maps/`:
+
+- `game_map.dart`: `GameMap` class with id, name, barriers (mini-grid coordinates), and spawn point
+- `predefined_maps.dart`: Available maps including:
+  - `openArena` - No barriers, free movement
+  - `lRoom` - L-shaped walls (default map)
+  - `fourCorners` - Barriers in each corner
+  - `simpleMaze` - Basic maze pattern
+
+The default map (`lRoom`) is used in `main.dart` and its `id` is passed as the `roomId` to `NetworkingService`.
 
 ### Proximity Detection
 
@@ -213,3 +227,63 @@ final botPosition = Double2(x: 200.0, y: 200.0);  // Pixel coordinates
 
 - Matchmaking - suggest players team up when struggling with similar concepts
 - Code battles - Claude referees live coding competitions
+
+## LiveKit Self-Hosting Migration
+
+### Current Setup (LiveKit Cloud)
+
+```dart
+// lib/livekit/livekit_service.dart:26
+static const _serverUrl = 'wss://testing-g5wrpk39.livekit.cloud';
+```
+
+- All players join single room `'tech-world'`
+- Free tier: 500 participant-minutes/month
+- Token generation via Firebase Cloud Function
+
+### Migration Steps
+
+1. **Update server URL** in `lib/livekit/livekit_service.dart`:
+   ```dart
+   static const _serverUrl = 'wss://livekit.yourdomain.com';
+   ```
+
+2. **Update Firebase Functions env vars** with self-hosted credentials:
+   ```bash
+   firebase functions:secrets:set LIVEKIT_API_KEY
+   firebase functions:secrets:set LIVEKIT_API_SECRET
+   ```
+
+### Server Requirements
+
+For ~50 concurrent users in a Gather-style proximity app:
+
+| Resource | Minimum |
+|----------|---------|
+| CPU | 4 cores |
+| RAM | 4-8 GB |
+| Ports | 443, 7881, UDP 50000-60000 |
+
+ARM64 compatible - can run on OCI free tier (4 OCPU / 24 GB Ampere).
+
+### Scaling Options
+
+Current: All players → single `tech-world` LiveKit room, proximity filtering client-side.
+
+Future options:
+- **Per-map rooms**: `tech-world-${mapId}` for native isolation
+- **Selective subscription**: Only subscribe to tracks of nearby players
+
+### Docker Deployment
+
+```yaml
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    network_mode: host  # Required for WebRTC
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    command: --config /etc/livekit.yaml
+```
+
+Note: `network_mode: host` is mandatory - LiveKit needs direct UDP access.
