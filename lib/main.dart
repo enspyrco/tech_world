@@ -4,6 +4,8 @@ import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/chat/chat_panel.dart';
+import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/config/server_config.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
@@ -79,10 +81,13 @@ class _MyAppState extends State<MyApp> {
       _progress = 0.9;
     });
 
+    final chatService = ChatService();
+
     Locator.add<AuthService>(authService);
     Locator.add<NetworkingService>(networkingService);
     Locator.add<TechWorld>(techWorld);
     Locator.add<TechWorldGame>(techWorldGame);
+    Locator.add<ChatService>(chatService);
 
     // Complete
     setState(() {
@@ -135,10 +140,8 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ),
                 ),
-                SizedBox(
-                  width: constraints.maxWidth >= 1200
-                      ? constraints.maxWidth / 2
-                      : constraints.maxWidth,
+                Expanded(
+                  flex: 2,
                   child: StreamBuilder<AuthUser>(
                     stream: locate<AuthService>().authStateChanges,
                     builder: (context, snapshot) {
@@ -155,6 +158,22 @@ class _MyAppState extends State<MyApp> {
                       return const AuthGate();
                     },
                   ),
+                ),
+                // Chat panel - always visible when authenticated
+                StreamBuilder<AuthUser>(
+                  stream: locate<AuthService>().authStateChanges,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData ||
+                        snapshot.data is SignedOutUser) {
+                      return const SizedBox.shrink();
+                    }
+                    return SizedBox(
+                      width: constraints.maxWidth >= 800 ? 320 : 280,
+                      child: ChatPanel(
+                        chatService: locate<ChatService>(),
+                      ),
+                    );
+                  },
                 ),
               ],
             );
