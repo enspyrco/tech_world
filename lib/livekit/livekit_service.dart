@@ -241,6 +241,49 @@ class LiveKitService {
     );
   }
 
+  /// Send a ping message to the bot and wait for pong response.
+  ///
+  /// Returns the pong response message if received within [timeout],
+  /// or null if no response.
+  Future<DataChannelMessage?> sendPing({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final pingId = DateTime.now().millisecondsSinceEpoch.toString();
+    final pingMessage = {
+      'type': 'ping',
+      'id': pingId,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    // Listen for pong response with matching ID
+    final pongFuture = dataReceived
+        .where((msg) => msg.topic == 'pong')
+        .where((msg) {
+          final json = msg.json;
+          return json != null &&
+              json['originalMessage']?['id'] == pingId;
+        })
+        .first
+        .timeout(timeout, onTimeout: () => throw TimeoutException('Ping timeout'));
+
+    // Send the ping
+    await publishJson(
+      pingMessage,
+      topic: 'ping',
+      destinationIdentities: ['bot-claude'],
+    );
+    debugPrint('LiveKitService: Sent ping with id: $pingId');
+
+    try {
+      final pong = await pongFuture;
+      debugPrint('LiveKitService: Received pong from ${pong.senderId}');
+      return pong;
+    } on TimeoutException {
+      debugPrint('LiveKitService: Ping timed out');
+      return null;
+    }
+  }
+
   Future<String?> _retrieveToken() async {
     try {
       debugPrint('LiveKitService: Retrieving token for room "$roomName"');
