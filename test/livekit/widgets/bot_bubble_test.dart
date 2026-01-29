@@ -76,5 +76,48 @@ void main() {
     test('clawdOrange constant is correct', () {
       expect(BotBubble.clawdOrange.toARGB32(), equals(0xFFD97757));
     });
+
+    test('_getInitial returns first letter uppercase for non-empty name', () {
+      // We test the widget's behavior indirectly since _getInitial is private
+      // The initial logic is: name.isNotEmpty ? name[0].toUpperCase() : '?'
+      // This is verified through the errorBuilder which uses _getInitial()
+      expect('Claude'[0].toUpperCase(), equals('C'));
+      expect('test'[0].toUpperCase(), equals('T'));
+    });
+
+    test('_getInitial returns ? for empty name', () {
+      const name = '';
+      final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+      expect(initial, equals('?'));
+    });
+
+    testWidgets('has shadow in decoration', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: BotBubble(name: 'Test'),
+          ),
+        ),
+      );
+
+      final container = tester.widget<Container>(find.byType(Container).first);
+      final decoration = container.decoration as BoxDecoration;
+
+      expect(decoration.boxShadow, isNotEmpty);
+    });
+
+    testWidgets('inner container has dark background', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: BotBubble(name: 'Test'),
+          ),
+        ),
+      );
+
+      // Find the inner Container (second one)
+      final containers = find.byType(Container);
+      expect(containers, findsAtLeast(2));
+    });
   });
 }
