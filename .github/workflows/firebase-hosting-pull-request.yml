@@ -26,11 +26,19 @@ jobs:
         run: flutter test --coverage
       - name: Install lcov
         run: sudo apt-get install -y lcov
+      - name: Remove untestable files from coverage
+        run: |
+          lcov --remove coverage/lcov.info \
+            '*/native/video_frame_ffi.dart' \
+            '*/native/video_frame_web_stub.dart' \
+            '*/flame/components/video_bubble_component.dart' \
+            '*/auth/auth_service.dart' \
+            -o coverage/lcov.info
       - name: Report coverage on PR
         uses: zgosalvez/github-actions-report-lcov@v4
         with:
           coverage-files: coverage/lcov.info
-          minimum-coverage: 15
+          minimum-coverage: 30
           github-token: ${{ secrets.GITHUB_TOKEN }}
           update-comment: true
 
