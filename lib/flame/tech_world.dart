@@ -363,10 +363,15 @@ class TechWorld extends World with TapCallbacks {
       _updateBubbleSpeakingState(participant.identity, isSpeaking);
     });
 
-    // Listen for track subscription events to trigger capture init immediately
+    // Listen for track subscription events to upgrade placeholder bubbles to video
     _trackSubscribedSubscription =
         _liveKitService!.trackSubscribed.listen((event) {
-      final (participant, _) = event;
+      final (participant, track) = event;
+      if (track.kind == TrackType.VIDEO) {
+        debugPrint('TechWorld: Video track subscribed for ${participant.identity}, refreshing bubble');
+        // This will upgrade PlayerBubbleComponent to VideoBubbleComponent
+        _refreshBubbleForPlayer(participant.identity);
+      }
       _notifyBubbleTrackReady(participant.identity);
     });
 
