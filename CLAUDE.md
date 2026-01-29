@@ -51,9 +51,16 @@ Access anywhere via `locate<T>()`.
 ### Communication (All via LiveKit)
 
 - **Video/Audio**: LiveKit tracks for proximity-based video chat
-- **Positions**: Data channel broadcasts player positions (`topic: 'position'`)
-- **Chat**: Data channel for shared chat (`topic: 'chat'`, `topic: 'chat-response'`)
+- **Data channels**: All game state via LiveKit data channels (replaced WebSocket game server)
 - **Bot (Clawd)**: Runs on GCP Compute Engine, joins room as participant `bot-claude`
+
+**Data Channel Topics:**
+| Topic | Direction | Purpose |
+|-------|-----------|---------|
+| `position` | broadcast | Player position updates |
+| `chat` | broadcast | User chat messages |
+| `chat-response` | broadcast | Bot responses |
+| `ping` / `pong` | targeted | Connectivity testing |
 
 ### Maps
 
@@ -100,6 +107,8 @@ LiveKit VideoTrack → Native RTCVideoRenderer → Shared Memory Buffer → Dart
 - `macos/Runner/VideoFrameCapture.m` - Native Objective-C implementation using `FlutterWebRTCPlugin`
 
 **Platform Support:** macOS uses FFI capture, web uses ImageBitmap, other platforms show placeholder with initial.
+
+**Timing Note:** When a remote participant joins, their video track may not be subscribed yet. The bubble is initially created as a `PlayerBubbleComponent` (placeholder with initial). When `TrackSubscribedEvent` fires, `_refreshBubbleForPlayer()` upgrades it to a `VideoBubbleComponent`. See `lib/flame/tech_world.dart` lines 366-375.
 
 ### Chat Service
 
