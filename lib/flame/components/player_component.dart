@@ -6,7 +6,7 @@ import 'package:flame/effects.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
-import 'package:tech_world_networking_types/tech_world_networking_types.dart';
+import 'package:tech_world/auth/auth_user.dart';
 
 /// The [PlayerComponent] uses the path points to calculate a list of
 /// [Direction]s that are used to create a list of [MoveEffect]s

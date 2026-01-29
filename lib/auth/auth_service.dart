@@ -2,13 +2,11 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide User;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
-import 'package:tech_world_networking_types/tech_world_networking_types.dart'
-    as networking;
 
 /// When a user signs in the [User] member is updated but the only time the
 /// [authStateChanges] [Stream] emits a [User] is on
@@ -18,7 +16,7 @@ class AuthService {
   AuthUser _user = PlaceholderUser();
   final _userProfileService = UserProfileService();
 
-  networking.User get user => _user;
+  User get user => _user;
   String get userId => _user.id;
   bool get signedIn => !(_user is PlaceholderUser || _user is SignedOutUser);
   Stream<AuthUser> get authStateChanges async* {

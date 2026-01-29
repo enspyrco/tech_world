@@ -941,7 +941,7 @@ packages:
     source: hosted
     version: "1.12.1"
   stream_channel:
-    dependency: "direct dev"
+    dependency: transitive
     description:
       name: stream_channel
       sha256: "969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d"
@@ -972,15 +972,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.0"
-  tech_world_networking_types:
-    dependency: "direct main"
-    description:
-      path: "."
-      ref: HEAD
-      resolved-ref: "82cd94637cb7e655bc03775d28ce8b73516679f4"
-      url: "https://github.com/enspyrco/tech_world_networking_types"
-    source: git
-    version: "0.0.0+1"
   term_glyph:
     dependency: transitive
     description:
@@ -1053,22 +1044,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
-  web_socket:
-    dependency: transitive
-    description:
-      name: web_socket
-      sha256: "34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.1"
-  web_socket_channel:
-    dependency: "direct main"
-    description:
-      name: web_socket_channel
-      sha256: d645757fb0f4773d602444000a8131ff5d48c9e47adfe9772652dd1a4f2d45c8
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.3"
   webdriver:
     dependency: transitive
     description:

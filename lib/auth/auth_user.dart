@@ -1,4 +1,8 @@
-import 'package:tech_world_networking_types/tech_world_networking_types.dart';
+/// Base interface for user identity.
+abstract class User {
+  abstract final String id;
+  abstract final String displayName;
+}
 
 class AuthUser implements User {
   AuthUser({required this.id, required this.displayName});

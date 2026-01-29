@@ -21,10 +21,6 @@ dependencies:
   crypto: ^3.0.6
   google_sign_in: ^7.2.0
   cloud_functions: ^6.0.2
-  tech_world_networking_types:
-    # path: ../../dart/interfaces/tech_world_networking_types
-    git: https://github.com/enspyrco/tech_world_networking_types
-  web_socket_channel: ^3.0.0 # used by networking service
   collection: ^1.19.1
   ffi: ^2.1.5
   web: ^1.1.0 # For web video capture APIs
@@ -36,7 +32,6 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^6.0.0
-  stream_channel: ^2.1.2 # for mocking the web_socket_channel connected to the server
   flutter_launcher_icons: ^0.14.4
   fake_cloud_firestore: ^4.0.1
   flutter_native_splash: ^2.4.7
