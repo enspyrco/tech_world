@@ -77,18 +77,18 @@ final fourCorners = GameMap(
 final simpleMaze = GameMap(
   id: 'simple_maze',
   name: 'Simple Maze',
-  barriers: [
+  barriers: _deduplicateBarriers([
     // Outer walls (with gaps for entry/exit)
     ..._generateHorizontalWall(5, 5, 40, gap: 20),
     ..._generateHorizontalWall(5, 44, 40, gap: 25),
-    ..._generateVerticalWall(5, 5, 40, gap: 22),
-    ..._generateVerticalWall(44, 5, 40, gap: 22),
+    ..._generateVerticalWall(5, 6, 38, gap: 22), // Start at y=6 to avoid corner overlap
+    ..._generateVerticalWall(44, 6, 38, gap: 22), // Start at y=6 to avoid corner overlap
     // Internal maze walls
     ..._generateHorizontalWall(10, 15, 25),
     ..._generateVerticalWall(20, 10, 20, gap: 15),
     ..._generateHorizontalWall(25, 30, 15),
     ..._generateVerticalWall(30, 20, 15, gap: 27),
-  ],
+  ]),
   spawnPoint: const Point(8, 8),
 );
 
@@ -99,6 +99,11 @@ final allMaps = [openArena, lRoom, fourCorners, simpleMaze];
 const defaultMap = lRoom;
 
 // Helper functions for generating barrier patterns
+
+/// Remove duplicate barriers from a list.
+List<Point<int>> _deduplicateBarriers(List<Point<int>> barriers) {
+  return barriers.toSet().toList();
+}
 
 /// Generate a rectangular block of barriers.
 List<Point<int>> _generateBlock(int startX, int startY, int width, int height) {
