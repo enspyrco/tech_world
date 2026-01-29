@@ -228,26 +228,32 @@ class _MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Determine avatar and colors based on message type
+    final isLocalUser = message.isLocalUser;
+    final isBot = message.isBot;
+    final avatarLetter = isBot ? 'C' : message.senderName.isNotEmpty ? message.senderName[0].toUpperCase() : '?';
+    final avatarColor = isBot ? clawdOrange : Colors.blue;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         mainAxisAlignment:
-            message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+            isLocalUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!message.isUser) ...[
+          if (!isLocalUser) ...[
             Container(
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: clawdOrange.withValues(alpha: 0.2),
+                color: avatarColor.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
-                  'C',
+                  avatarLetter,
                   style: TextStyle(
-                    color: clawdOrange,
+                    color: avatarColor,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
@@ -257,27 +263,45 @@ class _MessageBubble extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: message.isUser
-                    ? clawdOrange.withValues(alpha: 0.2)
-                    : const Color(0xFF2D2D2D),
-                borderRadius: BorderRadius.circular(16),
-                border: message.isUser
-                    ? Border.all(color: clawdOrange.withValues(alpha: 0.3))
-                    : null,
-              ),
-              child: Text(
-                message.text,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
+            child: Column(
+              crossAxisAlignment: isLocalUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [
+                // Show sender name for other users (not bot, not self)
+                if (!isLocalUser && !isBot)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4, left: 4),
+                    child: Text(
+                      message.senderName,
+                      style: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isLocalUser
+                        ? clawdOrange.withValues(alpha: 0.2)
+                        : const Color(0xFF2D2D2D),
+                    borderRadius: BorderRadius.circular(16),
+                    border: isLocalUser
+                        ? Border.all(color: clawdOrange.withValues(alpha: 0.3))
+                        : null,
+                  ),
+                  child: Text(
+                    message.text,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
-          if (message.isUser) const SizedBox(width: 36),
+          if (isLocalUser) const SizedBox(width: 36),
         ],
       ),
     );

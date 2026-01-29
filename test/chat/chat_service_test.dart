@@ -57,12 +57,14 @@ void main() {
 
       final published = fakeLiveKit.publishedMessages.first;
       expect(published['topic'], equals('chat'));
-      expect(published['destinationIdentities'], equals(['bot-claude']));
+      // Shared chat broadcasts to all (no destinationIdentities)
+      expect(published['destinationIdentities'], isNull);
 
       final payload = published['payload'] as Map<String, dynamic>;
       expect(payload['type'], equals('chat'));
       expect(payload['text'], equals('Test message'));
       expect(payload['id'], isNotNull);
+      expect(payload['senderName'], equals('Test User'));
       expect(payload['timestamp'], isNotNull);
     });
 
@@ -225,6 +227,12 @@ class FakeLiveKitService implements LiveKitService {
 
   @override
   bool get isConnected => connected;
+
+  @override
+  String get userId => 'test-user-id';
+
+  @override
+  String get displayName => 'Test User';
 
   @override
   Stream<DataChannelMessage> get dataReceived => _dataReceivedController.stream;
