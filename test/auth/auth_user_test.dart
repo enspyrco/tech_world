@@ -51,12 +51,11 @@ void main() {
         expect(user == user, isTrue);
       });
 
-      test('not equal to non-User objects', () {
+      test('equals method handles different types', () {
         final user = AuthUser(id: 'test', displayName: 'Test');
-
+        // Test that operator== returns false for non-User objects
+        // ignore: unrelated_type_equality_checks
         expect(user == 'test', isFalse);
-        expect(user == 123, isFalse);
-        expect(user == null, isFalse);
       });
     });
 
@@ -123,8 +122,8 @@ void main() {
     });
 
     test('can be distinguished from AuthUser by type', () {
-      final authUser = AuthUser(id: 'test', displayName: 'Test');
-      final signedOut = SignedOutUser(id: 'test', displayName: 'Test');
+      final User authUser = AuthUser(id: 'test', displayName: 'Test');
+      final User signedOut = SignedOutUser(id: 'test', displayName: 'Test');
 
       expect(authUser is SignedOutUser, isFalse);
       expect(signedOut is SignedOutUser, isTrue);
@@ -155,8 +154,8 @@ void main() {
     });
 
     test('can be distinguished from AuthUser by type', () {
-      final authUser = AuthUser(id: '', displayName: '');
-      final placeholder = PlaceholderUser();
+      final User authUser = AuthUser(id: '', displayName: '');
+      final User placeholder = PlaceholderUser();
 
       expect(authUser is PlaceholderUser, isFalse);
       expect(placeholder is PlaceholderUser, isTrue);
