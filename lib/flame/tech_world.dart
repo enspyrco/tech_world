@@ -500,7 +500,10 @@ class TechWorld extends World with TapCallbacks {
     await _loadVideoBubbleShader();
 
     _authStateChangesSubscription = _authStateChanges.listen((authUser) async {
-      if (authUser is! PlaceholderUser && authUser is! SignedOutUser) {
+      if (authUser is SignedOutUser) {
+        // User signed out - clear LiveKit state so we can reconnect on next sign-in
+        _disconnectFromLiveKit();
+      } else if (authUser is! PlaceholderUser) {
         _userPlayerComponent.id = authUser.id;
         _userPlayerComponent.displayName = authUser.displayName;
 
@@ -532,13 +535,51 @@ class TechWorld extends World with TapCallbacks {
     );
   }
 
+  /// Disconnect from LiveKit and clear all related state.
+  /// Called when user signs out so we can reconnect on next sign-in.
+  void _disconnectFromLiveKit() {
+    debugPrint('TechWorld: Disconnecting from LiveKit');
+
+    // Cancel all LiveKit-related subscriptions
+    _trackSubscribedSubscription?.cancel();
+    _trackSubscribedSubscription = null;
+    _localTrackPublishedSubscription?.cancel();
+    _localTrackPublishedSubscription = null;
+    _liveKitPositionSubscription?.cancel();
+    _liveKitPositionSubscription = null;
+    _participantJoinedSubscription?.cancel();
+    _participantJoinedSubscription = null;
+    _participantLeftSubscription?.cancel();
+    _participantLeftSubscription = null;
+
+    // Clear the service reference so _connectToLiveKit can reconnect
+    _liveKitService = null;
+
+    // Remove all player bubbles
+    for (final bubble in _playerBubbles.values) {
+      bubble.removeFromParent();
+    }
+    _playerBubbles.clear();
+
+    // Remove other player components
+    for (final component in _otherPlayerComponentsMap.values) {
+      component.removeFromParent();
+    }
+    _otherPlayerComponentsMap.clear();
+
+    // Remove bot character
+    if (_botCharacterComponent != null) {
+      _botCharacterComponent!.removeFromParent();
+      _botCharacterComponent = null;
+    }
+
+    // Reset position tracking
+    _lastPlayerGridPosition = null;
+  }
+
   void dispose() {
     _authStateChangesSubscription?.cancel();
-    _trackSubscribedSubscription?.cancel();
-    _localTrackPublishedSubscription?.cancel();
-    _liveKitPositionSubscription?.cancel();
-    _participantJoinedSubscription?.cancel();
-    _participantLeftSubscription?.cancel();
-    _liveKitService?.dispose();
+    _disconnectFromLiveKit();
   }
 }
+
