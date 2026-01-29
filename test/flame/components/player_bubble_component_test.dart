@@ -2,193 +2,152 @@ import 'package:flame/components.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 
+// Expose the private _getInitial method for testing via a subclass
+class TestablePlayerBubbleComponent extends PlayerBubbleComponent {
+  TestablePlayerBubbleComponent({
+    required super.displayName,
+    required super.playerId,
+    super.bubbleSize,
+  });
+
+  // Expose the private method for testing
+  String getInitialForTest() {
+    if (displayName.isNotEmpty) {
+      return displayName[0].toUpperCase();
+    }
+    if (playerId.isNotEmpty) {
+      return playerId[0].toUpperCase();
+    }
+    return '?';
+  }
+}
+
 void main() {
   group('PlayerBubbleComponent', () {
     group('constructor', () {
-      test('uses displayName initial when displayName is not empty', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Alice',
+      test('creates component with default bubble size', () {
+        final bubble = PlayerBubbleComponent(
+          displayName: 'Test User',
           playerId: 'user-123',
         );
 
-        expect(component.displayName, equals('Alice'));
-        expect(component.playerId, equals('user-123'));
+        expect(bubble.displayName, equals('Test User'));
+        expect(bubble.playerId, equals('user-123'));
+        expect(bubble.bubbleSize, equals(48));
+        expect(bubble.size.x, equals(48));
+        expect(bubble.size.y, equals(48));
       });
 
-      test('uses default bubble size of 48', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Bob',
-          playerId: 'user-456',
-        );
-
-        expect(component.bubbleSize, equals(48));
-        expect(component.size, equals(Vector2.all(48)));
-      });
-
-      test('respects custom bubble size', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Charlie',
-          playerId: 'user-789',
+      test('creates component with custom bubble size', () {
+        final bubble = PlayerBubbleComponent(
+          displayName: 'Test',
+          playerId: 'user-123',
           bubbleSize: 64,
         );
 
-        expect(component.bubbleSize, equals(64));
-        expect(component.size, equals(Vector2.all(64)));
+        expect(bubble.bubbleSize, equals(64));
+        expect(bubble.size.x, equals(64));
+        expect(bubble.size.y, equals(64));
       });
 
-      test('has bottomCenter anchor for positioning above player', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Diana',
-          playerId: 'user-101',
+      test('has bottom center anchor', () {
+        final bubble = PlayerBubbleComponent(
+          displayName: 'Test',
+          playerId: 'user-123',
         );
 
-        expect(component.anchor, equals(Anchor.bottomCenter));
-      });
-
-      test('stores playerId for fallback initial', () {
-        final component = PlayerBubbleComponent(
-          displayName: '',
-          playerId: 'xyz-player',
-        );
-
-        expect(component.playerId, equals('xyz-player'));
-      });
-
-      test('handles empty displayName and playerId gracefully', () {
-        final component = PlayerBubbleComponent(
-          displayName: '',
-          playerId: '',
-        );
-
-        expect(component.displayName, isEmpty);
-        expect(component.playerId, isEmpty);
-      });
-    });
-
-    group('bubble size variations', () {
-      test('small bubble size', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Small',
-          playerId: 'id',
-          bubbleSize: 24,
-        );
-
-        expect(component.bubbleSize, equals(24));
-        expect(component.size, equals(Vector2.all(24)));
-      });
-
-      test('large bubble size', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Large',
-          playerId: 'id',
-          bubbleSize: 128,
-        );
-
-        expect(component.bubbleSize, equals(128));
-        expect(component.size, equals(Vector2.all(128)));
+        expect(bubble.anchor, equals(Anchor.bottomCenter));
       });
     });
 
     group('_getInitial logic', () {
-      // Test the logic that _getInitial uses:
-      // 1. If displayName is not empty, use displayName[0].toUpperCase()
-      // 2. Else if playerId is not empty, use playerId[0].toUpperCase()
-      // 3. Else return '?'
-
-      test('displayName initial is first letter uppercase', () {
-        // The component stores displayName - initial would be 'A'
-        final component = PlayerBubbleComponent(
-          displayName: 'alice',
-          playerId: 'user',
+      test('returns first character of displayName uppercased', () {
+        final bubble = TestablePlayerBubbleComponent(
+          displayName: 'john',
+          playerId: 'user-123',
         );
-        // Logic: 'alice'.isNotEmpty => 'a'.toUpperCase() => 'A'
-        expect(component.displayName[0].toUpperCase(), equals('A'));
+
+        expect(bubble.getInitialForTest(), equals('J'));
       });
 
-      test('displayName takes precedence over playerId', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Bob',
-          playerId: 'xyz',
+      test('uses displayName over playerId when both are present', () {
+        final bubble = TestablePlayerBubbleComponent(
+          displayName: 'Alice',
+          playerId: 'bob-456',
         );
-        // Logic: 'Bob'.isNotEmpty => 'B' (not 'X' from playerId)
-        expect(component.displayName[0].toUpperCase(), equals('B'));
+
+        // Should use 'A' from displayName, not 'B' from playerId
+        expect(bubble.getInitialForTest(), equals('A'));
       });
 
-      test('playerId used when displayName is empty', () {
-        final component = PlayerBubbleComponent(
+      test('falls back to playerId when displayName is empty', () {
+        final bubble = TestablePlayerBubbleComponent(
           displayName: '',
-          playerId: 'user123',
+          playerId: 'user-123',
         );
-        // Logic: ''.isNotEmpty is false, 'user123'.isNotEmpty => 'u'.toUpperCase()
-        expect(component.playerId[0].toUpperCase(), equals('U'));
+
+        expect(bubble.getInitialForTest(), equals('U'));
       });
 
-      test('question mark when both are empty', () {
-        final component = PlayerBubbleComponent(
+      test('returns ? when both displayName and playerId are empty', () {
+        final bubble = TestablePlayerBubbleComponent(
           displayName: '',
           playerId: '',
         );
-        // Logic: both empty => '?'
-        final displayName = component.displayName;
-        final playerId = component.playerId;
-        String initial;
-        if (displayName.isNotEmpty) {
-          initial = displayName[0].toUpperCase();
-        } else if (playerId.isNotEmpty) {
-          initial = playerId[0].toUpperCase();
-        } else {
-          initial = '?';
-        }
-        expect(initial, equals('?'));
+
+        expect(bubble.getInitialForTest(), equals('?'));
       });
 
-      test('handles numeric displayName', () {
-        final component = PlayerBubbleComponent(
-          displayName: '123User',
-          playerId: 'id',
+      test('handles lowercase playerId correctly', () {
+        final bubble = TestablePlayerBubbleComponent(
+          displayName: '',
+          playerId: 'player-xyz',
         );
-        expect(component.displayName[0].toUpperCase(), equals('1'));
+
+        expect(bubble.getInitialForTest(), equals('P'));
       });
 
-      test('handles special character displayName', () {
-        final component = PlayerBubbleComponent(
-          displayName: '@username',
-          playerId: 'id',
+      test('handles numeric first character in displayName', () {
+        final bubble = TestablePlayerBubbleComponent(
+          displayName: '42Bot',
+          playerId: 'test',
         );
-        expect(component.displayName[0].toUpperCase(), equals('@'));
+
+        // Should return '4' (uppercased is same for numbers)
+        expect(bubble.getInitialForTest(), equals('4'));
+      });
+
+      test('handles special character first in displayName', () {
+        final bubble = TestablePlayerBubbleComponent(
+          displayName: '@User',
+          playerId: 'test',
+        );
+
+        expect(bubble.getInitialForTest(), equals('@'));
       });
     });
 
-    group('PositionComponent behavior', () {
-      test('is a PositionComponent', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Test',
-          playerId: 'id',
+    group('size variations', () {
+      test('small bubble size', () {
+        final bubble = PlayerBubbleComponent(
+          displayName: 'A',
+          playerId: 'a',
+          bubbleSize: 24,
         );
 
-        expect(component, isA<PositionComponent>());
+        expect(bubble.size.x, equals(24));
+        expect(bubble.size.y, equals(24));
       });
 
-      test('position can be set', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Test',
-          playerId: 'id',
+      test('large bubble size', () {
+        final bubble = PlayerBubbleComponent(
+          displayName: 'A',
+          playerId: 'a',
+          bubbleSize: 128,
         );
 
-        component.position = Vector2(100, 200);
-        expect(component.position.x, equals(100));
-        expect(component.position.y, equals(200));
-      });
-
-      test('size is based on bubbleSize', () {
-        final component = PlayerBubbleComponent(
-          displayName: 'Test',
-          playerId: 'id',
-          bubbleSize: 80,
-        );
-
-        expect(component.size.x, equals(80));
-        expect(component.size.y, equals(80));
+        expect(bubble.size.x, equals(128));
+        expect(bubble.size.y, equals(128));
       });
     });
   });

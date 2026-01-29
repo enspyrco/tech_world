@@ -294,6 +294,47 @@ void main() {
       // Should use senderId as fallback
       expect(chatService.currentMessages.first.senderName, equals('user-456'));
     });
+
+    test('completes pending message when response arrives with matching messageId', () async {
+      fakeLiveKit.connected = true;
+
+      // Start sending a message (don't await - it waits for response)
+      final sendFuture = chatService.sendMessage('Hello');
+
+      // Give it time to publish the message
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      // Get the message ID that was published
+      final messageId = fakeLiveKit.publishedMessages.first['payload']['id'];
+
+      // Simulate bot response with matching messageId
+      fakeLiveKit.simulateResponse({
+        'text': 'Hello!',
+        'messageId': messageId,
+      });
+
+      // Now the sendMessage should complete (not wait for timeout)
+      await sendFuture;
+
+      // Should have both user message and bot response
+      expect(chatService.currentMessages.length, equals(2));
+      expect(botStatusNotifier.value, equals(BotStatus.idle));
+    });
+
+    test('handles response to message without matching pending', () async {
+      fakeLiveKit.connected = true;
+
+      // Send a response for a message ID that doesn't exist in pending
+      fakeLiveKit.simulateResponse({
+        'text': 'Response to unknown message',
+        'messageId': 'non-existent-id',
+      });
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      // Should still add the message (it's a valid response)
+      expect(chatService.currentMessages.length, equals(1));
+    });
   });
 }
 
