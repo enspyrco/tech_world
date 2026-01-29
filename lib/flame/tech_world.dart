@@ -249,6 +249,36 @@ class TechWorld extends World with TapCallbacks {
     }
   }
 
+  /// Handle a participant joining the room
+  void _handleParticipantJoined(RemoteParticipant participant) {
+    debugPrint('LiveKit participant joined: ${participant.identity}');
+    _refreshBubbleForPlayer(participant.identity);
+
+    // Create component based on participant type
+    if (participant.identity == _botUserId) {
+      // Create bot character component at default position
+      if (_botCharacterComponent == null) {
+        _botCharacterComponent = BotCharacterComponent(
+          position: Vector2(200, 200),
+          id: participant.identity,
+          displayName: 'Claude',
+        );
+        add(_botCharacterComponent!);
+      }
+    } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
+      // Create player component for regular players
+      final playerComponent = PlayerComponent(
+        position: Vector2.zero(),
+        id: participant.identity,
+        displayName: participant.name.isNotEmpty
+            ? participant.name
+            : participant.identity,
+      );
+      _otherPlayerComponentsMap[participant.identity] = playerComponent;
+      add(playerComponent);
+    }
+  }
+
   /// Connect to LiveKit room
   Future<void> _connectToLiveKit(String userId, String displayName) async {
     if (_liveKitService != null) {
@@ -298,34 +328,13 @@ class TechWorld extends World with TapCallbacks {
 
     // Listen for participant join/leave to manage player presence
     _participantJoinedSubscription =
-        _liveKitService!.participantJoined.listen((participant) {
-      debugPrint('LiveKit participant joined: ${participant.identity}');
-      _refreshBubbleForPlayer(participant.identity);
+        _liveKitService!.participantJoined.listen(_handleParticipantJoined);
 
-      // Create component based on participant type
-      if (participant.identity == _botUserId) {
-        // Create bot character component at default position
-        if (_botCharacterComponent == null) {
-          _botCharacterComponent = BotCharacterComponent(
-            position: Vector2(200, 200),
-            id: participant.identity,
-            displayName: 'Claude',
-          );
-          add(_botCharacterComponent!);
-        }
-      } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
-        // Create player component for regular players
-        final playerComponent = PlayerComponent(
-          position: Vector2.zero(),
-          id: participant.identity,
-          displayName: participant.name.isNotEmpty
-              ? participant.name
-              : participant.identity,
-        );
-        _otherPlayerComponentsMap[participant.identity] = playerComponent;
-        add(playerComponent);
-      }
-    });
+    // Check for existing participants that joined before we subscribed
+    for (final participant in _liveKitService!.remoteParticipants.values) {
+      debugPrint('TechWorld: Found existing participant: ${participant.identity}');
+      _handleParticipantJoined(participant);
+    }
 
     _participantLeftSubscription =
         _liveKitService!.participantLeft.listen((participant) {
