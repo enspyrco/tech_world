@@ -205,4 +205,9 @@ class AuthService {
     final digest = sha256.convert(bytes);
     return digest.toString();
   }
+
+  /// Sign out the current user.
+  Future<void> signOut() async {
+    await FirebaseAuth.instance.signOut();
+  }
 }

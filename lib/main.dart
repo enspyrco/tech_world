@@ -10,6 +10,7 @@ import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/widgets/auth_menu.dart';
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -148,69 +149,92 @@ class _MyAppState extends State<MyApp> {
       home: Scaffold(
         body: LayoutBuilder(
           builder: (context, constraints) {
-            return Row(
+            return Stack(
               children: [
-                Visibility(
-                  visible: constraints.maxWidth >= 1200,
-                  child: Expanded(
-                    child: Container(
-                      height: double.infinity,
-                      color: Theme.of(context).colorScheme.primary,
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              'Welcome to Tech World',
-                              style: Theme.of(context).textTheme.headlineMedium,
+                Row(
+                  children: [
+                    Visibility(
+                      visible: constraints.maxWidth >= 1200,
+                      child: Expanded(
+                        child: Container(
+                          height: double.infinity,
+                          color: Theme.of(context).colorScheme.primary,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Welcome to Tech World',
+                                  style:
+                                      Theme.of(context).textTheme.headlineMedium,
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: StreamBuilder<AuthUser>(
-                    stream: locate<AuthService>().authStateChanges,
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
-                        return const LoadingScreen(
-                          message: 'Checking authentication...',
+                    Expanded(
+                      flex: 2,
+                      child: StreamBuilder<AuthUser>(
+                        stream: locate<AuthService>().authStateChanges,
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const LoadingScreen(
+                              message: 'Checking authentication...',
+                            );
+                          }
+                          if (snapshot.data! is! SignedOutUser) {
+                            return GameWidget(
+                              game: locate<TechWorldGame>(),
+                            );
+                          }
+                          return const AuthGate();
+                        },
+                      ),
+                    ),
+                    // Chat panel - always visible when authenticated
+                    StreamBuilder<AuthUser>(
+                      stream: locate<AuthService>().authStateChanges,
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData ||
+                            snapshot.data is SignedOutUser) {
+                          return const SizedBox.shrink();
+                        }
+                        // ChatService is created when user signs in
+                        final chatService = Locator.maybeLocate<ChatService>();
+                        if (chatService == null) {
+                          return SizedBox(
+                            width: constraints.maxWidth >= 800 ? 320 : 280,
+                            child: const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          );
+                        }
+                        return SizedBox(
+                          width: constraints.maxWidth >= 800 ? 320 : 280,
+                          child: ChatPanel(
+                            chatService: chatService,
+                          ),
                         );
-                      }
-                      if (snapshot.data! is! SignedOutUser) {
-                        return GameWidget(
-                          game: locate<TechWorldGame>(),
-                        );
-                      }
-                      return const AuthGate();
-                    },
-                  ),
+                      },
+                    ),
+                  ],
                 ),
-                // Chat panel - always visible when authenticated
+                // Auth menu - top right when authenticated
                 StreamBuilder<AuthUser>(
                   stream: locate<AuthService>().authStateChanges,
                   builder: (context, snapshot) {
-                    if (!snapshot.hasData ||
-                        snapshot.data is SignedOutUser) {
+                    if (!snapshot.hasData || snapshot.data is SignedOutUser) {
                       return const SizedBox.shrink();
                     }
-                    // ChatService is created when user signs in
-                    final chatService = Locator.maybeLocate<ChatService>();
-                    if (chatService == null) {
-                      return SizedBox(
-                        width: constraints.maxWidth >= 800 ? 320 : 280,
-                        child: const Center(
-                          child: CircularProgressIndicator(),
+                    return Positioned(
+                      top: 16,
+                      right: constraints.maxWidth >= 800 ? 336 : 296,
+                      child: SafeArea(
+                        child: AuthMenu(
+                          displayName: snapshot.data!.displayName,
                         ),
-                      );
-                    }
-                    return SizedBox(
-                      width: constraints.maxWidth >= 800 ? 320 : 280,
-                      child: ChatPanel(
-                        chatService: chatService,
                       ),
                     );
                   },
