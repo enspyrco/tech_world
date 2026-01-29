@@ -216,6 +216,84 @@ void main() {
       fakeLiveKit.simulateResponse({'text': 'After dispose'});
       await Future.delayed(const Duration(milliseconds: 10));
     });
+
+    test('deduplicates messages with same id', () async {
+      fakeLiveKit.connected = true;
+
+      // Simulate receiving the same message twice (same id)
+      fakeLiveKit.simulateResponseWithId('msg-123', {
+        'text': 'Duplicate message',
+        'id': 'msg-123',
+      });
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      // First message should be added
+      expect(chatService.currentMessages.length, equals(1));
+
+      // Send same message again with same id
+      fakeLiveKit.simulateResponseWithId('msg-123', {
+        'text': 'Duplicate message',
+        'id': 'msg-123',
+      });
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      // Should still be only 1 message (duplicate filtered)
+      expect(chatService.currentMessages.length, equals(1));
+    });
+
+    test('handles chat messages from other users', () async {
+      fakeLiveKit.connected = true;
+
+      // Simulate a chat message from another user (not a bot response)
+      fakeLiveKit.simulateChatFromOtherUser('other-user-id', {
+        'text': 'Hello from another user',
+        'id': 'other-msg-1',
+        'senderName': 'Other User',
+      });
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      expect(chatService.currentMessages.length, equals(1));
+      expect(chatService.currentMessages.first.text, equals('Hello from another user'));
+      expect(chatService.currentMessages.first.senderName, equals('Other User'));
+      expect(chatService.currentMessages.first.isBot, isFalse); // Not from bot
+      expect(chatService.currentMessages.first.isLocalUser, isFalse); // Not from local user
+    });
+
+    test('ignores own chat messages', () async {
+      fakeLiveKit.connected = true;
+
+      // Simulate receiving our own chat message back
+      fakeLiveKit.simulateChatFromSelf({
+        'text': 'My own message echoed back',
+        'id': 'self-msg-1',
+        'senderName': 'Test User',
+      });
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      // Should be ignored (we add our own messages locally)
+      expect(chatService.currentMessages, isEmpty);
+    });
+
+    test('uses senderId as fallback senderName', () async {
+      fakeLiveKit.connected = true;
+
+      // Simulate message without senderName
+      fakeLiveKit.simulateChatFromOtherUser('user-456', {
+        'text': 'Message without sender name',
+        'id': 'no-name-msg',
+        // No senderName field
+      });
+
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      expect(chatService.currentMessages.length, equals(1));
+      // Should use senderId as fallback
+      expect(chatService.currentMessages.first.senderName, equals('user-456'));
+    });
   });
 }
 
@@ -272,6 +350,30 @@ class FakeLiveKitService implements LiveKitService {
       senderId: 'bot-claude',
       topic: topic,
       data: utf8.encode(jsonEncode(response)),
+    ));
+  }
+
+  void simulateResponseWithId(String id, Map<String, dynamic> response) {
+    _dataReceivedController.add(DataChannelMessage(
+      senderId: 'bot-claude',
+      topic: 'chat-response',
+      data: utf8.encode(jsonEncode(response)),
+    ));
+  }
+
+  void simulateChatFromOtherUser(String senderId, Map<String, dynamic> message) {
+    _dataReceivedController.add(DataChannelMessage(
+      senderId: senderId,
+      topic: 'chat',
+      data: utf8.encode(jsonEncode(message)),
+    ));
+  }
+
+  void simulateChatFromSelf(Map<String, dynamic> message) {
+    _dataReceivedController.add(DataChannelMessage(
+      senderId: userId, // Same as our userId
+      topic: 'chat',
+      data: utf8.encode(jsonEncode(message)),
     ));
   }
 
