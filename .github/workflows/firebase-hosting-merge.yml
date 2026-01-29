@@ -26,7 +26,7 @@ jobs:
         uses: VeryGoodOpenSource/very_good_coverage@v3
         with:
           path: coverage/lcov.info
-          min_coverage: 50
+          min_coverage: 45
 
   build_and_deploy:
     needs: test

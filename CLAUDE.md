@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Flutter client for Tech World - an educational multiplayer game where players solve coding challenges together. Uses Flame engine for the game world and LiveKit for proximity video chat.
+Flutter client for Tech World - an educational multiplayer game where players solve coding challenges together. Uses Flame engine for the game world and LiveKit for video chat, positions, and AI tutor chat.
 
 ## Build & Run
 
@@ -16,7 +16,6 @@ Flutter client for Tech World - an educational multiplayer game where players so
 flutter pub get
 flutter run -d macos  # or chrome, ios, android
 flutter test
-flutter test test/networking_service_test.dart  # single test
 flutter analyze --fatal-infos                   # static analysis (CI requirement)
 ```
 
@@ -36,7 +35,8 @@ Services are created in `main.dart` and registered with `Locator`:
 
 ```dart
 Locator.add<AuthService>(authService);
-Locator.add<NetworkingService>(networkingService);
+Locator.add<LiveKitService>(liveKitService);
+Locator.add<ChatService>(chatService);
 Locator.add<TechWorld>(techWorld);
 ```
 
@@ -45,17 +45,15 @@ Access anywhere via `locate<T>()`.
 ### App Flow
 
 1. **Auth**: User authenticates via `AuthGate` using Firebase Auth
-2. **Connect**: `ConnectPage` retrieves LiveKit token from Firebase Function, shows connection UI
-3. **Video**: `PreJoinPage` → `RoomPage` handles LiveKit room connection and video/audio
+2. **LiveKit**: On sign-in, `LiveKitService` connects to LiveKit room with token from Firebase Function
+3. **Game**: Flame game world renders with video bubbles and chat panel
 
-Note: The Flame game world (`TechWorldGame`/`TechWorld`) is currently commented out in `main.dart`. The app goes directly to LiveKit connection after auth.
+### Communication (All via LiveKit)
 
-### Networking
-
-- `NetworkingService` connects to WebSocket game server
-- Dev: `ws://127.0.0.1:8080`, Prod: `wss://adventures-in-tech.world` (auto-selects via `kReleaseMode`)
-- Message types from `tech_world_networking_types` package (external Git dependency)
-- **Room-aware multiplayer**: `NetworkingService` accepts a `roomId` parameter. Players only see others in the same room. The `roomId` is included in `ArrivalMessage` and `PlayerPathMessage`.
+- **Video/Audio**: LiveKit tracks for proximity-based video chat
+- **Positions**: Data channel broadcasts player positions (`topic: 'position'`)
+- **Chat**: Data channel for shared chat (`topic: 'chat'`, `topic: 'chat-response'`)
+- **Bot (Clawd)**: Runs on GCP Compute Engine, joins room as participant `bot-claude`
 
 ### Maps
 
@@ -68,7 +66,7 @@ Predefined maps are defined in `lib/flame/maps/`:
   - `fourCorners` - Barriers in each corner
   - `simpleMaze` - Basic maze pattern
 
-The default map (`lRoom`) is used in `main.dart` and its `id` is passed as the `roomId` to `NetworkingService`.
+The default map (`lRoom`) is used in `main.dart` and its `id` is used as the LiveKit room name.
 
 ### Proximity Detection
 
@@ -80,11 +78,9 @@ The default map (`lRoom`) is used in `main.dart` and its `id` is passed as the `
 
 ### LiveKit Integration
 
-- `LiveKitService` (`lib/livekit/livekit_service.dart`) manages room connection and participant tracking
-- Connects to LiveKit room, tracks remote participants via streams
-- `ConnectPage` calls Firebase Function `retrieveLiveKitToken` to get auth token
-- Token generated in `functions/src/index.ts` using `livekit-server-sdk`
-- Requires `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in Firebase Functions environment
+- `LiveKitService` (`lib/livekit/livekit_service.dart`) manages room connection, participants, and data channels
+- Token retrieved from Firebase Function `retrieveLiveKitToken`
+- Data channels used for positions and chat (replaces old WebSocket game server)
 
 ### Video Bubble Component (In-Game Video Rendering)
 
@@ -103,65 +99,16 @@ LiveKit VideoTrack → Native RTCVideoRenderer → Shared Memory Buffer → Dart
 - `macos/Runner/VideoFrameCapture.h` - Native C API header
 - `macos/Runner/VideoFrameCapture.m` - Native Objective-C implementation using `FlutterWebRTCPlugin`
 
-**How It Works:**
+**Platform Support:** macOS uses FFI capture, web uses ImageBitmap, other platforms show placeholder with initial.
 
-1. `VideoBubbleComponent` takes a LiveKit `Participant` and renders their video
-2. Native Objective-C code accesses the WebRTC track via `[FlutterWebRTCPlugin sharedSingleton]`
-3. Registers as `RTCVideoRenderer` on the video track using the WebRTC track ID (`mediaStreamTrack.id`)
-4. Frames are written to a shared memory buffer (40-byte header + BGRA pixels)
-5. Dart reads pixels directly via FFI pointer (zero-copy)
-6. Converts BGRA → RGBA and creates `dart:ui.Image`
-7. Renders as circular clipped image with optional Impeller shader effects
+### Chat Service
 
-**Important:** The track ID used for FFI capture is `track.mediaStreamTrack.id` (WebRTC ID like `TR_xxx`), not `track.sid` (LiveKit session ID).
-
-**Platform Support:** macOS only (other platforms show placeholder with initial)
-
-**Usage:**
-
-```dart
-final bubble = VideoBubbleComponent(
-  participant: remoteParticipant,
-  displayName: 'Player Name',
-  bubbleSize: 64,
-  targetFps: 15,
-);
-world.add(bubble);
-```
-
-**Shader Effects:**
-
-```dart
-bubble.setShader(myFragmentShader);
-bubble.glowIntensity = 0.8;
-bubble.glowColor = Colors.blue;
-bubble.speakingLevel = audioLevel; // For pulse effects
-```
-
-**Debugging FFI Capture:**
-
-```dart
-// List all tracks available to native code
-final tracks = VideoFrameCapture.listTracks();
-print('Available tracks: $tracks');
-
-// Check capture stats
-print(bubble.debugStats);
-```
-
-### Firebase Functions
-
-Located in `functions/` (Node.js TypeScript):
-
-```bash
-cd functions
-npm install
-firebase deploy --only functions
-```
+- `ChatService` manages shared chat via LiveKit data channels
+- All participants see all messages (questions and responses)
+- Bot responses come from `bot-claude` participant running on GCP Compute Engine
+- `ChatPanel` widget renders the chat UI
 
 ## Testing
-
-Test doubles in `test/test-doubles/` provide fake WebSocket implementations for mocking server connections.
 
 CI runs: `flutter analyze --fatal-infos` then `flutter test --coverage` with 50% coverage threshold.
 
@@ -183,80 +130,58 @@ LIVEKIT_API_KEY=<key>
 LIVEKIT_API_SECRET=<secret>
 ```
 
-## Claude Bot (AI Tutor)
+## Claude Bot (Clawd - AI Tutor)
 
 ### Current Implementation
 
-- **Server**: `bot_user.dart` defines the bot (`id: 'bot-claude'`, `displayName: 'Claude'`)
-- **Server**: `client_connections_service.dart` includes bot in `OtherUsersMessage` and sends bot position on player connect
-- **Client**: `lib/livekit/widgets/bot_bubble.dart` - UI widget showing blue bubble with initial
-- **Client**: `lib/livekit/widgets/proximity_video_overlay.dart` - renders `BotBubble` when player is near bot
+- **Bot Service**: Node.js service on GCP Compute Engine (`tech-world-bot` instance)
+- **Joins LiveKit**: As participant `bot-claude`, listens for `chat` topic messages
+- **Claude API**: Calls Claude API, broadcasts response on `chat-response` topic
+- **Shared Chat**: All participants see all questions and answers
 
-Bot position is set in server's `bot_user.dart`:
+### Bot Management
 
-```dart
-final botPosition = Double2(x: 200.0, y: 200.0);  // Pixel coordinates
+```bash
+# Check status
+gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="pm2 status"
+
+# View logs
+gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="pm2 logs --lines 50"
+
+# Update and restart
+gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="cd ~/tech_world_bot_service && git pull && pm2 restart tech-world-bot"
 ```
 
 ### Planned Features
 
-**MVP - Text Chat:**
-
-1. Add tap handler to `BotBubble` that opens a chat dialog
-2. Create `ChatService` to manage conversation with Claude API
-3. Display responses in speech bubbles or chat panel
-
 **Core Tutoring:**
-
 - Hint system for stuck players (guided hints, not solutions)
 - Code review with feedback on style, edge cases, efficiency
 - Concept explainer for programming questions
 
-**Challenge System:**
-
-- Challenge stations at different map locations with themed challenges
-- Difficulty scaling based on player history
-- Collaborative mode for pair programming when 2+ players are nearby
-
 **Voice Integration:**
-
-- Use existing LiveKit audio infrastructure
 - Pipeline: microphone → speech-to-text → Claude API → text-to-speech → bot audio track
-
-**Multiplayer:**
-
-- Matchmaking - suggest players team up when struggling with similar concepts
-- Code battles - Claude referees live coding competitions
 
 ## LiveKit Self-Hosting Migration
 
 ### Current Setup (LiveKit Cloud)
 
 ```dart
-// lib/livekit/livekit_service.dart:26
+// lib/livekit/livekit_service.dart
 static const _serverUrl = 'wss://testing-g5wrpk39.livekit.cloud';
 ```
 
-- All players join single room `'tech-world'`
 - Free tier: 500 participant-minutes/month
 - Token generation via Firebase Cloud Function
 
 ### Migration Steps
 
-1. **Update server URL** in `lib/livekit/livekit_service.dart`:
-   ```dart
-   static const _serverUrl = 'wss://livekit.yourdomain.com';
-   ```
-
-2. **Update Firebase Functions env vars** with self-hosted credentials:
-   ```bash
-   firebase functions:secrets:set LIVEKIT_API_KEY
-   firebase functions:secrets:set LIVEKIT_API_SECRET
-   ```
+1. **Update server URL** in `lib/livekit/livekit_service.dart`
+2. **Update Firebase Functions env vars** with self-hosted credentials
 
 ### Server Requirements
 
-For ~50 concurrent users in a Gather-style proximity app:
+For ~50 concurrent users:
 
 | Resource | Minimum |
 |----------|---------|
@@ -265,25 +190,3 @@ For ~50 concurrent users in a Gather-style proximity app:
 | Ports | 443, 7881, UDP 50000-60000 |
 
 ARM64 compatible - can run on OCI free tier (4 OCPU / 24 GB Ampere).
-
-### Scaling Options
-
-Current: All players → single `tech-world` LiveKit room, proximity filtering client-side.
-
-Future options:
-- **Per-map rooms**: `tech-world-${mapId}` for native isolation
-- **Selective subscription**: Only subscribe to tracks of nearby players
-
-### Docker Deployment
-
-```yaml
-services:
-  livekit:
-    image: livekit/livekit-server:latest
-    network_mode: host  # Required for WebRTC
-    volumes:
-      - ./livekit.yaml:/etc/livekit.yaml
-    command: --config /etc/livekit.yaml
-```
-
-Note: `network_mode: host` is mandatory - LiveKit needs direct UDP access.
