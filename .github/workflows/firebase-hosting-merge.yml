@@ -7,7 +7,37 @@ on:
     branches:
       - main
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check if docs-only change
+        id: filter
+        run: |
+          # Get list of changed files
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Check if all changes are docs (md, txt, LICENSE, etc.)
+          DOCS_ONLY="true"
+          while IFS= read -r file; do
+            if [[ -n "$file" && ! "$file" =~ \.(md|txt|MD|TXT)$ && "$file" != "LICENSE" && "$file" != "CHANGELOG" ]]; then
+              DOCS_ONLY="false"
+              break
+            fi
+          done <<< "$CHANGED_FILES"
+
+          echo "docs_only=$DOCS_ONLY" >> $GITHUB_OUTPUT
+          echo "Docs only: $DOCS_ONLY"
+
   test:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +59,8 @@ jobs:
           min_coverage: 45
 
   build_and_deploy:
-    needs: test
+    needs: [changes, test]
+    if: always() && (needs.test.result == 'success' || needs.changes.outputs.docs_only == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

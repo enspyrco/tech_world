@@ -143,12 +143,22 @@ LIVEKIT_API_SECRET=<secret>
 
 ### Current Implementation
 
-- **Bot Service**: Node.js service on GCP Compute Engine (`tech-world-bot` instance)
+- **Source Code**: `../tech_world_bot/` - Node.js using `@livekit/agents` framework
+- **Deployment**: GCP Compute Engine (`tech-world-bot` instance)
 - **Joins LiveKit**: As participant `bot-claude`, listens for `chat` topic messages
 - **Claude API**: Calls Claude API, broadcasts response on `chat-response` topic
 - **Shared Chat**: All participants see all questions and answers
 
-### Bot Management
+### Local Development
+
+```bash
+cd ../tech_world_bot
+cp .env.example .env   # Add your API keys
+npm install
+npm run dev            # Runs with LiveKit Agents CLI
+```
+
+### Bot Management (Production)
 
 ```bash
 # Check status
@@ -158,7 +168,7 @@ gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-t
 gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="pm2 logs --lines 50"
 
 # Update and restart
-gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="cd ~/tech_world_bot_service && git pull && pm2 restart tech-world-bot"
+gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="cd ~/tech_world_bot && git pull && npm install && npm run build && pm2 restart tech-world-bot"
 ```
 
 ### Planned Features
