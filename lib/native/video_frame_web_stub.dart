@@ -20,6 +20,9 @@ class WebVideoFrameCapture {
   /// Always returns null on non-web platforms.
   static dynamic findVideoElementByTrackId(String trackId) => null;
 
+  /// Always returns null on non-web platforms.
+  static Future<WebVideoFrameCapture?> createFromExistingVideo(dynamic video) async => null;
+
   /// No-op on non-web platforms.
   static void debugListVideoElements() {}
 
