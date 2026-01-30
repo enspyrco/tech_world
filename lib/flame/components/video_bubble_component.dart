@@ -150,6 +150,8 @@ class VideoBubbleComponent extends PositionComponent {
     if (_captureInitialized) return;
 
     _captureRetryCount++;
+    debugPrint(
+        'VideoBubbleComponent: Attempting capture init for $displayName (attempt $_captureRetryCount/$_maxCaptureRetries)');
 
     if (kIsWeb) {
       _initializeWebCapture();
@@ -185,20 +187,47 @@ class VideoBubbleComponent extends PositionComponent {
   Future<void> _initializeWebCaptureAsync(
       VideoTrack track, dynamic mediaStreamTrack) async {
     try {
+      // Debug: List all existing video elements
+      web_capture.WebVideoFrameCapture.debugListVideoElements();
+
       // On web, mediaStreamTrack is MediaStreamTrackWeb which has jsTrack
       // We need to access the underlying web.MediaStreamTrack
       dynamic jsTrack;
       try {
         // Use dynamic to access jsTrack property (only exists on web)
         jsTrack = (mediaStreamTrack as dynamic).jsTrack;
-        debugPrint('WebCapture: Got jsTrack for $displayName');
+        debugPrint('WebCapture: Got jsTrack for $displayName, id=${jsTrack.id}');
       } catch (e) {
         debugPrint('WebCapture: Could not get jsTrack: $e');
         _webCaptureInitializing = false;
         return;
       }
 
-      // Create capture from the JS track
+      // First, try to find an existing video element with this track
+      // (LiveKit may have already created one)
+      final existingVideo =
+          web_capture.WebVideoFrameCapture.findVideoElementByTrackId(
+              jsTrack.id as String);
+      if (existingVideo != null) {
+        debugPrint(
+            'WebCapture: Found existing video element for $displayName: '
+            '${existingVideo.videoWidth}x${existingVideo.videoHeight}');
+        // Use the existing video element (async - waits for video to start)
+        final capture =
+            await web_capture.WebVideoFrameCapture.createFromExistingVideo(
+                existingVideo);
+        if (capture != null) {
+          debugPrint('WebCapture: Using existing video element for $displayName');
+          _webCapture = capture;
+          _videoTrack = track;
+          capture.startCapture();
+          _captureInitialized = true;
+          return;
+        }
+      }
+
+      // Fallback: Create capture from the JS track
+      debugPrint('WebCapture: No existing video found, creating new one');
       final capture = await web_capture.WebVideoFrameCapture.createFromTrack(
         jsTrack,
       );
@@ -220,9 +249,15 @@ class VideoBubbleComponent extends PositionComponent {
     }
   }
 
+  // Track IDs we've already tried for this bubble (to avoid retrying failed ones)
+  final Set<String> _triedTrackIds = {};
+
   void _initializeNativeCapture() {
     final track = _getVideoTrack();
-    if (track == null) return;
+    if (track == null) {
+      debugPrint('NativeCapture: No video track found for $displayName');
+      return;
+    }
 
     if (_videoTrack == track && _capture != null) {
       return; // Already attached
@@ -233,18 +268,55 @@ class VideoBubbleComponent extends PositionComponent {
 
     // Get the WebRTC track ID (not the LiveKit sid)
     final trackId = track.mediaStreamTrack.id;
-    if (trackId == null || trackId.isEmpty) return;
+    final trackSid = track.sid;
+    debugPrint('NativeCapture: For $displayName - mediaStreamTrack.id="$trackId", track.sid="$trackSid"');
 
-    _capture = ffi.VideoFrameCapture.create(
-      trackId,
-      targetFps: targetFps,
-      maxWidth: 640,
-      maxHeight: 480,
-    );
+    // List available tracks
+    final availableTracks = ffi.VideoFrameCapture.listTracks();
+    debugPrint('NativeCapture: Available tracks: $availableTracks');
 
-    if (_capture != null) {
-      _captureInitialized = true;
+    // For remote tracks, the mediaStreamTrack.id might be LiveKit's SID (TR_xxx format)
+    // which doesn't receive frames. Try all UUID-format tracks if the primary one fails.
+    final tracksToTry = <String>[];
+
+    // First try the reported track ID if we haven't already
+    if (trackId != null && trackId.isNotEmpty && !_triedTrackIds.contains(trackId)) {
+      tracksToTry.add(trackId);
     }
+
+    // For remote participants (track ID starts with TR_), also try UUID tracks
+    // that we haven't tried yet
+    if (trackId != null && trackId.startsWith('TR_')) {
+      for (final availableId in availableTracks) {
+        // Add UUID-format tracks we haven't tried
+        if (!availableId.startsWith('TR_') && !_triedTrackIds.contains(availableId)) {
+          tracksToTry.add(availableId);
+        }
+      }
+    }
+
+    debugPrint('NativeCapture: Tracks to try for $displayName: $tracksToTry');
+
+    // Try each track until one works
+    for (final tryId in tracksToTry) {
+      _triedTrackIds.add(tryId);
+      debugPrint('NativeCapture: Trying track "$tryId" for $displayName');
+
+      _capture = ffi.VideoFrameCapture.create(
+        tryId,
+        targetFps: targetFps,
+        maxWidth: 640,
+        maxHeight: 480,
+      );
+
+      if (_capture != null) {
+        debugPrint('NativeCapture: Successfully created capture for $displayName with track "$tryId"');
+        _captureInitialized = true;
+        return;
+      }
+    }
+
+    debugPrint('NativeCapture: Failed to create capture for $displayName - no working track found');
   }
 
   void _disposeCapture() {
@@ -305,10 +377,24 @@ class VideoBubbleComponent extends PositionComponent {
   }
 
   void _checkForNewNativeFrame() {
-    if (_capture == null) return;
+    if (_capture == null) {
+      // Log occasionally to avoid spam
+      if (_framesCaptured == 0 && _framesDropped % 100 == 0) {
+        debugPrint('NativeCapture: _capture is null for $displayName');
+      }
+      return;
+    }
+
+    // Log capture status periodically
+    if (_framesCaptured == 0 && _framesDropped % 60 == 0) {
+      debugPrint('NativeCapture: Waiting for frame for $displayName - isActive=${_capture!.isActive}, hasNewFrame=${_capture!.hasNewFrame}, width=${_capture!.width}, height=${_capture!.height}');
+    }
 
     // Check if a new frame is available
-    if (!_capture!.hasNewFrame) return;
+    if (!_capture!.hasNewFrame) {
+      _framesDropped++;
+      return;
+    }
 
     // Throttle frame processing
     final now = DateTime.now();
