@@ -36,6 +36,7 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.4
   fake_cloud_firestore: ^4.0.1
   flutter_native_splash: ^2.4.7
+  mocktail: ^1.0.4
 
 flutter_launcher_icons:
   image_path: "assets/icon/app_icon.png"
