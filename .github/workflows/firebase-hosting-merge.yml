@@ -52,6 +52,16 @@ jobs:
         run: flutter analyze --fatal-infos
       - name: Run tests with coverage
         run: flutter test --coverage
+      - name: Install lcov
+        run: sudo apt-get install -y lcov
+      - name: Remove untestable files from coverage
+        run: |
+          lcov --remove coverage/lcov.info \
+            '*/native/video_frame_ffi.dart' \
+            '*/native/video_frame_web_stub.dart' \
+            '*/flame/components/video_bubble_component.dart' \
+            '*/auth/auth_service.dart' \
+            -o coverage/lcov.info
       - name: Check coverage threshold
         uses: VeryGoodOpenSource/very_good_coverage@v3
         with:
