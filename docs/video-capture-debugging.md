@@ -39,59 +39,39 @@ LiveKit VideoTrack → Web: HTMLVideoElement + createImageBitmap → ui.Image �
 
 **Solution**: Made native library loading lazy and added `_isSupported` check for macOS-only functionality.
 
-## Current Bug: Video Disappears on Re-entry
+## Fixed: Video Disappears on Re-entry (PR #76)
 
-### Symptoms
+### Symptoms (Before Fix)
 - Video shows correctly when first encountering a participant
 - Moving away (out of proximity) and coming back → video no longer shows
 - Happens on web (both mobile and desktop)
 
-### Suspected Cause
+### Root Cause
 When a player moves out of proximity:
 1. `VideoBubbleComponent` is removed from the game
 2. `onRemove()` calls `_disposeCapture()` which disposes the web capture
-3. The web capture's `dispose()` removes the video element from DOM OR nulls srcObject
+3. The web capture's `dispose()` removed the video element from DOM, **even if LiveKit created it**
 
 When player comes back into proximity:
 1. New `VideoBubbleComponent` is created
 2. `_initializeWebCapture()` tries to find existing video element
-3. **BUG**: Either the video element was removed, or it exists but is in a bad state
+3. **BUG**: The video element was removed by our dispose!
 
-### Investigation Needed
+### Solution
+Added `_ownsElement` flag to `WebVideoFrameCapture`:
+- `createFromStream()` and `createFromTrack()` set `ownsElement: true` (we created the element)
+- `createFromExistingVideo()` sets `ownsElement: false` (LiveKit owns it)
+- `dispose()` only removes the video element if `_ownsElement` is true
 
-1. **Check if video element persists**: Does LiveKit keep the video element in DOM when we dispose our capture?
-
-2. **Check srcObject state**: When we call `createFromExistingVideo`, is the video's srcObject still valid?
-
-3. **Check track subscription**: Is the track still subscribed when re-entering proximity?
-
-4. **Timing issue**: Maybe the new bubble is created before the old one is fully disposed?
-
-### Code Flow to Trace
-
-```
-TechWorld._onProximityEvent()
-  → if exit: remove bubble from game
-  → if enter: _createBubbleForPlayer()
-      → VideoBubbleComponent created
-      → update() called repeatedly
-      → _initializeCapture() on retry timer
-      → _initializeWebCapture()
-      → _initializeWebCaptureAsync()
-          → findVideoElementByTrackId() - DOES THIS FIND IT?
-          → createFromExistingVideo() - DOES THIS WORK?
-          → OR createFromStream() - DOES THIS WORK?
+```dart
+// In dispose():
+if (_ownsElement) {
+  _videoElement.srcObject = null;
+  _videoElement.remove();
+}
 ```
 
-### Potential Fixes to Try
-
-1. **Don't dispose video element**: In `WebVideoFrameCapture.dispose()`, don't remove the video element if we didn't create it (`ownsElement` flag was removed - may need to restore)
-
-2. **Re-attach to existing track**: Instead of finding video element by track ID, get a fresh reference from the LiveKit participant
-
-3. **Keep capture alive**: Don't dispose the capture when bubble is removed, cache it by participant ID
-
-4. **Force LiveKit to recreate**: Request track re-subscription when re-entering proximity
+This preserves LiveKit's video elements so they can be reused when re-entering proximity
 
 ## Debug Logging
 
@@ -115,22 +95,25 @@ Current debug prints in release mode (check Chrome DevTools console):
 ```dart
 @override
 void onRemove() {
-  _disposeCapture();  // This might be too aggressive
+  _disposeCapture();
   _currentFrame?.dispose();
   _currentFrame = null;
   super.onRemove();
 }
 ```
 
-### WebVideoFrameCapture disposal
+### WebVideoFrameCapture disposal (after fix)
 ```dart
 void dispose() {
   stopCapture();
   _currentFrame?.dispose();
   _currentFrame = null;
 
-  // This removes the video element - problematic for re-use!
-  _videoElement.srcObject = null;
-  _videoElement.remove();
+  // Only remove the video element if we created it
+  // If we're using an existing LiveKit element, leave it alone
+  if (_ownsElement) {
+    _videoElement.srcObject = null;
+    _videoElement.remove();
+  }
 }
 ```

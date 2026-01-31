@@ -18,9 +18,11 @@ import 'package:web/web.dart' as web;
 /// Creates a hidden HTMLVideoElement, attaches the MediaStream to it,
 /// and captures frames for rendering in Flame/Flutter.
 class WebVideoFrameCapture {
-  WebVideoFrameCapture._(this._videoElement);
+  WebVideoFrameCapture._(this._videoElement, {required bool ownsElement})
+      : _ownsElement = ownsElement;
 
   final web.HTMLVideoElement _videoElement;
+  final bool _ownsElement; // If true, we created the element and should remove it on dispose
   ui.Image? _currentFrame;
   bool _hasNewFrame = false;
   bool _isCapturing = false;
@@ -67,7 +69,7 @@ class WebVideoFrameCapture {
 
     debugPrint(
         'WebVideoFrameCapture: Created video element ${video.videoWidth}x${video.videoHeight}');
-    return WebVideoFrameCapture._(video);
+    return WebVideoFrameCapture._(video, ownsElement: true);
   }
 
   /// Create a capture instance from a MediaStreamTrack.
@@ -105,7 +107,7 @@ class WebVideoFrameCapture {
 
     debugPrint(
         'WebVideoFrameCapture: Using existing video ${video.videoWidth}x${video.videoHeight}');
-    return WebVideoFrameCapture._(video);
+    return WebVideoFrameCapture._(video, ownsElement: false);
   }
 
   /// Find a video element by matching its MediaStream track ID or label.
@@ -286,8 +288,11 @@ class WebVideoFrameCapture {
     _currentFrame?.dispose();
     _currentFrame = null;
 
-    // Remove the hidden video element
-    _videoElement.srcObject = null;
-    _videoElement.remove();
+    // Only remove the video element if we created it
+    // If we're using an existing LiveKit element, leave it alone
+    if (_ownsElement) {
+      _videoElement.srcObject = null;
+      _videoElement.remove();
+    }
   }
 }
