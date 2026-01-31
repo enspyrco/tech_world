@@ -18,10 +18,9 @@ import 'package:web/web.dart' as web;
 /// Creates a hidden HTMLVideoElement, attaches the MediaStream to it,
 /// and captures frames for rendering in Flame/Flutter.
 class WebVideoFrameCapture {
-  WebVideoFrameCapture._(this._videoElement, {this.ownsElement = true});
+  WebVideoFrameCapture._(this._videoElement);
 
   final web.HTMLVideoElement _videoElement;
-  final bool ownsElement; // Whether we created this element (and should dispose it)
   ui.Image? _currentFrame;
   bool _hasNewFrame = false;
   bool _isCapturing = false;
@@ -53,78 +52,34 @@ class WebVideoFrameCapture {
       debugPrint('WebVideoFrameCapture: play() failed: $e');
     }
 
-    // Check if stream tracks are still alive after async operations
-    final videoTracks = stream.getVideoTracks();
-    if (videoTracks.length == 0) {
-      debugPrint('WebVideoFrameCapture: No video tracks in stream after play()');
-      video.srcObject = null;
-      video.remove();
-      return null;
-    }
-    final track = videoTracks.toDart[0];
-    if (track.readyState != 'live') {
-      debugPrint(
-          'WebVideoFrameCapture: Track died during initialization (state: ${track.readyState})');
-      video.srcObject = null;
-      video.remove();
-      return null;
-    }
-
-    // Wait for valid video dimensions (at least 32x32)
-    // Remote tracks may need more time to start streaming real frames
+    // Wait for video dimensions to be available
     var attempts = 0;
-    while (video.videoWidth < _minValidDimension && attempts < 50) {
-      // Check if track is still alive
-      if (track.readyState != 'live') {
-        debugPrint(
-            'WebVideoFrameCapture: Track died while waiting for dimensions');
-        video.srcObject = null;
-        video.remove();
-        return null;
-      }
-      await Future.delayed(const Duration(milliseconds: 100));
+    while (video.videoWidth == 0 && attempts < 50) {
+      await Future.delayed(const Duration(milliseconds: 50));
       attempts++;
     }
 
-    if (video.videoWidth < _minValidDimension) {
-      // Still no valid dimensions after 5 seconds
-      debugPrint(
-          'WebVideoFrameCapture: Created video element (dimensions pending: ${video.videoWidth}x${video.videoHeight})');
-    } else {
-      debugPrint(
-          'WebVideoFrameCapture: Created video element ${video.videoWidth}x${video.videoHeight}');
+    if (video.videoWidth == 0) {
+      debugPrint('WebVideoFrameCapture: Video dimensions not available');
+      video.remove();
+      return null;
     }
 
+    debugPrint(
+        'WebVideoFrameCapture: Created video element ${video.videoWidth}x${video.videoHeight}');
     return WebVideoFrameCapture._(video);
   }
 
   /// Create a capture instance from a MediaStreamTrack.
   static Future<WebVideoFrameCapture?> createFromTrack(
       web.MediaStreamTrack track) async {
-    // Check if track is still alive
-    if (track.readyState != 'live') {
-      debugPrint(
-          'WebVideoFrameCapture: Track not live (state: ${track.readyState}), skipping');
-      return null;
-    }
-    // Check if track is enabled
-    if (!track.enabled) {
-      debugPrint('WebVideoFrameCapture: Track is disabled, enabling it');
-      track.enabled = true;
-    }
-    debugPrint(
-        'WebVideoFrameCapture: Creating capture from track ${track.id} '
-        '(state: ${track.readyState}, enabled: ${track.enabled}, muted: ${track.muted})');
-
     final stream = web.MediaStream();
     stream.addTrack(track);
     return createFromStream(stream);
   }
 
   /// Create a capture instance from an existing video element.
-  ///
   /// Use this when LiveKit has already created a video element for the track.
-  /// Returns a Future because we may need to wait for the video to start playing.
   static Future<WebVideoFrameCapture?> createFromExistingVideo(
       web.HTMLVideoElement video) async {
     // Ensure video element has correct attributes for autoplay
@@ -132,43 +87,28 @@ class WebVideoFrameCapture {
     video.muted = true;
     video.playsInline = true;
 
-    // Try to play the video if it's not already playing
-    if (video.paused || video.readyState == 0) {
-      debugPrint('WebVideoFrameCapture: Existing video is paused/not ready (readyState=${video.readyState}), calling play()');
+    // Try to play the video if it's paused
+    if (video.paused) {
       try {
         await video.play().toDart;
-        debugPrint('WebVideoFrameCapture: play() succeeded');
       } catch (e) {
         debugPrint('WebVideoFrameCapture: play() failed: $e');
       }
     }
 
-    // Wait for valid dimensions (up to 5 seconds)
+    // Wait for video dimensions
     var attempts = 0;
-    while (video.videoWidth < _minValidDimension && attempts < 50) {
-      if (attempts % 10 == 0) {
-        debugPrint('WebVideoFrameCapture: Waiting for dimensions... readyState=${video.readyState}, size=${video.videoWidth}x${video.videoHeight}');
-      }
+    while (video.videoWidth == 0 && attempts < 50) {
       await Future.delayed(const Duration(milliseconds: 100));
       attempts++;
     }
 
-    if (video.videoWidth < _minValidDimension ||
-        video.videoHeight < _minValidDimension) {
-      debugPrint(
-          'WebVideoFrameCapture: Existing video still has invalid dimensions after waiting: '
-          '${video.videoWidth}x${video.videoHeight}, readyState=${video.readyState}');
-      return null;
-    }
     debugPrint(
-        'WebVideoFrameCapture: Using existing video element '
-        '${video.videoWidth}x${video.videoHeight}');
-    // Don't remove this video element on dispose - we didn't create it
-    return WebVideoFrameCapture._(video, ownsElement: false);
+        'WebVideoFrameCapture: Using existing video ${video.videoWidth}x${video.videoHeight}');
+    return WebVideoFrameCapture._(video);
   }
 
   /// Find a video element by matching its MediaStream track ID or label.
-  /// LiveKit uses different IDs internally, but puts the LiveKit track ID in the label.
   static web.HTMLVideoElement? findVideoElementByTrackId(String trackId) {
     final videos = web.document.querySelectorAll('video');
     debugPrint('WebVideoFrameCapture: Found ${videos.length} video elements');
@@ -196,7 +136,7 @@ class WebVideoFrameCapture {
           debugPrint('WebVideoFrameCapture: Track[$j] id=${track.id}, label=${track.label}');
           // Match by ID or by label (LiveKit puts its track ID in the label)
           if (track.id == trackId || track.label == trackId) {
-            debugPrint('WebVideoFrameCapture: MATCH FOUND by ${track.id == trackId ? "id" : "label"}!');
+            debugPrint('WebVideoFrameCapture: MATCH FOUND!');
             return video;
           }
         }
@@ -282,9 +222,6 @@ class WebVideoFrameCapture {
     _captureTimer = null;
   }
 
-  /// Minimum dimensions to consider video valid (not a placeholder)
-  static const int _minValidDimension = 32;
-
   /// Capture the current video frame.
   Future<void> _captureFrame() async {
     if (!_isCapturing) return;
@@ -292,10 +229,7 @@ class WebVideoFrameCapture {
 
     final videoWidth = _videoElement.videoWidth;
     final videoHeight = _videoElement.videoHeight;
-    // Skip frames that are too small (placeholders or not yet streaming)
-    if (videoWidth < _minValidDimension || videoHeight < _minValidDimension) {
-      return;
-    }
+    if (videoWidth == 0 || videoHeight == 0) return;
 
     try {
       // Create ImageBitmap from video element (GPU-efficient)
@@ -348,16 +282,12 @@ class WebVideoFrameCapture {
 
   /// Dispose resources.
   void dispose() {
-    debugPrint('WebVideoFrameCapture: Disposing capture (frame #$_frameNumber)');
     stopCapture();
     _currentFrame?.dispose();
     _currentFrame = null;
 
-    // Only remove the video element if we created it
-    if (ownsElement) {
-      _videoElement.srcObject = null;
-      _videoElement.remove();
-    }
-    debugPrint('WebVideoFrameCapture: Disposed');
+    // Remove the hidden video element
+    _videoElement.srcObject = null;
+    _videoElement.remove();
   }
 }

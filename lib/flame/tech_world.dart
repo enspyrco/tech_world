@@ -125,12 +125,6 @@ class TechWorld extends World with TapCallbacks {
           bubble.position = playerComponent.position + _bubbleOffset;
           _playerBubbles[playerId] = bubble;
           add(bubble);
-
-          // If this is a video bubble, notify it that track is ready
-          // (since TrackSubscribedEvent already fired earlier)
-          if (bubble is VideoBubbleComponent) {
-            bubble.notifyTrackReady();
-          }
         }
       }
     }
@@ -204,11 +198,7 @@ class TechWorld extends World with TapCallbacks {
       String playerId, PlayerComponent playerComponent) {
     // Check if this player has a LiveKit participant with video
     final participant = _liveKitService?.getParticipant(playerId);
-    final hasVideo = participant != null && _hasVideoTrack(participant);
-    debugPrint('_createBubbleForPlayer: playerId=$playerId, participant=${participant != null}, hasVideo=$hasVideo');
-
-    if (hasVideo) {
-      debugPrint('_createBubbleForPlayer: Creating VideoBubbleComponent for $playerId');
+    if (participant != null && _hasVideoTrack(participant)) {
       final videoBubble = VideoBubbleComponent(
         participant: participant,
         displayName: playerComponent.displayName,
@@ -225,7 +215,6 @@ class TechWorld extends World with TapCallbacks {
     }
 
     // Fallback to static bubble
-    debugPrint('_createBubbleForPlayer: Creating PlayerBubbleComponent (fallback) for $playerId');
     return PlayerBubbleComponent(
       displayName: playerComponent.displayName,
       playerId: playerId,
@@ -234,24 +223,19 @@ class TechWorld extends World with TapCallbacks {
 
   /// Check if participant has an active video track
   bool _hasVideoTrack(Participant participant) {
-    debugPrint('_hasVideoTrack: checking ${participant.identity}, publications: ${participant.videoTrackPublications.length}');
     for (final publication in participant.videoTrackPublications) {
-      debugPrint('_hasVideoTrack: publication sid=${publication.sid}, track=${publication.track != null}, subscribed=${publication.subscribed}');
       if (publication.track != null) {
         // For local participant, check if track is published
         // For remote participant, check if track is subscribed
         if (participant is LocalParticipant) {
-          debugPrint('_hasVideoTrack: Local participant has track, returning true');
           return true; // Local tracks are always "active" when present
         } else {
           if (publication.subscribed) {
-            debugPrint('_hasVideoTrack: Remote participant has subscribed track, returning true');
             return true;
           }
         }
       }
     }
-    debugPrint('_hasVideoTrack: No active video track found, returning false');
     return false;
   }
 
