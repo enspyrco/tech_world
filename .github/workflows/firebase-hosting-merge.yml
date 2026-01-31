@@ -70,7 +70,8 @@ jobs:
 
   build_and_deploy:
     needs: [changes, test]
-    if: always() && (needs.test.result == 'success' || needs.changes.outputs.docs_only == 'true')
+    # Skip build for docs-only changes, only run when tests pass for code changes
+    if: needs.changes.outputs.docs_only != 'true' && needs.test.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -74,7 +74,8 @@ jobs:
 
   build_and_preview:
     needs: [changes, test]
-    if: always() && (needs.test.result == 'success' || needs.changes.outputs.docs_only == 'true') && github.event.pull_request.head.repo.full_name == github.repository
+    # Skip build for docs-only changes, only run when tests pass for code changes
+    if: needs.changes.outputs.docs_only != 'true' && needs.test.result == 'success' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
