@@ -8,16 +8,19 @@ import 'package:ffi/ffi.dart';
 ///
 /// This provides zero-copy access to WebRTC video frames by directly
 /// reading from shared memory allocated by the native plugin.
+///
+/// Currently only supports macOS. On other platforms, VideoFrameCapture
+/// operations will return null/no-op.
 
-// Load the native library (the app's main executable on macOS)
-final DynamicLibrary _nativeLib = _loadNativeLibrary();
+/// Whether the current platform supports FFI video capture.
+final bool _isSupported = Platform.isMacOS;
 
-DynamicLibrary _loadNativeLibrary() {
-  if (Platform.isMacOS) {
-    // On macOS, the C code is compiled into the Runner executable
-    return DynamicLibrary.executable();
-  }
-  throw UnsupportedError('VideoFrameFFI only supports macOS currently');
+// Lazy-load the native library to avoid crashes on unsupported platforms
+DynamicLibrary? _nativeLib;
+
+DynamicLibrary? _getNativeLib() {
+  if (!_isSupported) return null;
+  return _nativeLib ??= DynamicLibrary.executable();
 }
 
 // C function signatures
@@ -74,29 +77,35 @@ typedef _VideoFrameCaptureListTracks = int Function(
 typedef _VideoFrameCaptureInitNative = Void Function();
 typedef _VideoFrameCaptureInit = void Function();
 
-// Lookup native functions
-final _create = _nativeLib.lookupFunction<_VideoFrameCaptureCreateNative,
-    _VideoFrameCaptureCreate>('video_frame_capture_create');
+// Lazy-loaded native functions (null on unsupported platforms)
+_VideoFrameCaptureCreate? _create;
+_VideoFrameCaptureGetBuffer? _getBuffer;
+_VideoFrameCaptureMarkConsumed? _markConsumed;
+_VideoFrameCaptureIsActive? _isActive;
+_VideoFrameCaptureDestroy? _destroy;
+_VideoFrameCaptureListTracks? _listTracks;
+_VideoFrameCaptureInit? _init;
 
-final _getBuffer = _nativeLib.lookupFunction<_VideoFrameCaptureGetBufferNative,
-    _VideoFrameCaptureGetBuffer>('video_frame_capture_get_buffer');
+void _ensureFunctionsLoaded() {
+  if (!_isSupported) return;
+  final lib = _getNativeLib();
+  if (lib == null) return;
 
-final _markConsumed = _nativeLib.lookupFunction<
-    _VideoFrameCaptureMarkConsumedNative,
-    _VideoFrameCaptureMarkConsumed>('video_frame_capture_mark_consumed');
-
-final _isActive = _nativeLib.lookupFunction<_VideoFrameCaptureIsActiveNative,
-    _VideoFrameCaptureIsActive>('video_frame_capture_is_active');
-
-final _destroy = _nativeLib.lookupFunction<_VideoFrameCaptureDestroyNative,
-    _VideoFrameCaptureDestroy>('video_frame_capture_destroy');
-
-final _listTracks = _nativeLib.lookupFunction<
-    _VideoFrameCaptureListTracksNative,
-    _VideoFrameCaptureListTracks>('video_frame_capture_list_tracks');
-
-final _init = _nativeLib.lookupFunction<_VideoFrameCaptureInitNative,
-    _VideoFrameCaptureInit>('video_frame_capture_init');
+  _create ??= lib.lookupFunction<_VideoFrameCaptureCreateNative,
+      _VideoFrameCaptureCreate>('video_frame_capture_create');
+  _getBuffer ??= lib.lookupFunction<_VideoFrameCaptureGetBufferNative,
+      _VideoFrameCaptureGetBuffer>('video_frame_capture_get_buffer');
+  _markConsumed ??= lib.lookupFunction<_VideoFrameCaptureMarkConsumedNative,
+      _VideoFrameCaptureMarkConsumed>('video_frame_capture_mark_consumed');
+  _isActive ??= lib.lookupFunction<_VideoFrameCaptureIsActiveNative,
+      _VideoFrameCaptureIsActive>('video_frame_capture_is_active');
+  _destroy ??= lib.lookupFunction<_VideoFrameCaptureDestroyNative,
+      _VideoFrameCaptureDestroy>('video_frame_capture_destroy');
+  _listTracks ??= lib.lookupFunction<_VideoFrameCaptureListTracksNative,
+      _VideoFrameCaptureListTracks>('video_frame_capture_list_tracks');
+  _init ??= lib.lookupFunction<_VideoFrameCaptureInitNative,
+      _VideoFrameCaptureInit>('video_frame_capture_init');
+}
 
 /// Video frame buffer structure matching the native C struct.
 /// Memory layout must match VideoFrameCapture.h exactly.
@@ -156,24 +165,31 @@ class VideoFrameCapture {
   bool _disposed = false;
 
   VideoFrameCapture._(this._handle) {
-    _buffer = _getBuffer(_handle);
+    _buffer = _getBuffer?.call(_handle);
   }
 
   /// Create a new frame capture for the given track.
   ///
-  /// Returns null if the track cannot be found or capture fails.
+  /// Returns null if the track cannot be found, capture fails, or
+  /// the platform is not supported.
   static VideoFrameCapture? create(
     String trackId, {
     int targetFps = 15,
     int maxWidth = 640,
     int maxHeight = 480,
   }) {
+    if (!_isSupported) return null;
+
+    // Ensure native functions are loaded
+    _ensureFunctionsLoaded();
+    if (_create == null || _init == null) return null;
+
     // Initialize the capture system
-    _init();
+    _init!();
 
     final trackIdPtr = trackId.toNativeUtf8();
     try {
-      final handle = _create(trackIdPtr, targetFps, maxWidth, maxHeight);
+      final handle = _create!(trackIdPtr, targetFps, maxWidth, maxHeight);
       if (handle == nullptr) {
         return null;
       }
@@ -192,8 +208,8 @@ class VideoFrameCapture {
 
   /// Check if the capture session is active.
   bool get isActive {
-    if (_disposed) return false;
-    return _isActive(_handle) == 1;
+    if (_disposed || _isActive == null) return false;
+    return _isActive!(_handle) == 1;
   }
 
   /// Get the current frame's width.
@@ -237,29 +253,35 @@ class VideoFrameCapture {
   ///
   /// Call this after reading pixels to allow the next frame to be written.
   void markConsumed() {
-    if (_disposed) return;
-    _markConsumed(_handle);
+    if (_disposed || _markConsumed == null) return;
+    _markConsumed!(_handle);
   }
 
   /// Dispose the capture session and free resources.
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    _destroy(_handle);
+    _destroy?.call(_handle);
     _buffer = null;
   }
 
   /// List all available video track IDs.
   ///
   /// Returns a list of track IDs that can be used with [create].
+  /// Returns an empty list on unsupported platforms.
   static List<String> listTracks() {
-    _init();
+    if (!_isSupported) return [];
+
+    _ensureFunctionsLoaded();
+    if (_init == null || _listTracks == null) return [];
+
+    _init!();
 
     // Allocate buffer for track IDs
     const bufferSize = 4096;
     final buffer = calloc<Uint8>(bufferSize);
     try {
-      final count = _listTracks(buffer.cast<Utf8>(), bufferSize);
+      final count = _listTracks!(buffer.cast<Utf8>(), bufferSize);
       if (count == 0) return [];
 
       final trackIdsStr = buffer.cast<Utf8>().toDartString();
