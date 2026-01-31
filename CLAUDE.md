@@ -110,6 +110,12 @@ LiveKit VideoTrack → Native RTCVideoRenderer → Shared Memory Buffer → Dart
 
 **Timing Note:** When a remote participant joins, their video track may not be subscribed yet. The bubble is initially created as a `PlayerBubbleComponent` (placeholder with initial). When `TrackSubscribedEvent` fires, `_refreshBubbleForPlayer()` upgrades it to a `VideoBubbleComponent`. See `lib/flame/tech_world.dart` lines 366-375.
 
+**Known Issues & Debugging:** See `docs/video-capture-debugging.md` for detailed notes on:
+- Release mode (dart2js) compatibility fixes
+- Remote participant video capture
+- iOS FFI crash fix
+- **Current bug**: Video disappears when re-entering proximity (lifecycle issue with video element disposal)
+
 ### Chat Service
 
 - `ChatService` manages shared chat via LiveKit data channels
