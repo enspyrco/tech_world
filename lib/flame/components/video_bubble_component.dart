@@ -188,19 +188,26 @@ class VideoBubbleComponent extends PositionComponent {
       final isRemote = participant is! LocalParticipant;
       debugPrint('WebCapture: Initializing for $displayName (isRemote=$isRemote)');
 
-      // First, get the track ID from the public API (works in release mode)
+      // Get the track ID from the public API (works in release mode)
       final trackId = mediaStreamTrack.id as String?;
-      debugPrint('WebCapture: Track ID from public API: $trackId');
+      // Also get the LiveKit track SID which might be different
+      final trackSid = track.sid;
+      debugPrint('WebCapture: mediaStreamTrack.id=$trackId, track.sid=$trackSid');
 
       // Debug: list all video elements
       web_capture.WebVideoFrameCapture.debugListVideoElements();
 
       // Try to find an existing video element for this track
-      // LiveKit creates video elements for both local and remote participants
-      if (trackId != null && trackId.isNotEmpty) {
+      // Try both the mediaStreamTrack.id AND the LiveKit track SID
+      final idsToTry = <String>{};
+      if (trackId != null && trackId.isNotEmpty) idsToTry.add(trackId);
+      if (trackSid != null && trackSid.isNotEmpty) idsToTry.add(trackSid);
+      debugPrint('WebCapture: IDs to try: $idsToTry');
+
+      for (final id in idsToTry) {
         final existingVideo =
-            web_capture.WebVideoFrameCapture.findVideoElementByTrackId(trackId);
-        debugPrint('WebCapture: findVideoElementByTrackId($trackId) returned: ${existingVideo != null}');
+            web_capture.WebVideoFrameCapture.findVideoElementByTrackId(id);
+        debugPrint('WebCapture: findVideoElementByTrackId($id) returned: ${existingVideo != null}');
 
         if (existingVideo != null) {
           final capture =
@@ -219,23 +226,40 @@ class VideoBubbleComponent extends PositionComponent {
         }
       }
 
-      // Fallback: try to get jsTrack and create a new video element
-      // This may fail in release mode due to dart2js minification
-      dynamic jsTrack;
+      // Fallback: create a new video element from the MediaStream
+      // Try to get jsStream from the MediaStream (MediaStreamWeb on web)
+      debugPrint('WebCapture: No existing video found, creating new one for $displayName');
+      dynamic jsStream;
       try {
-        jsTrack = (mediaStreamTrack as dynamic).jsTrack;
-        debugPrint('WebCapture: Got jsTrack via dynamic access');
+        // track.mediaStream gives us the flutter_webrtc MediaStream
+        // On web, this is MediaStreamWeb which has jsStream property
+        final mediaStream = track.mediaStream;
+        jsStream = (mediaStream as dynamic).jsStream;
+        debugPrint('WebCapture: Got jsStream via dynamic access');
       } catch (e) {
-        debugPrint('WebCapture: Could not get jsTrack (expected in release mode): $e');
-        debugPrint('WebCapture: No existing video found and cannot create new one');
+        debugPrint('WebCapture: Could not get jsStream: $e');
+        // Try jsTrack as a fallback
+        try {
+          final jsTrack = (mediaStreamTrack as dynamic).jsTrack;
+          debugPrint('WebCapture: Got jsTrack, creating stream from it');
+          final capture = await web_capture.WebVideoFrameCapture.createFromTrack(jsTrack);
+          if (capture != null) {
+            _webCapture = capture;
+            _videoTrack = track;
+            capture.startCapture();
+            _captureInitialized = true;
+          }
+        } catch (e2) {
+          debugPrint('WebCapture: Could not get jsTrack either: $e2');
+        }
         _webCaptureInitializing = false;
         return;
       }
 
-      // Create a new video element from the track
-      debugPrint('WebCapture: Creating new video element for $displayName');
-      final capture = await web_capture.WebVideoFrameCapture.createFromTrack(
-        jsTrack,
+      // Create video element from the JS MediaStream
+      debugPrint('WebCapture: Creating video element from jsStream for $displayName');
+      final capture = await web_capture.WebVideoFrameCapture.createFromStream(
+        jsStream,
       );
 
       if (capture == null) {
