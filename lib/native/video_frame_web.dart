@@ -105,6 +105,13 @@ class WebVideoFrameCapture {
       attempts++;
     }
 
+    // Don't use video elements that haven't loaded yet
+    if (video.videoWidth == 0 || video.videoHeight == 0) {
+      debugPrint(
+          'WebVideoFrameCapture: Existing video has no dimensions yet, skipping');
+      return null;
+    }
+
     debugPrint(
         'WebVideoFrameCapture: Using existing video ${video.videoWidth}x${video.videoHeight}');
     return WebVideoFrameCapture._(video, ownsElement: false);

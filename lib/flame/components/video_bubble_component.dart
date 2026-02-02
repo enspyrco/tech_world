@@ -7,10 +7,11 @@ import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
 import '../../native/video_frame_capture.dart' as ffi;
-import '../../native/web_video_capture.dart' as web_capture;
+import '../../native/direct_track_capture.dart' as direct_capture;
 
 /// A Flame component that renders a circular video bubble with a player's video feed.
 ///
@@ -57,10 +58,17 @@ class VideoBubbleComponent extends PositionComponent {
   // Native FFI capture (macOS)
   ffi.VideoFrameCapture? _capture;
 
-  // Web capture
-  dynamic _webCapture; // WebVideoFrameCapture on web, null otherwise
+  // Web capture - local tracks (MediaStreamTrackProcessor - fast, no DOM)
+  direct_capture.DirectTrackCapture? _webCapture;
+
+  // Web capture - remote tracks (HTMLVideoElement - handles buffering)
+  direct_capture.VideoElementCapture? _remoteWebCapture;
+
+  // RTCVideoRenderer for remote tracks on web (needed to properly attach to track)
+  webrtc.RTCVideoRenderer? _rtcRenderer;
 
   bool _captureInitialized = false;
+  bool _captureInitializing = false; // Prevent duplicate async init attempts
 
   // Shader support
   ui.FragmentShader? _shader;
@@ -80,6 +88,7 @@ class VideoBubbleComponent extends PositionComponent {
   static const int _maxCaptureRetries = 10;
   double _timeSinceLastRetry = 0;
   static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
+
 
   // Loading state
   bool _isLoading = true;
@@ -148,8 +157,10 @@ class VideoBubbleComponent extends PositionComponent {
 
   void _initializeCapture() {
     if (_captureInitialized) return;
+    if (_captureInitializing) return; // Already initializing, don't start another
 
     _captureRetryCount++;
+    _captureInitializing = true;
 
     if (kIsWeb) {
       _initializeWebCapture();
@@ -158,15 +169,11 @@ class VideoBubbleComponent extends PositionComponent {
     } else {
       // Unsupported platform
       _captureInitialized = true;
+      _captureInitializing = false;
     }
   }
 
-  bool _webCaptureInitializing = false;
-
   void _initializeWebCapture() {
-    // Prevent concurrent initialization attempts
-    if (_webCaptureInitializing) return;
-
     final track = _getVideoTrack();
     if (track == null) {
       debugPrint('WebCapture: No video track found for $displayName');
@@ -175,108 +182,90 @@ class VideoBubbleComponent extends PositionComponent {
 
     // Get the underlying MediaStreamTrack
     final mediaStreamTrack = track.mediaStreamTrack;
-    debugPrint('WebCapture: Got MediaStreamTrack for $displayName');
+    final isRemote = participant is! LocalParticipant;
+    debugPrint('WebCapture: Initializing for $displayName (isRemote=$isRemote)');
 
-    // Mark as initializing and start async process
-    _webCaptureInitializing = true;
-    _initializeWebCaptureAsync(track, mediaStreamTrack);
+    // Get the JS MediaStreamTrack
+    dynamic jsTrack;
+    try {
+      jsTrack = (mediaStreamTrack as dynamic).jsTrack;
+    } catch (e) {
+      debugPrint('WebCapture: Could not get jsTrack: $e');
+      return;
+    }
+
+    // HYBRID APPROACH:
+    // - Local tracks: Use MediaStreamTrackProcessor (fast, no DOM)
+    // - Remote tracks: Use HTMLVideoElement (handles buffering/decoding internally)
+    if (isRemote) {
+      _initializeRemoteWebCapture(jsTrack, track);
+    } else {
+      _initializeLocalWebCapture(jsTrack, track);
+    }
   }
 
-  Future<void> _initializeWebCaptureAsync(
-      VideoTrack track, dynamic mediaStreamTrack) async {
+  /// Initialize capture for local tracks using MediaStreamTrackProcessor.
+  ///
+  /// Local tracks produce frames immediately, so we can use the faster
+  /// MediaStreamTrackProcessor approach without any waiting.
+  void _initializeLocalWebCapture(dynamic jsTrack, VideoTrack track) {
+    if (!direct_capture.isMediaStreamTrackProcessorSupported) {
+      debugPrint('WebCapture: MediaStreamTrackProcessor not supported, using VideoElement for local');
+      // Fall back to VideoElementCapture even for local
+      _initializeRemoteWebCapture(jsTrack, track);
+      return;
+    }
+
+    final capture = direct_capture.DirectTrackCapture.create(jsTrack);
+    if (capture == null) {
+      debugPrint('WebCapture: Failed to create DirectTrackCapture for $displayName');
+      _captureInitializing = false;
+      return;
+    }
+
+    debugPrint('WebCapture: DirectTrackCapture created for local track $displayName');
+    _webCapture = capture;
+    _videoTrack = track;
+    capture.startCapture();
+    _captureInitialized = true;
+    _captureInitializing = false;
+  }
+
+  /// Initialize capture for remote tracks using VideoElementCapture.
+  ///
+  /// Creates a hidden video element and attaches the track's MediaStream to it.
+  /// This is more reliable than RTCVideoRenderer for capturing frames.
+  void _initializeRemoteWebCapture(dynamic jsTrack, VideoTrack track) {
+    _initializeRemoteWebCaptureAsync(jsTrack, track);
+  }
+
+  Future<void> _initializeRemoteWebCaptureAsync(dynamic jsTrack, VideoTrack track) async {
     try {
-      final isRemote = participant is! LocalParticipant;
-      debugPrint('WebCapture: Initializing for $displayName (isRemote=$isRemote)');
-
-      // Get the track ID from the public API (works in release mode)
-      final trackId = mediaStreamTrack.id as String?;
-      // Also get the LiveKit track SID which might be different
-      final trackSid = track.sid;
-      debugPrint('WebCapture: mediaStreamTrack.id=$trackId, track.sid=$trackSid');
-
-      // Debug: list all video elements
-      web_capture.WebVideoFrameCapture.debugListVideoElements();
-
-      // Try to find an existing video element for this track
-      // Try both the mediaStreamTrack.id AND the LiveKit track SID
-      final idsToTry = <String>{};
-      if (trackId != null && trackId.isNotEmpty) idsToTry.add(trackId);
-      if (trackSid != null && trackSid.isNotEmpty) idsToTry.add(trackSid);
-      debugPrint('WebCapture: IDs to try: $idsToTry');
-
-      for (final id in idsToTry) {
-        final existingVideo =
-            web_capture.WebVideoFrameCapture.findVideoElementByTrackId(id);
-        debugPrint('WebCapture: findVideoElementByTrackId($id) returned: ${existingVideo != null}');
-
-        if (existingVideo != null) {
-          final capture =
-              await web_capture.WebVideoFrameCapture.createFromExistingVideo(
-                  existingVideo);
-          debugPrint('WebCapture: createFromExistingVideo returned: ${capture != null}');
-          if (capture != null) {
-            debugPrint('WebCapture: Using existing video for $displayName');
-            _webCapture = capture;
-            _videoTrack = track;
-            capture.startCapture();
-            _captureInitialized = true;
-            _webCaptureInitializing = false;
-            return;
-          }
-        }
-      }
-
-      // Fallback: create a new video element from the MediaStream
-      // Try to get jsStream from the MediaStream (MediaStreamWeb on web)
-      debugPrint('WebCapture: No existing video found, creating new one for $displayName');
-      dynamic jsStream;
-      try {
-        // track.mediaStream gives us the flutter_webrtc MediaStream
-        // On web, this is MediaStreamWeb which has jsStream property
-        final mediaStream = track.mediaStream;
-        jsStream = (mediaStream as dynamic).jsStream;
-        debugPrint('WebCapture: Got jsStream via dynamic access');
-      } catch (e) {
-        debugPrint('WebCapture: Could not get jsStream: $e');
-        // Try jsTrack as a fallback
-        try {
-          final jsTrack = (mediaStreamTrack as dynamic).jsTrack;
-          debugPrint('WebCapture: Got jsTrack, creating stream from it');
-          final capture = await web_capture.WebVideoFrameCapture.createFromTrack(jsTrack);
-          if (capture != null) {
-            _webCapture = capture;
-            _videoTrack = track;
-            capture.startCapture();
-            _captureInitialized = true;
-          }
-        } catch (e2) {
-          debugPrint('WebCapture: Could not get jsTrack either: $e2');
-        }
-        _webCaptureInitializing = false;
-        return;
-      }
-
-      // Create video element from the JS MediaStream
-      debugPrint('WebCapture: Creating video element from jsStream for $displayName');
-      final capture = await web_capture.WebVideoFrameCapture.createFromStream(
-        jsStream,
-      );
-
-      if (capture == null) {
-        debugPrint('WebCapture: Failed to create capture for $displayName');
-        _webCaptureInitializing = false;
-        return;
-      }
-
-      debugPrint('WebCapture: Capture initialized for $displayName');
-      _webCapture = capture;
       _videoTrack = track;
-      capture.startCapture();
+
+      // Use the mediaStreamTrack directly (not mediaStream which may be stale)
+      // jsTrack is already the JS MediaStreamTrack
+      debugPrint('WebCapture: Creating VideoElementCapture from jsTrack for $displayName');
+
+      // Try VideoElementCapture with just the track (it will create a fresh MediaStream)
+      // This now waits for the video to be ready before returning
+      final capture = await direct_capture.VideoElementCapture.createFromStream(null, jsTrack);
+      if (capture != null) {
+        debugPrint('WebCapture: VideoElementCapture created for remote track $displayName');
+        _remoteWebCapture = capture;
+        capture.startCapture();
+        _captureInitialized = true;
+        _captureInitializing = false;
+        return;
+      }
+
+      debugPrint('WebCapture: Failed to create VideoElementCapture for $displayName');
       _captureInitialized = true;
-    } catch (e, stackTrace) {
-      debugPrint('WebCapture: Error initializing capture: $e');
-      debugPrint('WebCapture: Stack: $stackTrace');
-      _webCaptureInitializing = false;
+      _captureInitializing = false;
+    } catch (e, stack) {
+      debugPrint('WebCapture: Error initializing remote capture: $e');
+      debugPrint('WebCapture: Stack: $stack');
+      _captureInitializing = false;
     }
   }
 
@@ -312,11 +301,17 @@ class VideoBubbleComponent extends PositionComponent {
     _capture?.dispose();
     _capture = null;
 
-    // Dispose web capture
-    if (_webCapture != null) {
-      (_webCapture as web_capture.WebVideoFrameCapture).dispose();
-      _webCapture = null;
-    }
+    // Dispose web captures (local and remote)
+    _webCapture?.dispose();
+    _webCapture = null;
+
+    _remoteWebCapture?.dispose();
+    _remoteWebCapture = null;
+
+    // Dispose RTCVideoRenderer
+    _rtcRenderer?.srcObject = null;
+    _rtcRenderer?.dispose();
+    _rtcRenderer = null;
 
     _videoTrack = null;
     _captureInitialized = false;
@@ -331,26 +326,34 @@ class VideoBubbleComponent extends PositionComponent {
   }
 
   void _checkForNewWebFrame() {
-    if (_webCapture == null) return;
+    // Check local capture (DirectTrackCapture)
+    if (_webCapture != null && _webCapture!.hasNewFrame) {
+      _processWebFrame(_webCapture!.consumeFrame());
+      return;
+    }
 
-    final capture = _webCapture as web_capture.WebVideoFrameCapture;
-    if (!capture.hasNewFrame) return;
+    // Check remote capture (VideoElementCapture)
+    if (_remoteWebCapture != null && _remoteWebCapture!.hasNewFrame) {
+      _processWebFrame(_remoteWebCapture!.consumeFrame());
+      return;
+    }
+  }
+
+  void _processWebFrame(ui.Image? newFrame) {
+    if (newFrame == null) {
+      _framesDropped++;
+      return;
+    }
 
     // Throttle frame processing
     final now = DateTime.now();
     if (_lastFrameTime != null &&
         now.difference(_lastFrameTime!) < _minFrameInterval) {
       _framesDropped++;
+      newFrame.dispose();
       return;
     }
     _lastFrameTime = now;
-
-    // Get the frame directly (already a ui.Image)
-    final newFrame = capture.consumeFrame();
-    if (newFrame == null) {
-      _framesDropped++;
-      return;
-    }
 
     // Swap frames
     final oldFrame = _currentFrame;
@@ -629,9 +632,11 @@ class VideoBubbleComponent extends PositionComponent {
         'framesDropped': _framesDropped,
         'hasCurrentFrame': _currentFrame != null,
         'captureActive': kIsWeb
-            ? (_webCapture as web_capture.WebVideoFrameCapture?)?.isActive ??
-                false
+            ? (_webCapture?.isActive ?? _remoteWebCapture?.isActive ?? false)
             : _capture?.isActive ?? false,
+        'captureType': kIsWeb
+            ? (_webCapture != null ? 'DirectTrack' : (_remoteWebCapture != null ? 'VideoElement' : 'none'))
+            : (_capture != null ? 'FFI' : 'none'),
         'targetFps': targetFps,
         'shaderEnabled':
             _shader != null && ui.ImageFilter.isShaderFilterSupported,
