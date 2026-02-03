@@ -10,6 +10,8 @@ import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/widgets/proximity_video_overlay.dart';
+import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
@@ -33,6 +35,7 @@ class _MyAppState extends State<MyApp> {
   double? _progress;
   LiveKitService? _liveKitService;
   ChatService? _chatService;
+  ProximityService? _proximityService;
 
   @override
   void initState() {
@@ -102,11 +105,15 @@ class _MyAppState extends State<MyApp> {
       // User signed out - disconnect LiveKit
       _liveKitService?.dispose();
       _chatService?.dispose();
+      _proximityService?.dispose();
       _liveKitService = null;
       _chatService = null;
+      _proximityService = null;
       Locator.remove<LiveKitService>();
       Locator.remove<ChatService>();
+      Locator.remove<ProximityService>();
       debugPrint('User signed out - LiveKit disconnected');
+      setState(() {}); // Trigger rebuild to remove overlay
     } else {
       // User signed in - create and connect LiveKit
       debugPrint('User signed in: ${user.id} (${user.displayName})');
@@ -118,9 +125,11 @@ class _MyAppState extends State<MyApp> {
       );
 
       _chatService = ChatService(liveKitService: _liveKitService!);
+      _proximityService = ProximityService();
 
       Locator.add<LiveKitService>(_liveKitService!);
       Locator.add<ChatService>(_chatService!);
+      Locator.add<ProximityService>(_proximityService!);
 
       // Connect to LiveKit
       final connected = await _liveKitService!.connect();
@@ -131,6 +140,8 @@ class _MyAppState extends State<MyApp> {
         await _liveKitService!.setCameraEnabled(true);
         await _liveKitService!.setMicrophoneEnabled(true);
       }
+
+      setState(() {}); // Trigger rebuild to show overlay
     }
   }
 
@@ -185,8 +196,20 @@ class _MyAppState extends State<MyApp> {
                             );
                           }
                           if (snapshot.data! is! SignedOutUser) {
-                            return GameWidget(
-                              game: locate<TechWorldGame>(),
+                            return Stack(
+                              children: [
+                                GameWidget(
+                                  game: locate<TechWorldGame>(),
+                                ),
+                                // Video bubble overlay using native Flutter rendering
+                                if (_liveKitService?.room != null &&
+                                    _proximityService != null)
+                                  ProximityVideoOverlay(
+                                    room: _liveKitService!.room!,
+                                    techWorld: locate<TechWorld>(),
+                                    proximityService: _proximityService!,
+                                  ),
+                              ],
                             );
                           }
                           return const AuthGate();

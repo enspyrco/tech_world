@@ -115,6 +115,27 @@ LiveKit VideoTrack → Native RTCVideoRenderer → Shared Memory Buffer → Dart
 - Remote participant video capture (PR #72)
 - iOS FFI crash fix (PR #73)
 - Video lifecycle fix for proximity re-entry (PR #76)
+- Web remote video capture fixes (PR #77) - see below
+
+**Web Remote Video Capture (PR #77):** Fixed multiple issues preventing remote participant video from rendering on web:
+1. **Track lifecycle**: Don't call `track.stop()` on dispose - the track is owned by LiveKit and stopping it permanently ends the track for everyone
+2. **DOM attachment**: Video element must be added to document body for Chrome to properly load the video
+3. **Async initialization**: `createFromStream` now waits for video to be ready (play() + dimensions) before returning
+4. **Duplicate prevention**: Added `_captureInitializing` flag to prevent multiple concurrent async initialization attempts
+5. **Alternative approach**: Also added `ProximityVideoOverlay` using Flutter widgets + LiveKit's native `VideoTrackRenderer` as a simpler alternative
+
+**Testing Multi-Participant Video:** Use LiveKit CLI to add simulated participants:
+```bash
+# Install LiveKit CLI
+brew install livekit-cli
+
+# Add a test participant with demo video (use room name from app - note underscore vs hyphen)
+LIVEKIT_URL=wss://testing-g5wrpk39.livekit.cloud \
+LIVEKIT_API_KEY=<key> \
+LIVEKIT_API_SECRET=<secret> \
+lk room join --identity video-test-user --publish-demo l_room
+```
+The `--publish-demo` flag publishes a looped 720p demo video. The test participant appears at position (0,0) - walk to the top-left corner to trigger proximity.
 
 ### Chat Service
 
