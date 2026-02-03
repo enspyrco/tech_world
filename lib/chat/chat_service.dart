@@ -4,16 +4,19 @@ import 'package:flutter/foundation.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/services/tts_service.dart';
 
 /// Service that manages shared chat with Claude bot via LiveKit data channels.
 /// All participants see all messages (questions and responses).
 class ChatService {
   ChatService({required LiveKitService liveKitService})
-      : _liveKitService = liveKitService {
+      : _liveKitService = liveKitService,
+        _ttsService = TtsService() {
     _subscribeToMessages();
   }
 
   final LiveKitService _liveKitService;
+  final TtsService _ttsService;
   final _messagesController = StreamController<List<ChatMessage>>.broadcast();
   final List<ChatMessage> _messages = [];
   final Map<String, Completer<void>> _pendingMessages = {};
@@ -62,6 +65,8 @@ class ChatService {
         senderName: 'Clawd',
         isBot: true,
       ));
+      // Speak the response
+      _ttsService.speak(text);
     } else {
       // Message from another user
       _messages.add(ChatMessage(
@@ -153,5 +158,6 @@ class ChatService {
   void dispose() {
     _chatSubscription?.cancel();
     _messagesController.close();
+    _ttsService.dispose();
   }
 }
