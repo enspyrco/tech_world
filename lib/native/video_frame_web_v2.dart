@@ -444,7 +444,13 @@ class VideoElementCapture {
       video.autoplay = true;
       video.muted = true;
       video.playsInline = true;
-      video.style.display = 'none'; // Hide it
+      // Use off-screen positioning instead of display:none
+      // Mobile browsers may not decode frames for hidden elements
+      video.style.position = 'fixed';
+      video.style.top = '-9999px';
+      video.style.left = '-9999px';
+      video.style.width = '1px';
+      video.style.height = '1px';
       video.srcObject = stream;
 
       // Add to document body (required for some browsers to properly load video)
