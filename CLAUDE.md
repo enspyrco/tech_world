@@ -173,7 +173,7 @@ LIVEKIT_API_SECRET=<secret>
 - **Source Code**: `../tech_world_bot/` - Node.js using `@livekit/agents` framework
 - **Deployment**: GCP Compute Engine (`tech-world-bot` instance)
 - **Joins LiveKit**: As participant `bot-claude`, listens for `chat` topic messages
-- **Claude API**: Calls Claude API, broadcasts response on `chat-response` topic
+- **Claude API**: Uses Claude 3.5 Haiku (`claude-3-5-haiku-20241022`) for fast, cost-effective responses
 - **Shared Chat**: All participants see all questions and answers
 
 ### Local Development
