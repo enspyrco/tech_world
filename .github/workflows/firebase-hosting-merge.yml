@@ -56,9 +56,10 @@ jobs:
         run: sudo apt-get install -y lcov
       - name: Remove untestable files from coverage
         run: |
-          lcov --remove coverage/lcov.info \
+          lcov --ignore-errors unused --remove coverage/lcov.info \
             '*/native/video_frame_ffi.dart' \
             '*/native/video_frame_web_stub.dart' \
+            '*/native/video_frame_web_v2_stub.dart' \
             '*/flame/components/video_bubble_component.dart' \
             '*/auth/auth_service.dart' \
             -o coverage/lcov.info
