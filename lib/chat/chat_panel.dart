@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/services/stt_service.dart';
 
 /// Side panel for chatting with Clawd the bot.
 class ChatPanel extends StatefulWidget {
@@ -19,6 +20,7 @@ class _ChatPanelState extends State<ChatPanel> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
   final _focusNode = FocusNode();
+  final _sttService = SttService();
 
   // Clawd's orange color
   static const clawdOrange = Color(0xFFD97757);
@@ -28,7 +30,21 @@ class _ChatPanelState extends State<ChatPanel> {
     _textController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
+    _sttService.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleMicPress() async {
+    if (_sttService.listening.value) {
+      _sttService.stop();
+      return;
+    }
+
+    final result = await _sttService.listen();
+    if (result != null && result.isNotEmpty) {
+      _textController.text = result;
+      _sendMessage();
+    }
   }
 
   void _sendMessage() {
@@ -202,6 +218,23 @@ class _ChatPanelState extends State<ChatPanel> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                if (_sttService.isSupported)
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _sttService.listening,
+                    builder: (context, isListening, _) {
+                      return IconButton(
+                        onPressed: _handleMicPress,
+                        icon: Icon(isListening ? Icons.mic : Icons.mic_none),
+                        color: isListening ? Colors.red : clawdOrange,
+                        style: IconButton.styleFrom(
+                          backgroundColor: isListening
+                              ? Colors.red.withValues(alpha: 0.2)
+                              : clawdOrange.withValues(alpha: 0.1),
+                        ),
+                      );
+                    },
+                  ),
+                const SizedBox(width: 4),
                 IconButton(
                   onPressed: _sendMessage,
                   icon: const Icon(Icons.send),
