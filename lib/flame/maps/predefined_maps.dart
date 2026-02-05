@@ -54,6 +54,7 @@ const lRoom = GameMap(
     Point(17, 7),
   ],
   spawnPoint: Point(10, 15),
+  terminals: [Point(8, 12), Point(14, 12)],
 );
 
 /// Four Corners - barriers in each corner, open center.

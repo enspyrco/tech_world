@@ -10,6 +10,7 @@ class GameMap {
     required this.name,
     required this.barriers,
     this.spawnPoint = const Point(25, 25),
+    this.terminals = const [],
   });
 
   /// Unique identifier for this map.
@@ -24,4 +25,7 @@ class GameMap {
 
   /// Default spawn point for players in mini-grid coordinates.
   final Point<int> spawnPoint;
+
+  /// Positions of coding terminal stations in mini-grid coordinates.
+  final List<Point<int>> terminals;
 }

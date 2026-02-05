@@ -24,6 +24,8 @@ dependencies:
   collection: ^1.19.1
   ffi: ^2.1.5
   web: ^1.1.0 # For web video capture APIs
+  code_forge_web: ^1.0.0
+  re_highlight: ^0.0.3
 
 dev_dependencies:
   flutter_test:

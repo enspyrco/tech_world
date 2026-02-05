@@ -11,6 +11,7 @@ An educational multiplayer 2D virtual world game where players solve coding chal
 - Firebase Authentication for user management
 - LiveKit integration for proximity-based video chat
 - **In-game video bubbles** - Render video feeds directly in the Flame game world using zero-copy FFI frame capture (macOS, web)
+- **Coding terminals** - In-game terminal stations with Dart code editor (`code_forge_web`) and challenge submission to Clawd
 - Cross-platform support (macOS, web, etc.)
 
 ## Prerequisites
@@ -58,7 +59,12 @@ flutter test test/networking_service_test.dart  # Run specific test
   - `TechWorld`: Main world component, handles taps and player movement
   - `PlayerComponent`: Animated player sprites with pathfinding
   - `PathComponent`: Jump Point Search (JPS) pathfinding calculations
+  - `TerminalComponent`: Coding terminal stations with proximity-gated interaction
   - `maps/`: Predefined map definitions (`GameMap`, `predefined_maps.dart`)
+- **editor/**: In-game code editor
+  - `CodeEditorPanel`: Flutter widget wrapping `code_forge_web` with challenge info and submit button
+  - `Challenge`: Data model for coding challenges
+  - `predefined_challenges.dart`: Starter challenges (Hello Dart, Sum a List, FizzBuzz)
 - **networking/**: WebSocket connection management (`NetworkingService`)
 - **livekit/**: Video chat integration for proximity-based calls
 - **native/**: FFI bindings for native video frame capture
@@ -70,6 +76,8 @@ flutter test test/networking_service_test.dart  # Run specific test
 - `livekit_client`: Video chat
 - `firebase_core`, `firebase_auth`, `cloud_firestore`: Firebase integration
 - `jump_point_search`: Fast pathfinding for uniform-cost grids
+- `code_forge_web`: In-game Dart code editor with syntax highlighting
+- `re_highlight`: Dart syntax highlighting for the editor
 - `web_socket_channel`: WebSocket communication
 - `tech_world_networking_types`: Shared message types
 
@@ -108,17 +116,45 @@ Tech World includes an AI tutor bot powered by Claude that helps players learn t
 - Browser text-to-speech (speechSynthesis API) for Clawd's spoken responses
 - Leverage existing LiveKit infrastructure for future voice conversations
 
-**In-Game Code Editor:**
+**In-Game Code Editor (Implemented):**
 
-- Coding challenges at themed map locations (e.g., "Array Alley", "Recursion Ridge")
-- Full Dart editor with real-time diagnostics, completions, and hover docs
-- Uses [`code_forge_web`](https://pub.dev/packages/code_forge_web) for the editor widget
-- Dart analysis server connected over WebSocket via [`lsp-ws-proxy`](https://github.com/nickmeinhold/lsp-ws-proxy)
-- Clawd reviews submitted code and gives feedback
+- Coding terminal stations on the map - tap to open editor (proximity-gated)
+- Dart syntax-highlighted editor using [`code_forge_web`](https://pub.dev/packages/code_forge_web)
+- 3 starter challenges: Hello Dart, Sum a List, FizzBuzz
+- Submit code to Clawd for review via chat
 
-## In-Game Code Editor (Planned)
+## In-Game Code Editor
+
+### How It Works
+
+Players walk to a coding terminal (green `>_` icon on the map) and tap it. If within 2 grid squares, a code editor panel replaces the chat sidebar with:
+- Challenge title and description
+- Dart code editor with syntax highlighting
+- Submit button that sends code to Clawd for review
 
 ### Architecture
+
+```
+TerminalComponent (Flame) → tap + proximity check
+  → TechWorld.activeChallenge (ValueNotifier)
+    → main.dart swaps ChatPanel ↔ CodeEditorPanel
+      → CodeForgeWeb (code_forge_web) with re_highlight for Dart syntax
+        → Submit → ChatService.sendMessage() → Clawd reviews code
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `lib/editor/challenge.dart` | `Challenge` data model |
+| `lib/editor/predefined_challenges.dart` | Starter challenges |
+| `lib/editor/code_editor_panel.dart` | Editor panel widget |
+| `lib/flame/components/terminal_component.dart` | Terminal Flame component |
+| `lib/flame/maps/game_map.dart` | `GameMap.terminals` field |
+
+### Planned - LSP Integration
+
+Connect to a remote Dart analysis server for real-time diagnostics, completions, and hover docs:
 
 ```
 Browser (Flutter web)
@@ -128,55 +164,9 @@ Browser (Flutter web)
                  └─ dart language-server --protocol=lsp
 ```
 
-Players approach a coding terminal in the game world, which opens the editor as an overlay or panel. The editor connects to a remote Dart analysis server via WebSocket, providing real-time diagnostics, completions, hover docs, and code actions - a VS Code-like experience in the browser.
+`code_forge_web` already supports LSP via `CodeForgeWebController(lspConfig: LspSocketConfig(...))`.
 
-### Key Packages
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| [`code_forge_web`](https://pub.dev/packages/code_forge_web) | 1.0.0 | Flutter web code editor widget with LSP support |
-| [`code_forge`](https://pub.dev/packages/code_forge) | 8.1.1 | Native platforms (macOS, etc.) - same API, uses `dart:io` |
-| `lsp-ws-proxy` | - | Bridges WebSocket to stdio for the analysis server |
-
-### LSP Features Available
-
-- Intelligent code completions with auto-import
-- Hover documentation with rich markdown tooltips
-- Real-time diagnostics (errors and warnings)
-- Semantic token-based highlighting
-- Function signature help
-- Code actions and quick fixes
-- Inlay hints for type and parameter information
-- Go-to-definition and symbol renaming
-
-### Server-Side Setup
-
-```bash
-# Run the Dart analysis server behind a WebSocket proxy
-lsp-ws-proxy --listen 0.0.0.0:9000 -- dart language-server --protocol=lsp
-```
-
-Each connected user gets their own analysis server process. The server needs the Dart SDK installed.
-
-### Client-Side Integration
-
-```dart
-final controller = CodeForgeWebController(
-  lspConfig: LspSocketConfig(
-    workspacePath: 'file:///workspace',
-    languageId: 'dart',
-    serverUrl: 'ws://your-server:9000',
-  ),
-);
-
-CodeForgeWeb(
-  fileUrl: challengeFileUrl,
-  controller: controller,
-);
-```
-
-### Open Questions
-
+**Open Questions:**
 - Where to host the LSP proxy (existing GCP instance vs. dedicated)
 - How to sandbox user code execution (if we want to run code, not just analyze)
 - Session lifecycle - spin up/tear down analysis server per challenge or per user session
