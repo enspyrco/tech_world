@@ -137,12 +137,22 @@ lk room join --identity video-test-user --publish-demo l_room
 ```
 The `--publish-demo` flag publishes a looped 720p demo video. The test participant appears at position (0,0) - walk to the top-left corner to trigger proximity.
 
+### Voice Services (Browser Web Speech API)
+
+- **TTS**: `lib/services/tts_service.dart` (conditional export) - Clawd speaks responses via `speechSynthesis`
+  - Web: `tts_service_web.dart` uses `package:web` for typed access to `speechSynthesis` API
+  - Native: `tts_service_stub.dart` no-op
+- **STT**: `lib/services/stt_service.dart` (conditional export) - Voice input via `SpeechRecognition`
+  - Web: `stt_service_web.dart` uses `dart:js_interop_unsafe` with `globalContext` (SpeechRecognition not in `package:web`)
+  - Native: `stt_service_stub.dart` no-op
+- Pattern: `export 'stub.dart' if (dart.library.js_interop) 'web.dart'`
+
 ### Chat Service
 
 - `ChatService` manages shared chat via LiveKit data channels
 - All participants see all messages (questions and responses)
 - Bot responses come from `bot-claude` participant running on GCP Compute Engine
-- `ChatPanel` widget renders the chat UI
+- `ChatPanel` widget renders the chat UI with mic button (STT) and auto-spoken responses (TTS)
 
 ## Testing
 
@@ -205,8 +215,54 @@ gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-t
 - Code review with feedback on style, edge cases, efficiency
 - Concept explainer for programming questions
 
-**Voice Integration:**
-- Pipeline: microphone → speech-to-text → Claude API → text-to-speech → bot audio track
+**Voice Integration (Implemented):**
+- Browser STT: microphone → SpeechRecognition API → chat message → Clawd
+- Browser TTS: Clawd response → speechSynthesis API → spoken audio
+
+### In-Game Code Editor (Planned)
+
+The next major feature: an in-game Dart code editor with real-time analysis.
+
+**Architecture:**
+```
+Browser (Flutter web)
+  └─ code_forge_web widget
+       └─ WebSocket (LspSocketConfig)
+            └─ lsp-ws-proxy (server)
+                 └─ dart language-server --protocol=lsp
+```
+
+**Key Packages:**
+- [`code_forge_web`](https://pub.dev/packages/code_forge_web) v1.0.0 - Flutter web code editor with LSP over WebSocket
+- [`code_forge`](https://pub.dev/packages/code_forge) v8.1.1 - Native version (same API, uses `dart:io`)
+- `lsp-ws-proxy` - Bridges WebSocket connections to analysis server stdio
+
+**How DartPad does it:** Server-side `dart-services` wraps the analysis server behind a REST API. No real-time LSP - just request/response for completions and diagnostics.
+
+**Our approach:** Direct LSP over WebSocket gives the full IDE experience (live diagnostics, completions, hover, code actions, signature help, inlay hints, go-to-definition, renaming).
+
+**Client usage:**
+```dart
+final controller = CodeForgeWebController(
+  lspConfig: LspSocketConfig(
+    workspacePath: 'file:///workspace',
+    languageId: 'dart',
+    serverUrl: 'ws://your-server:9000',
+  ),
+);
+// CodeForgeWeb(fileUrl: challengeUrl, controller: controller)
+```
+
+**Server setup:**
+```bash
+lsp-ws-proxy --listen 0.0.0.0:9000 -- dart language-server --protocol=lsp
+```
+
+**Open questions:**
+- Where to host the LSP proxy (existing GCP instance vs. dedicated)
+- Session lifecycle (per-user or per-challenge analysis server processes)
+- Code execution sandboxing (if needed beyond static analysis)
+- Clawd-based evaluation via Claude API as alternative to execution
 
 ## LiveKit Self-Hosting Migration
 

@@ -104,8 +104,83 @@ Tech World includes an AI tutor bot powered by Claude that helps players learn t
 
 **Voice Integration:**
 
-- Leverage existing LiveKit infrastructure for voice conversations with Claude
-- Speech-to-text → Claude API → text-to-speech pipeline
+- Browser speech-to-text (SpeechRecognition API) for voice input to Clawd
+- Browser text-to-speech (speechSynthesis API) for Clawd's spoken responses
+- Leverage existing LiveKit infrastructure for future voice conversations
+
+**In-Game Code Editor:**
+
+- Coding challenges at themed map locations (e.g., "Array Alley", "Recursion Ridge")
+- Full Dart editor with real-time diagnostics, completions, and hover docs
+- Uses [`code_forge_web`](https://pub.dev/packages/code_forge_web) for the editor widget
+- Dart analysis server connected over WebSocket via [`lsp-ws-proxy`](https://github.com/nickmeinhold/lsp-ws-proxy)
+- Clawd reviews submitted code and gives feedback
+
+## In-Game Code Editor (Planned)
+
+### Architecture
+
+```
+Browser (Flutter web)
+  └─ code_forge_web widget (CodeForgeWeb)
+       └─ WebSocket connection (LspSocketConfig)
+            └─ lsp-ws-proxy (on server)
+                 └─ dart language-server --protocol=lsp
+```
+
+Players approach a coding terminal in the game world, which opens the editor as an overlay or panel. The editor connects to a remote Dart analysis server via WebSocket, providing real-time diagnostics, completions, hover docs, and code actions - a VS Code-like experience in the browser.
+
+### Key Packages
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| [`code_forge_web`](https://pub.dev/packages/code_forge_web) | 1.0.0 | Flutter web code editor widget with LSP support |
+| [`code_forge`](https://pub.dev/packages/code_forge) | 8.1.1 | Native platforms (macOS, etc.) - same API, uses `dart:io` |
+| `lsp-ws-proxy` | - | Bridges WebSocket to stdio for the analysis server |
+
+### LSP Features Available
+
+- Intelligent code completions with auto-import
+- Hover documentation with rich markdown tooltips
+- Real-time diagnostics (errors and warnings)
+- Semantic token-based highlighting
+- Function signature help
+- Code actions and quick fixes
+- Inlay hints for type and parameter information
+- Go-to-definition and symbol renaming
+
+### Server-Side Setup
+
+```bash
+# Run the Dart analysis server behind a WebSocket proxy
+lsp-ws-proxy --listen 0.0.0.0:9000 -- dart language-server --protocol=lsp
+```
+
+Each connected user gets their own analysis server process. The server needs the Dart SDK installed.
+
+### Client-Side Integration
+
+```dart
+final controller = CodeForgeWebController(
+  lspConfig: LspSocketConfig(
+    workspacePath: 'file:///workspace',
+    languageId: 'dart',
+    serverUrl: 'ws://your-server:9000',
+  ),
+);
+
+CodeForgeWeb(
+  fileUrl: challengeFileUrl,
+  controller: controller,
+);
+```
+
+### Open Questions
+
+- Where to host the LSP proxy (existing GCP instance vs. dedicated)
+- How to sandbox user code execution (if we want to run code, not just analyze)
+- Session lifecycle - spin up/tear down analysis server per challenge or per user session
+- Could Clawd evaluate code via Claude API instead of (or in addition to) running it
 
 ## Future Work
 
