@@ -620,6 +620,7 @@ class TechWorld extends World with TapCallbacks {
 
   void dispose() {
     _authStateChangesSubscription?.cancel();
+    activeChallenge.dispose();
     _disconnectFromLiveKit();
   }
 }

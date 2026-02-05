@@ -32,6 +32,12 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
     _controller = CodeForgeWebController();
   }
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   void _handleSubmit() {
     final code = _controller.text;
     widget.onSubmit(code);
