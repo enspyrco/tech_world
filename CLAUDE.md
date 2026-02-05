@@ -66,10 +66,10 @@ Access anywhere via `locate<T>()`.
 
 Predefined maps are defined in `lib/flame/maps/`:
 
-- `game_map.dart`: `GameMap` class with id, name, barriers (mini-grid coordinates), and spawn point
+- `game_map.dart`: `GameMap` class with id, name, barriers (mini-grid coordinates), spawn point, and terminals
 - `predefined_maps.dart`: Available maps including:
   - `openArena` - No barriers, free movement
-  - `lRoom` - L-shaped walls (default map)
+  - `lRoom` - L-shaped walls (default map), 2 coding terminals
   - `fourCorners` - Barriers in each corner
   - `simpleMaze` - Basic maze pattern
 
@@ -219,11 +219,31 @@ gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-t
 - Browser STT: microphone → SpeechRecognition API → chat message → Clawd
 - Browser TTS: Clawd response → speechSynthesis API → spoken audio
 
-### In-Game Code Editor (Planned)
+### In-Game Code Editor
 
-The next major feature: an in-game Dart code editor with real-time analysis.
+Coding terminal stations placed on the map. Players tap a terminal (when within 2 grid squares) to open a code editor panel that replaces the chat sidebar.
 
-**Architecture:**
+**Current State:**
+- `CodeEditorPanel` wraps `code_forge_web` with Dart syntax highlighting via `re_highlight`
+- 3 predefined challenges: Hello Dart, Sum a List, FizzBuzz
+- Submit sends code to Clawd for review via chat
+- No LSP server yet - local syntax highlighting only
+
+**Key Files:**
+- `lib/editor/challenge.dart` - `Challenge` data model
+- `lib/editor/predefined_challenges.dart` - Starter challenges (`allChallenges`)
+- `lib/editor/code_editor_panel.dart` - Flutter widget wrapping `CodeForgeWeb`
+- `lib/flame/components/terminal_component.dart` - Flame component for terminal stations
+
+**How it works:**
+1. `TechWorld.onLoad()` creates `TerminalComponent` for each `defaultMap.terminals[i]`
+2. Terminal tap checks Chebyshev distance <= 2 from player
+3. Sets `TechWorld.activeChallenge` ValueNotifier to challenge ID
+4. `main.dart` swaps `ChatPanel` for `CodeEditorPanel` via `ValueListenableBuilder`
+5. Submit sends code as chat message to Clawd, then closes editor
+
+**Planned - LSP Integration:**
+
 ```
 Browser (Flutter web)
   └─ code_forge_web widget
@@ -232,31 +252,9 @@ Browser (Flutter web)
                  └─ dart language-server --protocol=lsp
 ```
 
-**Key Packages:**
-- [`code_forge_web`](https://pub.dev/packages/code_forge_web) v1.0.0 - Flutter web code editor with LSP over WebSocket
-- [`code_forge`](https://pub.dev/packages/code_forge) v8.1.1 - Native version (same API, uses `dart:io`)
-- `lsp-ws-proxy` - Bridges WebSocket connections to analysis server stdio
-
-**How DartPad does it:** Server-side `dart-services` wraps the analysis server behind a REST API. No real-time LSP - just request/response for completions and diagnostics.
-
-**Our approach:** Direct LSP over WebSocket gives the full IDE experience (live diagnostics, completions, hover, code actions, signature help, inlay hints, go-to-definition, renaming).
-
-**Client usage:**
-```dart
-final controller = CodeForgeWebController(
-  lspConfig: LspSocketConfig(
-    workspacePath: 'file:///workspace',
-    languageId: 'dart',
-    serverUrl: 'ws://your-server:9000',
-  ),
-);
-// CodeForgeWeb(fileUrl: challengeUrl, controller: controller)
-```
-
-**Server setup:**
-```bash
-lsp-ws-proxy --listen 0.0.0.0:9000 -- dart language-server --protocol=lsp
-```
+- [`code_forge_web`](https://pub.dev/packages/code_forge_web) already supports LSP via `CodeForgeWebController(lspConfig: LspSocketConfig(...))`
+- `lsp-ws-proxy` bridges WebSocket connections to analysis server stdio
+- Would add real-time diagnostics, completions, hover docs, code actions
 
 **Open questions:**
 - Where to host the LSP proxy (existing GCP instance vs. dedicated)

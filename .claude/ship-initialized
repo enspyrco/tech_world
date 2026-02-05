@@ -1,0 +1,4 @@
+initialized=2026-02-06
+reviewer=claude-reviewer-max
+ci=skip
+notes=no-admin-access,existing-ci-workflows

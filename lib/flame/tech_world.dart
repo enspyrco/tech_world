@@ -9,6 +9,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
@@ -16,7 +17,9 @@ import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/grid_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
+import 'package:tech_world/flame/components/terminal_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
+import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
@@ -59,6 +62,16 @@ class TechWorld extends World with TapCallbacks {
   // LiveKit integration for video bubbles
   LiveKitService? _liveKitService;
   ui.FragmentProgram? _shaderProgram; // Keep reference for creating new shaders
+
+  /// Notifier for active challenge ID. Null means no editor open.
+  final ValueNotifier<String?> activeChallenge = ValueNotifier(null);
+
+  /// Close the code editor panel.
+  void closeEditor() {
+    activeChallenge.value = null;
+  }
+
+  static const _terminalProximityThreshold = 2; // grid squares
 
   final Stream<AuthUser> _authStateChanges;
   StreamSubscription<AuthUser>? _authStateChangesSubscription;
@@ -494,6 +507,22 @@ class TechWorld extends World with TapCallbacks {
     await add(_barriersComponent);
     await add(_userPlayerComponent);
 
+    // Add terminal components for each terminal position in the map
+    final terminals = defaultMap.terminals;
+    for (var i = 0; i < terminals.length; i++) {
+      final terminalPos = terminals[i];
+      final challengeIndex = i % allChallenges.length;
+      final challenge = allChallenges[challengeIndex];
+      final terminal = TerminalComponent(
+        position: Vector2(
+          terminalPos.x * gridSquareSizeDouble,
+          terminalPos.y * gridSquareSizeDouble,
+        ),
+        onInteract: () => _onTerminalInteract(terminalPos, challenge.id),
+      );
+      await add(terminal);
+    }
+
     (findGame() as TechWorldGame?)?.camera.follow(_userPlayerComponent);
 
     // Load the video bubble shader
@@ -533,6 +562,18 @@ class TechWorld extends World with TapCallbacks {
       points: _pathComponent.largeGridPoints,
       directions: _pathComponent.directions,
     );
+  }
+
+  /// Handle terminal interaction - check proximity before opening editor.
+  void _onTerminalInteract(Point<int> terminalPos, String challengeId) {
+    final playerGrid = _userPlayerComponent.miniGridPosition;
+    final distance = max(
+      (terminalPos.x - playerGrid.x).abs(),
+      (terminalPos.y - playerGrid.y).abs(),
+    );
+    if (distance <= _terminalProximityThreshold) {
+      activeChallenge.value = challengeId;
+    }
   }
 
   /// Disconnect from LiveKit and clear all related state.

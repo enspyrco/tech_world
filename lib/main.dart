@@ -6,6 +6,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/editor/code_editor_panel.dart';
+import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
@@ -216,7 +218,7 @@ class _MyAppState extends State<MyApp> {
                         },
                       ),
                     ),
-                    // Chat panel - always visible when authenticated
+                    // Side panel - chat or code editor
                     StreamBuilder<AuthUser>(
                       stream: locate<AuthService>().authStateChanges,
                       builder: (context, snapshot) {
@@ -224,21 +226,53 @@ class _MyAppState extends State<MyApp> {
                             snapshot.data is SignedOutUser) {
                           return const SizedBox.shrink();
                         }
-                        // ChatService is created when user signs in
-                        final chatService = Locator.maybeLocate<ChatService>();
-                        if (chatService == null) {
-                          return SizedBox(
-                            width: constraints.maxWidth >= 800 ? 320 : 280,
-                            child: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                          );
-                        }
-                        return SizedBox(
-                          width: constraints.maxWidth >= 800 ? 320 : 280,
-                          child: ChatPanel(
-                            chatService: chatService,
-                          ),
+                        final techWorld = locate<TechWorld>();
+                        return ValueListenableBuilder<String?>(
+                          valueListenable: techWorld.activeChallenge,
+                          builder: (context, challengeId, _) {
+                            if (challengeId != null) {
+                              final challenge = allChallenges.firstWhere(
+                                (c) => c.id == challengeId,
+                                orElse: () => allChallenges.first,
+                              );
+                              return SizedBox(
+                                width: constraints.maxWidth >= 800 ? 480 : 360,
+                                child: CodeEditorPanel(
+                                  challenge: challenge,
+                                  onClose: techWorld.closeEditor,
+                                  onSubmit: (code) {
+                                    final chatService =
+                                        Locator.maybeLocate<ChatService>();
+                                    if (chatService != null) {
+                                      chatService.sendMessage(
+                                        'Please review my "${challenge.title}" '
+                                        'solution:\n\n```dart\n$code\n```',
+                                      );
+                                    }
+                                    techWorld.closeEditor();
+                                  },
+                                ),
+                              );
+                            }
+                            // Default: show chat panel
+                            final chatService =
+                                Locator.maybeLocate<ChatService>();
+                            if (chatService == null) {
+                              return SizedBox(
+                                width:
+                                    constraints.maxWidth >= 800 ? 320 : 280,
+                                child: const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            }
+                            return SizedBox(
+                              width: constraints.maxWidth >= 800 ? 320 : 280,
+                              child: ChatPanel(
+                                chatService: chatService,
+                              ),
+                            );
+                          },
                         );
                       },
                     ),
