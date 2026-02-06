@@ -172,6 +172,13 @@ Browser (Flutter web)
 - Session lifecycle - spin up/tear down analysis server per challenge or per user session
 - Could Clawd evaluate code via Claude API instead of (or in addition to) running it
 
+## Current Issues
+
+- **Hard refresh required for new features** - Users may need to do a hard refresh (Cmd+Shift+R or Ctrl+Shift+R) to see newly deployed features like terminal stations. This is a browser caching issue common with web apps.
+- **No code completion in editor** - The code editor currently only has syntax highlighting, not full IDE features. To add completions, diagnostics, and hover docs, we need to integrate LSP support. See:
+  - https://github.com/heckmon/code_forge - Source repo for code_forge
+  - https://pub.dev/packages/code_forge_web - The package we're using, supports LSP via `LspSocketConfig`
+
 ## Future Work
 
 - When you come in proximity to a person you can send them an emoji
