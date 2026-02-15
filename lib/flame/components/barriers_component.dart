@@ -14,6 +14,22 @@ class BarriersComponent extends PositionComponent with HasWorldReference {
 
   final Paint _paint = Paint()..color = const Color.fromRGBO(0, 0, 255, 1);
 
+  final List<RectangleComponent> _rectangles = [];
+
+  /// When false, barrier rectangles are hidden (used during map editor mode).
+  bool get renderBarriers => _renderBarriers;
+  bool _renderBarriers = true;
+  set renderBarriers(bool value) {
+    _renderBarriers = value;
+    for (final rect in _rectangles) {
+      if (value) {
+        rect.paint.color = const Color.fromRGBO(0, 0, 255, 1);
+      } else {
+        rect.paint.color = const Color.fromRGBO(0, 0, 255, 0);
+      }
+    }
+  }
+
   /// The list of [Point]s that make up the barriers in the minigrid space
   final List<Point<int>> _points = const [
     Point(4, 7),
@@ -77,14 +93,15 @@ class BarriersComponent extends PositionComponent with HasWorldReference {
   @override
   onLoad() {
     for (int i = 0; i < _points.length; i++) {
-      world.add(
-        RectangleComponent(
-            position: Vector2(_points[i].x * gridSquareSizeDouble,
-                _points[i].y * gridSquareSizeDouble),
-            size: Vector2.array([gridSquareSizeDouble, gridSquareSizeDouble]),
-            anchor: Anchor.center,
-            paint: _paint),
+      final rect = RectangleComponent(
+        position: Vector2(_points[i].x * gridSquareSizeDouble,
+            _points[i].y * gridSquareSizeDouble),
+        size: Vector2.array([gridSquareSizeDouble, gridSquareSizeDouble]),
+        anchor: Anchor.center,
+        paint: Paint()..color = _paint.color,
       );
+      _rectangles.add(rect);
+      world.add(rect);
     }
   }
 }

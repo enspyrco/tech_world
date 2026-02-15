@@ -13,6 +13,8 @@ import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/widgets/proximity_video_overlay.dart';
+import 'package:tech_world/map_editor/map_editor_panel.dart';
+import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
 import 'package:tech_world/widgets/loading_screen.dart';
@@ -38,6 +40,7 @@ class _MyAppState extends State<MyApp> {
   LiveKitService? _liveKitService;
   ChatService? _chatService;
   ProximityService? _proximityService;
+  final MapEditorState _mapEditorState = MapEditorState();
 
   @override
   void initState() {
@@ -218,7 +221,7 @@ class _MyAppState extends State<MyApp> {
                         },
                       ),
                     ),
-                    // Side panel - chat or code editor
+                    // Side panel - map editor > code editor > chat
                     StreamBuilder<AuthUser>(
                       stream: locate<AuthService>().authStateChanges,
                       builder: (context, snapshot) {
@@ -227,50 +230,66 @@ class _MyAppState extends State<MyApp> {
                           return const SizedBox.shrink();
                         }
                         final techWorld = locate<TechWorld>();
-                        return ValueListenableBuilder<String?>(
-                          valueListenable: techWorld.activeChallenge,
-                          builder: (context, challengeId, _) {
-                            if (challengeId != null) {
-                              final challenge = allChallenges.firstWhere(
-                                (c) => c.id == challengeId,
-                                orElse: () => allChallenges.first,
-                              );
+                        return ValueListenableBuilder<bool>(
+                          valueListenable: techWorld.mapEditorActive,
+                          builder: (context, editorActive, _) {
+                            if (editorActive) {
                               return SizedBox(
                                 width: constraints.maxWidth >= 800 ? 480 : 360,
-                                child: CodeEditorPanel(
-                                  challenge: challenge,
-                                  onClose: techWorld.closeEditor,
-                                  onSubmit: (code) {
-                                    final chatService =
-                                        Locator.maybeLocate<ChatService>();
-                                    if (chatService != null) {
-                                      chatService.sendMessage(
-                                        'Please review my "${challenge.title}" '
-                                        'solution:\n\n```dart\n$code\n```',
-                                      );
-                                    }
-                                    techWorld.closeEditor();
-                                  },
+                                child: MapEditorPanel(
+                                  state: _mapEditorState,
+                                  onClose: techWorld.exitEditorMode,
                                 ),
                               );
                             }
-                            // Default: show chat panel
-                            final chatService =
-                                Locator.maybeLocate<ChatService>();
-                            if (chatService == null) {
-                              return SizedBox(
-                                width:
-                                    constraints.maxWidth >= 800 ? 320 : 280,
-                                child: const Center(
-                                  child: CircularProgressIndicator(),
-                                ),
-                              );
-                            }
-                            return SizedBox(
-                              width: constraints.maxWidth >= 800 ? 320 : 280,
-                              child: ChatPanel(
-                                chatService: chatService,
-                              ),
+                            return ValueListenableBuilder<String?>(
+                              valueListenable: techWorld.activeChallenge,
+                              builder: (context, challengeId, _) {
+                                if (challengeId != null) {
+                                  final challenge = allChallenges.firstWhere(
+                                    (c) => c.id == challengeId,
+                                    orElse: () => allChallenges.first,
+                                  );
+                                  return SizedBox(
+                                    width:
+                                        constraints.maxWidth >= 800 ? 480 : 360,
+                                    child: CodeEditorPanel(
+                                      challenge: challenge,
+                                      onClose: techWorld.closeEditor,
+                                      onSubmit: (code) {
+                                        final chatService =
+                                            Locator.maybeLocate<ChatService>();
+                                        if (chatService != null) {
+                                          chatService.sendMessage(
+                                            'Please review my "${challenge.title}" '
+                                            'solution:\n\n```dart\n$code\n```',
+                                          );
+                                        }
+                                        techWorld.closeEditor();
+                                      },
+                                    ),
+                                  );
+                                }
+                                // Default: show chat panel
+                                final chatService =
+                                    Locator.maybeLocate<ChatService>();
+                                if (chatService == null) {
+                                  return SizedBox(
+                                    width:
+                                        constraints.maxWidth >= 800 ? 320 : 280,
+                                    child: const Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  );
+                                }
+                                return SizedBox(
+                                  width:
+                                      constraints.maxWidth >= 800 ? 320 : 280,
+                                  child: ChatPanel(
+                                    chatService: chatService,
+                                  ),
+                                );
+                              },
                             );
                           },
                         );
@@ -278,7 +297,7 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ],
                 ),
-                // Auth menu - top right when authenticated
+                // Auth menu + map editor button - top right when authenticated
                 StreamBuilder<AuthUser>(
                   stream: locate<AuthService>().authStateChanges,
                   builder: (context, snapshot) {
@@ -289,8 +308,18 @@ class _MyAppState extends State<MyApp> {
                       top: 16,
                       right: constraints.maxWidth >= 800 ? 336 : 296,
                       child: SafeArea(
-                        child: AuthMenu(
-                          displayName: snapshot.data!.displayName,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _MapEditorButton(
+                              mapEditorState: _mapEditorState,
+                              techWorld: locate<TechWorld>(),
+                            ),
+                            const SizedBox(width: 8),
+                            AuthMenu(
+                              displayName: snapshot.data!.displayName,
+                            ),
+                          ],
                         ),
                       ),
                     );
@@ -301,6 +330,48 @@ class _MyAppState extends State<MyApp> {
           },
         ),
       ),
+    );
+  }
+}
+
+/// Toggle button for entering/exiting map editor mode.
+class _MapEditorButton extends StatelessWidget {
+  const _MapEditorButton({
+    required this.mapEditorState,
+    required this.techWorld,
+  });
+
+  final MapEditorState mapEditorState;
+  final TechWorld techWorld;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: techWorld.mapEditorActive,
+      builder: (context, active, _) {
+        return IconButton(
+          onPressed: () {
+            if (active) {
+              techWorld.exitEditorMode();
+            } else {
+              techWorld.enterEditorMode(mapEditorState);
+            }
+          },
+          icon: Icon(
+            Icons.grid_on,
+            color: active ? const Color(0xFF4444FF) : Colors.white70,
+            size: 20,
+          ),
+          tooltip: active ? 'Close map editor' : 'Open map editor',
+          style: IconButton.styleFrom(
+            backgroundColor:
+                active ? const Color(0xFF4444FF).withValues(alpha: 0.2) : Colors.black54,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      },
     );
   }
 }

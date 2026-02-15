@@ -13,6 +13,7 @@ import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
+import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/grid_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
@@ -21,6 +22,7 @@ import 'package:tech_world/flame/components/terminal_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -66,9 +68,37 @@ class TechWorld extends World with TapCallbacks {
   /// Notifier for active challenge ID. Null means no editor open.
   final ValueNotifier<String?> activeChallenge = ValueNotifier(null);
 
+  /// Whether the map editor sidebar is active.
+  final ValueNotifier<bool> mapEditorActive = ValueNotifier(false);
+
+  MapPreviewComponent? _mapPreviewComponent;
+
   /// Close the code editor panel.
   void closeEditor() {
     activeChallenge.value = null;
+  }
+
+  /// Enter map editor mode — shows preview overlay on the canvas.
+  void enterEditorMode(MapEditorState editorState) {
+    // Close code editor if open.
+    activeChallenge.value = null;
+    mapEditorActive.value = true;
+
+    // Hide normal barriers and add the preview component.
+    _barriersComponent.renderBarriers = false;
+    _mapPreviewComponent = MapPreviewComponent(editorState: editorState);
+    add(_mapPreviewComponent!);
+  }
+
+  /// Exit map editor mode — removes preview, restores barriers.
+  void exitEditorMode() {
+    mapEditorActive.value = false;
+
+    if (_mapPreviewComponent != null) {
+      _mapPreviewComponent!.removeFromParent();
+      _mapPreviewComponent = null;
+    }
+    _barriersComponent.renderBarriers = true;
   }
 
   static const _terminalProximityThreshold = 2; // grid squares
@@ -621,6 +651,7 @@ class TechWorld extends World with TapCallbacks {
   void dispose() {
     _authStateChangesSubscription?.cancel();
     activeChallenge.dispose();
+    mapEditorActive.dispose();
     _disconnectFromLiveKit();
   }
 }
