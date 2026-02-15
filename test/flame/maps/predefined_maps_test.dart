@@ -139,13 +139,12 @@ void main() {
 
       test('has gaps in outer walls', () {
         // Gap at x=20 in top wall
-        final topGap = simpleMaze.barriers
-            .where((p) => p.y == 5 && p.x == 20);
+        final topGap = simpleMaze.barriers.where((p) => p.y == 5 && p.x == 20);
         expect(topGap, isEmpty);
 
         // Gap at x=25 in bottom wall
-        final bottomGap = simpleMaze.barriers
-            .where((p) => p.y == 44 && p.x == 25);
+        final bottomGap =
+            simpleMaze.barriers.where((p) => p.y == 44 && p.x == 25);
         expect(bottomGap, isEmpty);
       });
 
@@ -156,16 +155,110 @@ void main() {
       });
     });
 
+    group('theLibrary', () {
+      test('has correct id', () {
+        expect(theLibrary.id, equals('the_library'));
+      });
+
+      test('has correct name', () {
+        expect(theLibrary.name, equals('The Library'));
+      });
+
+      test('has barriers', () {
+        expect(theLibrary.barriers, isNotEmpty);
+      });
+
+      test('has spawn point inside the library', () {
+        // ASCII art: S at column 14, row 23
+        expect(theLibrary.spawnPoint, equals(const Point(14, 23)));
+      });
+
+      test('has 4 terminal stations', () {
+        expect(theLibrary.terminals.length, equals(4));
+      });
+
+      test('terminals are not on barriers', () {
+        for (final terminal in theLibrary.terminals) {
+          expect(theLibrary.barriers.contains(terminal), isFalse,
+              reason: 'Terminal at $terminal should not be on a barrier');
+        }
+      });
+
+      test('spawn point is not on a barrier', () {
+        expect(theLibrary.barriers.contains(theLibrary.spawnPoint), isFalse);
+      });
+
+      test('has perimeter walls', () {
+        // North wall at y=2
+        final northWall = theLibrary.barriers.where((p) => p.y == 2);
+        expect(northWall, isNotEmpty);
+        // West wall at x=2
+        final westWall = theLibrary.barriers.where((p) => p.x == 2);
+        expect(westWall, isNotEmpty);
+      });
+
+      test('has entrance gap at top-left', () {
+        // Rows 0-1 at x=0,1 are open (entrance)
+        expect(theLibrary.barriers.contains(const Point(0, 0)), isFalse);
+        expect(theLibrary.barriers.contains(const Point(1, 0)), isFalse);
+      });
+    });
+
+    group('theWorkshop', () {
+      test('has correct id', () {
+        expect(theWorkshop.id, equals('the_workshop'));
+      });
+
+      test('has correct name', () {
+        expect(theWorkshop.name, equals('The Workshop'));
+      });
+
+      test('has barriers', () {
+        expect(theWorkshop.barriers, isNotEmpty);
+      });
+
+      test('has spawn point near bottom of building', () {
+        // ASCII art: S at column 10, row 28
+        expect(theWorkshop.spawnPoint, equals(const Point(10, 28)));
+      });
+
+      test('has 2 terminal stations', () {
+        expect(theWorkshop.terminals.length, equals(2));
+      });
+
+      test('terminals are not on barriers', () {
+        for (final terminal in theWorkshop.terminals) {
+          expect(theWorkshop.barriers.contains(terminal), isFalse,
+              reason: 'Terminal at $terminal should not be on a barrier');
+        }
+      });
+
+      test('spawn point is not on a barrier', () {
+        expect(theWorkshop.barriers.contains(theWorkshop.spawnPoint), isFalse);
+      });
+
+      test('has perimeter walls', () {
+        // North wall at y=3
+        final northWall = theWorkshop.barriers.where((p) => p.y == 3);
+        expect(northWall, isNotEmpty);
+        // East wall at x=48
+        final eastWall = theWorkshop.barriers.where((p) => p.x == 48);
+        expect(eastWall, isNotEmpty);
+      });
+    });
+
     group('allMaps', () {
       test('contains all predefined maps', () {
         expect(allMaps, contains(openArena));
         expect(allMaps, contains(lRoom));
         expect(allMaps, contains(fourCorners));
         expect(allMaps, contains(simpleMaze));
+        expect(allMaps, contains(theLibrary));
+        expect(allMaps, contains(theWorkshop));
       });
 
-      test('has exactly 4 maps', () {
-        expect(allMaps.length, equals(4));
+      test('has exactly 6 maps', () {
+        expect(allMaps.length, equals(6));
       });
 
       test('all maps have unique ids', () {
@@ -234,6 +327,58 @@ void main() {
           final uniqueBarriers = map.barriers.toSet();
           expect(uniqueBarriers.length, equals(map.barriers.length),
               reason: '${map.name} should not have duplicate barriers');
+        }
+      });
+
+      test('all terminals are reachable from spawn point', () {
+        for (final map in allMaps) {
+          if (map.terminals.isEmpty) continue;
+
+          // Build a set of barrier cells for O(1) lookup
+          final barrierSet = map.barriers.toSet();
+
+          // Flood-fill from spawn point to find all reachable cells
+          final reachable = <Point<int>>{};
+          final queue = <Point<int>>[map.spawnPoint];
+          reachable.add(map.spawnPoint);
+
+          while (queue.isNotEmpty) {
+            final current = queue.removeLast();
+
+            // Check all 8 neighbors (including diagonals, matching
+            // the game's movement model)
+            for (int dx = -1; dx <= 1; dx++) {
+              for (int dy = -1; dy <= 1; dy++) {
+                if (dx == 0 && dy == 0) continue;
+                final neighbor = Point(current.x + dx, current.y + dy);
+
+                // Skip out-of-bounds
+                if (neighbor.x < 0 ||
+                    neighbor.x >= gridSize ||
+                    neighbor.y < 0 ||
+                    neighbor.y >= gridSize) {
+                  continue;
+                }
+
+                // Skip barriers and already-visited cells
+                if (barrierSet.contains(neighbor) ||
+                    reachable.contains(neighbor)) {
+                  continue;
+                }
+
+                reachable.add(neighbor);
+                queue.add(neighbor);
+              }
+            }
+          }
+
+          // Verify every terminal is in the reachable set
+          for (final terminal in map.terminals) {
+            expect(reachable.contains(terminal), isTrue,
+                reason:
+                    '${map.name}: terminal at $terminal is not reachable from '
+                    'spawn point ${map.spawnPoint}');
+          }
         }
       });
     });
