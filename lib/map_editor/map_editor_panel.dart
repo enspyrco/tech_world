@@ -1,5 +1,8 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
@@ -14,11 +17,15 @@ class MapEditorPanel extends StatelessWidget {
   const MapEditorPanel({
     required this.state,
     required this.onClose,
+    this.referenceMap,
     super.key,
   });
 
   final MapEditorState state;
   final VoidCallback onClose;
+
+  /// Optional game map to render as a faint reference layer under the grid.
+  final GameMap? referenceMap;
 
   static const _headerBg = Color(0xFF2D2D2D);
   static const _panelBg = Color(0xFF1E1E1E);
@@ -32,7 +39,27 @@ class MapEditorPanel extends StatelessWidget {
         children: [
           _buildHeader(),
           _MapToolbar(state: state),
-          Expanded(child: _buildGrid()),
+          Expanded(
+            child: Stack(
+              children: [
+                // Paintable grid
+                _buildGrid(),
+                // PNG map image on top as reference overlay
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: 0.5,
+                      child: Image.asset(
+                        'assets/images/single_room.png',
+                        fit: BoxFit.contain,
+                        alignment: Alignment.topLeft,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           _buildFooter(context),
         ],
       ),
@@ -107,7 +134,11 @@ class MapEditorPanel extends StatelessWidget {
                   constraints.maxWidth,
                   cellSize * gridSize,
                 ),
-                painter: _GridPainter(state: state, cellSize: cellSize),
+                painter: _GridPainter(
+                  state: state,
+                  cellSize: cellSize,
+                  referenceMap: referenceMap,
+                ),
               ),
             );
           },
@@ -417,10 +448,21 @@ class _MapToolbarState extends State<_MapToolbar> {
 // ---------------------------------------------------------------------------
 
 class _GridPainter extends CustomPainter {
-  _GridPainter({required this.state, required this.cellSize});
+  _GridPainter({
+    required this.state,
+    required this.cellSize,
+    this.referenceMap,
+  });
 
   final MapEditorState state;
   final double cellSize;
+  final GameMap? referenceMap;
+
+  // Pre-compute reference map lookup for O(1) access.
+  late final Set<Point<int>> _refBarriers =
+      referenceMap?.barriers.toSet() ?? {};
+  late final Set<Point<int>> _refTerminals =
+      referenceMap?.terminals.toSet() ?? {};
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -429,18 +471,37 @@ class _GridPainter extends CustomPainter {
       ..color = TileColors.gridLine
       ..strokeWidth = 0.5;
 
+    // Draw reference map as underlay, then editable grid on top.
     for (var y = 0; y < gridSize; y++) {
       for (var x = 0; x < gridSize; x++) {
+        final rect =
+            Rect.fromLTWH(x * cellSize, y * cellSize, cellSize, cellSize);
+
+        // Reference layer — draw every cell so the full map shape is visible.
+        if (referenceMap != null) {
+          final pt = Point(x, y);
+          if (_refBarriers.contains(pt)) {
+            paint.color = const Color(0xFF333399); // dim blue
+          } else if (_refTerminals.contains(pt)) {
+            paint.color = const Color(0xFF805030); // dim orange
+          } else if (referenceMap!.spawnPoint == pt) {
+            paint.color = const Color(0xFF206020); // dim green
+          } else {
+            paint.color = const Color(0xFF2A3A2A); // dark grass
+          }
+          canvas.drawRect(rect, paint);
+        }
+
+        // Editable grid on top.
         final tile = state.tileAt(x, y);
-        paint.color = _colorForTile(tile);
-        canvas.drawRect(
-          Rect.fromLTWH(x * cellSize, y * cellSize, cellSize, cellSize),
-          paint,
-        );
+        if (tile != TileType.open) {
+          paint.color = _colorForTile(tile);
+          canvas.drawRect(rect, paint);
+        }
       }
     }
 
-    // Grid lines
+    // Light grid lines
     for (var i = 0; i <= gridSize; i++) {
       final offset = i * cellSize;
       canvas.drawLine(
