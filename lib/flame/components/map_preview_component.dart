@@ -8,21 +8,32 @@ import 'package:tech_world/map_editor/tile_colors.dart';
 /// Flame component that renders the map editor's grid state as colored tiles
 /// in the game canvas.
 ///
-/// Iterates the [MapEditorState] grid each frame and draws colored rectangles
-/// using the same coordinate system as [BarriersComponent].
+/// Caches the grid as a [Picture] and only re-records when [MapEditorState]
+/// notifies of a change, avoiding 2500 drawRect calls every frame.
 class MapPreviewComponent extends Component {
-  MapPreviewComponent({required this.editorState});
+  MapPreviewComponent({required this.editorState}) {
+    editorState.addListener(_invalidateCache);
+    _rebuildCache();
+  }
 
   final MapEditorState editorState;
 
-  final Paint _paint = Paint();
+  Picture? _cachedPicture;
 
-  @override
-  void render(Canvas canvas) {
+  void _invalidateCache() {
+    _cachedPicture?.dispose();
+    _cachedPicture = null;
+  }
+
+  void _rebuildCache() {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    final paint = Paint();
+
     for (var y = 0; y < gridSize; y++) {
       for (var x = 0; x < gridSize; x++) {
         final tile = editorState.tileAt(x, y);
-        _paint.color = _colorForTile(tile);
+        paint.color = _colorForTile(tile);
         canvas.drawRect(
           Rect.fromCenter(
             center: Offset(
@@ -32,10 +43,26 @@ class MapPreviewComponent extends Component {
             width: gridSquareSizeDouble,
             height: gridSquareSizeDouble,
           ),
-          _paint,
+          paint,
         );
       }
     }
+
+    _cachedPicture = recorder.endRecording();
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (_cachedPicture == null) _rebuildCache();
+    canvas.drawPicture(_cachedPicture!);
+  }
+
+  @override
+  void onRemove() {
+    editorState.removeListener(_invalidateCache);
+    _cachedPicture?.dispose();
+    _cachedPicture = null;
+    super.onRemove();
   }
 
   Color _colorForTile(TileType tile) {
