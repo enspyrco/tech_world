@@ -1,13 +1,13 @@
 import 'challenge.dart';
 
 // ---------------------------------------------------------------------------
-// Beginner challenges (10 total)
+// Beginner challenges
 // ---------------------------------------------------------------------------
 
 const helloDart = Challenge(
   id: 'hello_dart',
   title: 'Hello Dart',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that returns a greeting string.\n'
       'Given a name, return "Hello, <name>!".',
   starterCode: '''
@@ -24,7 +24,7 @@ void main() {
 const sumList = Challenge(
   id: 'sum_list',
   title: 'Sum a List',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that returns the sum of all integers '
       'in a list.\nReturn 0 for an empty list.',
   starterCode: '''
@@ -42,7 +42,7 @@ void main() {
 const fizzbuzz = Challenge(
   id: 'fizzbuzz',
   title: 'FizzBuzz',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that returns a list of strings from 1 to n.\n'
       'For multiples of 3, use "Fizz".\n'
       'For multiples of 5, use "Buzz".\n'
@@ -62,7 +62,7 @@ void main() {
 const stringReversal = Challenge(
   id: 'string_reversal',
   title: 'String Reversal',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that reverses a string.\n'
       'For example, "hello" becomes "olleh".',
   starterCode: '''
@@ -81,7 +81,7 @@ void main() {
 const evenNumbers = Challenge(
   id: 'even_numbers',
   title: 'Even Numbers',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that takes a list of integers and returns '
       'a new list containing only the even numbers.\n'
       'Preserve the original order. Return an empty list if there are no '
@@ -102,7 +102,7 @@ void main() {
 const palindromeCheck = Challenge(
   id: 'palindrome_check',
   title: 'Palindrome Check',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that checks whether a string is a palindrome.\n'
       'A palindrome reads the same forwards and backwards.\n'
       'The check should be case-insensitive and ignore spaces.',
@@ -123,7 +123,7 @@ void main() {
 const wordCounter = Challenge(
   id: 'word_counter',
   title: 'Word Counter',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that counts the number of words in a string.\n'
       'Words are separated by one or more spaces.\n'
       'Return 0 for an empty or whitespace-only string.',
@@ -144,7 +144,7 @@ void main() {
 const temperatureConverter = Challenge(
   id: 'temperature_converter',
   title: 'Temperature Converter',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that converts a temperature from Celsius '
       'to Fahrenheit.\n'
       'Formula: F = C * 9/5 + 32\n'
@@ -166,7 +166,7 @@ void main() {
 const findMaximum = Challenge(
   id: 'find_maximum',
   title: 'Find Maximum',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that finds the largest number in a list '
       'of integers.\n'
       'Do not use the built-in reduce or fold methods.\n'
@@ -187,7 +187,7 @@ void main() {
 const removeDuplicates = Challenge(
   id: 'remove_duplicates',
   title: 'Remove Duplicates',
-  difficulty: Difficulty.beginner,
+
   description: 'Write a function that removes duplicate items from a list, '
       'keeping only the first occurrence of each element.\n'
       'Preserve the original order of elements.',
@@ -205,7 +205,7 @@ void main() {
 );
 
 // ---------------------------------------------------------------------------
-// Intermediate challenges (7 total)
+// Intermediate challenges
 // ---------------------------------------------------------------------------
 
 const binarySearch = Challenge(
@@ -377,7 +377,7 @@ void main() {
 );
 
 // ---------------------------------------------------------------------------
-// Advanced challenges (6 total)
+// Advanced challenges
 // ---------------------------------------------------------------------------
 
 const mergeSort = Challenge(
