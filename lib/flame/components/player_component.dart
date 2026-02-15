@@ -98,6 +98,12 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     return super.onLoad();
   }
 
+  @override
+  void update(double dt) {
+    super.update(dt);
+    priority = position.y.round() ~/ gridSquareSize;
+  }
+
   // We round the player position before calculating the miniGrid position,
   // as position values are doubles and do not necessarily hold exact values.
   Point<int> get miniGridPosition => Point(

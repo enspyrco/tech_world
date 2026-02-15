@@ -33,6 +33,12 @@ class BotCharacterComponent extends PositionComponent with TapCallbacks {
     _clawdImage = await Flame.images.load('claude_bot.png');
   }
 
+  @override
+  void update(double dt) {
+    super.update(dt);
+    priority = position.y.round() ~/ gridSquareSize;
+  }
+
   /// Returns mini grid position as Point (for proximity detection)
   Point<int> get miniGridPosition => Point(
         position.x.round() ~/ gridSquareSize,
