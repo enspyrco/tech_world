@@ -139,13 +139,12 @@ void main() {
 
       test('has gaps in outer walls', () {
         // Gap at x=20 in top wall
-        final topGap = simpleMaze.barriers
-            .where((p) => p.y == 5 && p.x == 20);
+        final topGap = simpleMaze.barriers.where((p) => p.y == 5 && p.x == 20);
         expect(topGap, isEmpty);
 
         // Gap at x=25 in bottom wall
-        final bottomGap = simpleMaze.barriers
-            .where((p) => p.y == 44 && p.x == 25);
+        final bottomGap =
+            simpleMaze.barriers.where((p) => p.y == 44 && p.x == 25);
         expect(bottomGap, isEmpty);
       });
 
