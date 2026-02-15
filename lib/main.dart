@@ -239,6 +239,7 @@ class _MyAppState extends State<MyApp> {
                                 child: MapEditorPanel(
                                   state: _mapEditorState,
                                   onClose: techWorld.exitEditorMode,
+                                  referenceMap: defaultMap,
                                 ),
                               );
                             }

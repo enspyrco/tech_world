@@ -82,7 +82,17 @@ class TechWorld extends World with TapCallbacks {
   void enterEditorMode(MapEditorState editorState) {
     // Close code editor if open.
     activeChallenge.value = null;
+
+    // Pre-load the current map so the editor and canvas show existing layout.
+    editorState.loadFromGameMap(defaultMap);
+
     mapEditorActive.value = true;
+
+    // Bring the PNG map background above everything else.
+    final game = findGame() as TechWorldGame?;
+    if (game != null) {
+      game.background.priority = 1000;
+    }
 
     // Hide normal barriers and add the preview component.
     _barriersComponent.renderBarriers = false;
@@ -93,6 +103,12 @@ class TechWorld extends World with TapCallbacks {
   /// Exit map editor mode — removes preview, restores barriers.
   void exitEditorMode() {
     mapEditorActive.value = false;
+
+    // Restore the PNG map background to its normal layer.
+    final game = findGame() as TechWorldGame?;
+    if (game != null) {
+      game.background.priority = 0;
+    }
 
     if (_mapPreviewComponent != null) {
       _mapPreviewComponent!.removeFromParent();
