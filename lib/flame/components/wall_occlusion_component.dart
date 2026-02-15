@@ -40,6 +40,7 @@ class WallOcclusionComponent extends Component {
         sprite: sprite,
         position: Vector2(srcX, srcY),
         size: Vector2.all(gridSquareSizeDouble),
+        // +2 accounts for 64px-tall character sprites spanning 2 grid rows.
         priority: barrier.y + 2,
       );
 
