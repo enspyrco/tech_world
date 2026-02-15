@@ -156,16 +156,114 @@ void main() {
       });
     });
 
+    group('theLibrary', () {
+      test('has correct id', () {
+        expect(theLibrary.id, equals('the_library'));
+      });
+
+      test('has correct name', () {
+        expect(theLibrary.name, equals('The Library'));
+      });
+
+      test('has barriers', () {
+        expect(theLibrary.barriers, isNotEmpty);
+      });
+
+      test('has spawn point in entrance foyer', () {
+        expect(theLibrary.spawnPoint, equals(const Point(24, 44)));
+      });
+
+      test('has 4 terminal stations', () {
+        expect(theLibrary.terminals.length, equals(4));
+      });
+
+      test('terminals are not on barriers', () {
+        for (final terminal in theLibrary.terminals) {
+          expect(theLibrary.barriers.contains(terminal), isFalse,
+              reason: 'Terminal at $terminal should not be on a barrier');
+        }
+      });
+
+      test('spawn point is not on a barrier', () {
+        expect(theLibrary.barriers.contains(theLibrary.spawnPoint), isFalse);
+      });
+
+      test('has perimeter walls', () {
+        // North wall at y=3
+        final northWall = theLibrary.barriers.where((p) => p.y == 3);
+        expect(northWall, isNotEmpty);
+        // West wall at x=3
+        final westWall = theLibrary.barriers.where((p) => p.x == 3);
+        expect(westWall, isNotEmpty);
+      });
+
+      test('has entrance gap in south wall', () {
+        // Gap at x=23-26, y=46
+        for (int x = 23; x <= 26; x++) {
+          expect(theLibrary.barriers.contains(Point(x, 46)), isFalse,
+              reason: 'Entrance gap should be open at ($x, 46)');
+        }
+      });
+    });
+
+    group('theWorkshop', () {
+      test('has correct id', () {
+        expect(theWorkshop.id, equals('the_workshop'));
+      });
+
+      test('has correct name', () {
+        expect(theWorkshop.name, equals('The Workshop'));
+      });
+
+      test('has barriers', () {
+        expect(theWorkshop.barriers, isNotEmpty);
+      });
+
+      test('has spawn point near entrance', () {
+        expect(theWorkshop.spawnPoint, equals(const Point(5, 45)));
+      });
+
+      test('has 4 terminal stations', () {
+        expect(theWorkshop.terminals.length, equals(4));
+      });
+
+      test('terminals are not on barriers', () {
+        for (final terminal in theWorkshop.terminals) {
+          expect(theWorkshop.barriers.contains(terminal), isFalse,
+              reason: 'Terminal at $terminal should not be on a barrier');
+        }
+      });
+
+      test('spawn point is not on a barrier', () {
+        expect(theWorkshop.barriers.contains(theWorkshop.spawnPoint), isFalse);
+      });
+
+      test('has more barriers than the Library (more maze-like)', () {
+        expect(theWorkshop.barriers.length,
+            greaterThan(theLibrary.barriers.length));
+      });
+
+      test('has entrance gap in south wall', () {
+        // Gap at x=4-6, y=47
+        for (int x = 4; x <= 6; x++) {
+          expect(theWorkshop.barriers.contains(Point(x, 47)), isFalse,
+              reason: 'Entrance gap should be open at ($x, 47)');
+        }
+      });
+    });
+
     group('allMaps', () {
       test('contains all predefined maps', () {
         expect(allMaps, contains(openArena));
         expect(allMaps, contains(lRoom));
         expect(allMaps, contains(fourCorners));
         expect(allMaps, contains(simpleMaze));
+        expect(allMaps, contains(theLibrary));
+        expect(allMaps, contains(theWorkshop));
       });
 
-      test('has exactly 4 maps', () {
-        expect(allMaps.length, equals(4));
+      test('has exactly 6 maps', () {
+        expect(allMaps.length, equals(6));
       });
 
       test('all maps have unique ids', () {
