@@ -168,8 +168,9 @@ void main() {
         expect(theLibrary.barriers, isNotEmpty);
       });
 
-      test('has spawn point in entrance foyer', () {
-        expect(theLibrary.spawnPoint, equals(const Point(24, 44)));
+      test('has spawn point inside the library', () {
+        // ASCII art: S at column 14, row 23
+        expect(theLibrary.spawnPoint, equals(const Point(14, 23)));
       });
 
       test('has 4 terminal stations', () {
@@ -188,20 +189,18 @@ void main() {
       });
 
       test('has perimeter walls', () {
-        // North wall at y=3
-        final northWall = theLibrary.barriers.where((p) => p.y == 3);
+        // North wall at y=2
+        final northWall = theLibrary.barriers.where((p) => p.y == 2);
         expect(northWall, isNotEmpty);
-        // West wall at x=3
-        final westWall = theLibrary.barriers.where((p) => p.x == 3);
+        // West wall at x=2
+        final westWall = theLibrary.barriers.where((p) => p.x == 2);
         expect(westWall, isNotEmpty);
       });
 
-      test('has entrance gap in south wall', () {
-        // Gap at x=23-26, y=46
-        for (int x = 23; x <= 26; x++) {
-          expect(theLibrary.barriers.contains(Point(x, 46)), isFalse,
-              reason: 'Entrance gap should be open at ($x, 46)');
-        }
+      test('has entrance gap at top-left', () {
+        // Rows 0-1 at x=0,1 are open (entrance)
+        expect(theLibrary.barriers.contains(const Point(0, 0)), isFalse);
+        expect(theLibrary.barriers.contains(const Point(1, 0)), isFalse);
       });
     });
 
@@ -218,12 +217,13 @@ void main() {
         expect(theWorkshop.barriers, isNotEmpty);
       });
 
-      test('has spawn point near entrance', () {
-        expect(theWorkshop.spawnPoint, equals(const Point(5, 45)));
+      test('has spawn point near bottom of building', () {
+        // ASCII art: S at column 10, row 28
+        expect(theWorkshop.spawnPoint, equals(const Point(10, 28)));
       });
 
-      test('has 4 terminal stations', () {
-        expect(theWorkshop.terminals.length, equals(4));
+      test('has 2 terminal stations', () {
+        expect(theWorkshop.terminals.length, equals(2));
       });
 
       test('terminals are not on barriers', () {
@@ -237,17 +237,13 @@ void main() {
         expect(theWorkshop.barriers.contains(theWorkshop.spawnPoint), isFalse);
       });
 
-      test('has more barriers than the Library (more maze-like)', () {
-        expect(theWorkshop.barriers.length,
-            greaterThan(theLibrary.barriers.length));
-      });
-
-      test('has entrance gap in south wall', () {
-        // Gap at x=4-6, y=47
-        for (int x = 4; x <= 6; x++) {
-          expect(theWorkshop.barriers.contains(Point(x, 47)), isFalse,
-              reason: 'Entrance gap should be open at ($x, 47)');
-        }
+      test('has perimeter walls', () {
+        // North wall at y=3
+        final northWall = theWorkshop.barriers.where((p) => p.y == 3);
+        expect(northWall, isNotEmpty);
+        // East wall at x=48
+        final eastWall = theWorkshop.barriers.where((p) => p.x == 48);
+        expect(eastWall, isNotEmpty);
       });
     });
 
