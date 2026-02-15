@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
+import 'package:tech_world/map_editor/tile_colors.dart';
 
 /// Flame component that renders the map editor's grid state as colored tiles
 /// in the game canvas.
@@ -13,11 +14,6 @@ class MapPreviewComponent extends Component {
   MapPreviewComponent({required this.editorState});
 
   final MapEditorState editorState;
-
-  static const _openColor = Color(0xFF2A2A2A);
-  static const _barrierColor = Color(0xFF4444FF);
-  static const _spawnColor = Color(0xFF00FF41);
-  static const _terminalColor = Color(0xFFD97757);
 
   final Paint _paint = Paint();
 
@@ -45,13 +41,13 @@ class MapPreviewComponent extends Component {
   Color _colorForTile(TileType tile) {
     switch (tile) {
       case TileType.open:
-        return _openColor;
+        return TileColors.open;
       case TileType.barrier:
-        return _barrierColor;
+        return TileColors.barrier;
       case TileType.spawn:
-        return _spawnColor;
+        return TileColors.spawn;
       case TileType.terminal:
-        return _terminalColor;
+        return TileColors.terminal;
     }
   }
 }

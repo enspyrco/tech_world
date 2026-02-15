@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
+import 'package:tech_world/map_editor/tile_colors.dart';
 
 /// Sidebar panel for the visual map editor.
 ///
@@ -23,11 +24,6 @@ class MapEditorPanel extends StatelessWidget {
   static const _panelBg = Color(0xFF1E1E1E);
   static const _border = Color(0xFF3D3D3D);
 
-  // Tile colours — match in-game rendering.
-  static const _barrierColor = Color(0xFF4444FF);
-  static const _spawnColor = Color(0xFF00FF41);
-  static const _terminalColor = Color(0xFFD97757);
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -35,7 +31,7 @@ class MapEditorPanel extends StatelessWidget {
       child: Column(
         children: [
           _buildHeader(),
-          _buildToolbar(),
+          _MapToolbar(state: state),
           Expanded(child: _buildGrid()),
           _buildFooter(context),
         ],
@@ -60,12 +56,13 @@ class MapEditorPanel extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: _barrierColor.withValues(alpha: 0.2),
+              color: TileColors.barrier.withValues(alpha: 0.2),
               shape: BoxShape.circle,
-              border: Border.all(color: _barrierColor, width: 2),
+              border: Border.all(color: TileColors.barrier, width: 2),
             ),
             child: const Center(
-              child: Icon(Icons.grid_on, color: _barrierColor, size: 16),
+              child:
+                  Icon(Icons.grid_on, color: TileColors.barrier, size: 16),
             ),
           ),
           const SizedBox(width: 12),
@@ -86,129 +83,6 @@ class MapEditorPanel extends StatelessWidget {
             iconSize: 20,
           ),
         ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------------
-  // Toolbar — tool buttons + map name/id fields
-  // ---------------------------------------------------------------------------
-
-  Widget _buildToolbar() {
-    return ListenableBuilder(
-      listenable: state,
-      builder: (context, _) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: const BoxDecoration(
-            color: _headerBg,
-            border: Border(bottom: BorderSide(color: _border)),
-          ),
-          child: Column(
-            children: [
-              // Tool buttons
-              Row(
-                children: [
-                  _toolButton(EditorTool.barrier, Icons.square, 'Barrier',
-                      _barrierColor),
-                  const SizedBox(width: 4),
-                  _toolButton(
-                      EditorTool.spawn, Icons.my_location, 'Spawn', _spawnColor),
-                  const SizedBox(width: 4),
-                  _toolButton(EditorTool.terminal, Icons.terminal, 'Terminal',
-                      _terminalColor),
-                  const SizedBox(width: 4),
-                  _toolButton(EditorTool.eraser, Icons.cleaning_services,
-                      'Eraser', Colors.grey),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: state.clearGrid,
-                    icon: const Icon(Icons.delete_sweep, size: 18),
-                    color: Colors.redAccent,
-                    tooltip: 'Clear grid',
-                    iconSize: 18,
-                    constraints: const BoxConstraints(
-                        minWidth: 32, minHeight: 32),
-                    padding: EdgeInsets.zero,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // Map name / id
-              Row(
-                children: [
-                  Expanded(
-                    child: _compactField(
-                      label: 'Name',
-                      value: state.mapName,
-                      onChanged: state.setMapName,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _compactField(
-                      label: 'ID',
-                      value: state.mapId,
-                      onChanged: state.setMapId,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _toolButton(
-      EditorTool tool, IconData icon, String tooltip, Color color) {
-    final selected = state.currentTool == tool;
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: () => state.setTool(tool),
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: selected ? color.withValues(alpha: 0.3) : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: selected ? color : Colors.grey.shade700,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Icon(icon, color: color, size: 16),
-        ),
-      ),
-    );
-  }
-
-  Widget _compactField({
-    required String label,
-    required String value,
-    required ValueChanged<String> onChanged,
-  }) {
-    return TextField(
-      controller: TextEditingController(text: value),
-      onChanged: onChanged,
-      style: const TextStyle(color: Colors.white, fontSize: 12),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(color: Colors.grey.shade500, fontSize: 11),
-        isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        enabledBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: Colors.grey.shade700),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderSide: const BorderSide(color: _barrierColor),
-          borderRadius: BorderRadius.circular(4),
-        ),
       ),
     );
   }
@@ -308,7 +182,7 @@ class MapEditorPanel extends StatelessWidget {
                   icon: const Icon(Icons.copy, size: 14),
                   label: const Text('Export', style: TextStyle(fontSize: 12)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _barrierColor,
+                    backgroundColor: TileColors.barrier,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 8),
                   ),
@@ -376,6 +250,169 @@ class MapEditorPanel extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+// Toolbar — StatefulWidget to properly manage TextEditingControllers
+// ---------------------------------------------------------------------------
+
+class _MapToolbar extends StatefulWidget {
+  const _MapToolbar({required this.state});
+
+  final MapEditorState state;
+
+  @override
+  State<_MapToolbar> createState() => _MapToolbarState();
+}
+
+class _MapToolbarState extends State<_MapToolbar> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _idController;
+
+  static const _headerBg = Color(0xFF2D2D2D);
+  static const _border = Color(0xFF3D3D3D);
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.state.mapName);
+    _idController = TextEditingController(text: widget.state.mapId);
+    widget.state.addListener(_onStateChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.state.removeListener(_onStateChanged);
+    _nameController.dispose();
+    _idController.dispose();
+    super.dispose();
+  }
+
+  void _onStateChanged() {
+    // Update controllers when state changes externally (e.g., loading a map),
+    // but only if the value actually differs to avoid cursor jumps.
+    if (_nameController.text != widget.state.mapName) {
+      _nameController.text = widget.state.mapName;
+    }
+    if (_idController.text != widget.state.mapId) {
+      _idController.text = widget.state.mapId;
+    }
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: const BoxDecoration(
+        color: _headerBg,
+        border: Border(bottom: BorderSide(color: _border)),
+      ),
+      child: Column(
+        children: [
+          // Tool buttons
+          Row(
+            children: [
+              _toolButton(EditorTool.barrier, Icons.square, 'Barrier',
+                  TileColors.barrier),
+              const SizedBox(width: 4),
+              _toolButton(EditorTool.spawn, Icons.my_location, 'Spawn',
+                  TileColors.spawn),
+              const SizedBox(width: 4),
+              _toolButton(EditorTool.terminal, Icons.terminal, 'Terminal',
+                  TileColors.terminal),
+              const SizedBox(width: 4),
+              _toolButton(EditorTool.eraser, Icons.cleaning_services, 'Eraser',
+                  Colors.grey),
+              const Spacer(),
+              IconButton(
+                onPressed: widget.state.clearGrid,
+                icon: const Icon(Icons.delete_sweep, size: 18),
+                color: Colors.redAccent,
+                tooltip: 'Clear grid',
+                iconSize: 18,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: EdgeInsets.zero,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Map name / id
+          Row(
+            children: [
+              Expanded(
+                child: _compactField(
+                  label: 'Name',
+                  controller: _nameController,
+                  onChanged: widget.state.setMapName,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _compactField(
+                  label: 'ID',
+                  controller: _idController,
+                  onChanged: widget.state.setMapId,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _toolButton(
+      EditorTool tool, IconData icon, String tooltip, Color color) {
+    final selected = widget.state.currentTool == tool;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: () => widget.state.setTool(tool),
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.3) : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: selected ? color : Colors.grey.shade700,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Icon(icon, color: color, size: 16),
+        ),
+      ),
+    );
+  }
+
+  Widget _compactField({
+    required String label,
+    required TextEditingController controller,
+    required ValueChanged<String> onChanged,
+  }) {
+    return TextField(
+      controller: controller,
+      onChanged: onChanged,
+      style: const TextStyle(color: Colors.white, fontSize: 12),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: Colors.grey.shade700),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: const BorderSide(color: TileColors.barrier),
+          borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Custom painter for the mini-grid
 // ---------------------------------------------------------------------------
 
@@ -385,17 +422,11 @@ class _GridPainter extends CustomPainter {
   final MapEditorState state;
   final double cellSize;
 
-  static const _openColor = Color(0xFF2A2A2A);
-  static const _barrierColor = Color(0xFF4444FF);
-  static const _spawnColor = Color(0xFF00FF41);
-  static const _terminalColor = Color(0xFFD97757);
-  static const _gridLineColor = Color(0xFF333333);
-
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint();
     final linePaint = Paint()
-      ..color = _gridLineColor
+      ..color = TileColors.gridLine
       ..strokeWidth = 0.5;
 
     for (var y = 0; y < gridSize; y++) {
@@ -422,13 +453,13 @@ class _GridPainter extends CustomPainter {
   Color _colorForTile(TileType tile) {
     switch (tile) {
       case TileType.open:
-        return _openColor;
+        return TileColors.open;
       case TileType.barrier:
-        return _barrierColor;
+        return TileColors.barrier;
       case TileType.spawn:
-        return _spawnColor;
+        return TileColors.spawn;
       case TileType.terminal:
-        return _terminalColor;
+        return TileColors.terminal;
     }
   }
 
