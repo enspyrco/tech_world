@@ -7,6 +7,7 @@ import 'package:pathfinding/finders/jps.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
+import 'package:tech_world/map_editor/map_editor_state.dart';
 
 /// Uses Jump Point Search (JPS) to calculate a set of points that define a
 /// path that avoids all barriers.
@@ -118,6 +119,27 @@ class PathComponent extends Component with HasWorldReference {
 
   List<Vector2> get largeGridPoints => _largeGridPoints;
   List<Direction> get directions => _pathDirections;
+
+  /// Rebuild the pathfinding grid from editor state (barriers from the editor).
+  void setGridFromEditor(MapEditorState editorState) {
+    final matrix = List.generate(
+      gridSize,
+      (_) => List.filled(gridSize, 0),
+    );
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        if (editorState.tileAt(x, y) == TileType.barrier) {
+          matrix[y][x] = 1;
+        }
+      }
+    }
+    _grid = pf.Grid(gridSize, gridSize, matrix);
+  }
+
+  /// Reset the pathfinding grid so it rebuilds from barriers on next use.
+  void invalidateGrid() {
+    _grid = null;
+  }
 
   /// Expand sparse jump points into a step-by-step path.
   ///

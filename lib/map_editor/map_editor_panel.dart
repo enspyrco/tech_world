@@ -40,24 +40,37 @@ class MapEditorPanel extends StatelessWidget {
           _buildHeader(),
           _MapToolbar(state: state),
           Expanded(
-            child: Stack(
-              children: [
-                // Paintable grid
-                _buildGrid(),
-                // PNG map image on top as reference overlay
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Opacity(
-                      opacity: 0.5,
-                      child: Image.asset(
-                        'assets/images/single_room.png',
-                        fit: BoxFit.contain,
-                        alignment: Alignment.topLeft,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Scale so the game grid area (gridSize * gridSquareSize pixels)
+                // maps exactly to the sidebar grid width.
+                final cellSize = constraints.maxWidth / gridSize;
+                final imageScale = cellSize / gridSquareSizeDouble;
+                return Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    // Paintable grid
+                    _buildGrid(),
+                    // PNG map image on top, scaled to align with grid
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      child: IgnorePointer(
+                        child: Opacity(
+                          opacity: 0.5,
+                          child: Transform.scale(
+                            scale: imageScale,
+                            alignment: Alignment.topLeft,
+                            child: Image.asset(
+                              'assets/images/single_room.png',
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                );
+              },
             ),
           ),
           _buildFooter(context),

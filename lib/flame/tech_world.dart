@@ -15,7 +15,9 @@ import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
-import 'package:tech_world/flame/components/grid_component.dart';
+import 'package:tech_world/flame/components/wall_occlusion_component.dart';
+// Grid lines hidden for now — uncomment to restore:
+// import 'package:tech_world/flame/components/grid_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/components/terminal_component.dart';
@@ -48,7 +50,8 @@ class TechWorld extends World with TapCallbacks {
 
   final Map<String, PlayerComponent> _otherPlayerComponentsMap = {};
   BotCharacterComponent? _botCharacterComponent;
-  final GridComponent _gridComponent = GridComponent();
+  // Grid lines hidden for now — uncomment to restore:
+  // final GridComponent _gridComponent = GridComponent();
   final BarriersComponent _barriersComponent = BarriersComponent();
   late PathComponent _pathComponent;
 
@@ -72,6 +75,7 @@ class TechWorld extends World with TapCallbacks {
   final ValueNotifier<bool> mapEditorActive = ValueNotifier(false);
 
   MapPreviewComponent? _mapPreviewComponent;
+  WallOcclusionComponent? _wallOcclusion;
 
   /// Close the code editor panel.
   void closeEditor() {
@@ -88,33 +92,45 @@ class TechWorld extends World with TapCallbacks {
 
     mapEditorActive.value = true;
 
-    // Bring the PNG map background above everything else.
-    final game = findGame() as TechWorldGame?;
-    if (game != null) {
-      game.background.priority = 1000;
-    }
+    // Hide wall occlusion overlays during editing.
+    _wallOcclusion?.hide();
 
     // Hide normal barriers and add the preview component.
     _barriersComponent.renderBarriers = false;
     _mapPreviewComponent = MapPreviewComponent(editorState: editorState);
     add(_mapPreviewComponent!);
+
+    // Listen for editor changes to update pathfinding grid.
+    _editorState = editorState;
+    editorState.addListener(_onEditorStateChanged);
   }
 
   /// Exit map editor mode — removes preview, restores barriers.
   void exitEditorMode() {
     mapEditorActive.value = false;
 
-    // Restore the PNG map background to its normal layer.
-    final game = findGame() as TechWorldGame?;
-    if (game != null) {
-      game.background.priority = 0;
-    }
+    // Stop listening for editor changes.
+    _editorState?.removeListener(_onEditorStateChanged);
+    _editorState = null;
+
+    // Restore wall occlusion overlays.
+    _wallOcclusion?.show();
+
+    // Rebuild pathfinding grid from default barriers.
+    _pathComponent.invalidateGrid();
 
     if (_mapPreviewComponent != null) {
       _mapPreviewComponent!.removeFromParent();
       _mapPreviewComponent = null;
     }
     _barriersComponent.renderBarriers = true;
+  }
+
+  MapEditorState? _editorState;
+
+  /// Called when the editor state changes — rebuild pathfinding grid.
+  void _onEditorStateChanged() {
+    _pathComponent.setGridFromEditor(_editorState!);
   }
 
   static const _terminalProximityThreshold = 2; // grid squares
@@ -239,15 +255,18 @@ class TechWorld extends World with TapCallbacks {
     for (final entry in _playerBubbles.entries) {
       if (entry.key == _localPlayerBubbleKey) {
         entry.value.position = _userPlayerComponent.position + _bubbleOffset;
+        entry.value.priority = _userPlayerComponent.priority + 1;
       } else if (entry.key == _botUserId) {
         if (_botCharacterComponent != null) {
           entry.value.position =
               _botCharacterComponent!.position + _bubbleOffset;
+          entry.value.priority = _botCharacterComponent!.priority + 1;
         }
       } else {
         final playerComponent = _otherPlayerComponentsMap[entry.key];
         if (playerComponent != null) {
           entry.value.position = playerComponent.position + _bubbleOffset;
+          entry.value.priority = playerComponent.priority + 1;
         }
       }
     }
@@ -548,7 +567,8 @@ class TechWorld extends World with TapCallbacks {
   Future<void> onLoad() async {
     _pathComponent = PathComponent(barriers: _barriersComponent);
 
-    await add(_gridComponent);
+    // Grid lines hidden for now — uncomment to restore:
+    // await add(_gridComponent);
     await add(_pathComponent);
     await add(_barriersComponent);
     await add(_userPlayerComponent);
@@ -569,7 +589,18 @@ class TechWorld extends World with TapCallbacks {
       await add(terminal);
     }
 
-    (findGame() as TechWorldGame?)?.camera.follow(_userPlayerComponent);
+    // Create wall occlusion overlays for barrier cells.
+    final game = findGame() as TechWorldGame?;
+    if (game != null) {
+      final bgImage = game.images.fromCache('single_room.png');
+      _wallOcclusion = WallOcclusionComponent(
+        backgroundImage: bgImage,
+        barriers: defaultMap.barriers,
+      );
+      await add(_wallOcclusion!);
+    }
+
+    game?.camera.follow(_userPlayerComponent);
 
     // Load the video bubble shader
     await _loadVideoBubbleShader();

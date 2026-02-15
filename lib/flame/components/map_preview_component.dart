@@ -35,13 +35,11 @@ class MapPreviewComponent extends Component {
         final tile = editorState.tileAt(x, y);
         paint.color = _colorForTile(tile);
         canvas.drawRect(
-          Rect.fromCenter(
-            center: Offset(
-              x * gridSquareSizeDouble,
-              y * gridSquareSizeDouble,
-            ),
-            width: gridSquareSizeDouble,
-            height: gridSquareSizeDouble,
+          Rect.fromLTWH(
+            x * gridSquareSizeDouble,
+            y * gridSquareSizeDouble,
+            gridSquareSizeDouble,
+            gridSquareSizeDouble,
           ),
           paint,
         );
