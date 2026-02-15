@@ -334,6 +334,58 @@ void main() {
               reason: '${map.name} should not have duplicate barriers');
         }
       });
+
+      test('all terminals are reachable from spawn point', () {
+        for (final map in allMaps) {
+          if (map.terminals.isEmpty) continue;
+
+          // Build a set of barrier cells for O(1) lookup
+          final barrierSet = map.barriers.toSet();
+
+          // Flood-fill from spawn point to find all reachable cells
+          final reachable = <Point<int>>{};
+          final queue = <Point<int>>[map.spawnPoint];
+          reachable.add(map.spawnPoint);
+
+          while (queue.isNotEmpty) {
+            final current = queue.removeLast();
+
+            // Check all 8 neighbors (including diagonals, matching
+            // the game's movement model)
+            for (int dx = -1; dx <= 1; dx++) {
+              for (int dy = -1; dy <= 1; dy++) {
+                if (dx == 0 && dy == 0) continue;
+                final neighbor = Point(current.x + dx, current.y + dy);
+
+                // Skip out-of-bounds
+                if (neighbor.x < 0 ||
+                    neighbor.x >= gridSize ||
+                    neighbor.y < 0 ||
+                    neighbor.y >= gridSize) {
+                  continue;
+                }
+
+                // Skip barriers and already-visited cells
+                if (barrierSet.contains(neighbor) ||
+                    reachable.contains(neighbor)) {
+                  continue;
+                }
+
+                reachable.add(neighbor);
+                queue.add(neighbor);
+              }
+            }
+          }
+
+          // Verify every terminal is in the reachable set
+          for (final terminal in map.terminals) {
+            expect(reachable.contains(terminal), isTrue,
+                reason:
+                    '${map.name}: terminal at $terminal is not reachable from '
+                    'spawn point ${map.spawnPoint}');
+          }
+        }
+      });
     });
   });
 }
