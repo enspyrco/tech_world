@@ -609,7 +609,7 @@ class TechWorld extends World with TapCallbacks {
     // Barriers
     _barriersComponent = BarriersComponent(barriers: map.barriers);
     await add(_barriersComponent);
-    _pathComponent.invalidateGrid();
+    _pathComponent.barriers = _barriersComponent;
 
     // Terminals
     for (var i = 0; i < map.terminals.length; i++) {
@@ -669,6 +669,10 @@ class TechWorld extends World with TapCallbacks {
   /// Switch to a different map at runtime.
   Future<void> loadMap(GameMap map) async {
     if (mapEditorActive.value) return; // Don't switch while editing.
+    if (map.id == currentMap.value.id) return; // Already on this map.
+
+    // Close code editor if open — the terminals are about to change.
+    activeChallenge.value = null;
 
     _removeMapComponents();
     await _loadMapComponents(map);
