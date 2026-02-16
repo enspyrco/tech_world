@@ -668,8 +668,10 @@ class TechWorld extends World with TapCallbacks {
 
   /// Switch to a different map at runtime.
   Future<void> loadMap(GameMap map) async {
-    if (mapEditorActive.value) return; // Don't switch while editing.
     if (map.id == currentMap.value.id) return; // Already on this map.
+
+    // Auto-exit editor mode if active.
+    if (mapEditorActive.value) exitEditorMode();
 
     // Close code editor if open — the terminals are about to change.
     activeChallenge.value = null;
