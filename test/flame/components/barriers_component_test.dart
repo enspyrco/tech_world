@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
+import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 
 void main() {
@@ -9,7 +10,7 @@ void main() {
     late BarriersComponent barriers;
 
     setUp(() {
-      barriers = BarriersComponent();
+      barriers = BarriersComponent(barriers: lRoom.barriers);
     });
 
     group('tuples', () {

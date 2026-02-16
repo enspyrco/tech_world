@@ -3,6 +3,7 @@ import 'package:flame_test/flame_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
+import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 
@@ -31,7 +32,7 @@ void main() {
       'drawPath adds rectangles to world',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
         final pathComponent = PathComponent(barriers: barriers);
 
         await game.world.add(pathComponent);
@@ -59,7 +60,7 @@ void main() {
       'drawPath creates rectangles at correct positions',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
         final pathComponent = PathComponent(barriers: barriers);
 
         await game.world.add(pathComponent);
@@ -91,7 +92,7 @@ void main() {
       'drawPath colors start and end differently',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
         final pathComponent = PathComponent(barriers: barriers);
 
         await game.world.add(pathComponent);
@@ -116,7 +117,7 @@ void main() {
       'drawPath replaces previous path rectangles',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
         final pathComponent = PathComponent(barriers: barriers);
 
         await game.world.add(pathComponent);
@@ -148,7 +149,7 @@ void main() {
       'drawPath handles empty path gracefully',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
         final pathComponent = PathComponent(barriers: barriers);
 
         await game.world.add(pathComponent);
@@ -168,7 +169,7 @@ void main() {
       'multiple path components can coexist',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
         final pathComponent1 = PathComponent(barriers: barriers);
         final pathComponent2 = PathComponent(barriers: barriers);
 

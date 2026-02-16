@@ -11,6 +11,7 @@ class GameMap {
     required this.barriers,
     this.spawnPoint = const Point(25, 25),
     this.terminals = const [],
+    this.backgroundImage,
   });
 
   /// Unique identifier for this map.
@@ -28,4 +29,8 @@ class GameMap {
 
   /// Positions of coding terminal stations in mini-grid coordinates.
   final List<Point<int>> terminals;
+
+  /// Optional background image filename (in assets/images/).
+  /// When set, the image is rendered behind barriers with wall occlusion.
+  final String? backgroundImage;
 }

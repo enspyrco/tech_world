@@ -2,6 +2,7 @@ import 'package:flame/components.dart';
 import 'package:flame_test/flame_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
+import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 
@@ -30,7 +31,7 @@ void main() {
       'onLoad adds rectangle components for each barrier',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
 
         await game.world.add(barriers);
         await game.ready();
@@ -51,7 +52,7 @@ void main() {
       'barrier rectangles have correct size',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
 
         await game.world.add(barriers);
         await game.ready();
@@ -71,7 +72,7 @@ void main() {
       'barrier rectangles have center anchor',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
 
         await game.world.add(barriers);
         await game.ready();
@@ -90,7 +91,7 @@ void main() {
       'barrier rectangles are at correct positions',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers = BarriersComponent();
+        final barriers = BarriersComponent(barriers: lRoom.barriers);
 
         await game.world.add(barriers);
         await game.ready();
@@ -121,8 +122,8 @@ void main() {
       'multiple barriers can be added to game',
       TestGameWithMockImages.new,
       (game) async {
-        final barriers1 = BarriersComponent();
-        final barriers2 = BarriersComponent();
+        final barriers1 = BarriersComponent(barriers: lRoom.barriers);
+        final barriers2 = BarriersComponent(barriers: lRoom.barriers);
 
         await game.world.add(barriers1);
         await game.world.add(barriers2);
