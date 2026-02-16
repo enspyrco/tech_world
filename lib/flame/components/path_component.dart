@@ -24,7 +24,7 @@ class PathComponent extends Component with HasWorldReference {
   List<Vector2> _largeGridPoints = [];
   List<RectangleComponent> _pathRectangles = [];
   List<Direction> _pathDirections = [];
-  final BarriersComponent _barriers;
+  BarriersComponent _barriers;
   final _paint = Paint()..color = const Color.fromARGB(50, 255, 255, 255);
   final _startPaint = Paint()..color = const Color.fromARGB(150, 0, 255, 255);
   final _endPaint = Paint()..color = const Color.fromARGB(150, 255, 255, 0);
@@ -36,6 +36,12 @@ class PathComponent extends Component with HasWorldReference {
   pf.Grid? _grid;
 
   PathComponent({required BarriersComponent barriers}) : _barriers = barriers;
+
+  /// Update the barriers reference and invalidate the cached grid.
+  set barriers(BarriersComponent newBarriers) {
+    _barriers = newBarriers;
+    _grid = null;
+  }
 
   /// Use Jump Point Search to calculate a set of points that define a
   /// path that avoids all barriers.

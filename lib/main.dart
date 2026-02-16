@@ -8,7 +8,6 @@ import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/editor/code_editor_panel.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
-import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -17,6 +16,7 @@ import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
+import 'package:tech_world/widgets/map_selector.dart';
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -126,7 +126,7 @@ class _MyAppState extends State<MyApp> {
       _liveKitService = LiveKitService(
         userId: user.id,
         displayName: user.displayName,
-        roomName: defaultMap.id,
+        roomName: 'tech-world',
       );
 
       _chatService = ChatService(liveKitService: _liveKitService!);
@@ -239,7 +239,7 @@ class _MyAppState extends State<MyApp> {
                                 child: MapEditorPanel(
                                   state: _mapEditorState,
                                   onClose: techWorld.exitEditorMode,
-                                  referenceMap: defaultMap,
+                                  referenceMap: techWorld.currentMap.value,
                                 ),
                               );
                             }
@@ -312,6 +312,8 @@ class _MyAppState extends State<MyApp> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            MapSelector(techWorld: locate<TechWorld>()),
+                            const SizedBox(width: 8),
                             _MapEditorButton(
                               mapEditorState: _mapEditorState,
                               techWorld: locate<TechWorld>(),

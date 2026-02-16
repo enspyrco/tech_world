@@ -52,22 +52,23 @@ class MapEditorPanel extends StatelessWidget {
                     // Paintable grid
                     _buildGrid(),
                     // PNG map image on top, scaled to align with grid
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      child: IgnorePointer(
-                        child: Opacity(
-                          opacity: 0.5,
-                          child: Transform.scale(
-                            scale: imageScale,
-                            alignment: Alignment.topLeft,
-                            child: Image.asset(
-                              'assets/images/single_room.png',
+                    if (referenceMap?.backgroundImage != null)
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        child: IgnorePointer(
+                          child: Opacity(
+                            opacity: 0.5,
+                            child: Transform.scale(
+                              scale: imageScale,
+                              alignment: Alignment.topLeft,
+                              child: Image.asset(
+                                'assets/images/${referenceMap!.backgroundImage}',
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
                   ],
                 );
               },

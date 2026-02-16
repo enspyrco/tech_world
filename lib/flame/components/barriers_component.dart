@@ -10,7 +10,7 @@ import 'package:tech_world/flame/shared/constants.dart';
 /// drawn on screen. The points are part of the minigrid - a 2d grid of integers
 /// that A* operates on.
 class BarriersComponent extends PositionComponent with HasWorldReference {
-  BarriersComponent();
+  BarriersComponent({required List<Point<int>> barriers}) : _points = barriers;
 
   final Paint _paint = Paint()..color = const Color.fromRGBO(0, 0, 255, 1);
 
@@ -30,46 +30,10 @@ class BarriersComponent extends PositionComponent with HasWorldReference {
     }
   }
 
-  /// The list of [Point]s that make up the barriers in the minigrid space
-  final List<Point<int>> _points = const [
-    Point(4, 7),
-    Point(4, 8),
-    Point(4, 9),
-    Point(4, 10),
-    Point(4, 11),
-    Point(4, 12),
-    Point(4, 13),
-    Point(4, 14),
-    Point(4, 15),
-    Point(4, 16),
-    Point(4, 18),
-    Point(4, 19),
-    Point(4, 20),
-    Point(4, 21),
-    Point(4, 22),
-    Point(4, 23),
-    Point(4, 24),
-    Point(4, 25),
-    Point(4, 26),
-    Point(4, 27),
-    Point(4, 28),
-    Point(4, 29),
-    Point(5, 7),
-    Point(6, 7),
-    Point(7, 7),
-    Point(8, 7),
-    Point(9, 7),
-    Point(10, 7),
-    Point(11, 7),
-    Point(12, 7),
-    Point(13, 7),
-    Point(14, 7),
-    Point(15, 7),
-    Point(16, 7),
-    Point(17, 7),
-  ];
+  /// The list of [Point]s that make up the barriers in the minigrid space.
+  final List<Point<int>> _points;
 
-  /// Returns barriers as tuples for compatibility
+  /// Returns barriers as tuples for compatibility.
   List<(int, int)> get tuples => _points.map((p) => (p.x, p.y)).toList();
 
   /// Creates a pathfinding Grid with barriers marked as unwalkable.
@@ -86,6 +50,14 @@ class BarriersComponent extends PositionComponent with HasWorldReference {
     }
 
     return pf.Grid(gridSize, gridSize, matrix);
+  }
+
+  /// Remove all barrier rectangles from the world.
+  void removeBarriers() {
+    for (final rect in _rectangles) {
+      rect.removeFromParent();
+    }
+    _rectangles.clear();
   }
 
   /// Add [RectangleComponent]s to draw each barrier in the large grid that is

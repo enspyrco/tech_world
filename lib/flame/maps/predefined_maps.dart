@@ -15,6 +15,7 @@ const openArena = GameMap(
 const lRoom = GameMap(
   id: 'l_room',
   name: 'The L-Room',
+  backgroundImage: 'single_room.png',
   barriers: [
     // Vertical wall at x=4
     Point(4, 7),

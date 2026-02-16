@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
+import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 
@@ -10,7 +11,7 @@ void main() {
     late PathComponent pathComponent;
 
     setUp(() {
-      barriers = BarriersComponent();
+      barriers = BarriersComponent(barriers: lRoom.barriers);
       pathComponent = PathComponent(barriers: barriers);
     });
 

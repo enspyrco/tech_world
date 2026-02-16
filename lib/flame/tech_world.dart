@@ -22,6 +22,7 @@ import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/components/terminal_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
+import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
@@ -52,8 +53,15 @@ class TechWorld extends World with TapCallbacks {
   BotCharacterComponent? _botCharacterComponent;
   // Grid lines hidden for now — uncomment to restore:
   // final GridComponent _gridComponent = GridComponent();
-  final BarriersComponent _barriersComponent = BarriersComponent();
+  BarriersComponent _barriersComponent =
+      BarriersComponent(barriers: defaultMap.barriers);
   late PathComponent _pathComponent;
+
+  /// The currently loaded map.
+  final ValueNotifier<GameMap> currentMap = ValueNotifier(defaultMap);
+
+  SpriteComponent? _backgroundSprite;
+  final List<TerminalComponent> _terminalComponents = [];
 
   // Bubble components - shown when player is near other players
   static const _botUserId = 'bot-claude';
@@ -88,7 +96,7 @@ class TechWorld extends World with TapCallbacks {
     activeChallenge.value = null;
 
     // Pre-load the current map so the editor and canvas show existing layout.
-    editorState.loadFromGameMap(defaultMap);
+    editorState.loadFromGameMap(currentMap.value);
 
     mapEditorActive.value = true;
 
@@ -570,36 +578,12 @@ class TechWorld extends World with TapCallbacks {
     // Grid lines hidden for now — uncomment to restore:
     // await add(_gridComponent);
     await add(_pathComponent);
-    await add(_barriersComponent);
     await add(_userPlayerComponent);
 
-    // Add terminal components for each terminal position in the map
-    final terminals = defaultMap.terminals;
-    for (var i = 0; i < terminals.length; i++) {
-      final terminalPos = terminals[i];
-      final challengeIndex = i % allChallenges.length;
-      final challenge = allChallenges[challengeIndex];
-      final terminal = TerminalComponent(
-        position: Vector2(
-          terminalPos.x * gridSquareSizeDouble,
-          terminalPos.y * gridSquareSizeDouble,
-        ),
-        onInteract: () => _onTerminalInteract(terminalPos, challenge.id),
-      );
-      await add(terminal);
-    }
+    // Load initial map components.
+    await _loadMapComponents(currentMap.value);
 
-    // Create wall occlusion overlays for barrier cells.
     final game = findGame() as TechWorldGame?;
-    if (game != null) {
-      final bgImage = game.images.fromCache('single_room.png');
-      _wallOcclusion = WallOcclusionComponent(
-        backgroundImage: bgImage,
-        barriers: defaultMap.barriers,
-      );
-      await add(_wallOcclusion!);
-    }
-
     game?.camera.follow(_userPlayerComponent);
 
     // Load the video bubble shader
@@ -617,6 +601,89 @@ class TechWorld extends World with TapCallbacks {
         await _connectToLiveKit(authUser.id, authUser.displayName);
       }
     });
+  }
+
+  /// Load map-specific components: barriers, terminals, background, and wall
+  /// occlusion overlays.
+  Future<void> _loadMapComponents(GameMap map) async {
+    // Barriers
+    _barriersComponent = BarriersComponent(barriers: map.barriers);
+    await add(_barriersComponent);
+    _pathComponent.barriers = _barriersComponent;
+
+    // Terminals
+    for (var i = 0; i < map.terminals.length; i++) {
+      final terminalPos = map.terminals[i];
+      final challengeIndex = i % allChallenges.length;
+      final challenge = allChallenges[challengeIndex];
+      final terminal = TerminalComponent(
+        position: Vector2(
+          terminalPos.x * gridSquareSizeDouble,
+          terminalPos.y * gridSquareSizeDouble,
+        ),
+        onInteract: () => _onTerminalInteract(terminalPos, challenge.id),
+      );
+      _terminalComponents.add(terminal);
+      await add(terminal);
+    }
+
+    // Background image and wall occlusion (only for maps with a PNG).
+    final game = findGame() as TechWorldGame?;
+    if (game != null && map.backgroundImage != null) {
+      final bgImage = game.images.fromCache(map.backgroundImage!);
+      _backgroundSprite =
+          SpriteComponent(sprite: Sprite(bgImage), priority: -1);
+      add(_backgroundSprite!);
+
+      _wallOcclusion = WallOcclusionComponent(
+        backgroundImage: bgImage,
+        barriers: map.barriers,
+      );
+      await add(_wallOcclusion!);
+    }
+  }
+
+  /// Remove all map-specific components before loading a new map.
+  void _removeMapComponents() {
+    // Barriers
+    _barriersComponent.removeBarriers();
+    _barriersComponent.removeFromParent();
+
+    // Terminals
+    for (final terminal in _terminalComponents) {
+      terminal.removeFromParent();
+    }
+    _terminalComponents.clear();
+
+    // Background
+    _backgroundSprite?.removeFromParent();
+    _backgroundSprite = null;
+
+    // Wall occlusion
+    if (_wallOcclusion != null) {
+      _wallOcclusion!.removeFromParent();
+      _wallOcclusion = null;
+    }
+  }
+
+  /// Switch to a different map at runtime.
+  Future<void> loadMap(GameMap map) async {
+    if (mapEditorActive.value) return; // Don't switch while editing.
+    if (map.id == currentMap.value.id) return; // Already on this map.
+
+    // Close code editor if open — the terminals are about to change.
+    activeChallenge.value = null;
+
+    _removeMapComponents();
+    await _loadMapComponents(map);
+
+    // Reposition player to new map's spawn point.
+    _userPlayerComponent.position = Vector2(
+      map.spawnPoint.x * gridSquareSizeDouble,
+      map.spawnPoint.y * gridSquareSizeDouble,
+    );
+
+    currentMap.value = map;
   }
 
   @override
@@ -699,6 +766,7 @@ class TechWorld extends World with TapCallbacks {
     _authStateChangesSubscription?.cancel();
     activeChallenge.dispose();
     mapEditorActive.dispose();
+    currentMap.dispose();
     _disconnectFromLiveKit();
   }
 }
