@@ -33,7 +33,9 @@ class MapPreviewComponent extends Component {
     for (var y = 0; y < gridSize; y++) {
       for (var x = 0; x < gridSize; x++) {
         final tile = editorState.tileAt(x, y);
-        paint.color = _colorForTile(tile);
+        // Skip open tiles so the background PNG shows through.
+        if (tile == TileType.open) continue;
+        paint.color = _colorForTile(tile).withValues(alpha: 0.6);
         canvas.drawRect(
           Rect.fromLTWH(
             x * gridSquareSizeDouble,
