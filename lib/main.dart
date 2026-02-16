@@ -41,6 +41,7 @@ class _MyAppState extends State<MyApp> {
   ChatService? _chatService;
   ProximityService? _proximityService;
   final MapEditorState _mapEditorState = MapEditorState();
+  bool _liveKitConnectionFailed = false;
 
   @override
   void initState() {
@@ -114,6 +115,7 @@ class _MyAppState extends State<MyApp> {
       _liveKitService = null;
       _chatService = null;
       _proximityService = null;
+      _liveKitConnectionFailed = false;
       Locator.remove<LiveKitService>();
       Locator.remove<ChatService>();
       Locator.remove<ProximityService>();
@@ -144,6 +146,8 @@ class _MyAppState extends State<MyApp> {
         // Enable camera and microphone
         await _liveKitService!.setCameraEnabled(true);
         await _liveKitService!.setMicrophoneEnabled(true);
+      } else {
+        _liveKitConnectionFailed = true;
       }
 
       setState(() {}); // Trigger rebuild to show overlay
@@ -328,6 +332,39 @@ class _MyAppState extends State<MyApp> {
                     );
                   },
                 ),
+                // Connection failure banner
+                if (_liveKitConnectionFailed)
+                  Positioned(
+                    bottom: 16,
+                    left: 16,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade800,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.wifi_off, color: Colors.white, size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              'Video & chat unavailable — connection failed',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             );
           },

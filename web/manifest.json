@@ -1,11 +1,11 @@
 {
-    "name": "tech_world",
-    "short_name": "tech_world",
+    "name": "Tech World",
+    "short_name": "Tech World",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#000000",
     "theme_color": "#000000",
-    "description": "A new Flutter project.",
+    "description": "A multiplayer coding adventure where real programming is the gameplay.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
