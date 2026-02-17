@@ -8,10 +8,11 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
 
-/// When a user signs in the [User] member is updated but the only time the
-/// [authStateChanges] [Stream] emits a [User] is on
-/// [FirebaseAuth.instance.authStateChanges].
-/// TODO: this needs testing an more documentation.
+/// Manages Firebase Authentication state.
+///
+/// When a user signs in the [_user] member is updated, but the
+/// [authStateChanges] stream only emits when
+/// [FirebaseAuth.instance.authStateChanges] fires.
 class AuthService {
   AuthUser _user = PlaceholderUser();
   final _userProfileService = UserProfileService();

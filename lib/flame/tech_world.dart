@@ -3,7 +3,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show Colors;
+import 'package:flutter/material.dart' show Colors, FontWeight, TextStyle;
 
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
@@ -719,7 +719,36 @@ class TechWorld extends World with TapCallbacks {
     );
     if (distance <= _terminalProximityThreshold) {
       activeChallenge.value = challengeId;
+    } else {
+      _showHint(
+        'Walk closer to use this terminal',
+        Vector2(
+          terminalPos.x * gridSquareSizeDouble + gridSquareSizeDouble / 2,
+          terminalPos.y * gridSquareSizeDouble - 12,
+        ),
+      );
     }
+  }
+
+  /// Show an ephemeral text hint that fades out after a short delay.
+  void _showHint(String message, Vector2 position) {
+    final hint = TextComponent(
+      text: message,
+      position: position,
+      anchor: Anchor.bottomCenter,
+      textRenderer: TextPaint(
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      priority: 1000,
+    );
+    add(hint);
+    Future.delayed(const Duration(seconds: 2), () {
+      hint.removeFromParent();
+    });
   }
 
   /// Disconnect from LiveKit and clear all related state.

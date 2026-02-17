@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -296,14 +297,9 @@ class _AuthGateState extends State<AuthGate> {
 
     try {
       await locate<AuthService>().signInAnonymously();
-      // }
-      // on AuthException catch (e) {
-      //   setState(() {
-      //     error = e.message;
-      //   });
     } catch (e) {
       setState(() {
-        error = '$e';
+        error = 'Could not sign in as guest. Please try again.';
       });
     } finally {
       setIsLoading();
@@ -312,14 +308,44 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _emailAndPassword() async {
     if (formKey.currentState?.validate() ?? false) {
-      if (mode == AuthMode.login) {
-        await locate<AuthService>().signInWithEmailAndPassword(
-            email: emailController.text, password: passwordController.text);
-      } else if (mode == AuthMode.register) {
-        await locate<AuthService>().createUserWithEmailAndPassword(
-            email: emailController.text, password: passwordController.text);
+      setIsLoading();
+      try {
+        if (mode == AuthMode.login) {
+          await locate<AuthService>().signInWithEmailAndPassword(
+              email: emailController.text, password: passwordController.text);
+        } else if (mode == AuthMode.register) {
+          await locate<AuthService>().createUserWithEmailAndPassword(
+              email: emailController.text, password: passwordController.text);
+        }
+      } on FirebaseAuthException catch (e) {
+        setState(() {
+          error = _friendlyAuthError(e.code);
+        });
+      } catch (e) {
+        setState(() {
+          error = _friendlyAuthError('$e');
+        });
+      } finally {
+        setIsLoading();
       }
     }
+  }
+
+  /// Maps Firebase Auth error codes to user-friendly messages.
+  String _friendlyAuthError(String code) {
+    return switch (code) {
+      'user-not-found' => 'No account found with that email.',
+      'wrong-password' => 'Incorrect password. Please try again.',
+      'invalid-credential' => 'Invalid email or password. Please try again.',
+      'email-already-in-use' => 'An account already exists with that email.',
+      'weak-password' => 'Password is too weak. Use at least 6 characters.',
+      'invalid-email' => 'Please enter a valid email address.',
+      'too-many-requests' =>
+        'Too many attempts. Please wait a moment and try again.',
+      'network-request-failed' =>
+        'Network error. Please check your connection.',
+      _ => 'Something went wrong. Please try again.',
+    };
   }
 
   Future<void> _signInWithApple() async {
@@ -328,7 +354,7 @@ class _AuthGateState extends State<AuthGate> {
       await locate<AuthService>().signInWithApple();
     } catch (e) {
       setState(() {
-        error = '$e';
+        error = 'Apple sign-in failed. Please try again.';
       });
     } finally {
       setIsLoading();
@@ -341,7 +367,7 @@ class _AuthGateState extends State<AuthGate> {
       await locate<AuthService>().signInWithGoogle();
     } catch (e) {
       setState(() {
-        error = '$e';
+        error = 'Google sign-in failed. Please try again.';
       });
     } finally {
       setIsLoading();
