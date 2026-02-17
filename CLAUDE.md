@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Documentation
 
-- **Flame Engine**: https://docs.flame-engine.org/ - Game engine documentation (component lifecycle, rendering, etc.)
+- **Flame Engine**: https://docs.flame-engine.org/ — Component lifecycle, rendering, game loop
 
 ## Project Overview
 
-Flutter client for Tech World - an educational multiplayer game where players solve coding challenges together. Uses Flame engine for the game world and LiveKit for video chat, positions, and AI tutor chat.
+Flutter client for Tech World — an educational multiplayer game where players solve coding challenges together. Uses Flame engine for the game world and LiveKit for video chat, player positions, and AI tutor chat. All real-time communication goes through LiveKit; there is no separate game server.
 
 ## Build & Run
 
@@ -31,30 +31,40 @@ git config core.hooksPath .githooks
 
 ### Service Locator Pattern
 
-Services are created in `main.dart` and registered with `Locator`:
+Services are registered with `Locator` and accessed via `locate<T>()`:
 
-```dart
-Locator.add<AuthService>(authService);
-Locator.add<LiveKitService>(liveKitService);
-Locator.add<ChatService>(chatService);
-Locator.add<TechWorld>(techWorld);
-```
+- `AuthService` — registered at startup in `_initializeApp()`
+- `TechWorld` — registered at startup
+- `TechWorldGame` — registered at startup
+- `LiveKitService` — registered dynamically on sign-in, removed on sign-out
+- `ChatService` — registered dynamically on sign-in, removed on sign-out
+- `ProximityService` — registered dynamically on sign-in, removed on sign-out
 
-Access anywhere via `locate<T>()`.
+Use `Locator.maybeLocate<T>()` for services that may not be registered yet.
 
 ### App Flow
 
-1. **Auth**: User authenticates via `AuthGate` using Firebase Auth
-2. **LiveKit**: On sign-in, `LiveKitService` connects to LiveKit room with token from Firebase Function
-3. **Game**: Flame game world renders with video bubbles and chat panel
+1. **Initialization**: `_initializeApp()` creates Firebase, `AuthService`, `TechWorld`, and `TechWorldGame`. Shows `LoadingScreen` with progress bar during startup.
+2. **Auth**: `AuthGate` handles sign-in (email, Google, Apple, anonymous) with friendly error messages for `FirebaseAuthException` codes.
+3. **Sign-in**: `_onAuthStateChanged()` creates `LiveKitService`, `ChatService`, `ProximityService`, registers them with `Locator`, connects to LiveKit, enables camera/mic.
+4. **Game**: `GameWidget` renders the Flame world. `ProximityVideoOverlay` renders video feeds as Flutter widgets on top of the game.
+5. **Sign-out**: `_onAuthStateChanged()` disposes and removes all dynamic services from `Locator`.
+
+### Key Classes
+
+- **`TechWorldGame`** (`lib/flame/tech_world_game.dart`) — extends `FlameGame`, wraps the `TechWorld` world component, loads sprite images on startup.
+- **`TechWorld`** (`lib/flame/tech_world.dart`) — extends `World`, manages all game components (players, barriers, terminals, video bubbles, wall occlusion), handles taps for pathfinding movement, subscribes to LiveKit events.
 
 ### Communication (All via LiveKit)
 
 - **Video/Audio**: LiveKit tracks for proximity-based video chat
-- **Data channels**: All game state via LiveKit data channels (replaced WebSocket game server)
+- **Data channels**: Player positions and chat messages
 - **Bot (Clawd)**: Runs on GCP Compute Engine, joins room as participant `bot-claude`
 
+**LiveKit room name**: Hardcoded as `'tech-world'` in `main.dart` (not the map ID).
+
 **Data Channel Topics:**
+
 | Topic | Direction | Purpose |
 |-------|-----------|---------|
 | `position` | broadcast | Player position updates |
@@ -62,32 +72,60 @@ Access anywhere via `locate<T>()`.
 | `chat-response` | broadcast | Bot responses |
 | `ping` / `pong` | targeted | Connectivity testing |
 
+### UI Layout
+
+**Side panel priority** (only one shown at a time): map editor > code editor > chat panel.
+
+**Toolbar** (top-right when authenticated): `MapSelector` + map editor button + `AuthMenu`.
+
+**Responsive breakpoints:**
+- `>= 1200`: Welcome panel shown on left
+- `>= 800`: Side panels 480px (editor) / 320px (chat); below 800: 360px / 280px
+
+**Connection failure**: Orange banner at bottom-left when LiveKit connection fails.
+
 ### Maps
 
-Predefined maps are defined in `lib/flame/maps/`:
+6 predefined maps defined in `lib/flame/maps/predefined_maps.dart`:
 
-- `game_map.dart`: `GameMap` class with id, name, barriers (mini-grid coordinates), spawn point, and terminals
-- `predefined_maps.dart`: Available maps including:
-  - `openArena` - No barriers, free movement
-  - `lRoom` - L-shaped walls (default map), 2 coding terminals
-  - `fourCorners` - Barriers in each corner
-  - `simpleMaze` - Basic maze pattern
+| Map | ID | Terminals | Notes |
+|-----|----|-----------|-------|
+| Open Arena | `open_arena` | 0 | No barriers |
+| The L-Room | `l_room` | 2 | Default map, has background image |
+| Four Corners | `four_corners` | 0 | 5x5 barrier blocks in each corner |
+| Simple Maze | `simple_maze` | 0 | Outer walls + internal maze |
+| The Library | `the_library` | 4 | ASCII-parsed, bookshelf layout |
+| The Workshop | `the_workshop` | 2 | ASCII-parsed, maker space |
 
-The default map (`lRoom`) is used in `main.dart` and its `id` is used as the LiveKit room name.
+- `GameMap` class (`lib/flame/maps/game_map.dart`): `id`, `name`, `barriers`, `spawnPoint`, `terminals`, `backgroundImage`
+- `map_parser.dart`: Parses ASCII format (`.` open, `#` barrier, `S` spawn, `T` terminal) into `GameMap`
+- Grid size: 50x50, cell size: 16x16 pixels
+- **Runtime map switching**: `MapSelector` widget calls `TechWorld.loadMap()`, which tears down old components and creates new ones. Auto-exits editor mode and closes code editor on switch.
+
+### Map Editor
+
+Paint custom maps on the 50x50 grid with live preview in the game canvas.
+
+**Key files:**
+- `lib/map_editor/map_editor_panel.dart` — Sidebar UI with paintable grid, toolbar, import/export
+- `lib/map_editor/map_editor_state.dart` — Grid state model (extends `ChangeNotifier`), paint tools
+- `lib/flame/components/map_preview_component.dart` — Renders editor state on game canvas, caches as `Picture` for performance
+
+**Paint tools:** barrier, spawn, terminal, eraser. Single spawn point enforced.
+
+**Workflow:** Enter via toolbar button → `TechWorld.enterEditorMode()` shows `MapPreviewComponent`, hides barriers and wall occlusion → edit grid → export as ASCII or load existing maps → exit via button or map switch.
+
+### Wall Occlusion
+
+`WallOcclusionComponent` (`lib/flame/components/wall_occlusion_component.dart`) creates sprite overlays from the background PNG for walls. Each overlay extends 1 cell above a barrier and uses y-priority so characters walking behind walls are occluded. Only active for maps with a `backgroundImage`. Hidden during editor mode.
 
 ### Proximity Detection
 
-`ProximityService` emits events when players enter/exit proximity range:
+`ProximityService` emits stream events when players enter/exit proximity range:
 
 - Uses Chebyshev distance (accounts for diagonal movement)
 - Default threshold: 3 grid squares
 - Stream-based: subscribe to `proximityEvents` for enter/exit notifications
-
-### LiveKit Integration
-
-- `LiveKitService` (`lib/livekit/livekit_service.dart`) manages room connection, participants, and data channels
-- Token retrieved from Firebase Function `retrieveLiveKitToken`
-- Data channels used for positions and chat (replaces old WebSocket game server)
 
 ### Video Bubble Component (In-Game Video Rendering)
 
@@ -101,49 +139,32 @@ LiveKit VideoTrack → Native RTCVideoRenderer → Shared Memory Buffer → Dart
 
 **Key Files:**
 
-- `lib/flame/components/video_bubble_component.dart` - Flame component that renders video as circular bubble
-- `lib/native/video_frame_ffi.dart` - Dart FFI bindings for native frame capture
-- `macos/Runner/VideoFrameCapture.h` - Native C API header
-- `macos/Runner/VideoFrameCapture.m` - Native Objective-C implementation using `FlutterWebRTCPlugin`
+- `lib/flame/components/video_bubble_component.dart` — Flame component rendering video as circular bubble
+- `lib/native/video_frame_ffi.dart` — Dart FFI bindings for native frame capture
+- `macos/Runner/VideoFrameCapture.h` / `.m` — Native Objective-C implementation
 
 **Platform Support:** macOS uses FFI capture, web uses ImageBitmap, other platforms show placeholder with initial.
 
-**Timing Note:** When a remote participant joins, their video track may not be subscribed yet. The bubble is initially created as a `PlayerBubbleComponent` (placeholder with initial). When `TrackSubscribedEvent` fires, `_refreshBubbleForPlayer()` upgrades it to a `VideoBubbleComponent`. See `lib/flame/tech_world.dart` lines 366-375.
+**Bubble lifecycle:** When a remote participant joins, a `PlayerBubbleComponent` placeholder is created. When `TrackSubscribedEvent` fires, it's upgraded to `VideoBubbleComponent`. `ProximityVideoOverlay` provides a Flutter widget alternative using LiveKit's native `VideoTrackRenderer`.
 
-**Debugging Notes:** See `docs/video-capture-debugging.md` for detailed notes on:
-- Release mode (dart2js) compatibility fixes (PR #71)
-- Remote participant video capture (PR #72)
-- iOS FFI crash fix (PR #73)
-- Video lifecycle fix for proximity re-entry (PR #76)
-- Web remote video capture fixes (PR #77) - see below
+**Debugging Notes:** See `docs/video-capture-debugging.md` for detailed notes on PRs #71–#77.
 
-**Web Remote Video Capture (PR #77):** Fixed multiple issues preventing remote participant video from rendering on web:
-1. **Track lifecycle**: Don't call `track.stop()` on dispose - the track is owned by LiveKit and stopping it permanently ends the track for everyone
-2. **DOM attachment**: Video element must be added to document body for Chrome to properly load the video
-3. **Async initialization**: `createFromStream` now waits for video to be ready (play() + dimensions) before returning
-4. **Duplicate prevention**: Added `_captureInitializing` flag to prevent multiple concurrent async initialization attempts
-5. **Alternative approach**: Also added `ProximityVideoOverlay` using Flutter widgets + LiveKit's native `VideoTrackRenderer` as a simpler alternative
-
-**Testing Multi-Participant Video:** Use LiveKit CLI to add simulated participants:
+**Testing Multi-Participant Video:**
 ```bash
-# Install LiveKit CLI
 brew install livekit-cli
-
-# Add a test participant with demo video (use room name from app - note underscore vs hyphen)
 LIVEKIT_URL=wss://testing-g5wrpk39.livekit.cloud \
 LIVEKIT_API_KEY=<key> \
 LIVEKIT_API_SECRET=<secret> \
 lk room join --identity video-test-user --publish-demo l_room
 ```
-The `--publish-demo` flag publishes a looped 720p demo video. The test participant appears at position (0,0) - walk to the top-left corner to trigger proximity.
 
 ### Voice Services (Browser Web Speech API)
 
-- **TTS**: `lib/services/tts_service.dart` (conditional export) - Clawd speaks responses via `speechSynthesis`
-  - Web: `tts_service_web.dart` uses `package:web` for typed access to `speechSynthesis` API
+- **TTS**: `lib/services/tts_service.dart` (conditional export) — Clawd speaks responses via `speechSynthesis`
+  - Web: `tts_service_web.dart` uses `package:web` for typed API access
   - Native: `tts_service_stub.dart` no-op
-- **STT**: `lib/services/stt_service.dart` (conditional export) - Voice input via `SpeechRecognition`
-  - Web: `stt_service_web.dart` uses `dart:js_interop_unsafe` with `globalContext` (SpeechRecognition not in `package:web`)
+- **STT**: `lib/services/stt_service.dart` (conditional export) — Voice input via `SpeechRecognition`
+  - Web: `stt_service_web.dart` uses `dart:js_interop_unsafe` with `globalContext`
   - Native: `stt_service_stub.dart` no-op
 - Pattern: `export 'stub.dart' if (dart.library.js_interop) 'web.dart'`
 
@@ -151,12 +172,52 @@ The `--publish-demo` flag publishes a looped 720p demo video. The test participa
 
 - `ChatService` manages shared chat via LiveKit data channels
 - All participants see all messages (questions and responses)
-- Bot responses come from `bot-claude` participant running on GCP Compute Engine
-- `ChatPanel` widget renders the chat UI with mic button (STT) and auto-spoken responses (TTS)
+- Bot responses come from `bot-claude` participant on GCP Compute Engine
+- `ChatPanel` renders chat UI with mic button (STT) and auto-spoken responses (TTS)
+
+### In-Game Code Editor
+
+Coding terminal stations on the map. Tap a terminal (within 2 grid squares) to open the editor panel replacing the chat sidebar.
+
+**23 challenges** across 3 difficulty tiers:
+- **Beginner (10):** Hello Dart, Sum a List, FizzBuzz, String Reversal, Even Numbers, Palindrome Check, Word Counter, Temperature Converter, Find Maximum, Remove Duplicates
+- **Intermediate (7):** Binary Search, Fibonacci Sequence, Caesar Cipher, Anagram Checker, Flatten List, Matrix Sum, Bracket Matching
+- **Advanced (6):** Merge Sort, Stack Implementation, Roman Numerals, Run Length Encoding, Longest Common Subsequence, Async Data Pipeline
+
+Terminals cycle through challenges: `allChallenges[terminalIndex % allChallenges.length]`.
+
+**Key files:**
+- `lib/editor/challenge.dart` — `Challenge` data model with `Difficulty` enum
+- `lib/editor/predefined_challenges.dart` — All 23 challenges, accessed via `allChallenges`
+- `lib/editor/code_editor_panel.dart` — Flutter widget wrapping `CodeForgeWeb`
+- `lib/flame/components/terminal_component.dart` — Flame component for terminal stations
+
+**Workflow:** Terminal tap → proximity check → `TechWorld.activeChallenge` ValueNotifier → `main.dart` swaps `ChatPanel` for `CodeEditorPanel` → submit sends code to Clawd via `ChatService` → editor closes.
+
+**Planned — LSP Integration:**
+
+```
+Browser (Flutter web)
+  └─ code_forge_web widget
+       └─ WebSocket (LspSocketConfig)
+            └─ lsp-ws-proxy (server)
+                 └─ dart language-server --protocol=lsp
+```
+
+`code_forge_web` already supports LSP via `CodeForgeWebController(lspConfig: LspSocketConfig(...))`.
+
+### Auth
+
+`AuthGate` (`lib/auth/auth_gate.dart`) supports email/password, Google Sign-In, Apple Sign-In (iOS/macOS), and anonymous guest login. Catches `FirebaseAuthException` and shows friendly error messages (e.g. "No account found with that email", "Too many attempts. Please wait a moment and try again.").
 
 ## Testing
 
-CI runs: `flutter analyze --fatal-infos` then `flutter test --coverage` with 50% coverage threshold.
+**CI** (`.github/workflows/`):
+1. Docs-only changes (`.md`, `.txt`, `LICENSE`, `CHANGELOG`) skip tests and deploy.
+2. `flutter analyze --fatal-infos`
+3. `flutter test --coverage` with **45% coverage threshold** on merge to main.
+
+**Excluded from coverage:** `video_frame_ffi.dart`, `video_frame_web_stub.dart`, `video_frame_web_v2_stub.dart`, `video_bubble_component.dart`, `auth_service.dart`.
 
 ## Configuration Required
 
@@ -176,26 +237,13 @@ LIVEKIT_API_KEY=<key>
 LIVEKIT_API_SECRET=<secret>
 ```
 
-## Claude Bot (Clawd - AI Tutor)
+## Claude Bot (Clawd — AI Tutor)
 
-### Current Implementation
-
-- **Source Code**: `../tech_world_bot/` - Node.js using `@livekit/agents` framework
+- **Source Code**: `../tech_world_bot/` — Node.js using `@livekit/agents` framework
 - **Deployment**: GCP Compute Engine (`tech-world-bot` instance)
 - **Joins LiveKit**: As participant `bot-claude`, listens for `chat` topic messages
-- **Claude API**: Uses Claude 3.5 Haiku (`claude-3-5-haiku-20241022`) for fast, cost-effective responses
+- **Claude API**: Uses Claude 3.5 Haiku for fast, cost-effective responses
 - **Shared Chat**: All participants see all questions and answers
-
-### Local Development
-
-```bash
-cd ../tech_world_bot
-cp .env.example .env   # Add your API keys
-npm install
-npm run dev            # Runs with LiveKit Agents CLI
-```
-
-### Bot Management (Production)
 
 ```bash
 # Check status
@@ -208,59 +256,9 @@ gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-t
 gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="cd ~/tech_world_bot && git pull && npm install && npm run build && pm2 restart tech-world-bot"
 ```
 
-### Planned Features
+## Grant Application
 
-**Core Tutoring:**
-- Hint system for stuck players (guided hints, not solutions)
-- Code review with feedback on style, edge cases, efficiency
-- Concept explainer for programming questions
-
-**Voice Integration (Implemented):**
-- Browser STT: microphone → SpeechRecognition API → chat message → Clawd
-- Browser TTS: Clawd response → speechSynthesis API → spoken audio
-
-### In-Game Code Editor
-
-Coding terminal stations placed on the map. Players tap a terminal (when within 2 grid squares) to open a code editor panel that replaces the chat sidebar.
-
-**Current State:**
-- `CodeEditorPanel` wraps `code_forge_web` with Dart syntax highlighting via `re_highlight`
-- 3 predefined challenges: Hello Dart, Sum a List, FizzBuzz
-- Submit sends code to Clawd for review via chat
-- No LSP server yet - local syntax highlighting only
-
-**Key Files:**
-- `lib/editor/challenge.dart` - `Challenge` data model
-- `lib/editor/predefined_challenges.dart` - Starter challenges (`allChallenges`)
-- `lib/editor/code_editor_panel.dart` - Flutter widget wrapping `CodeForgeWeb`
-- `lib/flame/components/terminal_component.dart` - Flame component for terminal stations
-
-**How it works:**
-1. `TechWorld.onLoad()` creates `TerminalComponent` for each `defaultMap.terminals[i]`
-2. Terminal tap checks Chebyshev distance <= 2 from player
-3. Sets `TechWorld.activeChallenge` ValueNotifier to challenge ID
-4. `main.dart` swaps `ChatPanel` for `CodeEditorPanel` via `ValueListenableBuilder`
-5. Submit sends code as chat message to Clawd, then closes editor
-
-**Planned - LSP Integration:**
-
-```
-Browser (Flutter web)
-  └─ code_forge_web widget
-       └─ WebSocket (LspSocketConfig)
-            └─ lsp-ws-proxy (server)
-                 └─ dart language-server --protocol=lsp
-```
-
-- [`code_forge_web`](https://pub.dev/packages/code_forge_web) already supports LSP via `CodeForgeWebController(lspConfig: LspSocketConfig(...))`
-- `lsp-ws-proxy` bridges WebSocket connections to analysis server stdio
-- Would add real-time diagnostics, completions, hover docs, code actions
-
-**Open questions:**
-- Where to host the LSP proxy (existing GCP instance vs. dedicated)
-- Session lifecycle (per-user or per-challenge analysis server processes)
-- Code execution sandboxing (if needed beyond static analysis)
-- Clawd-based evaluation via Claude API as alternative to execution
+Screen Australia Games Production Fund application materials are in `docs/grant-application/`.
 
 ## LiveKit Self-Hosting Migration
 
@@ -274,11 +272,6 @@ static const _serverUrl = 'wss://testing-g5wrpk39.livekit.cloud';
 - Free tier: 500 participant-minutes/month
 - Token generation via Firebase Cloud Function
 
-### Migration Steps
-
-1. **Update server URL** in `lib/livekit/livekit_service.dart`
-2. **Update Firebase Functions env vars** with self-hosted credentials
-
 ### Server Requirements
 
 For ~50 concurrent users:
@@ -289,4 +282,4 @@ For ~50 concurrent users:
 | RAM | 4-8 GB |
 | Ports | 443, 7881, UDP 50000-60000 |
 
-ARM64 compatible - can run on OCI free tier (4 OCPU / 24 GB Ampere).
+ARM64 compatible — can run on OCI free tier (4 OCPU / 24 GB Ampere).
