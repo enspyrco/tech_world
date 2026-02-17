@@ -17,19 +17,20 @@ The project has been in active development since July 2024. The current prototyp
 
 **What has been built:**
 
-- **Multiplayer game world:** Real-time player synchronisation via LiveKit data channels. Animated 8-directional player sprites with tap-to-move pathfinding (Jump Point Search) around barriers. 4 playable maps with grid-based navigation and customisable layouts.
+- **Multiplayer game world:** Real-time player synchronisation via LiveKit data channels (no separate game server). Animated 8-directional player sprites with tap-to-move pathfinding (Jump Point Search) around barriers. 6 playable maps with runtime switching via UI dropdown, including 2 ASCII-parsed maps with background art and wall occlusion (characters walk behind walls using y-priority sprite overlays).
 - **Proximity-based video chat:** When two players walk within 3 grid squares of each other, their live video feeds appear as circular bubbles inside the game world. Uses zero-copy FFI frame capture on macOS and GPU-efficient ImageBitmap rendering on web. Camera and microphone controls.
 - **AI tutor (Clawd):** A bot powered by the Claude API that joins the game room as a live participant. Players can ask questions, submit code for review, and receive structured feedback. Supports text-to-speech (Clawd speaks responses aloud) and speech-to-text (players can speak instead of typing).
-- **In-game code editor:** Terminal stations placed on maps that players interact with to open a code editor panel. Dart syntax highlighting, 3 starter coding challenges (Hello Dart, Sum a List, FizzBuzz), and AI-powered code review on submission.
-- **Authentication & infrastructure:** Firebase Auth (email/password, Google, Apple Sign-In). LiveKit token generation via Firebase Cloud Function. Automated deployment to Firebase Hosting on merge to main. Loading screen with progress stages.
+- **In-game code editor:** 8 terminal stations across 3 maps that players interact with to open a code editor panel. Dart syntax highlighting. 23 coding challenges across 3 difficulty tiers (10 Beginner, 7 Intermediate, 6 Advanced — from Hello Dart to Async Data Pipeline). AI-powered code review on submission.
+- **Map editor:** Visual map editor with paint tools (barrier, spawn, terminal, eraser), live preview rendered on the game canvas, and ASCII import/export for sharing maps.
+- **Authentication & infrastructure:** Firebase Auth (email/password, Google, Apple Sign-In, anonymous guest login) with friendly error messages for common failures. LiveKit token generation via Firebase Cloud Function. Automated deployment to Firebase Hosting on merge to main. Loading screen with progress bar. Connection failure banner. Responsive layout with breakpoints.
 
-**Development metrics:** 85+ pull requests merged. ~10,000 lines of production Dart code. ~5,800 lines of tests across 34 test files. CI pipeline enforces static analysis and test coverage on every PR.
+**Development metrics:** 99 pull requests merged (61 commits in 2026 alone). ~12,200 lines of production Dart code across 74 source files. ~6,700 lines of tests across 36 test files. CI pipeline enforces static analysis and 45% test coverage on every PR; docs-only changes skip CI.
 
 ### What are the current strengths of the project? What are the current challenges or weaknesses?
 
 **Strengths:**
 
-- **The hard technical problems are solved.** Real-time multiplayer synchronisation, in-engine video rendering via WebRTC, and AI bot integration as a live participant are all shipped and working across platforms. These were the highest-risk, highest-complexity challenges, and they are behind us.
+- **The hard technical problems are solved — and substantial content is built.** Real-time multiplayer synchronisation, in-engine video rendering via WebRTC, AI bot integration, 23 coding challenges across 3 difficulty tiers, 6 maps with runtime switching, a visual map editor, wall occlusion, and voice input/output are all shipped and working across platforms. These were the highest-risk, highest-complexity challenges, and they are behind us.
 - **Unique genre intersection.** No existing game combines real coding challenges as the core gameplay mechanic with live multiplayer video presence and an AI tutor companion. Tech World sits at an unoccupied intersection of Zachtronics-style coding puzzles, social virtual worlds, and AI-assisted learning.
 - **Production-grade engineering practices.** Git-based version control with branch protection. Automated CI/CD with analysis and test coverage enforcement. Clean, well-documented codebase. This is not a prototype held together with tape — it is a production codebase ready to scale.
 - **Open-source technology stack.** Flutter, Flame, and LiveKit are all open-source. No dependency on proprietary engines or platforms that could introduce licensing risk or vendor lock-in.
@@ -37,13 +38,14 @@ The project has been in active development since July 2024. The current prototyp
 
 **Challenges / weaknesses:**
 
-- **Content volume.** The prototype has 3 coding challenges. A compelling demo needs 20+ across multiple difficulty tiers. Creating well-designed challenges with balanced difficulty and quality AI feedback is the primary content production task.
-- **Progression and retention.** There is no progression system yet — no completion tracking, no scores, no sense of journey. Players can solve challenges but have no reason to come back. This is the most important game design gap.
+- **Progression and retention.** There is no progression system yet — no completion tracking, no scores, no sense of journey. Players can solve 23 challenges but have no persistent record of their progress and no reason to come back. This is the most important game design gap.
+- **Challenge persistence.** Player progress is not saved across sessions. Closing the browser loses all state.
 - **Audio.** The game is currently silent. Sound design (ambient music, interaction SFX, feedback sounds) is essential to game feel and is entirely missing.
 - **Onboarding.** A new player dropped into the world has no guidance on what to do or where to go. A tutorial or guided first experience is needed.
-- **Visual polish.** The UI is functional but not polished. Menus, transitions, and responsive layout need a refinement pass.
+- **Enhanced tutoring.** Clawd reviews code on submission but doesn't yet provide structured hints, graded feedback, or difficulty-aware responses. The "I'm stuck" workflow doesn't exist yet.
+- **Visual polish.** The UI is functional but not fully polished. Menus, transitions, and some visual details need a refinement pass.
 
-These weaknesses are all **content and polish** problems — they are well-understood, plannable work. None require technical R&D or carry significant execution risk.
+These weaknesses are all **game loop and polish** problems — they are well-understood, plannable work. None require technical R&D or carry significant execution risk. The content foundation (challenges, maps, editor, voice, video) is built.
 
 ### Who is on the team? What appropriate experience do they have to execute your plans?
 
@@ -104,13 +106,16 @@ Enspyrco's goal is to become a sustainable Australian independent game studio th
 ### What significant milestone are you currently working towards for the game?
 
 **Playable public demo at PAX Aus 2026 (October 9–11, Melbourne Convention Centre)** with:
-- 20 coding challenges across beginner, intermediate, and advanced difficulty tiers
+- 23+ coding challenges across beginner, intermediate, and advanced difficulty tiers (23 already built)
 - A progression system tracking challenge completion, scores, and player journey
-- Enhanced AI tutoring with structured hints, graded feedback, and code review
+- Challenge persistence (save/resume across sessions)
+- Enhanced AI tutoring with structured hints, graded feedback, and "I'm stuck" workflow
 - Sound design (ambient music, interaction SFX, notification sounds)
-- 2 new themed maps
 - Onboarding tutorial for new players
+- Points and rewards system (badges, achievements)
 - Accessibility features (keyboard navigation, text sizing, colour contrast)
+
+Note: 6 maps with runtime switching, a visual map editor, wall occlusion, voice input/output, and proximity-based video chat are already built and will be part of the demo.
 
 This aligns with Screen Australia's supported milestone: *"Completion of a demo to present at a physical event."*
 
@@ -135,15 +140,17 @@ This aligns with Screen Australia's supported milestone: *"Completion of a demo 
 
 | Weakness | Plan | Timeline |
 |---|---|---|
-| **Content volume** (3 challenges → 20) | Design and implement 17 new challenges across 3 difficulty tiers. Each challenge includes: problem description, starter code, AI review rubric, structured hints. | Apr–Aug 2026 |
-| **Progression system** | Build challenge completion tracking, scoring, and a visual progress indicator. Persist state via Firebase so players can return and continue. | Apr–Jun 2026 |
+| **Progression system** | Build challenge completion tracking, scoring, and a visual progress indicator for all 23 existing challenges. | Apr–Jun 2026 |
+| **Challenge persistence** | Persist challenge state via Firebase so players can return and continue where they left off. | Apr–May 2026 |
+| **Enhanced tutoring** | Structured hints, grading rubric, difficulty-aware feedback. "I'm stuck" button that provides guided hints without giving solutions. | Apr–Jun 2026 |
 | **Audio** | Commission ambient music tracks and interaction SFX from an Australian sound designer. Integrate with Flame audio system. Player-controllable volume/mute. | May–Jun 2026 |
 | **Onboarding** | Guided first-time experience: walk player through movement, terminal interaction, challenge solving, and chat. Triggered on first login, skippable for returning players. | Jul–Aug 2026 |
-| **Visual polish** | UI/UX refinement pass: improved menus, transitions, responsive layout for different screen sizes. Consistent visual language across all screens. | Aug–Sep 2026 |
+| **Points & rewards** | Points and badges for completed challenges. Achievement system for milestones. | Jul–Aug 2026 |
+| **Visual polish** | UI/UX refinement pass: improved menus, transitions. Consistent visual language across all screens. | Aug–Sep 2026 |
 
 ### Why is Screen Australia funding necessary to help you achieve your goal?
 
-Without funding, Tech World remains a spare-time project with no fixed timeline. The technical foundation is strong, but the content, polish, and event presence required to reach PAX Aus in October 2026 cannot be achieved on evenings and weekends alone.
+Without funding, Tech World remains a spare-time project with no fixed timeline. The technical foundation and content are strong — 23 challenges, 6 maps, video chat, AI tutor, map editor, voice services — but the game loop (progression, persistence, sound), polish, and event presence required to reach PAX Aus in October 2026 cannot be achieved on evenings and weekends alone.
 
 Screen Australia funding enables:
 - **Dedicated development time** — the lead developer can commit focused hours to the project rather than fitting it around other work. Developer wages represent 60% of the budget.
@@ -151,7 +158,7 @@ Screen Australia funding enables:
 - **PAX Aus presence** — exhibitor booth, travel, accommodation, and signage. Without funding, attending PAX as an exhibitor is not financially viable.
 - **Specialist input** — UX review, accessibility audit, and structured playtesting with external participants.
 
-The grant transforms a strong prototype into a demo-ready product with a fixed, achievable deadline.
+The grant transforms a feature-complete prototype into a polished, demo-ready product with a fixed, achievable deadline. The remaining work is game loop and polish — not R&D.
 
 ### What are your plans for next steps following completion of the grant period, and the completion of the project?
 

@@ -129,9 +129,9 @@ Tech World is a multiplayer 2D game built with Flutter and the Flame engine. Pla
 
 ### Technical Stats
 - **First commit:** June 2023 (current architecture since July 2024)
-- **Active development:** 85+ PRs merged
-- **Codebase:** ~10,000 lines of production Dart code
-- **Tests:** ~5,800 lines across 34 test files
+- **Active development:** 99 PRs merged, 61 commits in 2026 alone
+- **Codebase:** ~12,200 lines of production Dart code across 74 source files
+- **Tests:** ~6,700 lines across 36 test files
 - **CI/CD:** Automated analysis, testing (45% coverage threshold), and deployment to Firebase Hosting
 - **Platforms:** Web (primary), macOS, iOS, Android
 
@@ -141,15 +141,16 @@ Tech World is a multiplayer 2D game built with Flutter and the Flame engine. Pla
 - 2D game world rendered with Flame engine
 - Tap-to-move with animated 8-directional player sprites
 - Jump Point Search pathfinding around barriers
-- 4 predefined maps with customizable layouts (Open Arena, L-Room, Four Corners, Simple Maze)
-- Grid-based coordinate system with mini-grid navigation
-- Terminal station components placed on maps (green ">_" icons)
+- 6 predefined maps with runtime switching via UI dropdown (Open Arena, The L-Room, Four Corners, Simple Maze, The Library, The Workshop)
+- 2 maps use ASCII-parsed format with background art and wall occlusion
+- Grid-based coordinate system (50x50 grid, 16x16px cells)
+- 8 terminal stations across maps (2 in L-Room, 4 in Library, 2 in Workshop)
 
 #### Multiplayer
-- Real-time multiplayer via LiveKit data channels
+- Real-time multiplayer via LiveKit data channels (no separate game server)
 - All players visible in shared game world with animated sprites
 - Position broadcasting and synchronization
-- Room-based sessions (map ID = room name)
+- Room-based sessions (hardcoded room name)
 
 #### Proximity-Based Video Chat
 - Video feeds rendered as circular bubbles in the game world
@@ -170,33 +171,53 @@ Tech World is a multiplayer 2D game built with Flutter and the Flame engine. Pla
 - Terminal stations on maps that players can interact with (proximity-gated, 2 grid squares)
 - Code editor panel (replaces chat sidebar) using code_forge_web
 - Dart syntax highlighting via re_highlight
-- 3 starter coding challenges: Hello Dart, Sum a List, FizzBuzz
+- 23 coding challenges across 3 difficulty tiers:
+  - **Beginner (10):** Hello Dart, Sum a List, FizzBuzz, String Reversal, Even Numbers, Palindrome Check, Word Counter, Temperature Converter, Find Maximum, Remove Duplicates
+  - **Intermediate (7):** Binary Search, Fibonacci Sequence, Caesar Cipher, Anagram Checker, Flatten List, Matrix Sum, Bracket Matching
+  - **Advanced (6):** Merge Sort, Stack Implementation, Roman Numerals, Run Length Encoding, Longest Common Subsequence, Async Data Pipeline
 - Submit code to Clawd for AI-powered review
 
+#### Map Editor
+- Visual map editor with paint tools (barrier, spawn, terminal, eraser)
+- Live preview rendered on the game canvas (cached as Picture for performance)
+- Import/export maps in ASCII format
+- Load existing maps for editing
+- Auto-exits editor mode on map switch
+
+#### Wall Occlusion
+- Y-priority sprite overlays so characters walk behind walls
+- Extracts wall art from background PNG, extends 1 cell above barriers
+- Only active for maps with background images
+- Hidden during map editor mode
+
 #### Authentication & Infrastructure
-- Firebase Auth (email/password, Google Sign-In, Apple Sign-In)
+- Firebase Auth (email/password, Google Sign-In, Apple Sign-In, anonymous guest login)
+- Friendly error messages for common auth failures (wrong password, account not found, too many attempts, etc.)
 - LiveKit token generation via Firebase Cloud Function
 - Auto-deploy to Firebase Hosting on merge to main
-- Loading screen with progress stages
+- Loading screen with progress bar and staged messages
 - Auth menu with sign-out
+- Connection failure banner when LiveKit is unavailable
+- Responsive layout with breakpoints (1200px welcome panel, 800px panel widths)
 
 ### Features — NOT YET IMPLEMENTED
 
 | Feature | Priority | Complexity |
 |---|---|---|
-| Progression system (track completion, scoring) | HIGH | Medium |
-| Challenge persistence (save progress) | HIGH | Medium |
+| Progression system (track completion, scoring, stars) | HIGH | Medium |
+| Challenge persistence (save progress across sessions via Firebase) | HIGH | Medium |
 | Sound effects & music | HIGH | Medium |
-| More coding challenges (target: 20+) | HIGH | Low per challenge |
-| Challenge difficulty tiers | HIGH | Low |
-| Enhanced Clawd tutoring (hints, grading, feedback) | HIGH | Medium |
-| More maps / themed areas | MEDIUM | Low |
-| LSP integration for code editor | MEDIUM | High |
+| Enhanced Clawd tutoring (structured hints, grading rubric, difficulty-aware feedback) | HIGH | Medium |
+| Onboarding tutorial (guided first-time experience) | HIGH | Medium |
+| "I'm stuck" button with guided hints from Clawd | MEDIUM | Low |
+| Difficulty feedback system (too easy/too hard) | MEDIUM | Low |
+| Points and rewards for completed challenges | MEDIUM | Medium |
+| LSP integration for code editor (real-time diagnostics, completions) | MEDIUM | High |
 | Leaderboards & achievements | MEDIUM | Medium |
+| Procedural map generation | LOW | High |
+| Map sharing system | LOW | Medium |
 | Social features (friends, DMs) | LOW | High |
 | Code execution sandbox | LOW | High |
-| Mobile video support | LOW | Medium |
-| Matchmaking | LOW | High |
 
 ---
 
@@ -207,7 +228,7 @@ Focus: Make the prototype demo-ready for assessors.
 
 | Task | Due | Est. Days |
 |---|---|---|
-| Fix any bugs in current prototype | Feb 17 | 2 |
+| Update documentation to reflect current state | Feb 17 | 1 |
 | Test prototype on fresh machine (assessor experience) | Feb 18 | 1 |
 | Record 30-second gameplay footage | Feb 20 | 1 |
 | Write Production Plan (7 pages, use SA template) | Feb 22 | 3 |
@@ -218,28 +239,26 @@ Focus: Make the prototype demo-ready for assessors.
 | Compile team CVs | Mar 1 | 1 |
 | Final review and submit on SmartyGrants | Mar 3–4 | 2 |
 
-### Phase 2: Core Game Loop (April–June 2026, funded)
-Focus: Transform prototype into a complete game loop with progression.
+### Phase 2: Progression & Sound (April–June 2026, funded)
+Focus: Add the game loop — progression, persistence, sound, and enhanced tutoring. The content foundation (23 challenges, 6 maps, map editor, voice services) is already built.
 
 | Task | Target | Est. Weeks |
 |---|---|---|
 | Progression system (challenge completion tracking, scores, stars) | Apr 2026 | 2 |
 | Challenge persistence (save/resume via Firebase) | Apr 2026 | 2 |
-| 10 additional coding challenges across 3 difficulty tiers | May 2026 | 3 |
-| Enhanced Clawd tutoring (structured hints, code review feedback, grading rubric) | May 2026 | 3 |
-| Sound design (ambient music, interaction SFX, chat notification sounds) | Jun 2026 | 2 |
-| 2 new themed maps (Library, Workshop) | Jun 2026 | 1 |
+| Enhanced Clawd tutoring (structured hints, grading rubric, difficulty-aware feedback) | May 2026 | 3 |
+| Sound design (ambient music, interaction SFX, chat notification sounds) | May–Jun 2026 | 3 |
+| "I'm stuck" button with guided hints from Clawd | Jun 2026 | 1 |
 
 ### Phase 3: Polish & Event Prep (July–September 2026, funded)
 Focus: Polish for PAX Aus demo.
 
 | Task | Target | Est. Weeks |
 |---|---|---|
-| 10 more coding challenges (20 total) | Jul 2026 | 2 |
-| Achievement system (badges for milestones) | Jul 2026 | 2 |
-| Onboarding tutorial (guided first experience) | Aug 2026 | 2 |
+| Onboarding tutorial (guided first experience) | Jul 2026 | 2 |
+| Points and rewards system (badges, achievements) | Jul 2026 | 2 |
 | UI/UX polish pass (menus, transitions, responsive design) | Aug 2026 | 2 |
-| LSP integration for real-time code diagnostics | Aug–Sep 2026 | 3 |
+| Accessibility features (keyboard nav, text sizing, colour contrast) | Aug 2026 | 2 |
 | Performance optimization and cross-platform testing | Sep 2026 | 2 |
 | PAX Aus demo build preparation | Sep 2026 | 1 |
 
@@ -254,7 +273,7 @@ Focus: Polish for PAX Aus demo.
 ## 5. Milestone & Budget Plan
 
 ### Proposed Milestone
-> **Playable public demo at PAX Aus 2026 (October 9–11) with 20 coding challenges, progression system, AI tutoring, and multiplayer video chat.**
+> **Playable public demo at PAX Aus 2026 (October 9–11) with 23+ coding challenges, progression system, enhanced AI tutoring, sound design, and multiplayer video chat.**
 
 This aligns with Screen Australia's supported milestone: *"Demo completion for events."*
 
@@ -349,18 +368,23 @@ The Finance Plan & Budget spreadsheet must present a **complete picture** of the
 **Key argument:** The hardest technical challenges are already solved.
 
 What we've already built (the stuff that's genuinely difficult):
-- Real-time multiplayer synchronization via LiveKit
+- Real-time multiplayer synchronization via LiveKit data channels
 - Zero-copy video rendering inside a game engine (FFI on native, GPU-efficient on web)
 - AI bot integration as a live participant in the game world
+- 23 coding challenges across 3 difficulty tiers with in-game editor
+- 6 maps with runtime switching, including ASCII-parsed maps with background art
+- Visual map editor with paint tools and live preview
+- Wall occlusion system (y-priority sprite overlays)
+- Voice input/output via Web Speech API
 - Cross-platform support (web, macOS, iOS)
 - Automated CI/CD pipeline with test coverage enforcement
 
-What remains is **content and polish** — adding more challenges, progression tracking, sound, and UI refinement. This is straightforward execution, not speculative R&D.
+What remains is **game loop and polish** — progression tracking, challenge persistence, sound design, onboarding, and UI refinement. This is straightforward execution, not speculative R&D.
 
 **Development velocity evidence:**
-- 30+ PRs merged in the last 3 weeks (Jan 29 – Feb 6, 2026)
-- Went from basic movement to full video chat + AI tutor + code editor in ~2 weeks
-- 85+ PRs total, clean git history, comprehensive test coverage
+- 99 PRs merged total, 61 commits in 2026 alone
+- Shipped 23 challenges, 6 maps, map editor, voice services, and wall occlusion in a 3-week sprint (PRs #81–#98)
+- ~12,200 lines of production code, ~6,700 lines of tests, clean git history
 
 **Fair compensation (required by Terms of Trade clause 4.7.a):**
 - Budget must show all team members paid at minimum industry rates
@@ -501,9 +525,9 @@ Clawd — our AI tutor powered by Claude — is a character in the world. You ca
 *[Quick technical montage: multiplayer sync, video bubbles rendering, code editor, chat with AI responses]*
 
 **ON CAMERA:**
-"We already have a working prototype. Real-time multiplayer with position sync. Proximity-based video chat rendered inside the game engine. An AI tutor that joins the room as a live participant. And an in-game code editor with syntax highlighting and AI-powered code review.
+"We already have a working prototype — and it's far beyond a proof of concept. Real-time multiplayer with position sync. Proximity-based video chat rendered inside the game engine. An AI tutor that joins the room as a live participant. Twenty-three coding challenges across three difficulty tiers. Six maps you can switch between at runtime. A visual map editor. Voice input and output. Wall occlusion so characters walk behind walls.
 
-This isn't a mockup — the hard technical challenges are solved. We've built the engine. Now we need to build the game."
+This isn't a mockup — the hard technical challenges are solved. What remains is the game loop: progression, persistence, sound, and polish."
 
 ### [1:30–2:15] THE PLAN — What $100k Buys
 
@@ -514,9 +538,9 @@ This isn't a mockup — the hard technical challenges are solved. We've built th
 
 Here's what that looks like:
 
-**Phase 1** — April to June: Build the core game loop. A progression system that tracks your coding journey. Twenty coding challenges across beginner, intermediate, and advanced tiers. Enhanced AI tutoring with structured hints and feedback. Sound design to bring the world to life.
+**Phase 1** — April to June: Build the game loop on top of our existing content. A progression system that tracks your coding journey. Challenge persistence so you can pick up where you left off. Enhanced AI tutoring with structured hints and graded feedback. Sound design to bring the world to life.
 
-**Phase 2** — July to September: Polish for PAX. An onboarding tutorial. Achievement badges. New themed maps. Performance optimization across platforms.
+**Phase 2** — July to September: Polish for PAX. An onboarding tutorial for new players. Points, rewards, and achievements. Accessibility features. Performance optimization across platforms.
 
 **October: PAX Aus.** A playable demo on the show floor. Players pick up a laptop, walk into Tech World, and start coding together.
 
@@ -532,7 +556,7 @@ Tech World grew out of the 'Adventures In' meetup — a community of developers 
 ### [2:45–3:00] CLOSE — The Ask
 
 **ON CAMERA:**
-"We're Enspyrco. We've built the prototype. The technical risks are behind us. We're asking for $100,000 to take Tech World from prototype to PAX Aus.
+"We're Enspyrco. We've built far more than a prototype — 23 challenges, 6 maps, video chat, AI tutor, map editor, voice input. The technical risks are behind us. We're asking for $100,000 to add the game loop, the polish, and bring Tech World to PAX Aus.
 
 Thank you."
 
@@ -546,13 +570,13 @@ Thank you."
 - [x] **Feb 15:** Download SA templates (Production Plan .docx, Strategic Outcomes .docx, Finance Plan .xlsx)
 - [x] **Feb 15:** Download Guidelines PDF, FAQs, Trends Report for reference
 - [ ] **Feb 15:** Register/log in to SmartyGrants platform
-- [ ] **Feb 16:** Bug-fix pass on prototype — ensure it's rock-solid for assessors
-- [ ] **Feb 16:** Review Terms of Trade document, Screen Australia AI Guiding Principles
-- [ ] **Feb 17:** Test prototype on a fresh machine/browser (simulate assessor experience)
-- [ ] **Feb 17:** Confirm IP ownership is with Enspyrco Pty Ltd; seek legal advice if needed
-- [ ] **Feb 18:** Prepare Prototype Details document (hardware reqs, setup instructions, controls)
-- [ ] **Feb 18:** Consider building a curated "assessor demo" version of prototype
-- [ ] **Feb 19:** Record 30-second gameplay footage video
+- [x] **Feb 17:** Update documentation (README, CLAUDE.md) to reflect current state (PR #99)
+- [ ] **Feb 17–18:** Review Terms of Trade document, Screen Australia AI Guiding Principles
+- [ ] **Feb 18:** Test prototype on a fresh machine/browser (simulate assessor experience)
+- [ ] **Feb 18:** Confirm IP ownership is with Enspyrco Pty Ltd; seek legal advice if needed
+- [ ] **Feb 19:** Prepare Prototype Details document (hardware reqs, setup instructions, controls)
+- [ ] **Feb 19:** Consider building a curated "assessor demo" version of prototype
+- [ ] **Feb 20:** Record 30-second gameplay footage video
 - [ ] **Feb 20–21:** Draft Production Plan (7 pages, using SA template)
 
 ### Week 2: February 22–28
