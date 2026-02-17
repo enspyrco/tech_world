@@ -13,7 +13,7 @@ Hi,
 
 I'm [Name] from Enspyrco, a Melbourne-based indie game studio. I'm writing to introduce our game Tech World and explore whether it might be a fit for ACMI's programming.
 
-Tech World is a multiplayer game where writing real code is the core gameplay mechanic. Players explore a shared 2D world, solve coding challenges at terminal stations, and collaborate through proximity-based live video chat — all in the browser, no download required. An AI companion (powered by Claude) provides real-time tutoring and code review.
+Tech World is a multiplayer game where writing real code is the core gameplay mechanic. Players explore a shared 2D world with 6 maps, solve 23 coding challenges across 3 difficulty tiers at terminal stations, and collaborate through proximity-based live video chat — all in the browser, no download required. An AI companion (powered by Claude) provides real-time tutoring and code review, with voice input and output support.
 
 We have a working prototype at [URL] and are currently applying for Screen Australia's Games Production Fund, with a milestone of a playable public demo at PAX Aus in October 2026.
 
@@ -36,7 +36,7 @@ Hi,
 
 I'm [Name] from Enspyrco, a Melbourne indie studio. I wanted to introduce Tech World and ask about submitting to a future Freeplay showcase.
 
-Tech World is a multiplayer game where writing real Dart code is the core mechanic. Players explore a shared world, solve coding challenges at in-game terminals, collaborate via live video chat, and get guidance from an AI tutor — all in the browser. It sits at an intersection no existing game occupies: Zachtronics-style coding puzzles meets social multiplayer meets AI companion.
+Tech World is a multiplayer game where writing real Dart code is the core mechanic. Players explore 6 maps in a shared world, solve 23 coding challenges across 3 difficulty tiers at in-game terminals, collaborate via live video chat, design custom maps with a built-in editor, and get guidance from an AI tutor — all in the browser. It sits at an intersection no existing game occupies: Zachtronics-style coding puzzles meets social multiplayer meets AI companion.
 
 We have a working prototype and are preparing a Screen Australia Games Production Fund application with a milestone of a PAX Aus demo in October 2026.
 
@@ -59,7 +59,7 @@ Hi,
 
 I'm [Name] from Enspyrco, a Melbourne-based indie game studio. I'm reaching out because I think our game Tech World could be a natural fit for the State Library's digital learning and community programs.
 
-Tech World is a browser-based multiplayer game where the gameplay is writing real code. Players explore a shared world, solve coding challenges at in-game terminals, and collaborate through live video chat. An AI companion provides guidance and code review in real time.
+Tech World is a browser-based multiplayer game where the gameplay is writing real code. Players explore 6 maps in a shared world, solve 23 coding challenges at in-game terminals, collaborate through live video chat, and talk to an AI companion using voice or text. It also includes a map editor and supports runtime map switching.
 
 It's designed to make coding feel social and playful rather than academic — which is why I think it could work as a live group activity in your digital workshops or coding programs. It runs entirely in the browser, so there's nothing to install — it works on any computer with a modern browser and a webcam.
 
@@ -80,7 +80,7 @@ Hi,
 
 I'm [Name] from Enspyrco, an Australian indie game studio. I'm writing to introduce Tech World, a multiplayer game at the intersection of gaming, coding, and AI, and to explore whether it might suit any of Powerhouse's interactive or technology-focused programming.
 
-In Tech World, players explore a shared virtual world and solve real coding challenges at in-game terminal stations. They collaborate through proximity-based live video chat and receive guidance from an AI tutor powered by Claude. It runs entirely in the browser — no installation required.
+In Tech World, players explore 6 maps in a shared virtual world and solve 23 real coding challenges at in-game terminal stations. They collaborate through proximity-based live video chat, design custom maps with a built-in editor, and receive guidance from an AI tutor powered by Claude — via text or voice. It runs entirely in the browser — no installation required.
 
 We're preparing a Screen Australia Games Production Fund application with a milestone of a playable demo at PAX Aus in October 2026.
 
