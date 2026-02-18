@@ -41,6 +41,7 @@ class _MyAppState extends State<MyApp> {
   ChatService? _chatService;
   ProximityService? _proximityService;
   final MapEditorState _mapEditorState = MapEditorState();
+  final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
   bool _liveKitConnectionFailed = false;
 
   @override
@@ -287,12 +288,47 @@ class _MyAppState extends State<MyApp> {
                                     ),
                                   );
                                 }
-                                return SizedBox(
-                                  width:
-                                      constraints.maxWidth >= 800 ? 320 : 280,
-                                  child: ChatPanel(
-                                    chatService: chatService,
-                                  ),
+                                return ValueListenableBuilder<bool>(
+                                  valueListenable: _chatCollapsed,
+                                  builder: (context, collapsed, _) {
+                                    if (collapsed) {
+                                      return Container(
+                                        width: 48,
+                                        color: const Color(0xFF2D2D2D),
+                                        child: Align(
+                                          alignment: Alignment.topCenter,
+                                          child: Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 12),
+                                            child: IconButton(
+                                              onPressed: () =>
+                                                  _chatCollapsed.value = false,
+                                              icon:
+                                                  const Icon(Icons.chat_bubble),
+                                              color: const Color(0xFFD97757),
+                                              tooltip: 'Open chat',
+                                              style: IconButton.styleFrom(
+                                                backgroundColor:
+                                                    const Color(0xFFD97757)
+                                                        .withValues(
+                                                            alpha: 0.1),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return SizedBox(
+                                      width: constraints.maxWidth >= 800
+                                          ? 320
+                                          : 280,
+                                      child: ChatPanel(
+                                        chatService: chatService,
+                                        onCollapse: () =>
+                                            _chatCollapsed.value = true,
+                                      ),
+                                    );
+                                  },
                                 );
                               },
                             );
@@ -309,9 +345,24 @@ class _MyAppState extends State<MyApp> {
                     if (!snapshot.hasData || snapshot.data is SignedOutUser) {
                       return const SizedBox.shrink();
                     }
+                    return ValueListenableBuilder<bool>(
+                      valueListenable: _chatCollapsed,
+                      builder: (context, chatCollapsed, child) {
+                    final techWorld = locate<TechWorld>();
+                    // Toolbar offset depends on what's showing in the side panel
+                    final double toolbarRight;
+                    if (techWorld.mapEditorActive.value) {
+                      toolbarRight = (constraints.maxWidth >= 800 ? 480 : 360) + 16;
+                    } else if (techWorld.activeChallenge.value != null) {
+                      toolbarRight = (constraints.maxWidth >= 800 ? 480 : 360) + 16;
+                    } else if (chatCollapsed) {
+                      toolbarRight = 64;
+                    } else {
+                      toolbarRight = constraints.maxWidth >= 800 ? 336 : 296;
+                    }
                     return Positioned(
                       top: 16,
-                      right: constraints.maxWidth >= 800 ? 336 : 296,
+                      right: toolbarRight,
                       child: SafeArea(
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -329,6 +380,8 @@ class _MyAppState extends State<MyApp> {
                           ],
                         ),
                       ),
+                    );
+                      },
                     );
                   },
                 ),

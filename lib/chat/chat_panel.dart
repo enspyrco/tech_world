@@ -7,10 +7,12 @@ import 'package:tech_world/services/stt_service.dart';
 class ChatPanel extends StatefulWidget {
   const ChatPanel({
     required this.chatService,
+    this.onCollapse,
     super.key,
   });
 
   final ChatService chatService;
+  final VoidCallback? onCollapse;
 
   @override
   State<ChatPanel> createState() => _ChatPanelState();
@@ -111,6 +113,21 @@ class _ChatPanelState extends State<ChatPanel> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                if (widget.onCollapse != null) ...[
+                  const Spacer(),
+                  IconButton(
+                    onPressed: widget.onCollapse,
+                    icon: const Icon(Icons.chevron_right),
+                    color: Colors.grey[400],
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 28,
+                      minHeight: 28,
+                    ),
+                    tooltip: 'Collapse chat',
+                  ),
+                ],
               ],
             ),
           ),
