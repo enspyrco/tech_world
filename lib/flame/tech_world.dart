@@ -29,6 +29,7 @@ import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
 /// We create a [TechWorld] component by extending flame's [World] class and
@@ -275,24 +276,9 @@ class TechWorld extends World with TapCallbacks {
     _updateBubblePositions();
   }
 
-  /// Calculate opacity based on Chebyshev distance.
-  ///
-  /// - Distance 0–1: 1.0 (fully visible)
-  /// - Distance 2: 0.8
-  /// - Distance 3: 0.5
-  /// - Distance 4: 0.2
-  /// - Distance 5+: removed (handled by caller)
-  static double _calculateOpacity(int distance) {
-    if (distance <= 1) return 1.0;
-    if (distance == 2) return 0.8;
-    if (distance == 3) return 0.5;
-    if (distance == 4) return 0.2;
-    return 0.0;
-  }
-
   /// Apply opacity to a bubble component (works for both Video and Player types).
   void _setBubbleOpacity(PositionComponent bubble, int distance) {
-    final opacity = _calculateOpacity(distance);
+    final opacity = ProximityService.calculateOpacity(distance);
     if (bubble is VideoBubbleComponent) {
       bubble.opacity = opacity;
     } else if (bubble is PlayerBubbleComponent) {

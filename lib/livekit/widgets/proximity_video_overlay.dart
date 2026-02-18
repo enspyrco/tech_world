@@ -112,15 +112,6 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
     return null;
   }
 
-  /// Calculate opacity based on Chebyshev distance (matches TechWorld logic).
-  static double _calculateOpacity(int distance) {
-    if (distance <= 1) return 1.0;
-    if (distance == 2) return 0.8;
-    if (distance == 3) return 0.5;
-    if (distance == 4) return 0.2;
-    return 0.0;
-  }
-
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -146,7 +137,7 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
           // Only show if on screen
           if (!_isOnScreen(screenPosition, constraints)) continue;
 
-          final opacity = _calculateOpacity(data.distance);
+          final opacity = ProximityService.calculateOpacity(data.distance);
           if (data.distance < closestDistance) {
             closestDistance = data.distance;
           }
@@ -193,7 +184,7 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
         // Add local player bubble if any other players are nearby
         if (_nearbyPlayerData.isNotEmpty &&
             widget.room.localParticipant != null) {
-          final localOpacity = _calculateOpacity(closestDistance);
+          final localOpacity = ProximityService.calculateOpacity(closestDistance);
           bubbles.add(
             Positioned(
               left: viewportCenter.dx - widget.bubbleSize / 2,

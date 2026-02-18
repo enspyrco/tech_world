@@ -93,6 +93,21 @@ class ProximityService {
     return max((a.x - b.x).abs(), (a.y - b.y).abs());
   }
 
+  /// Calculate visual opacity based on Chebyshev distance.
+  ///
+  /// - Distance 0–1: 1.0 (fully visible)
+  /// - Distance 2: 0.8
+  /// - Distance 3: 0.5
+  /// - Distance 4: 0.2
+  /// - Distance 5+: 0.0 (removed by caller)
+  static double calculateOpacity(int distance) {
+    if (distance <= 1) return 1.0;
+    if (distance == 2) return 0.8;
+    if (distance == 3) return 0.5;
+    if (distance == 4) return 0.2;
+    return 0.0;
+  }
+
   void dispose() {
     _proximityController.close();
   }
