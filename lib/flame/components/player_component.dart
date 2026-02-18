@@ -130,10 +130,12 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
       position = largeGridPoints.first;
       return;
     }
-    for (final largeGridPoint in largeGridPoints) {
+    // Skip the first point (player's current position) — effects start from
+    // the second point so each effect corresponds to a direction.
+    for (int i = 1; i < largeGridPoints.length; i++) {
       _moveEffects.add(
         MoveToEffect(
-          largeGridPoint,
+          largeGridPoints[i],
           EffectController(duration: 0.2),
           onComplete: () {
             playing = false;

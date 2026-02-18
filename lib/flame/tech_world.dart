@@ -66,10 +66,12 @@ class TechWorld extends World with TapCallbacks {
   // Bubble components - shown when player is near other players
   static const _botUserId = 'bot-claude';
   static const _localPlayerBubbleKey = '_local_player_';
-  static const _proximityThreshold = 3; // grid squares
+  static const _visualThreshold = 5; // grid squares — bubbles visible
+  static const _audioThreshold = 2; // grid squares — audio enabled
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
   final Map<String, PositionComponent> _playerBubbles = {};
+  final Set<String> _audioEnabledParticipants = {}; // track audio state
   Point<int>? _lastPlayerGridPosition; // track to skip unnecessary updates
 
   // LiveKit integration for video bubbles
@@ -185,6 +187,7 @@ class TechWorld extends World with TapCallbacks {
 
     // Check each other player for proximity
     final nearbyPlayerIds = <String>{};
+    int closestDistance = _visualThreshold + 1;
 
     for (final entry in _otherPlayerComponentsMap.entries) {
       final playerId = entry.key;
@@ -197,10 +200,11 @@ class TechWorld extends World with TapCallbacks {
         (otherGrid.y - playerGrid.y).abs(),
       );
 
-      final isNearby = distance <= _proximityThreshold;
+      final isVisible = distance <= _visualThreshold;
 
-      if (isNearby) {
+      if (isVisible) {
         nearbyPlayerIds.add(playerId);
+        if (distance < closestDistance) closestDistance = distance;
 
         if (!_playerBubbles.containsKey(playerId)) {
           // Create bubble for this player
@@ -209,6 +213,15 @@ class TechWorld extends World with TapCallbacks {
           _playerBubbles[playerId] = bubble;
           add(bubble);
         }
+
+        // Set opacity based on distance
+        _setBubbleOpacity(_playerBubbles[playerId]!, distance);
+
+        // Manage audio: enable within audio threshold, disable outside
+        _updateParticipantAudio(playerId, distance);
+      } else {
+        // Beyond visual range — ensure audio is disabled
+        _updateParticipantAudio(playerId, distance);
       }
     }
 
@@ -220,8 +233,9 @@ class TechWorld extends World with TapCallbacks {
         (botGrid.y - playerGrid.y).abs(),
       );
 
-      if (botDistance <= _proximityThreshold) {
+      if (botDistance <= _visualThreshold) {
         nearbyPlayerIds.add(_botUserId);
+        if (botDistance < closestDistance) closestDistance = botDistance;
 
         if (!_playerBubbles.containsKey(_botUserId)) {
           // Create status bubble for bot
@@ -241,6 +255,8 @@ class TechWorld extends World with TapCallbacks {
         _playerBubbles[_localPlayerBubbleKey] = localBubble;
         add(localBubble);
       }
+      // Local bubble opacity matches the closest other player
+      _setBubbleOpacity(_playerBubbles[_localPlayerBubbleKey]!, closestDistance);
       nearbyPlayerIds.add(_localPlayerBubbleKey);
     }
 
@@ -257,6 +273,46 @@ class TechWorld extends World with TapCallbacks {
     }
 
     _updateBubblePositions();
+  }
+
+  /// Calculate opacity based on Chebyshev distance.
+  ///
+  /// - Distance 0–1: 1.0 (fully visible)
+  /// - Distance 2: 0.8
+  /// - Distance 3: 0.5
+  /// - Distance 4: 0.2
+  /// - Distance 5+: removed (handled by caller)
+  static double _calculateOpacity(int distance) {
+    if (distance <= 1) return 1.0;
+    if (distance == 2) return 0.8;
+    if (distance == 3) return 0.5;
+    if (distance == 4) return 0.2;
+    return 0.0;
+  }
+
+  /// Apply opacity to a bubble component (works for both Video and Player types).
+  void _setBubbleOpacity(PositionComponent bubble, int distance) {
+    final opacity = _calculateOpacity(distance);
+    if (bubble is VideoBubbleComponent) {
+      bubble.opacity = opacity;
+    } else if (bubble is PlayerBubbleComponent) {
+      bubble.opacity = opacity;
+    }
+    // BotBubbleComponent doesn't fade — it stays fully visible when in range
+  }
+
+  /// Enable or disable audio for a participant based on distance.
+  void _updateParticipantAudio(String playerId, int distance) {
+    final shouldHaveAudio = distance <= _audioThreshold;
+    final hasAudio = _audioEnabledParticipants.contains(playerId);
+
+    if (shouldHaveAudio && !hasAudio) {
+      _audioEnabledParticipants.add(playerId);
+      _liveKitService?.setParticipantAudioEnabled(playerId, true);
+    } else if (!shouldHaveAudio && hasAudio) {
+      _audioEnabledParticipants.remove(playerId);
+      _liveKitService?.setParticipantAudioEnabled(playerId, false);
+    }
   }
 
   void _updateBubblePositions() {
@@ -698,8 +754,6 @@ class TechWorld extends World with TapCallbacks {
     _pathComponent.calculatePath(
         start: _userPlayerComponent.miniGridTuple, end: (miniGridX, miniGridY));
 
-    _pathComponent.drawPath();
-
     _userPlayerComponent.move(
         _pathComponent.directions, _pathComponent.largeGridPoints);
 
@@ -776,6 +830,7 @@ class TechWorld extends World with TapCallbacks {
       bubble.removeFromParent();
     }
     _playerBubbles.clear();
+    _audioEnabledParticipants.clear();
 
     // Remove other player components
     for (final component in _otherPlayerComponentsMap.values) {

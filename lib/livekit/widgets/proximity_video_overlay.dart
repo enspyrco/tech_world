@@ -36,7 +36,9 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
   late final StreamSubscription<ProximityEvent> _proximitySubscription;
   Timer? _updateTimer;
 
-  final Map<String, Point<int>> _nearbyPlayerPositions = {};
+  /// Nearby players with their grid position and distance from local player.
+  final Map<String, ({Point<int> position, int distance})>
+      _nearbyPlayerData = {};
 
   @override
   void initState() {
@@ -46,9 +48,12 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
         widget.proximityService.proximityEvents.listen((event) {
       setState(() {
         if (event.isNearby) {
-          _nearbyPlayerPositions[event.playerId] = event.position;
+          _nearbyPlayerData[event.playerId] = (
+            position: event.position,
+            distance: event.distance,
+          );
         } else {
-          _nearbyPlayerPositions.remove(event.playerId);
+          _nearbyPlayerData.remove(event.playerId);
         }
       });
     });
@@ -56,22 +61,31 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
     // Poll for position updates and proximity checks
     _updateTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
       final positions = widget.techWorld.otherPlayerPositions;
+      final localPos = widget.techWorld.localPlayerPosition;
 
-      // Update positions of nearby players
-      for (final playerId in _nearbyPlayerPositions.keys.toList()) {
+      // Update positions and distances of nearby players
+      for (final playerId in _nearbyPlayerData.keys.toList()) {
         if (positions.containsKey(playerId)) {
-          _nearbyPlayerPositions[playerId] = positions[playerId]!;
+          final otherPos = positions[playerId]!;
+          final distance = max(
+            (otherPos.x - localPos.x).abs(),
+            (otherPos.y - localPos.y).abs(),
+          );
+          _nearbyPlayerData[playerId] = (
+            position: otherPos,
+            distance: distance,
+          );
         }
       }
 
       // Check proximity
       widget.proximityService.checkProximity(
-        localPlayerPosition: widget.techWorld.localPlayerPosition,
+        localPlayerPosition: localPos,
         otherPlayerPositions: positions,
       );
 
       // Trigger rebuild for position updates
-      if (_nearbyPlayerPositions.isNotEmpty) {
+      if (_nearbyPlayerData.isNotEmpty) {
         setState(() {});
       }
     });
@@ -98,6 +112,15 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
     return null;
   }
 
+  /// Calculate opacity based on Chebyshev distance (matches TechWorld logic).
+  static double _calculateOpacity(int distance) {
+    if (distance <= 1) return 1.0;
+    if (distance == 2) return 0.8;
+    if (distance == 3) return 0.5;
+    if (distance == 4) return 0.2;
+    return 0.0;
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -109,11 +132,13 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
 
         final localPlayerGridPos = widget.techWorld.localPlayerPosition;
         final bubbles = <Widget>[];
+        int closestDistance = 6; // beyond visual threshold
 
         // Add bubbles for nearby players
-        for (final entry in _nearbyPlayerPositions.entries) {
+        for (final entry in _nearbyPlayerData.entries) {
+          final data = entry.value;
           final screenPosition = _gridToScreen(
-            entry.value,
+            data.position,
             localPlayerGridPos,
             viewportCenter,
           );
@@ -121,16 +146,24 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
           // Only show if on screen
           if (!_isOnScreen(screenPosition, constraints)) continue;
 
+          final opacity = _calculateOpacity(data.distance);
+          if (data.distance < closestDistance) {
+            closestDistance = data.distance;
+          }
+
           // Special handling for bot - show BotBubble instead of VideoBubble
           if (entry.key == _botUserId) {
             bubbles.add(
               Positioned(
                 left: screenPosition.dx - widget.bubbleSize / 2,
                 top: screenPosition.dy - widget.bubbleSize - 20,
-                child: BotBubble(
-                  key: ValueKey(entry.key),
-                  name: _botDisplayName,
-                  size: widget.bubbleSize,
+                child: Opacity(
+                  opacity: opacity,
+                  child: BotBubble(
+                    key: ValueKey(entry.key),
+                    name: _botDisplayName,
+                    size: widget.bubbleSize,
+                  ),
                 ),
               ),
             );
@@ -144,10 +177,13 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
               Positioned(
                 left: screenPosition.dx - widget.bubbleSize / 2,
                 top: screenPosition.dy - widget.bubbleSize - 20,
-                child: VideoBubble(
-                  key: ValueKey(entry.key),
-                  participant: participant,
-                  size: widget.bubbleSize,
+                child: Opacity(
+                  opacity: opacity,
+                  child: VideoBubble(
+                    key: ValueKey(entry.key),
+                    participant: participant,
+                    size: widget.bubbleSize,
+                  ),
                 ),
               ),
             );
@@ -155,16 +191,20 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
         }
 
         // Add local player bubble if any other players are nearby
-        if (_nearbyPlayerPositions.isNotEmpty &&
+        if (_nearbyPlayerData.isNotEmpty &&
             widget.room.localParticipant != null) {
+          final localOpacity = _calculateOpacity(closestDistance);
           bubbles.add(
             Positioned(
               left: viewportCenter.dx - widget.bubbleSize / 2,
               top: viewportCenter.dy - widget.bubbleSize - 20,
-              child: VideoBubble(
-                key: const ValueKey('local'),
-                participant: widget.room.localParticipant!,
-                size: widget.bubbleSize,
+              child: Opacity(
+                opacity: localOpacity,
+                child: VideoBubble(
+                  key: const ValueKey('local'),
+                  participant: widget.room.localParticipant!,
+                  size: widget.bubbleSize,
+                ),
               ),
             ),
           );

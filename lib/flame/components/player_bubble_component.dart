@@ -17,10 +17,25 @@ class PlayerBubbleComponent extends PositionComponent {
   final String playerId;
   final double bubbleSize;
 
+  double _opacity = 1.0;
+
+  /// Set the opacity for distance-based fading (0.0 to 1.0).
+  set opacity(double value) => _opacity = value.clamp(0.0, 1.0);
+
   @override
   void render(Canvas canvas) {
+    if (_opacity <= 0) return;
+
     final center = Offset(size.x / 2, size.y / 2);
     final radius = bubbleSize / 2;
+
+    // Apply opacity via saveLayer when not fully opaque
+    if (_opacity < 1.0) {
+      canvas.saveLayer(
+        Rect.fromCircle(center: center, radius: radius + 5),
+        Paint()..color = Color.fromARGB((_opacity * 255).round(), 255, 255, 255),
+      );
+    }
 
     // Draw shadow
     final shadowPaint = Paint()
@@ -59,6 +74,10 @@ class PlayerBubbleComponent extends PositionComponent {
         center.dy - textPainter.height / 2,
       ),
     );
+
+    if (_opacity < 1.0) {
+      canvas.restore();
+    }
   }
 
   String _getInitial() {

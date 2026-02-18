@@ -234,6 +234,24 @@ class LiveKitService {
     }
   }
 
+  /// Enable or disable audio playback for a remote participant.
+  ///
+  /// Uses [RemoteTrackPublication.enable]/[RemoteTrackPublication.disable] to
+  /// tell the server we want/don't want this participant's audio track.
+  /// Used for proximity-based audio: mute players who are too far away.
+  void setParticipantAudioEnabled(String identity, bool enabled) {
+    final participant = _room?.remoteParticipants[identity];
+    if (participant == null) return;
+
+    for (final publication in participant.audioTrackPublications) {
+      if (enabled) {
+        publication.enable();
+      } else {
+        publication.disable();
+      }
+    }
+  }
+
   /// Get a participant by their identity (userId)
   Participant? getParticipant(String identity) {
     if (_room == null) return null;
