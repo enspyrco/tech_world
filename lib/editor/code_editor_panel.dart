@@ -57,7 +57,9 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
         ),
       );
     } catch (_) {
-      // LSP server unreachable — fall back to plain text editing.
+      // Catches synchronous constructor errors (e.g. malformed URL).
+      // Async WebSocket failures (e.g. DNS) are handled internally by
+      // CodeForgeWebController — the editor falls back to plain text.
     }
 
     _controller = CodeForgeWebController(lspConfig: lspConfig);
