@@ -6,18 +6,22 @@ class ProximityEvent {
     required this.playerId,
     required this.isNearby,
     required this.position,
+    required this.distance,
   });
 
   final String playerId;
   final bool isNearby;
   final Point<int> position;
+
+  /// Chebyshev distance between the local player and this player.
+  final int distance;
 }
 
 /// Service that detects when players are within proximity of each other.
 ///
 /// Uses Chebyshev distance (max of x/y difference) to account for diagonal movement.
 class ProximityService {
-  ProximityService({this.proximityThreshold = 3});
+  ProximityService({this.proximityThreshold = 5});
 
   /// Distance in grid squares to trigger proximity
   final int proximityThreshold;
@@ -49,6 +53,7 @@ class ProximityService {
           playerId: playerId,
           isNearby: true,
           position: otherPosition,
+          distance: distance,
         ));
       } else if (!isNearby && wasNearby) {
         _nearbyPlayers.remove(playerId);
@@ -56,6 +61,15 @@ class ProximityService {
           playerId: playerId,
           isNearby: false,
           position: otherPosition,
+          distance: distance,
+        ));
+      } else if (isNearby && wasNearby) {
+        // Already nearby — emit update with current distance for fade
+        _proximityController.add(ProximityEvent(
+          playerId: playerId,
+          isNearby: true,
+          position: otherPosition,
+          distance: distance,
         ));
       }
     }
@@ -69,6 +83,7 @@ class ProximityService {
         playerId: playerId,
         isNearby: false,
         position: const Point(0, 0),
+        distance: proximityThreshold + 1,
       ));
     }
   }
@@ -76,6 +91,21 @@ class ProximityService {
   /// Chebyshev distance - allows diagonal movement to count as 1 step
   int _calculateChebyshevDistance(Point<int> a, Point<int> b) {
     return max((a.x - b.x).abs(), (a.y - b.y).abs());
+  }
+
+  /// Calculate visual opacity based on Chebyshev distance.
+  ///
+  /// - Distance 0–1: 1.0 (fully visible)
+  /// - Distance 2: 0.8
+  /// - Distance 3: 0.5
+  /// - Distance 4: 0.2
+  /// - Distance 5+: 0.0 (removed by caller)
+  static double calculateOpacity(int distance) {
+    if (distance <= 1) return 1.0;
+    if (distance == 2) return 0.8;
+    if (distance == 3) return 0.5;
+    if (distance == 4) return 0.2;
+    return 0.0;
   }
 
   void dispose() {

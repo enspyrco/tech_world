@@ -12,13 +12,13 @@ import 'package:tech_world/flame/shared/constants.dart';
 class BarriersComponent extends PositionComponent with HasWorldReference {
   BarriersComponent({required List<Point<int>> barriers}) : _points = barriers;
 
-  final Paint _paint = Paint()..color = const Color.fromRGBO(0, 0, 255, 1);
+  final Paint _paint = Paint()..color = const Color.fromRGBO(0, 0, 255, 0);
 
   final List<RectangleComponent> _rectangles = [];
 
   /// When false, barrier rectangles are hidden (used during map editor mode).
   bool get renderBarriers => _renderBarriers;
-  bool _renderBarriers = true;
+  bool _renderBarriers = false;
   set renderBarriers(bool value) {
     _renderBarriers = value;
     for (final rect in _rectangles) {

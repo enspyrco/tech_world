@@ -90,6 +90,12 @@ class VideoBubbleComponent extends PositionComponent {
   static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
 
 
+  // Opacity for distance-based fading
+  double _opacity = 1.0;
+
+  /// Set the opacity for distance-based fading (0.0 to 1.0).
+  set opacity(double value) => _opacity = value.clamp(0.0, 1.0);
+
   // Loading state
   bool _isLoading = true;
   double _loadingRotation = 0.0;
@@ -489,8 +495,18 @@ class VideoBubbleComponent extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
+    if (_opacity <= 0) return;
+
     final center = Offset(size.x / 2, size.y / 2);
     final radius = bubbleSize / 2;
+
+    // Apply opacity via saveLayer when not fully opaque
+    if (_opacity < 1.0) {
+      canvas.saveLayer(
+        Rect.fromCircle(center: center, radius: radius + 10),
+        Paint()..color = Color.fromARGB((_opacity * 255).round(), 255, 255, 255),
+      );
+    }
 
     // Draw shadow
     final shadowPaint = Paint()
@@ -587,6 +603,10 @@ class VideoBubbleComponent extends PositionComponent {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
       canvas.drawCircle(center, radius, borderPaint);
+    }
+
+    if (_opacity < 1.0) {
+      canvas.restore();
     }
   }
 
