@@ -2,6 +2,7 @@ import 'package:code_forge_web/code_forge_web.dart';
 import 'package:flutter/material.dart';
 import 'package:re_highlight/languages/dart.dart';
 import 'package:tech_world/editor/challenge.dart';
+import 'package:tech_world/editor/lsp_config.dart';
 
 /// Panel that displays a code editor for a coding challenge.
 /// Replaces the chat panel when a player interacts with a terminal.
@@ -23,13 +24,43 @@ class CodeEditorPanel extends StatefulWidget {
 
 class _CodeEditorPanelState extends State<CodeEditorPanel> {
   late final CodeForgeWebController _controller;
+  late final String _fileUri;
 
   static const _clawdOrange = Color(0xFFD97757);
 
   @override
   void initState() {
     super.initState();
-    _controller = CodeForgeWebController();
+
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    _fileUri =
+        '${LspConstants.fileBasePath}/${widget.challenge.id}_$timestamp.dart';
+
+    LspSocketConfig? lspConfig;
+    try {
+      lspConfig = LspSocketConfig(
+        serverUrl: LspConstants.serverUrl,
+        workspacePath: LspConstants.workspacePath,
+        languageId: LspConstants.languageId,
+        capabilities: const LspClientCapabilities(
+          codeCompletion: true,
+          hoverInfo: true,
+          signatureHelp: true,
+          semanticHighlighting: false,
+          codeAction: false,
+          documentColor: false,
+          documentHighlight: false,
+          codeFolding: false,
+          inlayHint: false,
+          goToDefinition: false,
+          rename: false,
+        ),
+      );
+    } catch (_) {
+      // LSP server unreachable — fall back to plain text editing.
+    }
+
+    _controller = CodeForgeWebController(lspConfig: lspConfig);
   }
 
   @override
@@ -130,11 +161,12 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
               controller: _controller,
               initialText: widget.challenge.starterCode,
               language: langDart,
+              fileUri: _fileUri,
               textStyle: const TextStyle(
                 fontFamily: 'monospace',
                 fontSize: 14,
               ),
-              enableSuggestions: false,
+              enableSuggestions: true,
               enableFolding: false,
             ),
           ),
