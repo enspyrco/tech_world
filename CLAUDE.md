@@ -194,17 +194,37 @@ Terminals cycle through challenges: `allChallenges[terminalIndex % allChallenges
 
 **Workflow:** Terminal tap → proximity check → `TechWorld.activeChallenge` ValueNotifier → `main.dart` swaps `ChatPanel` for `CodeEditorPanel` → submit sends code to Clawd via `ChatService` → editor closes.
 
-**Planned — LSP Integration:**
+**LSP Integration (Code Completion & Hover Docs):**
 
 ```
 Browser (Flutter web)
-  └─ code_forge_web widget
-       └─ WebSocket (LspSocketConfig)
-            └─ lsp-ws-proxy (server)
-                 └─ dart language-server --protocol=lsp
+  └─ CodeForgeWeb widget
+       └─ WebSocket (WSS via LspSocketConfig)
+            └─ nginx (SSL termination + limit_conn 5/IP)
+                 └─ lsp-ws-proxy (localhost:9999)
+                      └─ dart language-server --protocol=lsp
+                           (one process per WebSocket connection)
 ```
 
-`code_forge_web` already supports LSP via `CodeForgeWebController(lspConfig: LspSocketConfig(...))`.
+- **Server URL**: `wss://lsp.adventures-in-tech.world` → `104.154.170.222` (static IP)
+- **Workspace**: `/opt/lsp-workspace` — shared pubspec.yaml + analysis_options.yaml
+- **Config**: `lib/editor/lsp_config.dart` — constants for server URL, workspace path, language ID
+- **Capabilities enabled**: completion, hover, signature help (others disabled for performance)
+- **Graceful fallback**: If the LSP server is unreachable, the editor works as plain text
+
+**Server management:**
+```bash
+# Check proxy status
+gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="pm2 status"
+
+# View LSP proxy logs
+gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="pm2 logs lsp-proxy --lines 50"
+
+# nginx config
+# /etc/nginx/sites-available/lsp-proxy
+```
+
+**Scaling**: e2-small (2 GB) supports ~3–5 concurrent LSP sessions. Upgrade to e2-medium (4 GB, ~$27/mo) for ~10 sessions.
 
 ### Auth
 
