@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 
@@ -83,6 +84,35 @@ class LiveKitService {
       })
       .where((path) => path != null)
       .cast<PlayerPath>();
+
+  /// Stream of avatar updates received from other participants.
+  ///
+  /// Filters [dataReceived] for the `avatar` topic and parses into
+  /// [AvatarUpdate]. Own messages (matching [userId]) are excluded.
+  Stream<AvatarUpdate> get avatarReceived => dataReceived
+      .where((msg) => msg.topic == 'avatar')
+      .map((msg) {
+        final json = msg.json;
+        if (json == null) return null;
+        final update = AvatarUpdate.tryParse(json);
+        // Ignore our own avatar broadcasts
+        if (update != null && update.playerId == userId) return null;
+        return update;
+      })
+      .where((update) => update != null)
+      .cast<AvatarUpdate>();
+
+  /// Broadcast the local player's avatar to the room.
+  ///
+  /// Uses reliable delivery so late-joiners' catch-up works correctly.
+  Future<void> publishAvatar(Avatar avatar) async {
+    final message = {
+      'playerId': userId,
+      'avatarId': avatar.id,
+      'spriteAsset': avatar.spriteAsset,
+    };
+    await publishJson(message, topic: 'avatar');
+  }
 
   PlayerPath? _parsePlayerPath(Map<String, dynamic> json) {
     try {
@@ -478,4 +508,34 @@ class DataChannelMessage {
   @override
   String toString() =>
       'DataChannelMessage(senderId: $senderId, topic: $topic, data: ${data.length} bytes)';
+}
+
+/// A parsed avatar update from the `avatar` data channel topic.
+class AvatarUpdate {
+  const AvatarUpdate({
+    required this.playerId,
+    required this.avatarId,
+    required this.spriteAsset,
+  });
+
+  final String playerId;
+  final String avatarId;
+  final String spriteAsset;
+
+  /// Try to parse an [AvatarUpdate] from a JSON map. Returns null if required
+  /// fields are missing.
+  static AvatarUpdate? tryParse(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final playerId = json['playerId'] as String?;
+    final avatarId = json['avatarId'] as String?;
+    final spriteAsset = json['spriteAsset'] as String?;
+
+    if (playerId == null || spriteAsset == null) return null;
+
+    return AvatarUpdate(
+      playerId: playerId,
+      avatarId: avatarId ?? '',
+      spriteAsset: spriteAsset,
+    );
+  }
 }

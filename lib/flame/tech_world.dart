@@ -28,6 +28,8 @@ import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
+import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -153,6 +155,18 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<PlayerPath>? _liveKitPositionSubscription;
   StreamSubscription<RemoteParticipant>? _participantJoinedSubscription;
   StreamSubscription<RemoteParticipant>? _participantLeftSubscription;
+  StreamSubscription<AvatarUpdate>? _avatarSubscription;
+
+  // Avatar tracking — stores updates for players not yet created
+  final Map<String, String> _pendingAvatars = {};
+  Avatar? _localAvatar;
+
+  /// Set the local player's avatar. Also broadcasts to other participants.
+  void setLocalAvatar(Avatar avatar) {
+    _localAvatar = avatar;
+    _userPlayerComponent.spriteAsset = avatar.spriteAsset;
+    _liveKitService?.publishAvatar(avatar);
+  }
 
   // Position tracking for proximity detection
   Point<int> get localPlayerPosition => _userPlayerComponent.miniGridPosition;
@@ -394,16 +408,30 @@ class TechWorld extends World with TapCallbacks {
         add(_botCharacterComponent!);
       }
     } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
-      // Create player component for regular players
+      // Apply pending avatar if one arrived before the component was created
+      final pendingSpriteAsset = _pendingAvatars.remove(participant.identity);
+
       final playerComponent = PlayerComponent(
         position: Vector2.zero(),
         id: participant.identity,
         displayName: participant.name.isNotEmpty
             ? participant.name
             : participant.identity,
+        spriteAsset: pendingSpriteAsset ?? defaultAvatar.spriteAsset,
       );
       _otherPlayerComponentsMap[participant.identity] = playerComponent;
       add(playerComponent);
+    }
+  }
+
+  /// Handle an avatar update from a remote player.
+  void _handleAvatarUpdate(AvatarUpdate update) {
+    final playerComponent = _otherPlayerComponentsMap[update.playerId];
+    if (playerComponent != null) {
+      playerComponent.spriteAsset = update.spriteAsset;
+    } else {
+      // Player component doesn't exist yet — store for later
+      _pendingAvatars[update.playerId] = update.spriteAsset;
     }
   }
 
@@ -453,6 +481,10 @@ class TechWorld extends World with TapCallbacks {
             ?.move(path.directions, path.largeGridPoints);
       }
     });
+
+    // Subscribe to avatar updates from other players
+    _avatarSubscription =
+        _liveKitService!.avatarReceived.listen(_handleAvatarUpdate);
 
     // Listen for participant join/leave to manage player presence
     _participantJoinedSubscription =
@@ -518,6 +550,11 @@ class TechWorld extends World with TapCallbacks {
       await _liveKitService!.setCameraEnabled(true);
       await _liveKitService!.setMicrophoneEnabled(true);
       _refreshLocalPlayerBubble();
+
+      // Re-publish avatar so late joiners see our character
+      if (_localAvatar != null) {
+        _liveKitService!.publishAvatar(_localAvatar!);
+      }
     } else {
       debugPrint('Waiting for LiveKit connection...');
     }
@@ -807,6 +844,11 @@ class TechWorld extends World with TapCallbacks {
     _participantJoinedSubscription = null;
     _participantLeftSubscription?.cancel();
     _participantLeftSubscription = null;
+    _avatarSubscription?.cancel();
+    _avatarSubscription = null;
+
+    // Clear pending avatar data
+    _pendingAvatars.clear();
 
     // Clear the service reference so _connectToLiveKit can reconnect
     _liveKitService = null;
