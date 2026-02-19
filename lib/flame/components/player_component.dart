@@ -25,11 +25,13 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     required super.position,
     required this.id,
     required this.displayName,
-  });
+    String spriteAsset = 'NPC11.png',
+  }) : _spriteAsset = spriteAsset;
 
-  PlayerComponent.from(User user)
+  PlayerComponent.from(User user, {String spriteAsset = 'NPC11.png'})
       : id = user.id,
-        displayName = user.displayName {
+        displayName = user.displayName,
+        _spriteAsset = spriteAsset {
     super.position = Vector2.zero();
   }
 
@@ -37,6 +39,23 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
   String id;
   @override
   String displayName;
+
+  String _spriteAsset;
+
+  /// The sprite sheet asset used for this player's animations.
+  String get spriteAsset => _spriteAsset;
+
+  /// Update the sprite asset and rebuild animations.
+  ///
+  /// Only takes effect after [onLoad] has run (i.e. when [isMounted] is true).
+  set spriteAsset(String value) {
+    if (value == _spriteAsset) return;
+    _spriteAsset = value;
+    if (isMounted) {
+      _buildAnimations();
+    }
+  }
+
   List<MoveEffect> _moveEffects = [];
   List<Direction> _directions = [];
   int _pathSegmentNum = 0;
@@ -44,9 +63,16 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
   @override
   FutureOr<void> onLoad() {
     anchor = Anchor.centerLeft;
+    _buildAnimations();
+    return super.onLoad();
+  }
+
+  /// Build directional animations from the current [_spriteAsset].
+  void _buildAnimations() {
+    final image = game.images.fromCache(_spriteAsset);
 
     final upAnimation = SpriteAnimation.fromFrameData(
-      game.images.fromCache('NPC11.png'),
+      image,
       SpriteAnimationData.sequenced(
         amount: 3,
         textureSize: Vector2(32, 64),
@@ -56,7 +82,7 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     );
 
     final downAnimation = SpriteAnimation.fromFrameData(
-      game.images.fromCache('NPC11.png'),
+      image,
       SpriteAnimationData.sequenced(
         amount: 3,
         textureSize: Vector2(32, 64),
@@ -65,7 +91,7 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     );
 
     final leftAnimation = SpriteAnimation.fromFrameData(
-      game.images.fromCache('NPC11.png'),
+      image,
       SpriteAnimationData.sequenced(
         amount: 3,
         textureSize: Vector2(32, 64),
@@ -75,7 +101,7 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     );
 
     final rightAnimation = SpriteAnimation.fromFrameData(
-      game.images.fromCache('NPC11.png'),
+      image,
       SpriteAnimationData.sequenced(
         amount: 3,
         textureSize: Vector2(32, 64),
@@ -95,7 +121,6 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
       Direction.right: rightAnimation,
     };
     current = Direction.down; // Set after animations is initialized
-    return super.onLoad();
   }
 
   @override
