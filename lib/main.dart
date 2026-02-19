@@ -5,6 +5,10 @@ import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/avatar/avatar_selection_screen.dart';
+import 'package:tech_world/avatar/predefined_avatars.dart';
+import 'package:tech_world/auth/user_profile_service.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/editor/challenge.dart';
@@ -45,6 +49,9 @@ class _MyAppState extends State<MyApp> {
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
   bool _liveKitConnectionFailed = false;
+  Avatar? _selectedAvatar;
+  bool _avatarLoaded = false;
+  String? _currentUserId;
 
   @override
   void initState() {
@@ -119,6 +126,9 @@ class _MyAppState extends State<MyApp> {
       _chatService = null;
       _proximityService = null;
       _liveKitConnectionFailed = false;
+      _selectedAvatar = null;
+      _avatarLoaded = false;
+      _currentUserId = null;
       Locator.remove<LiveKitService>();
       Locator.remove<ChatService>();
       Locator.remove<ProximityService>();
@@ -127,6 +137,19 @@ class _MyAppState extends State<MyApp> {
     } else {
       // User signed in - create and connect LiveKit
       debugPrint('User signed in: ${user.id} (${user.displayName})');
+      _currentUserId = user.id;
+
+      // Load saved avatar from Firestore
+      try {
+        final profileService = UserProfileService();
+        final savedAvatarId = await profileService.getAvatarId(user.id);
+        if (savedAvatarId != null) {
+          _selectedAvatar = avatarById(savedAvatarId) ?? defaultAvatar;
+        }
+      } catch (e) {
+        debugPrint('Failed to load avatar: $e');
+      }
+      _avatarLoaded = true;
 
       _liveKitService = LiveKitService(
         userId: user.id,
@@ -153,8 +176,33 @@ class _MyAppState extends State<MyApp> {
         _liveKitConnectionFailed = true;
       }
 
+      // Apply saved avatar to game world
+      if (_selectedAvatar != null) {
+        locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
+      }
+
       setState(() {}); // Trigger rebuild to show overlay
     }
+  }
+
+  /// Called when the user confirms an avatar choice from the selection screen.
+  Future<void> _onAvatarSelected(Avatar avatar) async {
+    _selectedAvatar = avatar;
+
+    // Save to Firestore
+    if (_currentUserId != null) {
+      try {
+        final profileService = UserProfileService();
+        await profileService.saveAvatarId(_currentUserId!, avatar.id);
+      } catch (e) {
+        debugPrint('Failed to save avatar: $e');
+      }
+    }
+
+    // Apply to game world (also broadcasts via LiveKit)
+    locate<TechWorld>().setLocalAvatar(avatar);
+
+    setState(() {}); // Transition from selection screen to game
   }
 
   @override
@@ -208,6 +256,12 @@ class _MyAppState extends State<MyApp> {
                             );
                           }
                           if (snapshot.data! is! SignedOutUser) {
+                            // Show avatar selection if signed in but no avatar chosen yet
+                            if (_avatarLoaded && _selectedAvatar == null) {
+                              return AvatarSelectionScreen(
+                                onAvatarSelected: _onAvatarSelected,
+                              );
+                            }
                             return Stack(
                               children: [
                                 GameWidget(

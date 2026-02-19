@@ -196,6 +196,67 @@ void main() {
       });
     });
 
+    group('spriteAsset', () {
+      test('defaults to NPC11.png', () {
+        final player = PlayerComponent(
+          position: Vector2.zero(),
+          id: 'test',
+          displayName: 'Test',
+        );
+
+        expect(player.spriteAsset, equals('NPC11.png'));
+      });
+
+      test('accepts optional spriteAsset parameter', () {
+        final player = PlayerComponent(
+          position: Vector2.zero(),
+          id: 'test',
+          displayName: 'Test',
+          spriteAsset: 'NPC12.png',
+        );
+
+        expect(player.spriteAsset, equals('NPC12.png'));
+      });
+
+      test('PlayerComponent.from defaults to NPC11.png', () {
+        final user = AuthUser(id: 'user-1', displayName: 'User');
+        final player = PlayerComponent.from(user);
+
+        expect(player.spriteAsset, equals('NPC11.png'));
+      });
+
+      test('PlayerComponent.from accepts optional spriteAsset', () {
+        final user = AuthUser(id: 'user-1', displayName: 'User');
+        final player = PlayerComponent.from(user, spriteAsset: 'NPC13.png');
+
+        expect(player.spriteAsset, equals('NPC13.png'));
+      });
+
+      test('setter updates spriteAsset value (before mount)', () {
+        final player = PlayerComponent(
+          position: Vector2.zero(),
+          id: 'test',
+          displayName: 'Test',
+        );
+
+        player.spriteAsset = 'NPC12.png';
+        expect(player.spriteAsset, equals('NPC12.png'));
+      });
+
+      test('setter is a no-op for the same value', () {
+        final player = PlayerComponent(
+          position: Vector2.zero(),
+          id: 'test',
+          displayName: 'Test',
+          spriteAsset: 'NPC11.png',
+        );
+
+        // Should not throw or change anything
+        player.spriteAsset = 'NPC11.png';
+        expect(player.spriteAsset, equals('NPC11.png'));
+      });
+    });
+
     group('position updates', () {
       test('position can be changed after construction', () {
         final player = PlayerComponent(

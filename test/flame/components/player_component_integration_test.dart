@@ -184,6 +184,53 @@ void main() {
     );
 
     testWithGame<TestGameWithMockImages>(
+      'constructor with NPC12 spriteAsset loads animations from that sheet',
+      TestGameWithMockImages.new,
+      (game) async {
+        final player = PlayerComponent(
+          position: Vector2.zero(),
+          id: 'test',
+          displayName: 'Test',
+          spriteAsset: 'NPC12.png',
+        );
+
+        await game.world.add(player);
+        await game.ready();
+
+        expect(player.spriteAsset, equals('NPC12.png'));
+        expect(player.animations, isNotNull);
+        expect(player.animations!.length, equals(8));
+        expect(player.current, equals(Direction.down));
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
+      'spriteAsset setter rebuilds animations on mounted component',
+      TestGameWithMockImages.new,
+      (game) async {
+        final player = PlayerComponent(
+          position: Vector2.zero(),
+          id: 'test',
+          displayName: 'Test',
+        );
+
+        await game.world.add(player);
+        await game.ready();
+
+        expect(player.spriteAsset, equals('NPC11.png'));
+
+        // Change sprite at runtime
+        player.spriteAsset = 'NPC13.png';
+
+        expect(player.spriteAsset, equals('NPC13.png'));
+        // Animations should still be valid after rebuild
+        expect(player.animations, isNotNull);
+        expect(player.animations!.length, equals(8));
+        expect(player.current, equals(Direction.down));
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
       'position changes during move effect update',
       TestGameWithMockImages.new,
       (game) async {
