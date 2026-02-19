@@ -1,3 +1,4 @@
+import 'dart:async' show Timer;
 import 'dart:io' show Platform;
 
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
@@ -53,12 +54,35 @@ class _AuthGateState extends State<AuthGate> {
   GlobalKey<FormState> formKey = GlobalKey<FormState>();
   String error = '';
   String verificationId = '';
+  Timer? _errorTimer;
 
   AuthMode mode = AuthMode.login;
 
   bool isLoading = false;
 
   bool get _isApplePlatform => !kIsWeb && (Platform.isIOS || Platform.isMacOS);
+
+  @override
+  void dispose() {
+    _errorTimer?.cancel();
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  void _setError(String message) {
+    _errorTimer?.cancel();
+    setState(() {
+      error = message;
+    });
+    _errorTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          error = '';
+        });
+      }
+    });
+  }
 
   void setIsLoading() {
     if (mounted) {
@@ -87,29 +111,34 @@ class _AuthGateState extends State<AuthGate> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Visibility(
-                            visible: error.isNotEmpty,
-                            child: MaterialBanner(
-                              backgroundColor:
-                                  Theme.of(context).colorScheme.error,
-                              content: SelectableText(error),
-                              actions: [
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      error = '';
-                                    });
-                                  },
-                                  child: const Text(
-                                    'dismiss',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                ),
-                              ],
-                              contentTextStyle:
-                                  const TextStyle(color: Colors.white),
-                              padding: const EdgeInsets.all(10),
-                            ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: error.isNotEmpty
+                                ? MaterialBanner(
+                                    key: ValueKey(error),
+                                    backgroundColor:
+                                        Theme.of(context).colorScheme.error,
+                                    content: SelectableText(error),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () {
+                                          _errorTimer?.cancel();
+                                          setState(() {
+                                            error = '';
+                                          });
+                                        },
+                                        child: const Text(
+                                          'dismiss',
+                                          style:
+                                              TextStyle(color: Colors.white),
+                                        ),
+                                      ),
+                                    ],
+                                    contentTextStyle:
+                                        const TextStyle(color: Colors.white),
+                                    padding: const EdgeInsets.all(10),
+                                  )
+                                : const SizedBox.shrink(),
                           ),
                           const SizedBox(height: 20),
                           Column(
@@ -298,9 +327,7 @@ class _AuthGateState extends State<AuthGate> {
     try {
       await locate<AuthService>().signInAnonymously();
     } catch (e) {
-      setState(() {
-        error = 'Could not sign in as guest. Please try again.';
-      });
+      _setError('Could not sign in as guest. Please try again.');
     } finally {
       setIsLoading();
     }
@@ -318,13 +345,9 @@ class _AuthGateState extends State<AuthGate> {
               email: emailController.text, password: passwordController.text);
         }
       } on FirebaseAuthException catch (e) {
-        setState(() {
-          error = _friendlyAuthError(e.code);
-        });
+        _setError(_friendlyAuthError(e.code));
       } catch (e) {
-        setState(() {
-          error = _friendlyAuthError('$e');
-        });
+        _setError(_friendlyAuthError('$e'));
       } finally {
         setIsLoading();
       }
@@ -353,9 +376,7 @@ class _AuthGateState extends State<AuthGate> {
     try {
       await locate<AuthService>().signInWithApple();
     } catch (e) {
-      setState(() {
-        error = 'Apple sign-in failed. Please try again.';
-      });
+      _setError('Apple sign-in failed. Please try again.');
     } finally {
       setIsLoading();
     }
@@ -366,9 +387,7 @@ class _AuthGateState extends State<AuthGate> {
     try {
       await locate<AuthService>().signInWithGoogle();
     } catch (e) {
-      setState(() {
-        error = 'Google sign-in failed. Please try again.';
-      });
+      _setError('Google sign-in failed. Please try again.');
     } finally {
       setIsLoading();
     }
