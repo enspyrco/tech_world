@@ -1,5 +1,6 @@
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -490,34 +491,45 @@ class _CodeEditorModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Positioned.fill(
-      child: Stack(
-        children: [
-          // Semi-transparent scrim — tap to close
-          GestureDetector(
-            onTap: onClose,
-            child: Container(color: Colors.black54),
-          ),
-          // Centered editor
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: FractionallySizedBox(
-                heightFactor: 0.85,
-                child: Material(
-                  color: const Color(0xFF1E1E1E),
-                  borderRadius: BorderRadius.circular(12),
-                  clipBehavior: Clip.antiAlias,
-                  elevation: 24,
-                  child: CodeEditorPanel(
-                    challenge: challenge,
-                    onClose: onClose,
-                    onSubmit: onSubmit,
+      child: Focus(
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent &&
+              event.logicalKey == LogicalKeyboardKey.escape) {
+            onClose();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Stack(
+          children: [
+            // Semi-transparent scrim — tap to close
+            GestureDetector(
+              onTap: onClose,
+              child: Container(color: Colors.black54),
+            ),
+            // Centered editor
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: FractionallySizedBox(
+                  heightFactor: 0.85,
+                  child: Material(
+                    color: const Color(0xFF1E1E1E),
+                    borderRadius: BorderRadius.circular(12),
+                    clipBehavior: Clip.antiAlias,
+                    elevation: 24,
+                    child: CodeEditorPanel(
+                      challenge: challenge,
+                      onClose: onClose,
+                      onSubmit: onSubmit,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
