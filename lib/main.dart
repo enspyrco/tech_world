@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/code_editor_panel.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/tech_world.dart';
@@ -226,7 +227,7 @@ class _MyAppState extends State<MyApp> {
                         },
                       ),
                     ),
-                    // Side panel - map editor > code editor > chat
+                    // Side panel - map editor or chat
                     StreamBuilder<AuthUser>(
                       stream: locate<AuthService>().authStateChanges,
                       builder: (context, snapshot) {
@@ -248,87 +249,57 @@ class _MyAppState extends State<MyApp> {
                                 ),
                               );
                             }
-                            return ValueListenableBuilder<String?>(
-                              valueListenable: techWorld.activeChallenge,
-                              builder: (context, challengeId, _) {
-                                if (challengeId != null) {
-                                  final challenge = allChallenges.firstWhere(
-                                    (c) => c.id == challengeId,
-                                    orElse: () => allChallenges.first,
-                                  );
-                                  return SizedBox(
-                                    width:
-                                        constraints.maxWidth >= 800 ? 480 : 360,
-                                    child: CodeEditorPanel(
-                                      challenge: challenge,
-                                      onClose: techWorld.closeEditor,
-                                      onSubmit: (code) {
-                                        final chatService =
-                                            Locator.maybeLocate<ChatService>();
-                                        if (chatService != null) {
-                                          chatService.sendMessage(
-                                            'Please review my "${challenge.title}" '
-                                            'solution:\n\n```dart\n$code\n```',
-                                          );
-                                        }
-                                        techWorld.closeEditor();
-                                      },
-                                    ),
-                                  );
-                                }
-                                // Default: show chat panel
-                                final chatService =
-                                    Locator.maybeLocate<ChatService>();
-                                if (chatService == null) {
-                                  return SizedBox(
-                                    width:
-                                        constraints.maxWidth >= 800 ? 320 : 280,
-                                    child: const Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                  );
-                                }
-                                return ValueListenableBuilder<bool>(
-                                  valueListenable: _chatCollapsed,
-                                  builder: (context, collapsed, _) {
-                                    if (collapsed) {
-                                      return Container(
-                                        width: 48,
-                                        color: const Color(0xFF2D2D2D),
-                                        child: Align(
-                                          alignment: Alignment.topCenter,
-                                          child: Padding(
-                                            padding:
-                                                const EdgeInsets.only(top: 12),
-                                            child: IconButton(
-                                              onPressed: () =>
-                                                  _chatCollapsed.value = false,
-                                              icon:
-                                                  const Icon(Icons.chat_bubble),
-                                              color: const Color(0xFFD97757),
-                                              tooltip: 'Open chat',
-                                              style: IconButton.styleFrom(
-                                                backgroundColor:
-                                                    const Color(0xFFD97757)
-                                                        .withValues(
-                                                            alpha: 0.1),
-                                              ),
-                                            ),
+                            // Show chat panel
+                            final chatService =
+                                Locator.maybeLocate<ChatService>();
+                            if (chatService == null) {
+                              return SizedBox(
+                                width:
+                                    constraints.maxWidth >= 800 ? 320 : 280,
+                                child: const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              );
+                            }
+                            return ValueListenableBuilder<bool>(
+                              valueListenable: _chatCollapsed,
+                              builder: (context, collapsed, _) {
+                                if (collapsed) {
+                                  return Container(
+                                    width: 48,
+                                    color: const Color(0xFF2D2D2D),
+                                    child: Align(
+                                      alignment: Alignment.topCenter,
+                                      child: Padding(
+                                        padding:
+                                            const EdgeInsets.only(top: 12),
+                                        child: IconButton(
+                                          onPressed: () =>
+                                              _chatCollapsed.value = false,
+                                          icon:
+                                              const Icon(Icons.chat_bubble),
+                                          color: const Color(0xFFD97757),
+                                          tooltip: 'Open chat',
+                                          style: IconButton.styleFrom(
+                                            backgroundColor:
+                                                const Color(0xFFD97757)
+                                                    .withValues(
+                                                        alpha: 0.1),
                                           ),
                                         ),
-                                      );
-                                    }
-                                    return SizedBox(
-                                      width: constraints.maxWidth >= 800
-                                          ? 320
-                                          : 280,
-                                      child: ChatPanel(
-                                        chatService: chatService,
-                                        onCollapse: () =>
-                                            _chatCollapsed.value = true,
                                       ),
-                                    );
-                                  },
+                                    ),
+                                  );
+                                }
+                                return SizedBox(
+                                  width: constraints.maxWidth >= 800
+                                      ? 320
+                                      : 280,
+                                  child: ChatPanel(
+                                    chatService: chatService,
+                                    onCollapse: () =>
+                                        _chatCollapsed.value = true,
+                                  ),
                                 );
                               },
                             );
@@ -352,8 +323,6 @@ class _MyAppState extends State<MyApp> {
                     // Toolbar offset depends on what's showing in the side panel
                     final double toolbarRight;
                     if (techWorld.mapEditorActive.value) {
-                      toolbarRight = (constraints.maxWidth >= 800 ? 480 : 360) + 16;
-                    } else if (techWorld.activeChallenge.value != null) {
                       toolbarRight = (constraints.maxWidth >= 800 ? 480 : 360) + 16;
                     } else if (chatCollapsed) {
                       toolbarRight = 64;
@@ -381,6 +350,43 @@ class _MyAppState extends State<MyApp> {
                         ),
                       ),
                     );
+                      },
+                    );
+                  },
+                ),
+                // Code editor modal overlay
+                StreamBuilder<AuthUser>(
+                  stream: locate<AuthService>().authStateChanges,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData || snapshot.data is SignedOutUser) {
+                      return const SizedBox.shrink();
+                    }
+                    final techWorld = locate<TechWorld>();
+                    return ValueListenableBuilder<String?>(
+                      valueListenable: techWorld.activeChallenge,
+                      builder: (context, challengeId, _) {
+                        if (challengeId == null) {
+                          return const SizedBox.shrink();
+                        }
+                        final challenge = allChallenges.firstWhere(
+                          (c) => c.id == challengeId,
+                          orElse: () => allChallenges.first,
+                        );
+                        return _CodeEditorModal(
+                          challenge: challenge,
+                          onClose: techWorld.closeEditor,
+                          onSubmit: (code) {
+                            final chatService =
+                                Locator.maybeLocate<ChatService>();
+                            if (chatService != null) {
+                              chatService.sendMessage(
+                                'Please review my "${challenge.title}" '
+                                'solution:\n\n```dart\n$code\n```',
+                              );
+                            }
+                            techWorld.closeEditor();
+                          },
+                        );
                       },
                     );
                   },
@@ -465,6 +471,54 @@ class _MapEditorButton extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Modal overlay that displays the code editor centered on screen with a scrim.
+class _CodeEditorModal extends StatelessWidget {
+  const _CodeEditorModal({
+    required this.challenge,
+    required this.onClose,
+    required this.onSubmit,
+  });
+
+  final Challenge challenge;
+  final VoidCallback onClose;
+  final void Function(String code) onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          // Semi-transparent scrim — tap to close
+          GestureDetector(
+            onTap: onClose,
+            child: Container(color: Colors.black54),
+          ),
+          // Centered editor
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: FractionallySizedBox(
+                heightFactor: 0.85,
+                child: Material(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(12),
+                  clipBehavior: Clip.antiAlias,
+                  elevation: 24,
+                  child: CodeEditorPanel(
+                    challenge: challenge,
+                    onClose: onClose,
+                    onSubmit: onSubmit,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
