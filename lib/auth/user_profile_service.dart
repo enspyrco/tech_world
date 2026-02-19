@@ -45,6 +45,7 @@ class UserProfileService {
       uid: uid,
       displayName: data['displayName'] as String?,
       email: data['email'] as String?,
+      avatarId: data['avatarId'] as String?,
     );
   }
 
@@ -54,6 +55,23 @@ class UserProfileService {
     final profile = await getUserProfile(uid);
     return profile?.displayName ?? fallback;
   }
+
+  /// Save the chosen avatar ID to the user's profile.
+  Future<void> saveAvatarId(String uid, String avatarId) async {
+    await _collection.doc(uid).set(
+      {
+        'avatarId': avatarId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Get the saved avatar ID for a user, or null if none saved.
+  Future<String?> getAvatarId(String uid) async {
+    final profile = await getUserProfile(uid);
+    return profile?.avatarId;
+  }
 }
 
 /// User profile data stored in Firestore.
@@ -62,9 +80,11 @@ class UserProfile {
     required this.uid,
     this.displayName,
     this.email,
+    this.avatarId,
   });
 
   final String uid;
   final String? displayName;
   final String? email;
+  final String? avatarId;
 }
