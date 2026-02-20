@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
@@ -492,9 +493,23 @@ class FakeLiveKitService implements LiveKitService {
     ));
   }
 
+  final _participantJoinedController = StreamController<RemoteParticipant>.broadcast();
+  final _participantLeftController = StreamController<RemoteParticipant>.broadcast();
+
+  @override
+  Map<String, RemoteParticipant> get remoteParticipants => {};
+
+  @override
+  Stream<RemoteParticipant> get participantJoined => _participantJoinedController.stream;
+
+  @override
+  Stream<RemoteParticipant> get participantLeft => _participantLeftController.stream;
+
   @override
   void dispose() {
     _dataReceivedController.close();
+    _participantJoinedController.close();
+    _participantLeftController.close();
   }
 
   // Unused methods - just satisfy interface

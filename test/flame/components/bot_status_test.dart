@@ -14,8 +14,13 @@ void main() {
       expect(BotStatus.thinking.name, equals('thinking'));
     });
 
-    test('has exactly 2 values', () {
-      expect(BotStatus.values.length, equals(2));
+    test('has absent status', () {
+      expect(BotStatus.absent, isNotNull);
+      expect(BotStatus.absent.name, equals('absent'));
+    });
+
+    test('has exactly 3 values', () {
+      expect(BotStatus.values.length, equals(3));
     });
 
     test('values are unique', () {

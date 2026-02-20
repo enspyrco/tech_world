@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
+import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/services/tts_service.dart';
 
@@ -13,6 +14,7 @@ class ChatService {
       : _liveKitService = liveKitService,
         _ttsService = TtsService() {
     _subscribeToMessages();
+    _trackBotPresence();
   }
 
   final LiveKitService _liveKitService;
@@ -22,15 +24,39 @@ class ChatService {
   final Map<String, Completer<Map<String, dynamic>?>> _pendingMessages = {};
   final Set<String> _seenMessageIds = {}; // Prevent duplicate messages
   StreamSubscription<DataChannelMessage>? _chatSubscription;
+  StreamSubscription<RemoteParticipant>? _botJoinedSubscription;
+  StreamSubscription<RemoteParticipant>? _botLeftSubscription;
 
   Stream<List<ChatMessage>> get messages => _messagesController.stream;
   List<ChatMessage> get currentMessages => List.unmodifiable(_messages);
+
+  static const _botIdentity = 'bot-claude';
 
   void _subscribeToMessages() {
     // Listen for both chat messages and bot responses
     _chatSubscription = _liveKitService.dataReceived
         .where((msg) => msg.topic == 'chat' || msg.topic == 'chat-response')
         .listen(_handleMessage);
+  }
+
+  /// Track bot presence via LiveKit participant events.
+  void _trackBotPresence() {
+    // Set initial status based on whether bot is already in the room.
+    final botPresent =
+        _liveKitService.remoteParticipants.containsKey(_botIdentity);
+    botStatusNotifier.value = botPresent ? BotStatus.idle : BotStatus.absent;
+
+    _botJoinedSubscription = _liveKitService.participantJoined
+        .where((p) => p.identity == _botIdentity)
+        .listen((_) {
+      botStatusNotifier.value = BotStatus.idle;
+    });
+
+    _botLeftSubscription = _liveKitService.participantLeft
+        .where((p) => p.identity == _botIdentity)
+        .listen((_) {
+      botStatusNotifier.value = BotStatus.absent;
+    });
   }
 
   void _handleMessage(DataChannelMessage message) {
@@ -112,6 +138,17 @@ class ChatService {
       return null;
     }
 
+    if (botStatusNotifier.value == BotStatus.absent) {
+      debugPrint('ChatService: Bot is not in the room');
+      _messages.add(ChatMessage(
+        text: "Clawd isn't in the room right now. Try again in a moment!",
+        senderName: 'System',
+        isBot: true,
+      ));
+      _messagesController.add(List.from(_messages));
+      return null;
+    }
+
     // Generate a unique message ID
     final messageId = DateTime.now().millisecondsSinceEpoch.toString();
     _seenMessageIds.add(messageId); // Mark as seen so we don't duplicate
@@ -178,6 +215,8 @@ class ChatService {
 
   void dispose() {
     _chatSubscription?.cancel();
+    _botJoinedSubscription?.cancel();
+    _botLeftSubscription?.cancel();
     _messagesController.close();
     _ttsService.dispose();
   }
