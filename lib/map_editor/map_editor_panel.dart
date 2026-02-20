@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/map_editor/available_backgrounds.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
 import 'package:tech_world/map_editor/tile_palette.dart';
@@ -118,7 +119,7 @@ class MapEditorPanel extends StatelessWidget {
           clipBehavior: Clip.hardEdge,
           children: [
             _buildGrid(),
-            if (referenceMap?.backgroundImage != null)
+            if (state.backgroundImage != null)
               Positioned(
                 top: 0,
                 left: 0,
@@ -129,7 +130,7 @@ class MapEditorPanel extends StatelessWidget {
                       scale: imageScale,
                       alignment: Alignment.topLeft,
                       child: Image.asset(
-                        'assets/images/${referenceMap!.backgroundImage}',
+                        'assets/images/${state.backgroundImage}',
                       ),
                     ),
                   ),
@@ -516,16 +517,67 @@ class _MapToolbarState extends State<_MapToolbar> {
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          // Background image selector
+          _buildBackgroundDropdown(),
         ],
       ),
     );
   }
 
+  Widget _buildBackgroundDropdown() {
+    return Row(
+      children: [
+        Text(
+          'BG',
+          style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: widget.state.backgroundImage,
+              dropdownColor: _headerBg,
+              iconEnabledColor: Colors.grey,
+              iconSize: 16,
+              isDense: true,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              items: [
+                const DropdownMenuItem<String>(
+                  child:
+                      Text('None', style: TextStyle(color: Colors.grey)),
+                ),
+                for (final bg in availableBackgrounds)
+                  DropdownMenuItem<String>(
+                    value: bg.filename,
+                    child: Text(bg.label),
+                  ),
+              ],
+              onChanged: (value) =>
+                  widget.state.setBackgroundImage(value),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTileBrushInfo() {
-    final brush = widget.state.currentTileBrush;
+    final brush = widget.state.currentBrush;
     final layerName = widget.state.activeLayer == ActiveLayer.floor
         ? 'Floor'
         : 'Objects';
+
+    String label;
+    if (brush == null) {
+      label = '$layerName — Eraser';
+    } else if (brush.isMultiTile) {
+      label = '$layerName — ${brush.tilesetId} [${brush.width}×${brush.height}]';
+    } else {
+      final index = brush.startRow * brush.columns + brush.startCol;
+      label = '$layerName — ${brush.tilesetId}[$index]';
+    }
 
     return Row(
       children: [
@@ -536,9 +588,7 @@ class _MapToolbarState extends State<_MapToolbar> {
         ),
         const SizedBox(width: 6),
         Text(
-          brush == null
-              ? '$layerName — Eraser'
-              : '$layerName — ${brush.tilesetId}[${brush.tileIndex}]',
+          label,
           style: TextStyle(
             color: Colors.grey.shade300,
             fontSize: 11,

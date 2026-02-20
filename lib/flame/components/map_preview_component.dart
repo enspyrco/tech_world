@@ -41,6 +41,29 @@ class MapPreviewComponent extends Component {
     final game = findGame() as TechWorldGame?;
     final registry = game?.tilesetRegistry;
 
+    // Render background image if selected.
+    final bgImage = editorState.backgroundImage;
+    if (bgImage != null && game != null) {
+      try {
+        final image = game.images.fromCache(bgImage);
+        final worldWidth = gridSize * gridSquareSizeDouble;
+        final worldHeight = gridSize * gridSquareSizeDouble;
+        canvas.drawImageRect(
+          image,
+          Rect.fromLTWH(
+            0,
+            0,
+            image.width.toDouble(),
+            image.height.toDouble(),
+          ),
+          Rect.fromLTWH(0, 0, worldWidth, worldHeight),
+          paint,
+        );
+      } catch (_) {
+        // Image not loaded yet — skip silently.
+      }
+    }
+
     // Render floor tile layer first (below structure).
     if (registry != null) {
       _renderTileLayer(canvas, editorState.floorLayerData, registry, paint);
