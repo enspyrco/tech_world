@@ -18,6 +18,7 @@ import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/widgets/proximity_video_overlay.dart';
+import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
@@ -46,6 +47,7 @@ class _MyAppState extends State<MyApp> {
   LiveKitService? _liveKitService;
   ChatService? _chatService;
   ProximityService? _proximityService;
+  ProgressService? _progressService;
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
   bool _liveKitConnectionFailed = false;
@@ -122,9 +124,11 @@ class _MyAppState extends State<MyApp> {
       _liveKitService?.dispose();
       _chatService?.dispose();
       _proximityService?.dispose();
+      _progressService?.dispose();
       _liveKitService = null;
       _chatService = null;
       _proximityService = null;
+      _progressService = null;
       _liveKitConnectionFailed = false;
       _selectedAvatar = null;
       _avatarLoaded = false;
@@ -132,6 +136,7 @@ class _MyAppState extends State<MyApp> {
       Locator.remove<LiveKitService>();
       Locator.remove<ChatService>();
       Locator.remove<ProximityService>();
+      Locator.remove<ProgressService>();
       debugPrint('User signed out - LiveKit disconnected');
       setState(() {}); // Trigger rebuild to remove overlay
     } else {
@@ -151,6 +156,11 @@ class _MyAppState extends State<MyApp> {
       }
       _avatarLoaded = true;
 
+      // Load challenge progression
+      _progressService = ProgressService(uid: user.id);
+      await _progressService!.loadProgress();
+      Locator.add<ProgressService>(_progressService!);
+
       _liveKitService = LiveKitService(
         userId: user.id,
         displayName: user.displayName,
@@ -169,6 +179,12 @@ class _MyAppState extends State<MyApp> {
       debugPrint('LiveKit connected: $connected');
 
       if (connected) {
+        // Tell TechWorld to set up LiveKit subscriptions now that the
+        // service is registered and connected. TechWorld's own auth
+        // listener fires before this point, so its initial attempt
+        // to locate LiveKitService will have failed.
+        await locate<TechWorld>().connectToLiveKit(user.id, user.displayName);
+
         // Enable camera and microphone
         await _liveKitService!.setCameraEnabled(true);
         await _liveKitService!.setMicrophoneEnabled(true);
@@ -427,19 +443,35 @@ class _MyAppState extends State<MyApp> {
                           (c) => c.id == challengeId,
                           orElse: () => allChallenges.first,
                         );
+                        final isCompleted = Locator.maybeLocate<
+                                    ProgressService>()
+                                ?.isChallengeCompleted(challenge.id) ??
+                            false;
                         return _CodeEditorModal(
                           challenge: challenge,
+                          isCompleted: isCompleted,
                           onClose: techWorld.closeEditor,
-                          onSubmit: (code) {
+                          onSubmit: (code) async {
+                            // Close the editor immediately so the player
+                            // returns to the game while waiting for Clawd.
+                            techWorld.closeEditor();
+
                             final chatService =
                                 Locator.maybeLocate<ChatService>();
-                            if (chatService != null) {
-                              chatService.sendMessage(
-                                'Please review my "${challenge.title}" '
-                                'solution:\n\n```dart\n$code\n```',
-                              );
+                            if (chatService == null) return;
+
+                            final response = await chatService.sendMessage(
+                              'Please review my "${challenge.title}" '
+                              'solution:\n\n```dart\n$code\n```',
+                              metadata: {'challengeId': challenge.id},
+                            );
+
+                            // Only mark completed when bot confirms pass
+                            if (response?['challengeResult'] == 'pass') {
+                              Locator.maybeLocate<ProgressService>()
+                                  ?.markChallengeCompleted(challenge.id);
+                              techWorld.refreshTerminalStates();
                             }
-                            techWorld.closeEditor();
                           },
                         );
                       },
@@ -534,11 +566,13 @@ class _MapEditorButton extends StatelessWidget {
 class _CodeEditorModal extends StatelessWidget {
   const _CodeEditorModal({
     required this.challenge,
+    required this.isCompleted,
     required this.onClose,
     required this.onSubmit,
   });
 
   final Challenge challenge;
+  final bool isCompleted;
   final VoidCallback onClose;
   final void Function(String code) onSubmit;
 
@@ -575,6 +609,7 @@ class _CodeEditorModal extends StatelessWidget {
                     elevation: 24,
                     child: CodeEditorPanel(
                       challenge: challenge,
+                      isCompleted: isCompleted,
                       onClose: onClose,
                       onSubmit: onSubmit,
                     ),

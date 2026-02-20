@@ -11,12 +11,16 @@ class CodeEditorPanel extends StatefulWidget {
     required this.challenge,
     required this.onClose,
     required this.onSubmit,
+    this.isCompleted = false,
     super.key,
   });
 
   final Challenge challenge;
   final VoidCallback onClose;
   final void Function(String code) onSubmit;
+
+  /// Whether this challenge has already been completed.
+  final bool isCompleted;
 
   @override
   State<CodeEditorPanel> createState() => _CodeEditorPanelState();
@@ -127,6 +131,40 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (widget.isCompleted)
+                  Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFD700).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFFFFD700).withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.check_circle,
+                          color: Color(0xFFFFD700),
+                          size: 14,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Completed',
+                          style: TextStyle(
+                            color: Color(0xFFFFD700),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 IconButton(
                   onPressed: widget.onClose,
                   icon: const Icon(Icons.close),
