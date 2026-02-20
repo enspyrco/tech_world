@@ -31,7 +31,7 @@ class TerminalComponent extends PositionComponent with TapCallbacks {
     ..style = PaintingStyle.stroke
     ..strokeWidth = 1.5;
   static final _completedBorderPaint = Paint()
-    ..color = const Color(0xFFFFD700)
+    ..color = completedGold
     ..style = PaintingStyle.stroke
     ..strokeWidth = 1.5;
   static final _promptStyle = ui.TextStyle(
@@ -40,7 +40,7 @@ class TerminalComponent extends PositionComponent with TapCallbacks {
     fontWeight: FontWeight.bold,
   );
   static final _checkmarkStyle = ui.TextStyle(
-    color: const Color(0xFFFFD700),
+    color: completedGold,
     fontSize: 12,
     fontWeight: FontWeight.bold,
   );

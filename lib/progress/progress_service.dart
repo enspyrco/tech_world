@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 /// Tracks which coding challenges a player has completed.
 ///
@@ -26,28 +27,48 @@ class ProgressService {
   Stream<Set<String>> get completedChallenges => _controller.stream;
 
   /// Load the user's completed challenges from Firestore.
+  ///
+  /// Logs and rethrows on Firestore errors so callers can handle failure
+  /// (e.g. show a retry prompt).
   Future<void> loadProgress() async {
-    final doc = await _collection.doc(_uid).get();
-    final data = doc.data();
-    if (data != null && data['completedChallenges'] is List) {
-      _completed.addAll(List<String>.from(data['completedChallenges']));
+    try {
+      final doc = await _collection.doc(_uid).get();
+      final data = doc.data();
+      if (data != null && data['completedChallenges'] is List) {
+        _completed.addAll(List<String>.from(data['completedChallenges']));
+      }
+    } on FirebaseException catch (e) {
+      debugPrint('ProgressService: Failed to load progress: $e');
+      rethrow;
     }
   }
 
   /// Mark a challenge as completed. Optimistic local update then Firestore
   /// write with [FieldValue.arrayUnion] for idempotency.
+  ///
+  /// If the Firestore write fails the local cache is rolled back and
+  /// the error is rethrown.
   Future<void> markChallengeCompleted(String challengeId) async {
     if (_completed.contains(challengeId)) return;
 
+    // Optimistic local update.
     _completed.add(challengeId);
     _controller.add(Set.unmodifiable(_completed));
 
-    await _collection.doc(_uid).set(
-      {
-        'completedChallenges': FieldValue.arrayUnion([challengeId]),
-      },
-      SetOptions(merge: true),
-    );
+    try {
+      await _collection.doc(_uid).set(
+        {
+          'completedChallenges': FieldValue.arrayUnion([challengeId]),
+        },
+        SetOptions(merge: true),
+      );
+    } on FirebaseException catch (e) {
+      // Rollback the optimistic update.
+      _completed.remove(challengeId);
+      _controller.add(Set.unmodifiable(_completed));
+      debugPrint('ProgressService: Failed to persist completion: $e');
+      rethrow;
+    }
   }
 
   /// Synchronous check against the local cache.

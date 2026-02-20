@@ -6,10 +6,19 @@ import 'package:tech_world/flame/tiles/tileset_registry.dart';
 /// Renders the object tile layer as individual [SpriteComponent]s with
 /// y-based priority for depth sorting.
 ///
-/// Each non-null tile becomes a [SpriteComponent] added to the parent (World)
-/// with `priority = y`, so objects at higher y-values render in front of
-/// objects at lower y-values — the same pattern used by
-/// [WallOcclusionComponent].
+/// ## Parent-injection pattern
+///
+/// Sprites are **not** added as children of this component. Instead, [onLoad]
+/// adds them directly to the parent [World] so that they participate in the
+/// World's y-priority sorting alongside player characters and
+/// [WallOcclusionComponent] overlays. If they were children of *this*
+/// component they would be depth-sorted only among themselves, breaking
+/// occlusion with other world-level components.
+///
+/// **Ownership caveat:** This component tracks every sprite in [_sprites] but
+/// the sprites' `parent` is the World. [hide], [show], and [onRemove]
+/// maintain this relationship — external code should not remove these sprites
+/// from the World independently.
 ///
 /// Supports [hide] and [show] for toggling visibility during editor mode.
 class TileObjectLayerComponent extends Component {
