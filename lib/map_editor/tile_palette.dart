@@ -1,14 +1,18 @@
+import 'dart:math';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
-import 'package:tech_world/flame/tiles/tile_ref.dart';
+import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 
 /// Scrollable tile picker showing available tiles from loaded tilesets.
 ///
-/// Tiles are grouped by tileset name. Selecting a tile sets the
-/// [MapEditorState.currentTileBrush]. A special "eraser" entry at the top
-/// clears the brush (paints null).
+/// Each tileset is rendered as a single sprite sheet image scaled to fit the
+/// palette width. Tapping a tile selects it as a 1×1 brush. Long-pressing and
+/// dragging selects a rectangular multi-tile brush. This avoids conflict with
+/// the ListView scroll gesture.
 class TilePalette extends StatelessWidget {
   const TilePalette({required this.state, super.key});
 
@@ -35,7 +39,7 @@ class TilePalette extends StatelessWidget {
                 padding: const EdgeInsets.all(8),
                 children: [
                   for (final tileset in allTilesets)
-                    _buildTilesetSection(tileset),
+                    _TilesetSection(tileset: tileset, state: state),
                 ],
               ),
             ),
@@ -46,9 +50,9 @@ class TilePalette extends StatelessWidget {
   }
 
   Widget _buildEraserButton() {
-    final isSelected = state.currentTileBrush == null;
+    final isSelected = state.currentBrush == null;
     return InkWell(
-      onTap: () => state.setTileBrush(null),
+      onTap: () => state.setBrush(null),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         color: isSelected ? _selectedColor.withValues(alpha: 0.2) : _headerBg,
@@ -72,108 +76,228 @@ class TilePalette extends StatelessWidget {
       ),
     );
   }
-
-  Widget _buildTilesetSection(Tileset tileset) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4, top: 8),
-          child: Text(
-            tileset.name,
-            style: TextStyle(
-              color: Colors.grey.shade400,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        Wrap(
-          spacing: 2,
-          runSpacing: 2,
-          children: [
-            for (var i = 0; i < tileset.tileCount; i++)
-              _buildTileButton(tileset, i),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTileButton(Tileset tileset, int index) {
-    final ref = TileRef(tilesetId: tileset.id, tileIndex: index);
-    final isSelected = state.currentTileBrush == ref;
-
-    return GestureDetector(
-      onTap: () => state.setTileBrush(ref),
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: isSelected ? _selectedColor : Colors.grey.shade700,
-            width: isSelected ? 2 : 1,
-          ),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: CustomPaint(
-            painter: _TilePreviewPainter(
-              tileset: tileset,
-              tileIndex: index,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-/// Paints a single tile from a tileset as a colored rectangle.
-///
-/// Uses a color derived from the tile index as a placeholder. When real tileset
-/// images are available, this should render the actual sprite sub-region.
-class _TilePreviewPainter extends CustomPainter {
-  _TilePreviewPainter({required this.tileset, required this.tileIndex});
+// ---------------------------------------------------------------------------
+// Tileset section — StatefulWidget for local drag state
+// ---------------------------------------------------------------------------
+
+class _TilesetSection extends StatefulWidget {
+  const _TilesetSection({required this.tileset, required this.state});
 
   final Tileset tileset;
-  final int tileIndex;
+  final MapEditorState state;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    // Generate a deterministic color from the tile index for the test tileset.
-    final hue = (tileIndex * 22.5) % 360;
-    final color = HSLColor.fromAHSL(1.0, hue, 0.6, 0.5).toColor();
+  State<_TilesetSection> createState() => _TilesetSectionState();
+}
 
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = color,
+class _TilesetSectionState extends State<_TilesetSection> {
+  static const _selectedColor = Color(0xFF4FC3F7);
+
+  /// Start of the drag selection (col, row in the tileset grid).
+  int? _dragStartCol;
+  int? _dragStartRow;
+
+  /// Current end of the drag selection.
+  int? _dragEndCol;
+  int? _dragEndRow;
+
+  /// Whether a long-press drag is active.
+  bool _isDragging = false;
+
+  /// Cached tile display size for use in gesture callbacks.
+  double _tileDisplaySize = 0;
+
+  Tileset get _tileset => widget.tileset;
+  MapEditorState get _state => widget.state;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+        _tileDisplaySize = availableWidth / _tileset.columns;
+        final sheetHeight = _tileset.rows * _tileDisplaySize;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4, top: 8),
+              child: Text(
+                _tileset.name,
+                style: TextStyle(
+                  color: Colors.grey.shade400,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            RawGestureDetector(
+              gestures: <Type, GestureRecognizerFactory>{
+                TapGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+                  () => TapGestureRecognizer(),
+                  (instance) {
+                    instance.onTapUp = (details) =>
+                        _onTap(details.localPosition, _tileDisplaySize);
+                  },
+                ),
+                LongPressGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<
+                        LongPressGestureRecognizer>(
+                  // 150ms hold — much snappier than the default 500ms,
+                  // but still long enough to distinguish from scroll intent.
+                  () => LongPressGestureRecognizer(
+                      duration: const Duration(milliseconds: 150)),
+                  (instance) {
+                    instance.onLongPressStart = (details) {
+                      _onLongPressStart(
+                          details.localPosition, _tileDisplaySize);
+                    };
+                    instance.onLongPressMoveUpdate = (details) {
+                      _onLongPressMove(
+                          details.localPosition, _tileDisplaySize);
+                    };
+                    instance.onLongPressEnd = (_) {
+                      _onLongPressEnd(_tileDisplaySize);
+                    };
+                  },
+                ),
+              },
+              child: Stack(
+                children: [
+                  SizedBox(
+                    width: availableWidth,
+                    height: sheetHeight,
+                    child: Image.asset(
+                      'assets/images/${_tileset.imagePath}',
+                      fit: BoxFit.fill,
+                      filterQuality: FilterQuality.none,
+                    ),
+                  ),
+                  // Selection highlight — during drag or for current brush
+                  _buildSelectionHighlight(_tileDisplaySize),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
+  }
 
-    // Draw index label for identification.
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: '$tileIndex',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 9,
-          fontWeight: FontWeight.bold,
+  /// Build the cyan selection rectangle overlay.
+  Widget _buildSelectionHighlight(double tileDisplaySize) {
+    int? selCol, selRow, selW, selH;
+
+    if (_isDragging &&
+        _dragStartCol != null &&
+        _dragEndCol != null) {
+      // Live drag preview.
+      selCol = min(_dragStartCol!, _dragEndCol!);
+      selRow = min(_dragStartRow!, _dragEndRow!);
+      selW = (_dragStartCol! - _dragEndCol!).abs() + 1;
+      selH = (_dragStartRow! - _dragEndRow!).abs() + 1;
+    } else {
+      // Show the committed brush selection.
+      final brush = _state.currentBrush;
+      if (brush != null && brush.tilesetId == _tileset.id) {
+        selCol = brush.startCol;
+        selRow = brush.startRow;
+        selW = brush.width;
+        selH = brush.height;
+      }
+    }
+
+    if (selCol == null) return const SizedBox.shrink();
+
+    return Positioned(
+      left: selCol * tileDisplaySize,
+      top: selRow! * tileDisplaySize,
+      child: IgnorePointer(
+        child: Container(
+          width: selW! * tileDisplaySize,
+          height: selH! * tileDisplaySize,
+          decoration: BoxDecoration(
+            border: Border.all(color: _selectedColor, width: 2),
+          ),
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    textPainter.paint(
-      canvas,
-      Offset(
-        (size.width - textPainter.width) / 2,
-        (size.height - textPainter.height) / 2,
       ),
     );
   }
 
-  @override
-  bool shouldRepaint(_TilePreviewPainter oldDelegate) =>
-      tileIndex != oldDelegate.tileIndex ||
-      tileset.id != oldDelegate.tileset.id;
+  // -------------------------------------------------------------------------
+  // Gesture handlers
+  // -------------------------------------------------------------------------
+
+  /// Tap → single tile (1×1) brush.
+  void _onTap(Offset pos, double tileDisplaySize) {
+    final col = (pos.dx / tileDisplaySize).floor().clamp(0, _tileset.columns - 1);
+    final row = (pos.dy / tileDisplaySize).floor().clamp(0, _tileset.rows - 1);
+
+    _state.setBrush(TileBrush(
+      tilesetId: _tileset.id,
+      startCol: col,
+      startRow: row,
+      columns: _tileset.columns,
+    ));
+  }
+
+  /// Long press start → begin rectangular selection.
+  void _onLongPressStart(Offset pos, double tileDisplaySize) {
+    final col = (pos.dx / tileDisplaySize).floor().clamp(0, _tileset.columns - 1);
+    final row = (pos.dy / tileDisplaySize).floor().clamp(0, _tileset.rows - 1);
+
+    setState(() {
+      _isDragging = true;
+      _dragStartCol = col;
+      _dragStartRow = row;
+      _dragEndCol = col;
+      _dragEndRow = row;
+    });
+  }
+
+  /// Long press move → update selection rectangle.
+  void _onLongPressMove(Offset pos, double tileDisplaySize) {
+    if (!_isDragging) return;
+
+    final col = (pos.dx / tileDisplaySize).floor().clamp(0, _tileset.columns - 1);
+    final row = (pos.dy / tileDisplaySize).floor().clamp(0, _tileset.rows - 1);
+
+    if (col != _dragEndCol || row != _dragEndRow) {
+      setState(() {
+        _dragEndCol = col;
+        _dragEndRow = row;
+      });
+    }
+  }
+
+  /// Long press end → commit rectangular brush.
+  void _onLongPressEnd(double tileDisplaySize) {
+    if (!_isDragging) return;
+
+    final startCol = min(_dragStartCol!, _dragEndCol!);
+    final startRow = min(_dragStartRow!, _dragEndRow!);
+    final w = (_dragStartCol! - _dragEndCol!).abs() + 1;
+    final h = (_dragStartRow! - _dragEndRow!).abs() + 1;
+
+    _state.setBrush(TileBrush(
+      tilesetId: _tileset.id,
+      startCol: startCol,
+      startRow: startRow,
+      columns: _tileset.columns,
+      width: w,
+      height: h,
+    ));
+
+    setState(() {
+      _isDragging = false;
+      _dragStartCol = null;
+      _dragStartRow = null;
+      _dragEndCol = null;
+      _dragEndRow = null;
+    });
+  }
 }

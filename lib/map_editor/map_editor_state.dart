@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 
@@ -65,8 +66,26 @@ class MapEditorState extends ChangeNotifier {
   final TileLayerData objectLayerData = TileLayerData();
 
   /// The currently selected tile brush for painting on tile layers.
-  TileRef? _currentTileBrush;
-  TileRef? get currentTileBrush => _currentTileBrush;
+  ///
+  /// A [TileBrush] can represent a single tile (1×1) or a rectangular
+  /// multi-tile selection. Use [setBrush] for arbitrary sizes, or
+  /// [setTileBrush] as a convenience for single-tile selections.
+  TileBrush? _currentBrush;
+  TileBrush? get currentBrush => _currentBrush;
+
+  // -------------------------------------------------------------------------
+  // Background image
+  // -------------------------------------------------------------------------
+
+  /// Optional background image filename (relative to `assets/images/`).
+  String? _backgroundImage;
+  String? get backgroundImage => _backgroundImage;
+
+  /// Set the background image filename, or `null` for no background.
+  void setBackgroundImage(String? filename) {
+    _backgroundImage = filename;
+    notifyListeners();
+  }
 
   /// Switch the active editing layer.
   void setActiveLayer(ActiveLayer layer) {
@@ -74,22 +93,58 @@ class MapEditorState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Set the tile brush for painting on floor/object layers.
-  void setTileBrush(TileRef? ref) {
-    _currentTileBrush = ref;
+  /// Set the tile brush to a rectangular selection.
+  void setBrush(TileBrush? brush) {
+    _currentBrush = brush;
     notifyListeners();
   }
 
-  /// Paint a tile reference at (x, y) on the active tile layer.
+  /// Convenience: set a single-tile brush from a [TileRef].
   ///
-  /// Uses [currentTileBrush] if set, or clears the cell if null.
+  /// The [columns] parameter is required so that the tile index can be
+  /// correctly decomposed into column/row coordinates.
+  /// Pass `null` for [ref] to select the eraser.
+  void setTileBrush(TileRef? ref, {required int columns}) {
+    if (ref == null) {
+      _currentBrush = null;
+    } else {
+      _currentBrush = TileBrush(
+        tilesetId: ref.tilesetId,
+        startCol: ref.tileIndex % columns,
+        startRow: ref.tileIndex ~/ columns,
+        columns: columns,
+      );
+    }
+    notifyListeners();
+  }
+
+  /// Paint the current brush at (x, y) on the active tile layer.
+  ///
+  /// For a multi-tile brush, (x, y) is the top-left anchor and all tiles
+  /// within the brush rectangle are stamped. Eraser (`null` brush) clears
+  /// a single cell.
   void paintTileRef(int x, int y) {
     if (x < 0 || x >= gridSize || y < 0 || y >= gridSize) return;
 
     final layer = _activeLayer == ActiveLayer.floor
         ? floorLayerData
         : objectLayerData;
-    layer.setTile(x, y, _currentTileBrush);
+
+    final brush = _currentBrush;
+    if (brush == null) {
+      // Eraser — clear single cell.
+      layer.setTile(x, y, null);
+    } else {
+      for (var dy = 0; dy < brush.height; dy++) {
+        for (var dx = 0; dx < brush.width; dx++) {
+          final tx = x + dx;
+          final ty = y + dy;
+          if (tx >= 0 && tx < gridSize && ty >= 0 && ty < gridSize) {
+            layer.setTile(tx, ty, brush.tileRefAt(dx, dy));
+          }
+        }
+      }
+    }
     notifyListeners();
   }
 
@@ -158,6 +213,7 @@ class MapEditorState extends ChangeNotifier {
   /// Reset all layers including tile data.
   void clearAll() {
     clearGrid();
+    _backgroundImage = null;
     _clearTileLayer(floorLayerData);
     _clearTileLayer(objectLayerData);
     notifyListeners();
@@ -168,6 +224,7 @@ class MapEditorState extends ChangeNotifier {
     clearGrid();
     _mapName = map.name;
     _mapId = map.id;
+    _backgroundImage = map.backgroundImage;
 
     for (final barrier in map.barriers) {
       if (_inBounds(barrier.x, barrier.y)) {
@@ -278,6 +335,7 @@ class MapEditorState extends ChangeNotifier {
       barriers: barriers,
       spawnPoint: spawnPoint ?? const Point(25, 25),
       terminals: terminals,
+      backgroundImage: _backgroundImage,
       floorLayer: floorLayerData.isEmpty ? null : floorLayerData,
       objectLayer: objectLayerData.isEmpty ? null : objectLayerData,
       tilesetIds: tilesetIds,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/maps/generators/map_generator.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 
@@ -55,6 +56,22 @@ class MapSelector extends StatelessWidget {
                       const SizedBox(width: 16),
                     const SizedBox(width: 8),
                     Text(map.name),
+                  ],
+                ),
+              ),
+            const PopupMenuDivider(),
+            for (final algo in MapAlgorithm.values)
+              PopupMenuItem<GameMap>(
+                // value is null — onTap handles generation instead.
+                onTap: () {
+                  final map = generateMap(algorithm: algo);
+                  techWorld.loadMap(map);
+                },
+                child: Row(
+                  children: [
+                    const Icon(Icons.casino, size: 16, color: Colors.orange),
+                    const SizedBox(width: 8),
+                    Text('Generate ${algo.displayName}'),
                   ],
                 ),
               ),
