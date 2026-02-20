@@ -47,5 +47,9 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSCameraUsageDescription</key>
+		<string>Tech World uses camera for video chat with nearby players</string>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Tech World uses microphone for voice chat with nearby players</string>
 	</dict>
 </plist>

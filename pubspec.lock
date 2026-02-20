@@ -188,11 +188,12 @@ packages:
   code_forge_web:
     dependency: "direct main"
     description:
-      name: code_forge_web
-      sha256: "6da105c86c02b1eaa4249ea8dd5c21a0f7210c855530580fc653fa61d48f927a"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.0"
+      path: "."
+      ref: "feat/alt-arrow-word-navigation"
+      resolved-ref: "06f065e17e2e150f3820b83334f56b53deb1b5f1"
+      url: "https://github.com/nickmeinhold/code_forge_web.git"
+    source: git
+    version: "1.4.1"
   collection:
     dependency: "direct main"
     description:
