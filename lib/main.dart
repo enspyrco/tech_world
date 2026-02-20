@@ -323,6 +323,8 @@ class _MyAppState extends State<MyApp> {
                                   state: _mapEditorState,
                                   onClose: techWorld.exitEditorMode,
                                   referenceMap: techWorld.currentMap.value,
+                                  playerPosition:
+                                      techWorld.playerGridPosition,
                                 ),
                               );
                             }

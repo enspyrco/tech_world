@@ -1,8 +1,10 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/maps/generators/map_generator.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/map_editor/available_backgrounds.dart';
@@ -20,6 +22,7 @@ class MapEditorPanel extends StatelessWidget {
     required this.state,
     required this.onClose,
     this.referenceMap,
+    this.playerPosition,
     super.key,
   });
 
@@ -28,6 +31,9 @@ class MapEditorPanel extends StatelessWidget {
 
   /// Optional game map to render as a faint reference layer under the grid.
   final GameMap? referenceMap;
+
+  /// Current player position in grid coordinates, shown as a marker on the grid.
+  final ValueListenable<Point<int>>? playerPosition;
 
   static const _headerBg = Color(0xFF2D2D2D);
   static const _panelBg = Color(0xFF1E1E1E);
@@ -168,8 +174,11 @@ class MapEditorPanel extends StatelessWidget {
   // ---------------------------------------------------------------------------
 
   Widget _buildGrid() {
+    final listenable = playerPosition != null
+        ? Listenable.merge([state, playerPosition!])
+        : state as Listenable;
     return ListenableBuilder(
-      listenable: state,
+      listenable: listenable,
       builder: (context, _) {
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -187,6 +196,7 @@ class MapEditorPanel extends StatelessWidget {
                   state: state,
                   cellSize: cellSize,
                   referenceMap: referenceMap,
+                  playerPosition: playerPosition?.value,
                 ),
               ),
             );
@@ -220,6 +230,9 @@ class MapEditorPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
+          // Generate procedural map
+          _GenerateSection(state: state),
+          const SizedBox(height: 8),
           // Load existing map dropdown
           SizedBox(
             width: double.infinity,
@@ -652,6 +665,66 @@ class _MapToolbarState extends State<_MapToolbar> {
 }
 
 // ---------------------------------------------------------------------------
+// Generate section — pick algorithm + generate button
+// ---------------------------------------------------------------------------
+
+class _GenerateSection extends StatefulWidget {
+  const _GenerateSection({required this.state});
+
+  final MapEditorState state;
+
+  @override
+  State<_GenerateSection> createState() => _GenerateSectionState();
+}
+
+class _GenerateSectionState extends State<_GenerateSection> {
+  MapAlgorithm _selected = MapAlgorithm.dungeon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<MapAlgorithm>(
+              isExpanded: true,
+              value: _selected,
+              dropdownColor: const Color(0xFF2D2D2D),
+              iconEnabledColor: Colors.grey,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              items: [
+                for (final algo in MapAlgorithm.values)
+                  DropdownMenuItem(
+                    value: algo,
+                    child: Text(algo.displayName),
+                  ),
+              ],
+              onChanged: (algo) {
+                if (algo != null) setState(() => _selected = algo);
+              },
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton.icon(
+          onPressed: () {
+            final map = generateMap(algorithm: _selected);
+            widget.state.loadFromGameMap(map);
+          },
+          icon: const Icon(Icons.casino, size: 14),
+          label: const Text('Generate', style: TextStyle(fontSize: 12)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange.shade700,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Custom painter for the mini-grid
 // ---------------------------------------------------------------------------
 
@@ -660,11 +733,13 @@ class _GridPainter extends CustomPainter {
     required this.state,
     required this.cellSize,
     this.referenceMap,
+    this.playerPosition,
   });
 
   final MapEditorState state;
   final double cellSize;
   final GameMap? referenceMap;
+  final Point<int>? playerPosition;
 
   // Pre-compute reference map lookup for O(1) access.
   late final Set<Point<int>> _refBarriers =
@@ -740,6 +815,28 @@ class _GridPainter extends CustomPainter {
           Offset(offset, 0), Offset(offset, size.height), linePaint);
       canvas.drawLine(
           Offset(0, offset), Offset(size.width, offset), linePaint);
+    }
+
+    // Player position marker
+    if (playerPosition != null) {
+      final px = playerPosition!.x;
+      final py = playerPosition!.y;
+      if (px >= 0 && px < gridSize && py >= 0 && py < gridSize) {
+        final center = Offset(
+          (px + 0.5) * cellSize,
+          (py + 0.5) * cellSize,
+        );
+        paint
+          ..color = const Color(0xFFFFFFFF)
+          ..style = PaintingStyle.fill;
+        canvas.drawCircle(center, cellSize * 0.4, paint);
+        paint
+          ..color = const Color(0xFF4FC3F7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5;
+        canvas.drawCircle(center, cellSize * 0.4, paint);
+        paint.style = PaintingStyle.fill;
+      }
     }
   }
 

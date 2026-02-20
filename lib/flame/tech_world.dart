@@ -80,6 +80,11 @@ class TechWorld extends World with TapCallbacks {
   final Set<String> _audioEnabledParticipants = {}; // track audio state
   Point<int>? _lastPlayerGridPosition; // track to skip unnecessary updates
 
+  /// Current player grid position, updated each frame for UI consumers
+  /// (e.g. the map editor mini-grid).
+  final ValueNotifier<Point<int>> playerGridPosition =
+      ValueNotifier(defaultMap.spawnPoint);
+
   // LiveKit integration for video bubbles
   LiveKitService? _liveKitService;
   ui.FragmentProgram? _shaderProgram; // Keep reference for creating new shaders
@@ -143,7 +148,7 @@ class TechWorld extends World with TapCallbacks {
       _mapPreviewComponent!.removeFromParent();
       _mapPreviewComponent = null;
     }
-    _barriersComponent.renderBarriers = true;
+    _barriersComponent.renderBarriers = false;
   }
 
   MapEditorState? _editorState;
@@ -222,6 +227,7 @@ class TechWorld extends World with TapCallbacks {
       return;
     }
     _lastPlayerGridPosition = playerGrid;
+    playerGridPosition.value = playerGrid;
 
     // Check each other player for proximity
     final nearbyPlayerIds = <String>{};
@@ -823,6 +829,7 @@ class TechWorld extends World with TapCallbacks {
       map.spawnPoint.x * gridSquareSizeDouble,
       map.spawnPoint.y * gridSquareSizeDouble,
     );
+    playerGridPosition.value = map.spawnPoint;
 
     currentMap.value = map;
   }
