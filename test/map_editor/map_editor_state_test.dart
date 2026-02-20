@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 
 void main() {
@@ -297,6 +298,95 @@ void main() {
       state.setBackgroundImage('single_room.png');
       state.clearAll();
       expect(state.backgroundImage, isNull);
+    });
+  });
+
+  group('Multi-tile brush painting', () {
+    test('setBrush sets the current brush', () {
+      const brush = TileBrush(
+        tilesetId: 'test',
+        startCol: 0,
+        startRow: 0,
+        columns: 4,
+        width: 2,
+        height: 2,
+      );
+      state.setBrush(brush);
+      expect(state.currentBrush, brush);
+    });
+
+    test('setBrush null selects eraser', () {
+      state.setBrush(const TileBrush(
+        tilesetId: 'test',
+        startCol: 0,
+        startRow: 0,
+        columns: 4,
+      ));
+      state.setBrush(null);
+      expect(state.currentBrush, isNull);
+    });
+
+    test('paintTileRef with multi-tile brush stamps full rectangle', () {
+      state.setActiveLayer(ActiveLayer.floor);
+      state.setBrush(const TileBrush(
+        tilesetId: 'test',
+        startCol: 1,
+        startRow: 2,
+        columns: 4,
+        width: 2,
+        height: 3,
+      ));
+
+      state.paintTileRef(5, 10);
+
+      // Check all 6 cells (2×3) were painted.
+      for (var dy = 0; dy < 3; dy++) {
+        for (var dx = 0; dx < 2; dx++) {
+          final ref = state.floorLayerData.tileAt(5 + dx, 10 + dy);
+          expect(ref, isNotNull, reason: 'Cell (${5 + dx}, ${10 + dy})');
+          expect(ref!.tilesetId, 'test');
+          // Expected index: (2+dy) * 4 + (1+dx)
+          expect(ref.tileIndex, (2 + dy) * 4 + (1 + dx));
+        }
+      }
+    });
+
+    test('paintTileRef clips brush at grid boundary', () {
+      state.setActiveLayer(ActiveLayer.floor);
+      state.setBrush(const TileBrush(
+        tilesetId: 'test',
+        startCol: 0,
+        startRow: 0,
+        columns: 4,
+        width: 3,
+        height: 3,
+      ));
+
+      // Paint at bottom-right corner — only (49,49) should be set.
+      state.paintTileRef(48, 48);
+
+      expect(state.floorLayerData.tileAt(48, 48), isNotNull);
+      expect(state.floorLayerData.tileAt(49, 49), isNotNull);
+      // (50, 50) is out of bounds — should not crash.
+    });
+
+    test('paintTileRef with null brush erases single cell', () {
+      state.setActiveLayer(ActiveLayer.floor);
+
+      // First paint a tile.
+      state.setBrush(const TileBrush(
+        tilesetId: 'test',
+        startCol: 0,
+        startRow: 0,
+        columns: 4,
+      ));
+      state.paintTileRef(5, 5);
+      expect(state.floorLayerData.tileAt(5, 5), isNotNull);
+
+      // Erase it.
+      state.setBrush(null);
+      state.paintTileRef(5, 5);
+      expect(state.floorLayerData.tileAt(5, 5), isNull);
     });
   });
 }

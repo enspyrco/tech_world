@@ -101,8 +101,10 @@ class MapEditorState extends ChangeNotifier {
 
   /// Convenience: set a single-tile brush from a [TileRef].
   ///
-  /// Pass `null` to select the eraser.
-  void setTileBrush(TileRef? ref, {int columns = 1}) {
+  /// The [columns] parameter is required so that the tile index can be
+  /// correctly decomposed into column/row coordinates.
+  /// Pass `null` for [ref] to select the eraser.
+  void setTileBrush(TileRef? ref, {required int columns}) {
     if (ref == null) {
       _currentBrush = null;
     } else {
