@@ -259,11 +259,34 @@ LIVEKIT_API_SECRET=<secret>
 
 ## Claude Bot (Clawd — AI Tutor)
 
-- **Source Code**: `../tech_world_bot/` — Node.js using `@livekit/agents` framework
-- **Deployment**: GCP Compute Engine (`tech-world-bot` instance)
+- **Source Code**: `../tech_world_bot/` — Node.js using `@livekit/agents` framework (v1.0+)
+- **Deployment**: GCP Compute Engine (`tech-world-bot` instance), managed by PM2
 - **Joins LiveKit**: As participant `bot-claude`, listens for `chat` topic messages
-- **Claude API**: Uses Claude 3.5 Haiku for fast, cost-effective responses
+- **Claude API**: Uses Claude Haiku 4.5 for fast, cost-effective responses
 - **Shared Chat**: All participants see all questions and answers
+
+### Agent Dispatch
+
+The bot uses the `@livekit/agents` SDK to register as a worker with LiveKit Cloud. LiveKit dispatches the bot to rooms via **token-based dispatch**: the Firebase Cloud Function (`retrieveLiveKitToken`) embeds a `RoomAgentDispatch` in every user's access token. When a user joins a room, LiveKit automatically dispatches the bot.
+
+**Why token-based dispatch?** LiveKit's automatic dispatch only fires for *new* rooms. The `tech-world` room has a 5-minute `empty_timeout`, so if users sign out and back in quickly, the room persists and automatic dispatch never triggers. Token-based dispatch ensures the bot is dispatched every time any user connects, regardless of room age.
+
+**If the bot disappears:** Check these in order:
+1. `pm2 logs tech-world-bot` — Is the worker registered? Look for `"registered worker"`.
+2. Room exists? Use LiveKit API: `POST /twirp/livekit.RoomService/ListRooms`
+3. Dispatch happening? Look for `"received job request"` and `"[Bot] Connected to room"` in logs.
+4. If worker registers but no dispatch, the `@livekit/agents` SDK version may be incompatible with LiveKit Cloud. Check `npm outdated @livekit/agents`.
+5. Manual dispatch (emergency): `POST /twirp/livekit.AgentDispatchService/CreateDispatch {"room": "tech-world"}`
+
+### Bot Presence Indicator
+
+`ChatService` tracks bot presence via LiveKit participant events (`participantJoined`/`participantLeft` for identity `bot-claude`). The `botStatusNotifier` (`ValueNotifier<BotStatus>`) drives UI state:
+
+- `BotStatus.absent` — Bot not in room. Chat panel shows "Clawd is offline" banner, input disabled.
+- `BotStatus.idle` — Bot connected, ready for messages.
+- `BotStatus.thinking` — Bot is processing a message (set on send, cleared on response).
+
+`sendMessage()` has a fast guard: if bot is absent, it immediately shows a system message instead of waiting for the 30-second timeout.
 
 ```bash
 # Check status
