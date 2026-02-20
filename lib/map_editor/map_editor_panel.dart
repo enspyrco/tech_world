@@ -679,46 +679,95 @@ class _GenerateSection extends StatefulWidget {
 
 class _GenerateSectionState extends State<_GenerateSection> {
   MapAlgorithm _selected = MapAlgorithm.dungeon;
+  int? _lastSeed;
+
+  void _generate() {
+    final seed = Random().nextInt(1 << 32);
+    final map = generateMap(
+      algorithm: _selected,
+      config: GeneratorConfig(seed: seed),
+    );
+    widget.state.loadFromGameMap(map);
+    setState(() => _lastSeed = seed);
+  }
+
+  void _regenerateWithSeed(int seed) {
+    final map = generateMap(
+      algorithm: _selected,
+      config: GeneratorConfig(seed: seed),
+    );
+    widget.state.loadFromGameMap(map);
+    setState(() => _lastSeed = seed);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<MapAlgorithm>(
-              isExpanded: true,
-              value: _selected,
-              dropdownColor: const Color(0xFF2D2D2D),
-              iconEnabledColor: Colors.grey,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              items: [
-                for (final algo in MapAlgorithm.values)
-                  DropdownMenuItem(
-                    value: algo,
-                    child: Text(algo.displayName),
-                  ),
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<MapAlgorithm>(
+                  isExpanded: true,
+                  value: _selected,
+                  dropdownColor: const Color(0xFF2D2D2D),
+                  iconEnabledColor: Colors.grey,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  items: [
+                    for (final algo in MapAlgorithm.values)
+                      DropdownMenuItem(
+                        value: algo,
+                        child: Text(algo.displayName),
+                      ),
+                  ],
+                  onChanged: (algo) {
+                    if (algo != null) setState(() => _selected = algo);
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              onPressed: _generate,
+              icon: const Icon(Icons.casino, size: 14),
+              label: const Text('Generate', style: TextStyle(fontSize: 12)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange.shade700,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
+          ],
+        ),
+        if (_lastSeed != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: [
+                Text(
+                  'Seed: $_lastSeed',
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
+                ),
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: () {
+                    Clipboard.setData(
+                        ClipboardData(text: _lastSeed.toString()));
+                  },
+                  child: Icon(Icons.copy, size: 12, color: Colors.grey.shade500),
+                ),
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: () => _regenerateWithSeed(_lastSeed!),
+                  child: Icon(Icons.refresh, size: 12,
+                      color: Colors.grey.shade500),
+                ),
               ],
-              onChanged: (algo) {
-                if (algo != null) setState(() => _selected = algo);
-              },
             ),
           ),
-        ),
-        const SizedBox(width: 8),
-        ElevatedButton.icon(
-          onPressed: () {
-            final map = generateMap(algorithm: _selected);
-            widget.state.loadFromGameMap(map);
-          },
-          icon: const Icon(Icons.casino, size: 14),
-          label: const Text('Generate', style: TextStyle(fontSize: 12)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange.shade700,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          ),
-        ),
       ],
     );
   }

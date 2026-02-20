@@ -115,14 +115,30 @@ Point<int> findSpawnPoint(Grid grid, Set<Point<int>> region) {
   return best ?? const Point(25, 25);
 }
 
+// ---------------------------------------------------------------------------
+// Tile index constants for `room_builder_office` tileset (16 cols × 14 rows).
+// ---------------------------------------------------------------------------
+
+/// Dark wall fill tile (row 4, col 5).
+const wallTileDefault = 69;
+
+/// Light stone center — used for maze floors (row 5, col 3).
+const floorTileLightStone = 83;
+
+/// Gray stone — used for dungeon floors (row 7, col 8).
+const floorTileGrayStone = 120;
+
+/// Brown/earth — used for cave floors (row 10, col 2).
+const floorTileBrownEarth = 162;
+
 /// Builds floor and object tile layers from a boolean [grid].
 ///
 /// Open cells get a floor tile at [floorTileIndex], wall cells get a wall tile
 /// at [wallTileIndex]. Both reference the [tilesetId] tileset.
 ({TileLayerData floor, TileLayerData objects}) buildTileLayers(
   Grid grid, {
-  int floorTileIndex = 83,
-  int wallTileIndex = 69,
+  int floorTileIndex = floorTileLightStone,
+  int wallTileIndex = wallTileDefault,
   String tilesetId = 'room_builder_office',
 }) {
   final floor = TileLayerData();
