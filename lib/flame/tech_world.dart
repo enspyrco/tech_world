@@ -699,6 +699,8 @@ class TechWorld extends World with TapCallbacks {
       if (authUser is SignedOutUser) {
         // User signed out - clear LiveKit state so we can reconnect on next sign-in
         _disconnectFromLiveKit();
+        // Clear stale terminal completion indicators from the previous user.
+        refreshTerminalStates();
       } else if (authUser is! PlaceholderUser) {
         _userPlayerComponent.id = authUser.id;
         _userPlayerComponent.displayName = authUser.displayName;
