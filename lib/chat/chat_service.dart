@@ -19,7 +19,7 @@ class ChatService {
   final TtsService _ttsService;
   final _messagesController = StreamController<List<ChatMessage>>.broadcast();
   final List<ChatMessage> _messages = [];
-  final Map<String, Completer<void>> _pendingMessages = {};
+  final Map<String, Completer<Map<String, dynamic>?>> _pendingMessages = {};
   final Set<String> _seenMessageIds = {}; // Prevent duplicate messages
   StreamSubscription<DataChannelMessage>? _chatSubscription;
 
@@ -80,14 +80,23 @@ class ChatService {
 
     // Complete pending message if this is a response to one of ours
     if (replyToId != null && _pendingMessages.containsKey(replyToId)) {
-      _pendingMessages[replyToId]!.complete();
+      _pendingMessages[replyToId]!.complete(json);
       _pendingMessages.remove(replyToId);
     }
   }
 
   /// Send a message to the shared chat (visible to all participants).
-  Future<void> sendMessage(String text) async {
-    if (text.trim().isEmpty) return;
+  ///
+  /// Returns the bot's response JSON when a response arrives, or `null` on
+  /// timeout or error. The caller can inspect fields like `challengeResult`.
+  ///
+  /// Optional [metadata] fields are spread into the published JSON payload
+  /// (e.g. `{'challengeId': 'fizzbuzz'}` for challenge evaluations).
+  Future<Map<String, dynamic>?> sendMessage(
+    String text, {
+    Map<String, dynamic>? metadata,
+  }) async {
+    if (text.trim().isEmpty) return null;
 
     if (!_liveKitService.isConnected) {
       debugPrint('ChatService: Not connected to LiveKit, cannot send message');
@@ -97,7 +106,7 @@ class ChatService {
         isBot: true,
       ));
       _messagesController.add(List.from(_messages));
-      return;
+      return null;
     }
 
     // Generate a unique message ID
@@ -116,18 +125,21 @@ class ChatService {
     botStatusNotifier.value = BotStatus.thinking;
 
     // Create a completer to track when we get a response
-    final completer = Completer<void>();
+    final completer = Completer<Map<String, dynamic>?>();
     _pendingMessages[messageId] = completer;
 
     // Send message to all participants (no destinationIdentities = broadcast)
+    final payload = {
+      'type': 'chat',
+      'id': messageId,
+      'text': text,
+      'senderName': _liveKitService.displayName,
+      'timestamp': DateTime.now().toIso8601String(),
+      if (metadata != null) ...metadata,
+    };
+
     await _liveKitService.publishJson(
-      {
-        'type': 'chat',
-        'id': messageId,
-        'text': text,
-        'senderName': _liveKitService.displayName,
-        'timestamp': DateTime.now().toIso8601String(),
-      },
+      payload,
       topic: 'chat',
       // No destinationIdentities = broadcast to all
     );
@@ -136,7 +148,7 @@ class ChatService {
 
     // Wait for response with timeout
     try {
-      await completer.future.timeout(
+      return await completer.future.timeout(
         const Duration(seconds: 30),
         onTimeout: () {
           debugPrint('ChatService: Response timeout');
@@ -148,10 +160,12 @@ class ChatService {
           ));
           _messagesController.add(List.from(_messages));
           _pendingMessages.remove(messageId);
+          return null;
         },
       );
     } catch (e) {
       debugPrint('ChatService: Error waiting for response: $e');
+      return null;
     }
   }
 

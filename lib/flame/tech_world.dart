@@ -15,6 +15,8 @@ import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
+import 'package:tech_world/flame/components/tile_floor_component.dart';
+import 'package:tech_world/flame/components/tile_object_layer_component.dart';
 import 'package:tech_world/flame/components/wall_occlusion_component.dart';
 // Grid lines hidden for now — uncomment to restore:
 // import 'package:tech_world/flame/components/grid_component.dart';
@@ -32,6 +34,7 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
+import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
 /// We create a [TechWorld] component by extending flame's [World] class and
@@ -89,6 +92,8 @@ class TechWorld extends World with TapCallbacks {
 
   MapPreviewComponent? _mapPreviewComponent;
   WallOcclusionComponent? _wallOcclusion;
+  TileFloorComponent? _tileFloor;
+  TileObjectLayerComponent? _tileObjectLayer;
 
   /// Close the code editor panel.
   void closeEditor() {
@@ -105,8 +110,9 @@ class TechWorld extends World with TapCallbacks {
 
     mapEditorActive.value = true;
 
-    // Hide wall occlusion overlays during editing.
+    // Hide wall occlusion overlays and tile objects during editing.
     _wallOcclusion?.hide();
+    _tileObjectLayer?.hide();
 
     // Hide normal barriers and add the preview component.
     _barriersComponent.renderBarriers = false;
@@ -126,8 +132,9 @@ class TechWorld extends World with TapCallbacks {
     _editorState?.removeListener(_onEditorStateChanged);
     _editorState = null;
 
-    // Restore wall occlusion overlays.
+    // Restore wall occlusion overlays and tile objects.
     _wallOcclusion?.show();
+    _tileObjectLayer?.show();
 
     // Rebuild pathfinding grid from default barriers.
     _pathComponent.invalidateGrid();
@@ -144,6 +151,22 @@ class TechWorld extends World with TapCallbacks {
   /// Called when the editor state changes — rebuild pathfinding grid.
   void _onEditorStateChanged() {
     _pathComponent.setGridFromEditor(_editorState!);
+  }
+
+  /// Check if a challenge is completed via the [ProgressService].
+  bool _isChallengeCompleted(String challengeId) {
+    return Locator.maybeLocate<ProgressService>()
+            ?.isChallengeCompleted(challengeId) ??
+        false;
+  }
+
+  /// Update all terminal components' [isCompleted] state from current progress.
+  void refreshTerminalStates() {
+    for (var i = 0; i < _terminalComponents.length; i++) {
+      final challengeIndex = i % allChallenges.length;
+      _terminalComponents[i].isCompleted =
+          _isChallengeCompleted(allChallenges[challengeIndex].id);
+    }
   }
 
   static const _terminalProximityThreshold = 2; // grid squares
@@ -435,8 +458,12 @@ class TechWorld extends World with TapCallbacks {
     }
   }
 
-  /// Connect to LiveKit room
-  Future<void> _connectToLiveKit(String userId, String displayName) async {
+  /// Connect to LiveKit room.
+  ///
+  /// Safe to call multiple times — returns immediately if already connected.
+  /// Called from [main.dart] after [LiveKitService] is registered and connected,
+  /// since TechWorld's own auth listener may fire before the service exists.
+  Future<void> connectToLiveKit(String userId, String displayName) async {
     if (_liveKitService != null) {
       debugPrint('LiveKit already initialized');
       return;
@@ -677,7 +704,7 @@ class TechWorld extends World with TapCallbacks {
         _userPlayerComponent.displayName = authUser.displayName;
 
         // Connect to LiveKit when user is authenticated
-        await _connectToLiveKit(authUser.id, authUser.displayName);
+        await connectToLiveKit(authUser.id, authUser.displayName);
       }
     });
   }
@@ -701,14 +728,35 @@ class TechWorld extends World with TapCallbacks {
           terminalPos.y * gridSquareSizeDouble,
         ),
         onInteract: () => _onTerminalInteract(terminalPos, challenge.id),
+        isCompleted: _isChallengeCompleted(challenge.id),
       );
       _terminalComponents.add(terminal);
       await add(terminal);
     }
 
-    // Background image and wall occlusion (only for maps with a PNG).
+    // Tile layers (tileset-based maps) or background image + wall occlusion.
     final game = findGame() as TechWorldGame?;
-    if (game != null && map.backgroundImage != null) {
+    if (game != null && map.usesTilesets) {
+      // Tileset-based rendering.
+      final registry = game.tilesetRegistry;
+
+      if (map.floorLayer != null) {
+        _tileFloor = TileFloorComponent(
+          layerData: map.floorLayer!,
+          registry: registry,
+        );
+        await add(_tileFloor!);
+      }
+
+      if (map.objectLayer != null) {
+        _tileObjectLayer = TileObjectLayerComponent(
+          layerData: map.objectLayer!,
+          registry: registry,
+        );
+        await add(_tileObjectLayer!);
+      }
+    } else if (game != null && map.backgroundImage != null) {
+      // Legacy background image rendering.
       final bgImage = game.images.fromCache(map.backgroundImage!);
       _backgroundSprite =
           SpriteComponent(sprite: Sprite(bgImage), priority: -1);
@@ -742,6 +790,16 @@ class TechWorld extends World with TapCallbacks {
     if (_wallOcclusion != null) {
       _wallOcclusion!.removeFromParent();
       _wallOcclusion = null;
+    }
+
+    // Tile layers
+    if (_tileFloor != null) {
+      _tileFloor!.removeFromParent();
+      _tileFloor = null;
+    }
+    if (_tileObjectLayer != null) {
+      _tileObjectLayer!.removeFromParent();
+      _tileObjectLayer = null;
     }
   }
 

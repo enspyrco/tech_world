@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/tile_layer_data.dart';
+import 'package:tech_world/flame/tiles/tile_ref.dart';
 
 /// Tile types that can be painted on the map grid.
 enum TileType { open, barrier, spawn, terminal }
@@ -11,11 +13,26 @@ enum TileType { open, barrier, spawn, terminal }
 /// Tools available in the map editor.
 enum EditorTool { barrier, spawn, terminal, eraser }
 
+/// Which layer is active for editing.
+enum ActiveLayer {
+  /// Structural layer — barriers, spawn, terminals (classic grid).
+  structure,
+
+  /// Floor tile layer — rendered below everything.
+  floor,
+
+  /// Object tile layer — rendered with y-sorted priority.
+  objects,
+}
+
 /// State model for the visual map editor.
 ///
 /// Holds a [gridSize] x [gridSize] grid of [TileType] values and provides
 /// methods for painting, importing from existing maps, and exporting to
 /// ASCII art or [GameMap] objects.
+///
+/// Also manages tile layers for tileset-based maps. The [activeLayer]
+/// determines whether painting affects the structure grid or a tile layer.
 class MapEditorState extends ChangeNotifier {
   MapEditorState()
       : _grid = List.generate(
@@ -33,6 +50,52 @@ class MapEditorState extends ChangeNotifier {
 
   String _mapId = 'untitled_map';
   String get mapId => _mapId;
+
+  // -------------------------------------------------------------------------
+  // Tile layer state
+  // -------------------------------------------------------------------------
+
+  ActiveLayer _activeLayer = ActiveLayer.structure;
+  ActiveLayer get activeLayer => _activeLayer;
+
+  /// Floor tile layer data.
+  final TileLayerData floorLayerData = TileLayerData();
+
+  /// Object tile layer data.
+  final TileLayerData objectLayerData = TileLayerData();
+
+  /// The currently selected tile brush for painting on tile layers.
+  TileRef? _currentTileBrush;
+  TileRef? get currentTileBrush => _currentTileBrush;
+
+  /// Switch the active editing layer.
+  void setActiveLayer(ActiveLayer layer) {
+    _activeLayer = layer;
+    notifyListeners();
+  }
+
+  /// Set the tile brush for painting on floor/object layers.
+  void setTileBrush(TileRef? ref) {
+    _currentTileBrush = ref;
+    notifyListeners();
+  }
+
+  /// Paint a tile reference at (x, y) on the active tile layer.
+  ///
+  /// Uses [currentTileBrush] if set, or clears the cell if null.
+  void paintTileRef(int x, int y) {
+    if (x < 0 || x >= gridSize || y < 0 || y >= gridSize) return;
+
+    final layer = _activeLayer == ActiveLayer.floor
+        ? floorLayerData
+        : objectLayerData;
+    layer.setTile(x, y, _currentTileBrush);
+    notifyListeners();
+  }
+
+  // -------------------------------------------------------------------------
+  // Structure grid (original functionality)
+  // -------------------------------------------------------------------------
 
   /// Read-only access to the grid.
   TileType tileAt(int x, int y) {
@@ -82,13 +145,21 @@ class MapEditorState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Reset all tiles to open.
+  /// Reset all tiles to open (structure grid only).
   void clearGrid() {
     for (var y = 0; y < gridSize; y++) {
       for (var x = 0; x < gridSize; x++) {
         _grid[y][x] = TileType.open;
       }
     }
+    notifyListeners();
+  }
+
+  /// Reset all layers including tile data.
+  void clearAll() {
+    clearGrid();
+    _clearTileLayer(floorLayerData);
+    _clearTileLayer(objectLayerData);
     notifyListeners();
   }
 
@@ -113,6 +184,18 @@ class MapEditorState extends ChangeNotifier {
         _grid[terminal.y][terminal.x] = TileType.terminal;
       }
     }
+
+    // Load tile layers if present.
+    _clearTileLayer(floorLayerData);
+    _clearTileLayer(objectLayerData);
+
+    if (map.floorLayer != null) {
+      _copyTileLayer(map.floorLayer!, floorLayerData);
+    }
+    if (map.objectLayer != null) {
+      _copyTileLayer(map.objectLayer!, objectLayerData);
+    }
+
     notifyListeners();
   }
 
@@ -183,12 +266,21 @@ class MapEditorState extends ChangeNotifier {
       }
     }
 
+    // Collect tileset IDs from both layers.
+    final tilesetIds = <String>{
+      ...floorLayerData.referencedTilesetIds,
+      ...objectLayerData.referencedTilesetIds,
+    }.toList();
+
     return GameMap(
       id: _mapId,
       name: _mapName,
       barriers: barriers,
       spawnPoint: spawnPoint ?? const Point(25, 25),
       terminals: terminals,
+      floorLayer: floorLayerData.isEmpty ? null : floorLayerData,
+      objectLayer: objectLayerData.isEmpty ? null : objectLayerData,
+      tilesetIds: tilesetIds,
     );
   }
 
@@ -215,6 +307,24 @@ class MapEditorState extends ChangeNotifier {
         return 'S';
       case TileType.terminal:
         return 'T';
+    }
+  }
+
+  /// Clear all cells in a tile layer.
+  void _clearTileLayer(TileLayerData layer) {
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        layer.setTile(x, y, null);
+      }
+    }
+  }
+
+  /// Copy tile data from [source] into [dest].
+  void _copyTileLayer(TileLayerData source, TileLayerData dest) {
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        dest.setTile(x, y, source.tileAt(x, y));
+      }
     }
   }
 }
