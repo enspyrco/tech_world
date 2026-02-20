@@ -158,7 +158,12 @@ class _MyAppState extends State<MyApp> {
 
       // Load challenge progression
       _progressService = ProgressService(uid: user.id);
-      await _progressService!.loadProgress();
+      try {
+        await _progressService!.loadProgress();
+      } catch (e) {
+        debugPrint('Failed to load progress: $e');
+        // Continue — terminals will render as incomplete, which is safe.
+      }
       Locator.add<ProgressService>(_progressService!);
 
       _liveKitService = LiveKitService(
@@ -468,8 +473,13 @@ class _MyAppState extends State<MyApp> {
 
                             // Only mark completed when bot confirms pass
                             if (response?['challengeResult'] == 'pass') {
-                              Locator.maybeLocate<ProgressService>()
-                                  ?.markChallengeCompleted(challenge.id);
+                              try {
+                                await Locator.maybeLocate<ProgressService>()
+                                    ?.markChallengeCompleted(challenge.id);
+                              } catch (e) {
+                                debugPrint('Failed to persist completion: $e');
+                                // Rollback already handled by ProgressService.
+                              }
                               techWorld.refreshTerminalStates();
                             }
                           },

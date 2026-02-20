@@ -90,8 +90,11 @@ class ChatService {
   /// Returns the bot's response JSON when a response arrives, or `null` on
   /// timeout or error. The caller can inspect fields like `challengeResult`.
   ///
-  /// Optional [metadata] fields are spread into the published JSON payload
+  /// Optional [metadata] fields are merged into the published JSON payload
   /// (e.g. `{'challengeId': 'fizzbuzz'}` for challenge evaluations).
+  ///
+  /// Reserved keys (`type`, `id`, `text`, `senderName`, `timestamp`) are
+  /// silently stripped from [metadata] to prevent protocol corruption.
   Future<Map<String, dynamic>?> sendMessage(
     String text, {
     Map<String, dynamic>? metadata,
@@ -129,13 +132,17 @@ class ChatService {
     _pendingMessages[messageId] = completer;
 
     // Send message to all participants (no destinationIdentities = broadcast)
+    const reservedKeys = {'type', 'id', 'text', 'senderName', 'timestamp'};
+    final safeMetadata = metadata?.entries
+        .where((e) => !reservedKeys.contains(e.key));
+
     final payload = {
       'type': 'chat',
       'id': messageId,
       'text': text,
       'senderName': _liveKitService.displayName,
       'timestamp': DateTime.now().toIso8601String(),
-      if (metadata != null) ...metadata,
+      if (safeMetadata != null) ...Map.fromEntries(safeMetadata),
     };
 
     await _liveKitService.publishJson(

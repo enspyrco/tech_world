@@ -21,11 +21,13 @@ class LiveKitService {
     required this.userId,
     required this.displayName,
     this.roomName = 'tech-world',
-  });
+    @visibleForTesting Future<String?> Function()? tokenRetriever,
+  }) : _tokenRetriever = tokenRetriever;
 
   final String userId;
   final String displayName;
   final String roomName;
+  final Future<String?> Function()? _tokenRetriever;
 
   // LiveKit server URL
   static const _serverUrl = 'wss://testing-g5wrpk39.livekit.cloud';
@@ -401,6 +403,7 @@ class LiveKitService {
   }
 
   Future<String?> _retrieveToken() async {
+    if (_tokenRetriever != null) return _tokenRetriever();
     try {
       debugPrint('LiveKitService: Retrieving token for room "$roomName"');
       final result = await FirebaseFunctions.instance

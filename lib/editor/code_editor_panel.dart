@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:re_highlight/languages/dart.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/lsp_config.dart';
+import 'package:tech_world/flame/shared/constants.dart';
 
 /// Panel that displays a code editor for a coding challenge.
 /// Replaces the chat panel when a player interacts with a terminal.
@@ -139,25 +140,25 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFD700).withValues(alpha: 0.2),
+                      color: completedGold.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: const Color(0xFFFFD700).withValues(alpha: 0.5),
+                        color: completedGold.withValues(alpha: 0.5),
                       ),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.check_circle,
-                          color: Color(0xFFFFD700),
+                          color: completedGold,
                           size: 14,
                         ),
-                        SizedBox(width: 4),
+                        const SizedBox(width: 4),
                         Text(
                           'Completed',
                           style: TextStyle(
-                            color: Color(0xFFFFD700),
+                            color: completedGold,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),

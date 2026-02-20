@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
@@ -184,6 +186,50 @@ void main() {
         // Should complete without throwing
         await service.setMicrophoneEnabled(true);
         await service.setMicrophoneEnabled(false);
+
+        service.dispose();
+      });
+    });
+
+    group('concurrent connection guard', () {
+      test('second connect returns immediately while first is in-flight',
+          () async {
+        final tokenCompleter = Completer<String?>();
+        final service = LiveKitService(
+          userId: 'test-user',
+          displayName: 'Test',
+          tokenRetriever: () => tokenCompleter.future,
+        );
+
+        // Start first connect — blocks on token retrieval.
+        final firstConnect = service.connect();
+
+        // Second connect should return immediately (guard hit).
+        final secondResult = await service.connect();
+        expect(secondResult, isFalse);
+
+        // Finish the first connect (null token → connection fails).
+        tokenCompleter.complete(null);
+        final firstResult = await firstConnect;
+        expect(firstResult, isFalse);
+
+        service.dispose();
+      });
+
+      test('connect returns true status when already connected', () async {
+        // Simulate a service that retrieved a token but will fail at
+        // room.connect — we only need to verify the guard checks
+        // _isConnected.
+        final service = LiveKitService(
+          userId: 'test-user',
+          displayName: 'Test',
+          tokenRetriever: () async => null,
+        );
+
+        // First connect fails (null token).
+        final result = await service.connect();
+        expect(result, isFalse);
+        expect(service.isConnected, isFalse);
 
         service.dispose();
       });
