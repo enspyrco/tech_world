@@ -148,7 +148,7 @@ class TechWorld extends World with TapCallbacks {
       _mapPreviewComponent!.removeFromParent();
       _mapPreviewComponent = null;
     }
-    _barriersComponent.renderBarriers = false;
+    _barriersComponent.renderBarriers = !currentMap.value.usesTilesets;
   }
 
   MapEditorState? _editorState;
