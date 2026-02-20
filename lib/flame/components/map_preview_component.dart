@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart' show HSLColor;
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
+import 'package:tech_world/flame/tiles/tileset_registry.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
 
@@ -75,7 +76,7 @@ class MapPreviewComponent extends Component {
   void _renderTileLayer(
     Canvas canvas,
     TileLayerData layerData,
-    dynamic registry,
+    TilesetRegistry registry,
     Paint paint,
   ) {
     for (var y = 0; y < gridSize; y++) {
