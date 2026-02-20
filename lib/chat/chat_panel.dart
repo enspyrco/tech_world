@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/services/stt_service.dart';
 
 /// Side panel for chatting with Clawd the bot.
@@ -201,67 +202,116 @@ class _ChatPanelState extends State<ChatPanel> {
             ),
           ),
 
-          // Input
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFF2D2D2D),
-              border: Border(
-                top: BorderSide(color: Color(0xFF3D3D3D)),
-              ),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    focusNode: _focusNode,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Type a message...',
-                      hintStyle: TextStyle(color: Colors.grey[500]),
-                      filled: true,
-                      fillColor: const Color(0xFF1E1E1E),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
+          // Input (with offline banner)
+          ValueListenableBuilder<BotStatus>(
+            valueListenable: botStatusNotifier,
+            builder: (context, botStatus, _) {
+              final isAbsent = botStatus == BotStatus.absent;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Offline banner
+                  if (isAbsent)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
                         horizontal: 16,
-                        vertical: 12,
+                        vertical: 8,
+                      ),
+                      color: Colors.amber.shade800.withValues(alpha: 0.3),
+                      child: Row(
+                        children: [
+                          Icon(Icons.cloud_off,
+                              size: 16, color: Colors.amber.shade300),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Clawd is offline',
+                            style: TextStyle(
+                              color: Colors.amber.shade300,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    onSubmitted: (_) => _sendMessage(),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (_sttService.isSupported)
-                  ValueListenableBuilder<bool>(
-                    valueListenable: _sttService.listening,
-                    builder: (context, isListening, _) {
-                      return IconButton(
-                        onPressed: _handleMicPress,
-                        icon: Icon(isListening ? Icons.mic : Icons.mic_none),
-                        color: isListening ? Colors.red : clawdOrange,
-                        style: IconButton.styleFrom(
-                          backgroundColor: isListening
-                              ? Colors.red.withValues(alpha: 0.2)
-                              : clawdOrange.withValues(alpha: 0.1),
+                  // Input row
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF2D2D2D),
+                      border: Border(
+                        top: BorderSide(color: Color(0xFF3D3D3D)),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _textController,
+                            focusNode: _focusNode,
+                            enabled: !isAbsent,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              hintText: isAbsent
+                                  ? 'Clawd is offline...'
+                                  : 'Type a message...',
+                              hintStyle: TextStyle(color: Colors.grey[500]),
+                              filled: true,
+                              fillColor: const Color(0xFF1E1E1E),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            onSubmitted: isAbsent ? null : (_) => _sendMessage(),
+                          ),
                         ),
-                      );
-                    },
+                        const SizedBox(width: 8),
+                        if (_sttService.isSupported)
+                          ValueListenableBuilder<bool>(
+                            valueListenable: _sttService.listening,
+                            builder: (context, isListening, _) {
+                              return IconButton(
+                                onPressed:
+                                    isAbsent ? null : _handleMicPress,
+                                icon: Icon(
+                                    isListening ? Icons.mic : Icons.mic_none),
+                                color: isAbsent
+                                    ? Colors.grey[600]
+                                    : isListening
+                                        ? Colors.red
+                                        : clawdOrange,
+                                style: IconButton.styleFrom(
+                                  backgroundColor: isAbsent
+                                      ? Colors.grey.withValues(alpha: 0.1)
+                                      : isListening
+                                          ? Colors.red.withValues(alpha: 0.2)
+                                          : clawdOrange.withValues(alpha: 0.1),
+                                ),
+                              );
+                            },
+                          ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          onPressed: isAbsent ? null : _sendMessage,
+                          icon: const Icon(Icons.send),
+                          color: isAbsent ? Colors.grey[600] : clawdOrange,
+                          style: IconButton.styleFrom(
+                            backgroundColor: isAbsent
+                                ? Colors.grey.withValues(alpha: 0.1)
+                                : clawdOrange.withValues(alpha: 0.1),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                const SizedBox(width: 4),
-                IconButton(
-                  onPressed: _sendMessage,
-                  icon: const Icon(Icons.send),
-                  color: clawdOrange,
-                  style: IconButton.styleFrom(
-                    backgroundColor: clawdOrange.withValues(alpha: 0.1),
-                  ),
-                ),
-              ],
-            ),
+                ],
+              );
+            },
           ),
         ],
       ),
