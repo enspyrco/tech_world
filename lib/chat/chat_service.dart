@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
-import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/services/tts_service.dart';
 
@@ -196,7 +196,11 @@ class ChatService {
         const Duration(seconds: 30),
         onTimeout: () {
           debugPrint('ChatService: Response timeout');
-          botStatusNotifier.value = BotStatus.idle;
+          // Only reset to idle if bot is still present; if it left during
+          // the wait the participantLeft handler already set absent.
+          if (botStatusNotifier.value != BotStatus.absent) {
+            botStatusNotifier.value = BotStatus.idle;
+          }
           _messages.add(ChatMessage(
             text: "Hmm, Clawd seems to be taking a while. Try again?",
             senderName: 'System',
