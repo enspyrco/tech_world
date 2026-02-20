@@ -57,7 +57,7 @@ GameMap generateDungeon({required int seed, required GeneratorConfig config}) {
       ? Point(_centerX(rooms.first), _centerY(rooms.first))
       : findSpawnPoint(grid, region);
 
-  final layers = buildTileLayers(grid, floorTileIndex: 120);
+  final layers = buildTileLayers(grid, floorTileIndex: floorTileGrayStone);
 
   return GameMap(
     id: 'generated_dungeon_$seed',

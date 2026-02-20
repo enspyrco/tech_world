@@ -25,7 +25,7 @@ GameMap generateCave({required int seed, required GeneratorConfig config}) {
   removeDisconnectedRegions(grid, region);
   final spawn = findSpawnPoint(grid, region);
 
-  final layers = buildTileLayers(grid, floorTileIndex: 162);
+  final layers = buildTileLayers(grid, floorTileIndex: floorTileBrownEarth);
 
   return GameMap(
     id: 'generated_cave_$seed',

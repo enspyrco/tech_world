@@ -185,20 +185,23 @@ void main() {
 
       final layers = buildTileLayers(grid);
 
-      // Wall cells get object tiles.
+      // Wall cells get object tiles (default wall index).
       expect(
         layers.objects.tileAt(0, 0),
-        const TileRef(tilesetId: 'room_builder_office', tileIndex: 69),
+        const TileRef(
+            tilesetId: 'room_builder_office', tileIndex: wallTileDefault),
       );
       expect(
         layers.objects.tileAt(3, 2),
-        const TileRef(tilesetId: 'room_builder_office', tileIndex: 69),
+        const TileRef(
+            tilesetId: 'room_builder_office', tileIndex: wallTileDefault),
       );
 
-      // Open cells get floor tiles.
+      // Open cells get floor tiles (default light stone).
       expect(
         layers.floor.tileAt(1, 1),
-        const TileRef(tilesetId: 'room_builder_office', tileIndex: 83),
+        const TileRef(
+            tilesetId: 'room_builder_office', tileIndex: floorTileLightStone),
       );
 
       // Open cells have no object tile.
