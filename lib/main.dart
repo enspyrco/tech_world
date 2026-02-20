@@ -165,6 +165,7 @@ class _MyAppState extends State<MyApp> {
         // Continue — terminals will render as incomplete, which is safe.
       }
       Locator.add<ProgressService>(_progressService!);
+      locate<TechWorld>().refreshTerminalStates();
 
       _liveKitService = LiveKitService(
         userId: user.id,
