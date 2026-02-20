@@ -1,5 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
+import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
+import 'package:tech_world/flame/tiles/tileset_registry.dart';
 
 class SnapshotComponent extends PositionComponent with Snapshot {}
 
@@ -10,6 +12,9 @@ class TechWorldGame extends FlameGame {
 
   late final SnapshotComponent root;
 
+  /// Registry for loading and accessing tileset sprite sheets.
+  late final TilesetRegistry tilesetRegistry;
+
   @override
   Future<void> onLoad() async {
     await images.loadAll([
@@ -19,6 +24,10 @@ class TechWorldGame extends FlameGame {
       'single_room.png',
       'claude_bot.png',
     ]);
+
+    // Initialize tileset registry and load all predefined tilesets.
+    tilesetRegistry = TilesetRegistry(images: images);
+    await tilesetRegistry.loadAll(allTilesets);
 
     // Add a snapshot component.
     root = SnapshotComponent();

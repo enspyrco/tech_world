@@ -7,12 +7,13 @@ import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
+import 'package:tech_world/map_editor/tile_palette.dart';
 
 /// Sidebar panel for the visual map editor.
 ///
 /// Provides a toolbar for selecting paint tools, a paintable mini-grid, and
-/// import/export controls. Follows the same dark-theme pattern as
-/// [CodeEditorPanel].
+/// import/export controls. Supports layer switching between structure (barriers,
+/// spawn, terminals) and tile layers (floor, objects).
 class MapEditorPanel extends StatelessWidget {
   const MapEditorPanel({
     required this.state,
@@ -35,47 +36,23 @@ class MapEditorPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: _panelBg,
-      child: Column(
-        children: [
-          _buildHeader(),
-          _MapToolbar(state: state),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // Scale so the game grid area (gridSize * gridSquareSize pixels)
-                // maps exactly to the sidebar grid width.
-                final cellSize = constraints.maxWidth / gridSize;
-                final imageScale = cellSize / gridSquareSizeDouble;
-                return Stack(
-                  clipBehavior: Clip.hardEdge,
-                  children: [
-                    // Paintable grid
-                    _buildGrid(),
-                    // PNG map image on top, scaled to align with grid
-                    if (referenceMap?.backgroundImage != null)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        child: IgnorePointer(
-                          child: Opacity(
-                            opacity: 0.5,
-                            child: Transform.scale(
-                              scale: imageScale,
-                              alignment: Alignment.topLeft,
-                              child: Image.asset(
-                                'assets/images/${referenceMap!.backgroundImage}',
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-          _buildFooter(context),
-        ],
+      child: ListenableBuilder(
+        listenable: state,
+        builder: (context, _) {
+          return Column(
+            children: [
+              _buildHeader(),
+              _LayerTabs(state: state),
+              _MapToolbar(state: state),
+              Expanded(
+                child: state.activeLayer == ActiveLayer.structure
+                    ? _buildGridArea()
+                    : _buildTileLayerEditor(),
+              ),
+              _buildFooter(context),
+            ],
+          );
+        },
       ),
     );
   }
@@ -129,6 +106,63 @@ class MapEditorPanel extends StatelessWidget {
   }
 
   // ---------------------------------------------------------------------------
+  // Grid area (structure layer) — with reference image overlay
+  // ---------------------------------------------------------------------------
+
+  Widget _buildGridArea() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cellSize = constraints.maxWidth / gridSize;
+        final imageScale = cellSize / gridSquareSizeDouble;
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            _buildGrid(),
+            if (referenceMap?.backgroundImage != null)
+              Positioned(
+                top: 0,
+                left: 0,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0.5,
+                    child: Transform.scale(
+                      scale: imageScale,
+                      alignment: Alignment.topLeft,
+                      child: Image.asset(
+                        'assets/images/${referenceMap!.backgroundImage}',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tile layer editor — grid + tile palette side by side
+  // ---------------------------------------------------------------------------
+
+  Widget _buildTileLayerEditor() {
+    return Column(
+      children: [
+        // Paintable grid (for tile layers)
+        Expanded(child: _buildGrid()),
+        // Tile palette at the bottom
+        Container(
+          height: 160,
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: _border)),
+          ),
+          child: TilePalette(state: state),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Paintable grid
   // ---------------------------------------------------------------------------
 
@@ -164,7 +198,12 @@ class MapEditorPanel extends StatelessWidget {
   void _paintAt(Offset position, double cellSize) {
     final x = (position.dx / cellSize).floor();
     final y = (position.dy / cellSize).floor();
-    state.paintTile(x, y);
+
+    if (state.activeLayer == ActiveLayer.structure) {
+      state.paintTile(x, y);
+    } else {
+      state.paintTileRef(x, y);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -295,6 +334,76 @@ class MapEditorPanel extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
+// Layer tabs — switch between Structure, Floor, Objects
+// ---------------------------------------------------------------------------
+
+class _LayerTabs extends StatelessWidget {
+  const _LayerTabs({required this.state});
+
+  final MapEditorState state;
+
+  static const _headerBg = Color(0xFF2D2D2D);
+  static const _border = Color(0xFF3D3D3D);
+  static const _selectedColor = Color(0xFF4FC3F7);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: _headerBg,
+        border: Border(bottom: BorderSide(color: _border)),
+      ),
+      child: Row(
+        children: [
+          _tab('Structure', ActiveLayer.structure, Icons.grid_on),
+          _tab('Floor', ActiveLayer.floor, Icons.layers),
+          _tab('Objects', ActiveLayer.objects, Icons.category),
+        ],
+      ),
+    );
+  }
+
+  Widget _tab(String label, ActiveLayer layer, IconData icon) {
+    final isSelected = state.activeLayer == layer;
+    return Expanded(
+      child: InkWell(
+        onTap: () => state.setActiveLayer(layer),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isSelected ? _selectedColor : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 14,
+                color: isSelected ? _selectedColor : Colors.grey,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? _selectedColor : Colors.grey,
+                  fontSize: 10,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Toolbar — StatefulWidget to properly manage TextEditingControllers
 // ---------------------------------------------------------------------------
 
@@ -344,6 +453,9 @@ class _MapToolbarState extends State<_MapToolbar> {
 
   @override
   Widget build(BuildContext context) {
+    final isStructureLayer =
+        widget.state.activeLayer == ActiveLayer.structure;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: const BoxDecoration(
@@ -352,32 +464,37 @@ class _MapToolbarState extends State<_MapToolbar> {
       ),
       child: Column(
         children: [
-          // Tool buttons
-          Row(
-            children: [
-              _toolButton(EditorTool.barrier, Icons.square, 'Barrier',
-                  TileColors.barrier),
-              const SizedBox(width: 4),
-              _toolButton(EditorTool.spawn, Icons.my_location, 'Spawn',
-                  TileColors.spawn),
-              const SizedBox(width: 4),
-              _toolButton(EditorTool.terminal, Icons.terminal, 'Terminal',
-                  TileColors.terminal),
-              const SizedBox(width: 4),
-              _toolButton(EditorTool.eraser, Icons.cleaning_services, 'Eraser',
-                  Colors.grey),
-              const Spacer(),
-              IconButton(
-                onPressed: widget.state.clearGrid,
-                icon: const Icon(Icons.delete_sweep, size: 18),
-                color: Colors.redAccent,
-                tooltip: 'Clear grid',
-                iconSize: 18,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                padding: EdgeInsets.zero,
-              ),
-            ],
-          ),
+          // Tool buttons — only shown for structure layer
+          if (isStructureLayer)
+            Row(
+              children: [
+                _toolButton(EditorTool.barrier, Icons.square, 'Barrier',
+                    TileColors.barrier),
+                const SizedBox(width: 4),
+                _toolButton(EditorTool.spawn, Icons.my_location, 'Spawn',
+                    TileColors.spawn),
+                const SizedBox(width: 4),
+                _toolButton(EditorTool.terminal, Icons.terminal, 'Terminal',
+                    TileColors.terminal),
+                const SizedBox(width: 4),
+                _toolButton(EditorTool.eraser, Icons.cleaning_services,
+                    'Eraser', Colors.grey),
+                const Spacer(),
+                IconButton(
+                  onPressed: widget.state.clearGrid,
+                  icon: const Icon(Icons.delete_sweep, size: 18),
+                  color: Colors.redAccent,
+                  tooltip: 'Clear grid',
+                  iconSize: 18,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          // Tile brush info — shown for tile layers
+          if (!isStructureLayer)
+            _buildTileBrushInfo(),
           const SizedBox(height: 8),
           // Map name / id
           Row(
@@ -401,6 +518,33 @@ class _MapToolbarState extends State<_MapToolbar> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTileBrushInfo() {
+    final brush = widget.state.currentTileBrush;
+    final layerName = widget.state.activeLayer == ActiveLayer.floor
+        ? 'Floor'
+        : 'Objects';
+
+    return Row(
+      children: [
+        Icon(
+          brush == null ? Icons.cleaning_services : Icons.brush,
+          size: 14,
+          color: Colors.grey.shade400,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          brush == null
+              ? '$layerName — Eraser'
+              : '$layerName — ${brush.tilesetId}[${brush.tileIndex}]',
+          style: TextStyle(
+            color: Colors.grey.shade300,
+            fontSize: 11,
+          ),
+        ),
+      ],
     );
   }
 
@@ -485,6 +629,8 @@ class _GridPainter extends CustomPainter {
       ..color = TileColors.gridLine
       ..strokeWidth = 0.5;
 
+    final activeLayer = state.activeLayer;
+
     // Draw reference map as underlay, then editable grid on top.
     for (var y = 0; y < gridSize; y++) {
       for (var x = 0; x < gridSize; x++) {
@@ -492,7 +638,7 @@ class _GridPainter extends CustomPainter {
             Rect.fromLTWH(x * cellSize, y * cellSize, cellSize, cellSize);
 
         // Reference layer — draw every cell so the full map shape is visible.
-        if (referenceMap != null) {
+        if (referenceMap != null && activeLayer == ActiveLayer.structure) {
           final pt = Point(x, y);
           if (_refBarriers.contains(pt)) {
             paint.color = const Color(0xFF333399); // dim blue
@@ -506,11 +652,33 @@ class _GridPainter extends CustomPainter {
           canvas.drawRect(rect, paint);
         }
 
-        // Editable grid on top.
-        final tile = state.tileAt(x, y);
-        if (tile != TileType.open) {
-          paint.color = _colorForTile(tile);
-          canvas.drawRect(rect, paint);
+        if (activeLayer == ActiveLayer.structure) {
+          // Editable structure grid on top.
+          final tile = state.tileAt(x, y);
+          if (tile != TileType.open) {
+            paint.color = _colorForTile(tile);
+            canvas.drawRect(rect, paint);
+          }
+        } else {
+          // Tile layer view — show colored cells for placed tiles.
+          final layerData = activeLayer == ActiveLayer.floor
+              ? state.floorLayerData
+              : state.objectLayerData;
+          final ref = layerData.tileAt(x, y);
+          if (ref != null) {
+            // Use a deterministic color from the tile index.
+            final hue = (ref.tileIndex * 22.5) % 360;
+            paint.color =
+                HSLColor.fromAHSL(0.7, hue, 0.6, 0.5).toColor();
+            canvas.drawRect(rect, paint);
+          }
+
+          // Show structure as a dim overlay on tile layers.
+          final structTile = state.tileAt(x, y);
+          if (structTile != TileType.open) {
+            paint.color = _colorForTile(structTile).withValues(alpha: 0.3);
+            canvas.drawRect(rect, paint);
+          }
         }
       }
     }

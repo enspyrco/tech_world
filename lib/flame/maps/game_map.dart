@@ -1,9 +1,15 @@
 import 'dart:math';
 
+import 'package:tech_world/flame/tiles/tile_layer_data.dart';
+
 /// A game map definition containing barrier layout and spawn configuration.
 ///
 /// Maps define the walkable/non-walkable areas of the game world.
 /// Barriers are specified in mini-grid coordinates (0 to gridSize-1).
+///
+/// Maps can optionally include tileset-based rendering via [floorLayer] and
+/// [objectLayer]. When [usesTilesets] is true, the tile layers are rendered
+/// instead of a plain background image.
 class GameMap {
   const GameMap({
     required this.id,
@@ -12,6 +18,9 @@ class GameMap {
     this.spawnPoint = const Point(25, 25),
     this.terminals = const [],
     this.backgroundImage,
+    this.floorLayer,
+    this.objectLayer,
+    this.tilesetIds = const [],
   });
 
   /// Unique identifier for this map.
@@ -33,4 +42,19 @@ class GameMap {
   /// Optional background image filename (in assets/images/).
   /// When set, the image is rendered behind barriers with wall occlusion.
   final String? backgroundImage;
+
+  /// Optional floor tile layer — rendered below everything as a cached Picture.
+  final TileLayerData? floorLayer;
+
+  /// Optional object tile layer — rendered with y-sorted priority for depth.
+  final TileLayerData? objectLayer;
+
+  /// IDs of tilesets used by this map. Ensures they're loaded before rendering.
+  final List<String> tilesetIds;
+
+  /// Whether this map uses tileset-based rendering.
+  bool get usesTilesets =>
+      tilesetIds.isNotEmpty ||
+      (floorLayer != null && !floorLayer!.isEmpty) ||
+      (objectLayer != null && !objectLayer!.isEmpty);
 }
