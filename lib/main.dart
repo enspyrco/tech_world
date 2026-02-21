@@ -249,7 +249,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   /// Create a new room — enter editor with empty map, then save.
-  void _onCreateRoom() {
+  Future<void> _onCreateRoom() async {
     // Jump into a temporary "new room" in the game with a blank map
     // and open the editor. The save button will create the Firestore doc.
     _mapEditorState.clearAll();
@@ -268,7 +268,7 @@ class _MyAppState extends State<MyApp> {
       mapData: blankMap,
     );
 
-    locate<TechWorld>().loadMap(blankMap);
+    await locate<TechWorld>().loadMap(blankMap);
     locate<TechWorld>().enterEditorMode(_mapEditorState);
 
     setState(() {});
