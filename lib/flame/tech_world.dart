@@ -481,15 +481,22 @@ class TechWorld extends World with TapCallbacks {
 
     // Create component based on participant type
     if (participant.identity == _botUserId) {
-      // Create bot character component at default position
+      // Create bot character component at the map's spawn point
       if (_botCharacterComponent == null) {
+        final spawn = currentMap.value.spawnPoint;
         _botCharacterComponent = BotCharacterComponent(
-          position: Vector2(200, 200),
+          position: Vector2(
+            spawn.x * gridSquareSizeDouble,
+            spawn.y * gridSquareSizeDouble,
+          ),
           id: participant.identity,
           displayName: 'Claude',
         );
         add(_botCharacterComponent!);
       }
+
+      // Send the current map layout so the bot knows about barriers/terminals
+      _liveKitService?.publishMapInfo(currentMap.value);
     } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
       // Apply pending avatar if one arrived before the component was created
       final pendingSpriteAsset = _pendingAvatars.remove(participant.identity);
@@ -886,6 +893,9 @@ class TechWorld extends World with TapCallbacks {
     playerGridPosition.value = map.spawnPoint;
 
     currentMap.value = map;
+
+    // Notify the bot about the new map layout
+    _liveKitService?.publishMapInfo(map);
   }
 
   @override
