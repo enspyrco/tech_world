@@ -20,7 +20,9 @@ import 'package:tech_world/map_editor/tile_colors.dart';
 class MapPreviewComponent extends Component {
   MapPreviewComponent({required this.editorState}) {
     editorState.addListener(_invalidateCache);
-    _rebuildCache();
+    // Don't build cache here — findGame() is null before the component is
+    // mounted. The first render() call will trigger _rebuildCache() because
+    // _cachedPicture starts as null.
   }
 
   final MapEditorState editorState;

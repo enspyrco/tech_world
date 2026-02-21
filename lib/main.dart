@@ -22,8 +22,10 @@ import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
+import 'package:tech_world/rooms/room_browser.dart';
+import 'package:tech_world/rooms/room_data.dart';
+import 'package:tech_world/rooms/room_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
-import 'package:tech_world/widgets/map_selector.dart';
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -54,6 +56,11 @@ class _MyAppState extends State<MyApp> {
   Avatar? _selectedAvatar;
   bool _avatarLoaded = false;
   String? _currentUserId;
+  String _currentDisplayName = '';
+  RoomService? _roomService;
+
+  /// The room the user is currently inside. Null = lobby view.
+  RoomData? _currentRoom;
 
   @override
   void initState() {
@@ -120,29 +127,26 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _onAuthStateChanged(AuthUser user) async {
     if (user is SignedOutUser) {
-      // User signed out - disconnect LiveKit
-      _liveKitService?.dispose();
-      _chatService?.dispose();
-      _proximityService?.dispose();
+      // User signed out — tear down everything.
+      _leaveRoom();
       _progressService?.dispose();
-      _liveKitService = null;
-      _chatService = null;
-      _proximityService = null;
       _progressService = null;
+      Locator.remove<ProgressService>();
+      _roomService = null;
+      Locator.remove<RoomService>();
       _liveKitConnectionFailed = false;
       _selectedAvatar = null;
       _avatarLoaded = false;
       _currentUserId = null;
-      Locator.remove<LiveKitService>();
-      Locator.remove<ChatService>();
-      Locator.remove<ProximityService>();
-      Locator.remove<ProgressService>();
-      debugPrint('User signed out - LiveKit disconnected');
-      setState(() {}); // Trigger rebuild to remove overlay
+      _currentDisplayName = '';
+      _currentRoom = null;
+      debugPrint('User signed out - cleaned up');
+      setState(() {});
     } else {
-      // User signed in - create and connect LiveKit
+      // User signed in — set up profile & services, show lobby.
       debugPrint('User signed in: ${user.id} (${user.displayName})');
       _currentUserId = user.id;
+      _currentDisplayName = user.displayName;
 
       // Load saved avatar from Firestore
       try {
@@ -162,49 +166,173 @@ class _MyAppState extends State<MyApp> {
         await _progressService!.loadProgress();
       } catch (e) {
         debugPrint('Failed to load progress: $e');
-        // Continue — terminals will render as incomplete, which is safe.
       }
       Locator.add<ProgressService>(_progressService!);
       locate<TechWorld>().refreshTerminalStates();
 
-      _liveKitService = LiveKitService(
-        userId: user.id,
-        displayName: user.displayName,
-        roomName: 'tech-world',
-      );
+      // Register RoomService for the lobby.
+      _roomService = RoomService();
+      Locator.add<RoomService>(_roomService!);
 
-      _chatService = ChatService(liveKitService: _liveKitService!);
-      _proximityService = ProximityService();
-
-      Locator.add<LiveKitService>(_liveKitService!);
-      Locator.add<ChatService>(_chatService!);
-      Locator.add<ProximityService>(_proximityService!);
-
-      // Connect to LiveKit
-      final connected = await _liveKitService!.connect();
-      debugPrint('LiveKit connected: $connected');
-
-      if (connected) {
-        // Tell TechWorld to set up LiveKit subscriptions now that the
-        // service is registered and connected. TechWorld's own auth
-        // listener fires before this point, so its initial attempt
-        // to locate LiveKitService will have failed.
-        await locate<TechWorld>().connectToLiveKit(user.id, user.displayName);
-
-        // Enable camera and microphone
-        await _liveKitService!.setCameraEnabled(true);
-        await _liveKitService!.setMicrophoneEnabled(true);
-      } else {
-        _liveKitConnectionFailed = true;
-      }
-
-      // Apply saved avatar to game world
-      if (_selectedAvatar != null) {
-        locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
-      }
-
-      setState(() {}); // Trigger rebuild to show overlay
+      setState(() {}); // Show lobby (or avatar picker first).
     }
+  }
+
+  /// Join a room — load map and connect to LiveKit.
+  Future<void> _joinRoom(RoomData room) async {
+    final userId = _currentUserId;
+    final displayName = _currentDisplayName;
+    if (userId == null) return;
+
+    _currentRoom = room;
+    _mapEditorState.setRoomId(room.id);
+
+    // Load the room's map into the game world.
+    await locate<TechWorld>().loadMap(room.mapData);
+
+    // Create and connect LiveKit using the room ID as LiveKit room name.
+    _liveKitService = LiveKitService(
+      userId: userId,
+      displayName: displayName,
+      roomName: room.id,
+    );
+    _chatService = ChatService(liveKitService: _liveKitService!);
+    _proximityService = ProximityService();
+
+    Locator.add<LiveKitService>(_liveKitService!);
+    Locator.add<ChatService>(_chatService!);
+    Locator.add<ProximityService>(_proximityService!);
+
+    final connected = await _liveKitService!.connect();
+    debugPrint('LiveKit connected to room ${room.id}: $connected');
+
+    if (connected) {
+      await locate<TechWorld>().connectToLiveKit(userId, displayName);
+      await _liveKitService!.setCameraEnabled(true);
+      await _liveKitService!.setMicrophoneEnabled(true);
+    } else {
+      _liveKitConnectionFailed = true;
+    }
+
+    // Apply saved avatar to game world.
+    if (_selectedAvatar != null) {
+      locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
+    }
+
+    setState(() {});
+  }
+
+  /// Leave the current room — disconnect LiveKit and return to lobby.
+  void _leaveRoom() {
+    if (_currentRoom == null) return;
+
+    _liveKitService?.dispose();
+    _chatService?.dispose();
+    _proximityService?.dispose();
+    _liveKitService = null;
+    _chatService = null;
+    _proximityService = null;
+    _liveKitConnectionFailed = false;
+    Locator.remove<LiveKitService>();
+    Locator.remove<ChatService>();
+    Locator.remove<ProximityService>();
+    _currentRoom = null;
+    _mapEditorState.setRoomId(null);
+
+    // Exit editor mode if active.
+    final techWorld = locate<TechWorld>();
+    if (techWorld.mapEditorActive.value) {
+      techWorld.exitEditorMode();
+    }
+
+    setState(() {});
+  }
+
+  /// Create a new room — enter editor with empty map, then save.
+  void _onCreateRoom() {
+    // Jump into a temporary "new room" in the game with a blank map
+    // and open the editor. The save button will create the Firestore doc.
+    _mapEditorState.clearAll();
+    _mapEditorState.setRoomId(null);
+    _mapEditorState.setMapName('New Room');
+    _mapEditorState.setMapId('new_room');
+
+    // Use a transient room so the user can see the editor.
+    // We load the blank map into the game world.
+    final blankMap = _mapEditorState.toGameMap();
+    _currentRoom = RoomData(
+      id: '',
+      name: 'New Room',
+      ownerId: _currentUserId ?? '',
+      ownerDisplayName: _currentDisplayName,
+      mapData: blankMap,
+    );
+
+    locate<TechWorld>().loadMap(blankMap);
+    locate<TechWorld>().enterEditorMode(_mapEditorState);
+
+    setState(() {});
+  }
+
+  /// Save the current editor state as a room. Creates a new room or updates existing.
+  Future<void> _saveRoom() async {
+    final userId = _currentUserId;
+    if (userId == null || _roomService == null) return;
+
+    final gameMap = _mapEditorState.toGameMap();
+
+    if (_mapEditorState.roomId != null && _mapEditorState.roomId!.isNotEmpty) {
+      // Update existing room.
+      await _roomService!.updateRoomMap(_mapEditorState.roomId!, gameMap);
+      await _roomService!.updateRoomName(
+        _mapEditorState.roomId!,
+        _mapEditorState.mapName,
+      );
+      // Update local state.
+      _currentRoom = _currentRoom?.copyWith(
+        name: _mapEditorState.mapName,
+        mapData: gameMap,
+      );
+    } else {
+      // Create new room.
+      final room = await _roomService!.createRoom(
+        name: _mapEditorState.mapName,
+        ownerId: userId,
+        ownerDisplayName: _currentDisplayName,
+        map: gameMap,
+      );
+      _mapEditorState.setRoomId(room.id);
+      _currentRoom = room;
+
+      // Now connect LiveKit for the new room.
+      if (_liveKitService == null) {
+        _liveKitService = LiveKitService(
+          userId: userId,
+          displayName: _currentDisplayName,
+          roomName: room.id,
+        );
+        _chatService = ChatService(liveKitService: _liveKitService!);
+        _proximityService = ProximityService();
+
+        Locator.add<LiveKitService>(_liveKitService!);
+        Locator.add<ChatService>(_chatService!);
+        Locator.add<ProximityService>(_proximityService!);
+
+        final connected = await _liveKitService!.connect();
+        if (connected) {
+          await locate<TechWorld>()
+              .connectToLiveKit(userId, _currentDisplayName);
+          await _liveKitService!.setCameraEnabled(true);
+          await _liveKitService!.setMicrophoneEnabled(true);
+        }
+
+        if (_selectedAvatar != null) {
+          locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
+        }
+      }
+    }
+
+    setState(() {});
   }
 
   /// Called when the user confirms an avatar choice from the selection screen.
@@ -284,6 +412,15 @@ class _MyAppState extends State<MyApp> {
                                 onAvatarSelected: _onAvatarSelected,
                               );
                             }
+                            // Show room browser (lobby) if not in a room
+                            if (_currentRoom == null && _roomService != null) {
+                              return RoomBrowser(
+                                roomService: _roomService!,
+                                userId: _currentUserId!,
+                                onJoinRoom: _joinRoom,
+                                onCreateRoom: _onCreateRoom,
+                              );
+                            }
                             return Stack(
                               children: [
                                 GameWidget(
@@ -304,12 +441,13 @@ class _MyAppState extends State<MyApp> {
                         },
                       ),
                     ),
-                    // Side panel - map editor or chat
+                    // Side panel - map editor or chat (hidden in lobby)
                     StreamBuilder<AuthUser>(
                       stream: locate<AuthService>().authStateChanges,
                       builder: (context, snapshot) {
                         if (!snapshot.hasData ||
-                            snapshot.data is SignedOutUser) {
+                            snapshot.data is SignedOutUser ||
+                            _currentRoom == null) {
                           return const SizedBox.shrink();
                         }
                         final techWorld = locate<TechWorld>();
@@ -317,6 +455,9 @@ class _MyAppState extends State<MyApp> {
                           valueListenable: techWorld.mapEditorActive,
                           builder: (context, editorActive, _) {
                             if (editorActive) {
+                              final canEdit = _currentRoom != null &&
+                                  _currentUserId != null &&
+                                  _currentRoom!.canEdit(_currentUserId!);
                               return SizedBox(
                                 width: constraints.maxWidth >= 800 ? 480 : 360,
                                 child: MapEditorPanel(
@@ -325,6 +466,8 @@ class _MyAppState extends State<MyApp> {
                                   referenceMap: techWorld.currentMap.value,
                                   playerPosition:
                                       techWorld.playerGridPosition,
+                                  onSave: canEdit ? _saveRoom : null,
+                                  canEdit: canEdit,
                                 ),
                               );
                             }
@@ -388,11 +531,13 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ],
                 ),
-                // Auth menu + map editor button - top right when authenticated
+                // Toolbar — top right when in a room
                 StreamBuilder<AuthUser>(
                   stream: locate<AuthService>().authStateChanges,
                   builder: (context, snapshot) {
-                    if (!snapshot.hasData || snapshot.data is SignedOutUser) {
+                    if (!snapshot.hasData ||
+                        snapshot.data is SignedOutUser ||
+                        _currentRoom == null) {
                       return const SizedBox.shrink();
                     }
                     return ValueListenableBuilder<bool>(
@@ -415,7 +560,44 @@ class _MyAppState extends State<MyApp> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            MapSelector(techWorld: locate<TechWorld>()),
+                            // Leave room button
+                            IconButton(
+                              onPressed: _leaveRoom,
+                              icon: const Icon(Icons.arrow_back,
+                                  color: Colors.white70, size: 20),
+                              tooltip: 'Leave room',
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.black54,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Room name indicator
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.meeting_room,
+                                      color: Colors.white70, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _currentRoom?.name ?? '',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                             const SizedBox(width: 8),
                             _MapEditorButton(
                               mapEditorState: _mapEditorState,
@@ -437,7 +619,9 @@ class _MyAppState extends State<MyApp> {
                 StreamBuilder<AuthUser>(
                   stream: locate<AuthService>().authStateChanges,
                   builder: (context, snapshot) {
-                    if (!snapshot.hasData || snapshot.data is SignedOutUser) {
+                    if (!snapshot.hasData ||
+                        snapshot.data is SignedOutUser ||
+                        _currentRoom == null) {
                       return const SizedBox.shrink();
                     }
                     final techWorld = locate<TechWorld>();

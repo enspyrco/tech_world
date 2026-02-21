@@ -43,6 +43,7 @@ class TileMapFormat {
       'terminals': [
         for (final t in map.terminals) {'x': t.x, 'y': t.y},
       ],
+      if (map.backgroundImage != null) 'backgroundImage': map.backgroundImage,
       if (map.tilesetIds.isNotEmpty) 'tilesetIds': map.tilesetIds,
       if (map.floorLayer != null) 'floorLayer': map.floorLayer!.toJson(),
       if (map.objectLayer != null) 'objectLayer': map.objectLayer!.toJson(),
@@ -79,6 +80,7 @@ class TileMapFormat {
             t['y'] as int,
           ),
       ],
+      backgroundImage: json['backgroundImage'] as String?,
       tilesetIds: (json['tilesetIds'] as List<dynamic>?)
               ?.cast<String>()
               .toList() ??

@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Challenge progress
+    match /progress/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Rooms — any authenticated user can read (public listing + joining).
+    // Private room filtering is handled client-side; the query itself
+    // filters on isPublic so private rooms won't appear in browse results.
+    match /rooms/{roomId} {
+      allow read: if request.auth != null;
+
+      // Anyone signed in can create (must set themselves as owner)
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.ownerId;
+
+      // Owner and editors can update
+      allow update: if request.auth != null &&
+        (request.auth.uid == resource.data.ownerId ||
+         request.auth.uid in resource.data.editorIds);
+
+      // Only owner can delete
+      allow delete: if request.auth != null &&
+        request.auth.uid == resource.data.ownerId;
+    }
+  }
+}
