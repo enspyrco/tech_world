@@ -6,6 +6,8 @@ import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 
@@ -336,6 +338,26 @@ class LiveKitService {
       reliable: reliable,
       destinationIdentities: destinationIdentities,
       topic: topic,
+    );
+  }
+
+  /// Publish the current map layout to the bot.
+  ///
+  /// Sent when the bot joins the room and whenever the map is switched, so the
+  /// bot knows about barriers, terminal locations, and the spawn point.
+  Future<void> publishMapInfo(GameMap map) async {
+    final message = {
+      'mapId': map.id,
+      'barriers': map.barriers.map((p) => [p.x, p.y]).toList(),
+      'terminals': map.terminals.map((p) => [p.x, p.y]).toList(),
+      'spawnPoint': [map.spawnPoint.x, map.spawnPoint.y],
+      'gridSize': gridSize,
+      'cellSize': gridSquareSize,
+    };
+    await publishJson(
+      message,
+      topic: 'map-info',
+      destinationIdentities: const ['bot-claude'],
     );
   }
 

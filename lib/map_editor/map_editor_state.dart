@@ -52,6 +52,15 @@ class MapEditorState extends ChangeNotifier {
   String _mapId = 'untitled_map';
   String get mapId => _mapId;
 
+  /// Firestore room ID when editing an existing room. Null for new maps.
+  String? _roomId;
+  String? get roomId => _roomId;
+
+  /// Set the room ID (used when loading from an existing room).
+  void setRoomId(String? id) {
+    _roomId = id;
+  }
+
   // -------------------------------------------------------------------------
   // Tile layer state
   // -------------------------------------------------------------------------
@@ -214,6 +223,7 @@ class MapEditorState extends ChangeNotifier {
   void clearAll() {
     clearGrid();
     _backgroundImage = null;
+    _roomId = null;
     _clearTileLayer(floorLayerData);
     _clearTileLayer(objectLayerData);
     notifyListeners();

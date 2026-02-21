@@ -23,6 +23,8 @@ class MapEditorPanel extends StatelessWidget {
     required this.onClose,
     this.referenceMap,
     this.playerPosition,
+    this.onSave,
+    this.canEdit = true,
     super.key,
   });
 
@@ -34,6 +36,12 @@ class MapEditorPanel extends StatelessWidget {
 
   /// Current player position in grid coordinates, shown as a marker on the grid.
   final ValueListenable<Point<int>>? playerPosition;
+
+  /// Called when the user taps the Save button. Null hides the button.
+  final Future<void> Function()? onSave;
+
+  /// Whether the current user can edit (owner or editor). Controls paint tools.
+  final bool canEdit;
 
   static const _headerBg = Color(0xFF2D2D2D);
   static const _panelBg = Color(0xFF1E1E1E);
@@ -230,6 +238,12 @@ class MapEditorPanel extends StatelessWidget {
       ),
       child: Column(
         children: [
+          // Save to Firestore
+          if (onSave != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _SaveButton(onSave: onSave!, roomId: state.roomId),
+            ),
           // Generate procedural map
           _GenerateSection(state: state),
           const SizedBox(height: 8),
@@ -658,6 +672,75 @@ class _MapToolbarState extends State<_MapToolbar> {
         focusedBorder: OutlineInputBorder(
           borderSide: const BorderSide(color: TileColors.barrier),
           borderRadius: BorderRadius.circular(4),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Save button — saves to Firestore with loading/success feedback
+// ---------------------------------------------------------------------------
+
+class _SaveButton extends StatefulWidget {
+  const _SaveButton({required this.onSave, this.roomId});
+
+  final Future<void> Function() onSave;
+  final String? roomId;
+
+  @override
+  State<_SaveButton> createState() => _SaveButtonState();
+}
+
+class _SaveButtonState extends State<_SaveButton> {
+  bool _saving = false;
+
+  Future<void> _handleSave() async {
+    setState(() => _saving = true);
+    try {
+      await widget.onSave();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Room saved'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Save failed: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = widget.roomId != null ? 'Save Room' : 'Save as New Room';
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _saving ? null : _handleSave,
+        icon: _saving
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.save, size: 14),
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF4CAF50),
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: const Color(0xFF4CAF50).withValues(alpha: 0.5),
+          padding: const EdgeInsets.symmetric(vertical: 10),
         ),
       ),
     );
