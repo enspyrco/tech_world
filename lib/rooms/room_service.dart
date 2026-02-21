@@ -98,6 +98,7 @@ class RoomService {
   Future<List<RoomData>> listMyRooms(String userId) async {
     final snapshot = await _collection
         .where('ownerId', isEqualTo: userId)
+        .limit(50)
         .get();
     final rooms = snapshot.docs.map(RoomData.fromFirestore).toList();
     rooms.sort((a, b) => (b.updatedAt ?? DateTime(0))
