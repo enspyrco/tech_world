@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:collection/collection.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 
 /// A game map definition containing barrier layout and spawn configuration.
@@ -57,4 +58,34 @@ class GameMap {
       tilesetIds.isNotEmpty ||
       (floorLayer != null && !floorLayer!.isEmpty) ||
       (objectLayer != null && !objectLayer!.isEmpty);
+
+  static const _listEquality = ListEquality<Point<int>>();
+  static const _stringListEquality = ListEquality<String>();
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GameMap &&
+          id == other.id &&
+          name == other.name &&
+          spawnPoint == other.spawnPoint &&
+          backgroundImage == other.backgroundImage &&
+          _listEquality.equals(barriers, other.barriers) &&
+          _listEquality.equals(terminals, other.terminals) &&
+          _stringListEquality.equals(tilesetIds, other.tilesetIds) &&
+          floorLayer == other.floorLayer &&
+          objectLayer == other.objectLayer;
+
+  @override
+  int get hashCode => Object.hash(
+        id,
+        name,
+        spawnPoint,
+        backgroundImage,
+        _listEquality.hash(barriers),
+        _listEquality.hash(terminals),
+        _stringListEquality.hash(tilesetIds),
+        floorLayer,
+        objectLayer,
+      );
 }

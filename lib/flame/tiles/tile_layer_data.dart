@@ -71,6 +71,29 @@ class TileLayerData {
     return tiles;
   }
 
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! TileLayerData) return false;
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        if (_grid[y][x] != other._grid[y][x]) return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode {
+    var hash = 0;
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        hash = Object.hash(hash, _grid[y][x]);
+      }
+    }
+    return hash;
+  }
+
   /// Deserialize from a sparse JSON list.
   factory TileLayerData.fromJson(List<dynamic> json) {
     final layer = TileLayerData();
