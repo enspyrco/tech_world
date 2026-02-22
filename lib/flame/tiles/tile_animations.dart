@@ -8,6 +8,9 @@ import 'package:tech_world/flame/tiles/tile_animation.dart';
 /// the animation instead of a static sprite.
 ///
 /// Currently defines waterfall animations for `ext_terrains`.
+///
+/// This is `final` rather than `const` because the entries use [_idx] helper
+/// calls and collection-for syntax, which aren't const-evaluable in Dart.
 final Map<String, List<TileAnimation>> tileAnimations = {
   'ext_terrains': _extTerrainsAnimations,
 };
@@ -89,15 +92,34 @@ final List<TileAnimation> _extTerrainsAnimations = [
   ],
 ];
 
+/// O(1) lookup index: maps (tilesetId, tileIndex) → [TileAnimation].
+///
+/// Built lazily from [tileAnimations] on first access. Every frame index in
+/// every animation is registered, so painting any frame of an animation in
+/// the editor will trigger it.
+final Map<String, Map<int, TileAnimation>> _animationIndex = _buildIndex();
+
+Map<String, Map<int, TileAnimation>> _buildIndex() {
+  final index = <String, Map<int, TileAnimation>>{};
+  for (final entry in tileAnimations.entries) {
+    final tilesetMap = <int, TileAnimation>{};
+    for (final anim in entry.value) {
+      for (final frameIndex in anim.frameIndices) {
+        tilesetMap[frameIndex] = anim;
+      }
+    }
+    index[entry.key] = tilesetMap;
+  }
+  return index;
+}
+
 /// Look up the [TileAnimation] for a tile in a given tileset.
 ///
 /// Returns the animation if [tileIndex] is any frame of an animation in
 /// [tilesetId], or `null` if the tile is static.
+///
+/// Uses an O(1) indexed map rather than linear search, so this is efficient
+/// even when called per-tile during map loading.
 TileAnimation? lookupAnimationForTile(String tilesetId, int tileIndex) {
-  final animations = tileAnimations[tilesetId];
-  if (animations == null) return null;
-  for (final anim in animations) {
-    if (anim.containsIndex(tileIndex)) return anim;
-  }
-  return null;
+  return _animationIndex[tilesetId]?[tileIndex];
 }
