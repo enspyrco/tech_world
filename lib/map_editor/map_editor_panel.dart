@@ -7,6 +7,8 @@ import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/generators/map_generator.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/predefined_terrains.dart';
+import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/map_editor/available_backgrounds.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
@@ -220,6 +222,14 @@ class MapEditorPanel extends StatelessWidget {
 
     if (state.activeLayer == ActiveLayer.structure) {
       state.paintTile(x, y);
+    } else if (state.activeLayer == ActiveLayer.floor &&
+        state.activeTerrainBrush != null) {
+      // Auto-terrain brush mode: paint or erase terrain.
+      if (state.currentBrush == null) {
+        state.eraseTerrainAt(x, y);
+      } else {
+        state.paintTerrain(x, y);
+      }
     } else {
       state.paintTileRef(x, y);
     }
@@ -520,6 +530,9 @@ class _MapToolbarState extends State<_MapToolbar> {
                 ),
               ],
             ),
+          // Terrain brush selector — shown for floor layer
+          if (widget.state.activeLayer == ActiveLayer.floor)
+            _buildTerrainBrushRow(),
           // Tile brush info — shown for tile layers
           if (!isStructureLayer)
             _buildTileBrushInfo(),
@@ -591,13 +604,19 @@ class _MapToolbarState extends State<_MapToolbar> {
   }
 
   Widget _buildTileBrushInfo() {
+    final terrainBrush = widget.state.activeTerrainBrush;
     final brush = widget.state.currentBrush;
     final layerName = widget.state.activeLayer == ActiveLayer.floor
         ? 'Floor'
         : 'Objects';
 
     String label;
-    if (brush == null) {
+    if (terrainBrush != null &&
+        widget.state.activeLayer == ActiveLayer.floor) {
+      label = brush == null
+          ? '$layerName — Eraser'
+          : '$layerName — ${terrainBrush.name} [auto-terrain]';
+    } else if (brush == null) {
       label = '$layerName — Eraser';
     } else if (brush.isMultiTile) {
       label = '$layerName — ${brush.tilesetId} [${brush.width}×${brush.height}]';
@@ -609,7 +628,9 @@ class _MapToolbarState extends State<_MapToolbar> {
     return Row(
       children: [
         Icon(
-          brush == null ? Icons.cleaning_services : Icons.brush,
+          brush == null
+              ? Icons.cleaning_services
+              : terrainBrush != null ? Icons.auto_fix_high : Icons.brush,
           size: 14,
           color: Colors.grey.shade400,
         ),
@@ -622,6 +643,86 @@ class _MapToolbarState extends State<_MapToolbar> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Terrain brush selector row — one button per terrain + "Manual" to return
+  /// to palette mode.
+  Widget _buildTerrainBrushRow() {
+    final activeTerrain = widget.state.activeTerrainBrush;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Text(
+            'Brush',
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
+          ),
+          const SizedBox(width: 6),
+          // Manual mode button (return to palette)
+          _terrainChip(
+            label: 'Manual',
+            isSelected: activeTerrain == null,
+            color: Colors.grey,
+            onTap: () {
+              widget.state.setTerrainBrush(null);
+            },
+          ),
+          const SizedBox(width: 4),
+          // One chip per predefined terrain
+          for (final terrain in allTerrains) ...[
+            _terrainChip(
+              label: terrain.name,
+              isSelected: activeTerrain?.id == terrain.id,
+              color: const Color(0xFF4FC3F7),
+              onTap: () {
+                widget.state.setTerrainBrush(terrain);
+                // Set a non-null brush to indicate "paint" mode (vs eraser).
+                // The actual tile selection is handled by auto-terrain.
+                widget.state.setBrush(TileBrush(
+                  tilesetId: terrain.tilesetId,
+                  startCol: terrain.preview % 32,
+                  startRow: terrain.preview ~/ 32,
+                  columns: 32,
+                ));
+              },
+            ),
+            const SizedBox(width: 4),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _terrainChip({
+    required String label,
+    required bool isSelected,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withValues(alpha: 0.3) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? color : Colors.grey.shade700,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? color : Colors.grey.shade400,
+            fontSize: 10,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ),
     );
   }
 
