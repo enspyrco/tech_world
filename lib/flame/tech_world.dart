@@ -61,7 +61,7 @@ class TechWorld extends World with TapCallbacks {
   // final GridComponent _gridComponent = GridComponent();
   BarriersComponent _barriersComponent =
       BarriersComponent(barriers: defaultMap.barriers);
-  late PathComponent _pathComponent;
+  PathComponent? _pathComponent;
 
   /// The currently loaded map.
   final ValueNotifier<GameMap> currentMap = ValueNotifier(defaultMap);
@@ -154,7 +154,7 @@ class TechWorld extends World with TapCallbacks {
     _tileObjectLayer?.show();
 
     // Rebuild pathfinding grid from default barriers.
-    _pathComponent.invalidateGrid();
+    _pathComponent?.invalidateGrid();
 
     if (_mapPreviewComponent != null) {
       _mapPreviewComponent!.removeFromParent();
@@ -215,7 +215,7 @@ class TechWorld extends World with TapCallbacks {
 
   /// Called when the editor state changes — rebuild pathfinding grid.
   void _onEditorStateChanged() {
-    _pathComponent.setGridFromEditor(_editorState!);
+    _pathComponent?.setGridFromEditor(_editorState!);
   }
 
   /// Check if a challenge is completed via the [ProgressService].
@@ -754,7 +754,7 @@ class TechWorld extends World with TapCallbacks {
 
     // Grid lines hidden for now — uncomment to restore:
     // await add(_gridComponent);
-    await add(_pathComponent);
+    await add(_pathComponent!);
     await add(_userPlayerComponent);
 
     // Load initial map components.
@@ -788,7 +788,7 @@ class TechWorld extends World with TapCallbacks {
     // Barriers
     _barriersComponent = BarriersComponent(barriers: map.barriers);
     await add(_barriersComponent);
-    _pathComponent.barriers = _barriersComponent;
+    _pathComponent?.barriers = _barriersComponent;
 
     // Terminals
     for (var i = 0; i < map.terminals.length; i++) {
@@ -909,16 +909,19 @@ class TechWorld extends World with TapCallbacks {
     int miniGridX = (worldPosition.x / gridSquareSize).floor();
     int miniGridY = (worldPosition.y / gridSquareSize).floor();
 
-    _pathComponent.calculatePath(
+    final pathComponent = _pathComponent;
+    if (pathComponent == null) return;
+
+    pathComponent.calculatePath(
         start: _userPlayerComponent.miniGridTuple, end: (miniGridX, miniGridY));
 
     _userPlayerComponent.move(
-        _pathComponent.directions, _pathComponent.largeGridPoints);
+        pathComponent.directions, pathComponent.largeGridPoints);
 
     // Publish position via LiveKit data channel
     _liveKitService?.publishPosition(
-      points: _pathComponent.largeGridPoints,
-      directions: _pathComponent.directions,
+      points: pathComponent.largeGridPoints,
+      directions: pathComponent.directions,
     );
   }
 

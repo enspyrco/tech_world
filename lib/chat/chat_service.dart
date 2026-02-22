@@ -224,19 +224,6 @@ class ChatService {
     }
   }
 
-  /// Add a message from Clawd to the chat panel programmatically.
-  ///
-  /// Use this to surface bot-originated content (e.g. hints) that didn't
-  /// arrive through the normal `chat-response` data channel.
-  void addBotMessage(String text) {
-    _messages.add(ChatMessage(
-      text: text,
-      senderName: 'Clawd',
-      isBot: true,
-    ));
-    _messagesController.add(List.from(_messages));
-  }
-
   /// Handle a help-response message from the bot.
   void _handleHelpResponse(DataChannelMessage message) {
     final json = message.json;
@@ -247,9 +234,6 @@ class ChatService {
     if (requestId == null || hint == null) return;
 
     debugPrint('ChatService: Received help-response for $requestId');
-
-    // Post the hint to chat so it's visible in the chat panel
-    addBotMessage(hint);
 
     // Speak the hint aloud so Clawd "says" it when arriving (web only)
     _ttsService.speak(hint);
