@@ -94,7 +94,7 @@ final List<TileAnimation> _extTerrainsAnimations = [
 
 /// O(1) lookup index: maps (tilesetId, tileIndex) → [TileAnimation].
 ///
-/// Built lazily from [tileAnimations] on first access. Every frame index in
+/// Built eagerly from [tileAnimations] at library initialization. Every frame index in
 /// every animation is registered, so painting any frame of an animation in
 /// the editor will trigger it.
 final Map<String, Map<int, TileAnimation>> _animationIndex = _buildIndex();
