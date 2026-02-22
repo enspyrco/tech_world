@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/maps/tile_map_format.dart';
 import 'package:tech_world/rooms/room_data.dart';
 
 /// Firestore CRUD service for rooms.
@@ -78,32 +79,23 @@ class RoomService {
   }
 
   /// List all public rooms, ordered by most recently updated.
-  ///
-  /// Sorts client-side to avoid requiring a Firestore composite index
-  /// (which would need `isPublic` + `updatedAt`). Fine at current scale.
   Future<List<RoomData>> listPublicRooms() async {
     final snapshot = await _collection
         .where('isPublic', isEqualTo: true)
+        .orderBy('updatedAt', descending: true)
         .limit(50)
         .get();
-    final rooms = snapshot.docs.map(RoomData.fromFirestore).toList();
-    rooms.sort((a, b) => (b.updatedAt ?? DateTime(0))
-        .compareTo(a.updatedAt ?? DateTime(0)));
-    return rooms;
+    return snapshot.docs.map(RoomData.fromFirestore).toList();
   }
 
-  /// List rooms owned by the given user.
-  ///
-  /// Sorts client-side to avoid requiring a Firestore composite index.
+  /// List rooms owned by the given user, ordered by most recently updated.
   Future<List<RoomData>> listMyRooms(String userId) async {
     final snapshot = await _collection
         .where('ownerId', isEqualTo: userId)
+        .orderBy('updatedAt', descending: true)
         .limit(50)
         .get();
-    final rooms = snapshot.docs.map(RoomData.fromFirestore).toList();
-    rooms.sort((a, b) => (b.updatedAt ?? DateTime(0))
-        .compareTo(a.updatedAt ?? DateTime(0)));
-    return rooms;
+    return snapshot.docs.map(RoomData.fromFirestore).toList();
   }
 
   /// Add a user to the editor list (Firestore arrayUnion).
@@ -132,20 +124,9 @@ class RoomService {
 
   /// Build the `mapData` JSON without `id`/`name` (those live at the room level).
   static Map<String, dynamic> _mapDataJson(GameMap map) {
-    // Reuse TileMapFormat but strip room-level fields.
-    final json = <String, dynamic>{
-      'spawnPoint': {'x': map.spawnPoint.x, 'y': map.spawnPoint.y},
-      'barriers': [
-        for (final b in map.barriers) {'x': b.x, 'y': b.y},
-      ],
-      'terminals': [
-        for (final t in map.terminals) {'x': t.x, 'y': t.y},
-      ],
-      if (map.backgroundImage != null) 'backgroundImage': map.backgroundImage,
-      if (map.tilesetIds.isNotEmpty) 'tilesetIds': map.tilesetIds,
-      if (map.floorLayer != null) 'floorLayer': map.floorLayer!.toJson(),
-      if (map.objectLayer != null) 'objectLayer': map.objectLayer!.toJson(),
-    };
+    final json = TileMapFormat.toJson(map);
+    json.remove('id');
+    json.remove('name');
     return json;
   }
 }

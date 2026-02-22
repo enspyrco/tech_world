@@ -128,7 +128,7 @@ class _MyAppState extends State<MyApp> {
   Future<void> _onAuthStateChanged(AuthUser user) async {
     if (user is SignedOutUser) {
       // User signed out — tear down everything.
-      _leaveRoom();
+      await _leaveRoom();
       _progressService?.dispose();
       _progressService = null;
       Locator.remove<ProgressService>();
@@ -181,7 +181,6 @@ class _MyAppState extends State<MyApp> {
   /// Join a room — load map and connect to LiveKit.
   Future<void> _joinRoom(RoomData room) async {
     final userId = _currentUserId;
-    final displayName = _currentDisplayName;
     if (userId == null) return;
 
     _currentRoom = room;
@@ -190,11 +189,24 @@ class _MyAppState extends State<MyApp> {
     // Load the room's map into the game world.
     await locate<TechWorld>().loadMap(room.mapData);
 
-    // Create and connect LiveKit using the room ID as LiveKit room name.
+    await _setupLiveKit(room.id, userId, _currentDisplayName);
+
+    setState(() {});
+  }
+
+  /// Create LiveKit, Chat, and Proximity services, connect, and enable media.
+  ///
+  /// Sets [_liveKitConnectionFailed] on failure so the UI can show a banner.
+  /// Applies the saved avatar if one is selected.
+  Future<void> _setupLiveKit(
+    String roomId,
+    String userId,
+    String displayName,
+  ) async {
     _liveKitService = LiveKitService(
       userId: userId,
       displayName: displayName,
-      roomName: room.id,
+      roomName: roomId,
     );
     _chatService = ChatService(liveKitService: _liveKitService!);
     _proximityService = ProximityService();
@@ -204,7 +216,7 @@ class _MyAppState extends State<MyApp> {
     Locator.add<ProximityService>(_proximityService!);
 
     final connected = await _liveKitService!.connect();
-    debugPrint('LiveKit connected to room ${room.id}: $connected');
+    debugPrint('LiveKit connected to room $roomId: $connected');
 
     if (connected) {
       await locate<TechWorld>().connectToLiveKit(userId, displayName);
@@ -218,12 +230,10 @@ class _MyAppState extends State<MyApp> {
     if (_selectedAvatar != null) {
       locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
     }
-
-    setState(() {});
   }
 
   /// Leave the current room — disconnect LiveKit and return to lobby.
-  void _leaveRoom() {
+  Future<void> _leaveRoom() async {
     if (_currentRoom == null) return;
 
     _liveKitService?.dispose();
@@ -242,7 +252,7 @@ class _MyAppState extends State<MyApp> {
     // Exit editor mode if active.
     final techWorld = locate<TechWorld>();
     if (techWorld.mapEditorActive.value) {
-      techWorld.exitEditorMode();
+      await techWorld.exitEditorMode();
     }
 
     setState(() {});
@@ -306,29 +316,7 @@ class _MyAppState extends State<MyApp> {
 
       // Now connect LiveKit for the new room.
       if (_liveKitService == null) {
-        _liveKitService = LiveKitService(
-          userId: userId,
-          displayName: _currentDisplayName,
-          roomName: room.id,
-        );
-        _chatService = ChatService(liveKitService: _liveKitService!);
-        _proximityService = ProximityService();
-
-        Locator.add<LiveKitService>(_liveKitService!);
-        Locator.add<ChatService>(_chatService!);
-        Locator.add<ProximityService>(_proximityService!);
-
-        final connected = await _liveKitService!.connect();
-        if (connected) {
-          await locate<TechWorld>()
-              .connectToLiveKit(userId, _currentDisplayName);
-          await _liveKitService!.setCameraEnabled(true);
-          await _liveKitService!.setMicrophoneEnabled(true);
-        }
-
-        if (_selectedAvatar != null) {
-          locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
-        }
+        await _setupLiveKit(room.id, userId, _currentDisplayName);
       }
     }
 
@@ -749,9 +737,9 @@ class _MapEditorButton extends StatelessWidget {
       valueListenable: techWorld.mapEditorActive,
       builder: (context, active, _) {
         return IconButton(
-          onPressed: () {
+          onPressed: () async {
             if (active) {
-              techWorld.exitEditorMode();
+              await techWorld.exitEditorMode();
             } else {
               techWorld.enterEditorMode(mapEditorState);
             }
