@@ -1,6 +1,8 @@
 import 'package:flame/cache.dart';
 import 'package:flame/components.dart';
 import 'package:flame/sprite.dart';
+import 'package:tech_world/flame/tiles/tile_animation.dart';
+import 'package:tech_world/flame/tiles/tile_animations.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
 
 /// Loads and caches tileset sprite sheets for tile rendering.
@@ -9,6 +11,10 @@ import 'package:tech_world/flame/tiles/tileset.dart';
 /// [SpriteSheet] instances for efficient sprite lookup by tile index.
 class TilesetRegistry {
   TilesetRegistry({required this.images});
+
+  /// Creates a registry without an [Images] cache, for testing animation
+  /// lookups that don't require sprite loading.
+  TilesetRegistry.forTesting() : images = Images();
 
   /// Flame's shared image cache — typically `game.images`.
   final Images images;
@@ -64,4 +70,14 @@ class TilesetRegistry {
 
   /// All currently loaded tileset IDs.
   Iterable<String> get loadedIds => _loaded.keys;
+
+  /// Look up the [TileAnimation] for a tile in a given tileset.
+  ///
+  /// Returns the animation if [tileIndex] is any frame of an animation
+  /// defined for [tilesetId], or `null` if the tile is static. Checks all
+  /// frame indices (not just base), so any frame painted in the editor still
+  /// triggers the animation.
+  TileAnimation? getAnimationForTile(String tilesetId, int tileIndex) {
+    return lookupAnimationForTile(tilesetId, tileIndex);
+  }
 }
