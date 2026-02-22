@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flame/components.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/animation_ticker.dart';
 import 'package:tech_world/flame/tiles/tile_animation.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tileset_registry.dart';
@@ -11,7 +12,7 @@ import 'package:tech_world/flame/tiles/tileset_registry.dart';
 ///
 /// Static tiles are recorded once into a [Picture] and replayed each frame as
 /// a single draw call. Animated tiles are skipped in the [Picture] and instead
-/// rendered via shared [_AnimationTicker]s so all instances of the same
+/// rendered via shared [AnimationTicker]s so all instances of the same
 /// animation play in sync (standard for pixel-art water, lava, etc.).
 ///
 /// Priority is -2, placing it below the background image layer (-1) and all
@@ -33,9 +34,13 @@ class TileFloorComponent extends Component {
   /// rendering.
   final List<_AnimatedTileEntry> _animatedTiles = [];
 
+  /// Grid positions of animated tiles, used by [_rebuildCache] to skip them
+  /// without re-calling [TilesetRegistry.getAnimationForTile].
+  final Set<(int, int)> _animatedPositions = {};
+
   /// Shared tickers keyed by [TileAnimation.baseTileIndex]. All tiles sharing
   /// the same animation use the same ticker to animate in sync.
-  final Map<int, _AnimationTicker> _tickers = {};
+  final Map<int, AnimationTicker> _tickers = {};
 
   /// Number of animated tile cells (for testing / debugging).
   int get animatedTileCount => _animatedTiles.length;
@@ -49,6 +54,7 @@ class TileFloorComponent extends Component {
   /// available immediately (before [onLoad]).
   void _partitionTiles() {
     _animatedTiles.clear();
+    _animatedPositions.clear();
     _tickers.clear();
 
     for (var y = 0; y < gridSize; y++) {
@@ -66,10 +72,11 @@ class TileFloorComponent extends Component {
               animation: anim,
             ),
           );
+          _animatedPositions.add((x, y));
           // Create a shared ticker per unique animation.
           _tickers.putIfAbsent(
             anim.baseTileIndex,
-            () => _AnimationTicker(anim),
+            () => AnimationTicker(anim),
           );
         }
       }
@@ -93,8 +100,7 @@ class TileFloorComponent extends Component {
         if (ref == null) continue;
 
         // Skip animated tiles — they're rendered per-frame in render().
-        final anim = registry.getAnimationForTile(ref.tilesetId, ref.tileIndex);
-        if (anim != null) continue;
+        if (_animatedPositions.contains((x, y))) continue;
 
         final sprite = registry.getSpriteForTile(ref.tilesetId, ref.tileIndex);
         if (sprite == null) continue;
@@ -153,6 +159,7 @@ class TileFloorComponent extends Component {
     _cachedPicture?.dispose();
     _cachedPicture = null;
     _animatedTiles.clear();
+    _animatedPositions.clear();
     _tickers.clear();
     super.onRemove();
   }
@@ -171,38 +178,4 @@ class _AnimatedTileEntry {
   final int y;
   final String tilesetId;
   final TileAnimation animation;
-}
-
-/// Lightweight animation ticker that cycles through frame indices at a fixed
-/// step time.
-///
-/// Unlike Flame's [SpriteAnimationTicker], this works with tile indices rather
-/// than [Sprite] objects, deferring sprite lookup to render time. This avoids
-/// importing Flame's internal `src/` API and keeps the animation logic simple.
-class _AnimationTicker {
-  _AnimationTicker(this.animation);
-
-  final TileAnimation animation;
-
-  double _elapsed = 0;
-
-  /// The tile index of the current animation frame.
-  int get currentFrameIndex {
-    if (animation.frameCount == 0) return animation.baseTileIndex;
-    final frameIdx = (_elapsed / animation.stepTime).floor() %
-        animation.frameCount;
-    return animation.frameIndices[frameIdx];
-  }
-
-  /// Advance the animation clock by [dt] seconds.
-  void update(double dt) {
-    _elapsed += dt;
-    // Wrap at cycle boundary to prevent floating-point precision loss over
-    // long play sessions. The modulo keeps _elapsed within one cycle so
-    // currentFrameIndex stays accurate.
-    final cycleDuration = animation.stepTime * animation.frameCount;
-    if (_elapsed >= cycleDuration) {
-      _elapsed %= cycleDuration;
-    }
-  }
 }
