@@ -235,6 +235,9 @@ class ChatService {
 
     debugPrint('ChatService: Received help-response for $requestId');
 
+    // Speak the hint aloud so Clawd "says" it when arriving (web only)
+    _ttsService.speak(hint);
+
     final completer = _pendingHelpRequests.remove(requestId);
     completer?.complete(hint);
   }
