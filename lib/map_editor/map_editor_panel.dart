@@ -29,7 +29,7 @@ class MapEditorPanel extends StatelessWidget {
   });
 
   final MapEditorState state;
-  final VoidCallback onClose;
+  final Future<void> Function() onClose;
 
   /// Optional game map to render as a faint reference layer under the grid.
   final GameMap? referenceMap;

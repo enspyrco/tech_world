@@ -141,13 +141,18 @@ class TechWorld extends World with TapCallbacks {
   }
 
   /// Exit map editor mode — removes preview, applies editor changes to game.
-  void exitEditorMode() {
+  Future<void> exitEditorMode() async {
     mapEditorActive.value = false;
 
-    // Apply the editor's map to the game world so background / barriers
-    // reflect whatever was edited (e.g. loading a predefined map in a new room).
+    // Apply the full edited map to the game world so barriers, terminals,
+    // background, and wall occlusion all reflect whatever was changed.
     if (_editorState != null) {
-      _applyEditorBackground(_editorState!);
+      final editedMap = _editorState!.toGameMap();
+      if (editedMap != currentMap.value) {
+        _removeMapComponents();
+        await _loadMapComponents(editedMap);
+        currentMap.value = editedMap;
+      }
     }
 
     // Stop listening for editor changes.
@@ -166,54 +171,6 @@ class TechWorld extends World with TapCallbacks {
       _mapPreviewComponent = null;
     }
     _barriersComponent.renderBarriers = !currentMap.value.usesTilesets;
-  }
-
-  /// Sync the game world's background sprite with the editor state.
-  ///
-  /// When the user loads a different map in the editor (e.g. a predefined map
-  /// in a new room), the game world's [_backgroundSprite] may not match. This
-  /// method adds/removes the sprite so exiting the editor shows the correct
-  /// background.
-  void _applyEditorBackground(MapEditorState editor) {
-    final editorBg = editor.backgroundImage;
-    final currentBg = currentMap.value.backgroundImage;
-
-    // Nothing to change.
-    if (editorBg == currentBg) return;
-
-    final game = findGame() as TechWorldGame?;
-    if (game == null) return;
-
-    // Remove old background sprite if present.
-    if (_backgroundSprite != null) {
-      _backgroundSprite!.removeFromParent();
-      _backgroundSprite = null;
-    }
-
-    // Remove old wall occlusion (tied to the old background).
-    if (_wallOcclusion != null) {
-      _wallOcclusion!.removeFromParent();
-      _wallOcclusion = null;
-    }
-
-    // Add new background sprite if the editor has one.
-    if (editorBg != null && game.images.containsKey(editorBg)) {
-      final bgImage = game.images.fromCache(editorBg);
-      _backgroundSprite =
-          SpriteComponent(sprite: Sprite(bgImage), priority: -1);
-      add(_backgroundSprite!);
-
-      // Recreate wall occlusion for the new background.
-      final editedMap = editor.toGameMap();
-      _wallOcclusion = WallOcclusionComponent(
-        backgroundImage: bgImage,
-        barriers: editedMap.barriers,
-      );
-      add(_wallOcclusion!);
-
-      // Update currentMap so the rest of the system sees the change.
-      currentMap.value = editedMap;
-    }
   }
 
   MapEditorState? _editorState;
@@ -886,7 +843,7 @@ class TechWorld extends World with TapCallbacks {
     if (map.id == currentMap.value.id) return; // Already on this map.
 
     // Auto-exit editor mode if active.
-    if (mapEditorActive.value) exitEditorMode();
+    if (mapEditorActive.value) await exitEditorMode();
 
     // Close code editor if open — the terminals are about to change.
     closeEditor();
