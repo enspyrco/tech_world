@@ -9,6 +9,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
@@ -107,14 +108,18 @@ class TechWorld extends World with TapCallbacks {
 
   /// Close the code editor panel.
   void closeEditor() {
+    // Only publish if we were actually in the editor.
+    if (activeChallenge.value != null) {
+      _liveKitService?.publishTerminalActivity(action: 'close');
+    }
     activeChallenge.value = null;
     activeTerminalPosition.value = null;
   }
 
   /// Enter map editor mode — shows preview overlay on the canvas.
   void enterEditorMode(MapEditorState editorState) {
-    // Close code editor if open.
-    activeChallenge.value = null;
+    // Close code editor if open (also notifies the bot).
+    closeEditor();
 
     // Pre-load the current map so the editor and canvas show existing layout.
     editorState.loadFromGameMap(currentMap.value);
@@ -800,7 +805,7 @@ class TechWorld extends World with TapCallbacks {
           terminalPos.x * gridSquareSizeDouble,
           terminalPos.y * gridSquareSizeDouble,
         ),
-        onInteract: () => _onTerminalInteract(terminalPos, challenge.id),
+        onInteract: () => _onTerminalInteract(terminalPos, challenge),
         isCompleted: _isChallengeCompleted(challenge.id),
       );
       _terminalComponents.add(terminal);
@@ -926,15 +931,25 @@ class TechWorld extends World with TapCallbacks {
   }
 
   /// Handle terminal interaction - check proximity before opening editor.
-  void _onTerminalInteract(Point<int> terminalPos, String challengeId) {
+  void _onTerminalInteract(Point<int> terminalPos, Challenge challenge) {
     final playerGrid = _userPlayerComponent.miniGridPosition;
     final distance = max(
       (terminalPos.x - playerGrid.x).abs(),
       (terminalPos.y - playerGrid.y).abs(),
     );
     if (distance <= _terminalProximityThreshold) {
-      activeChallenge.value = challengeId;
+      activeChallenge.value = challenge.id;
       activeTerminalPosition.value = terminalPos;
+
+      // Notify the bot that we opened a terminal editor.
+      _liveKitService?.publishTerminalActivity(
+        action: 'open',
+        challengeId: challenge.id,
+        challengeTitle: challenge.title,
+        challengeDescription: challenge.description,
+        terminalX: terminalPos.x,
+        terminalY: terminalPos.y,
+      );
     } else {
       _showHint(
         'Walk closer to use this terminal',

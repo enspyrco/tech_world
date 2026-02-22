@@ -381,6 +381,41 @@ class LiveKitService {
     );
   }
 
+  /// Publish a terminal-activity event to the bot.
+  ///
+  /// Notifies `bot-claude` when the local player opens or closes the code
+  /// editor so the bot can track who is working on challenges and proactively
+  /// offer help.
+  Future<void> publishTerminalActivity({
+    required String action,
+    String? challengeId,
+    String? challengeTitle,
+    String? challengeDescription,
+    int? terminalX,
+    int? terminalY,
+  }) async {
+    final message = <String, dynamic>{
+      'type': 'terminal-activity',
+      'action': action,
+      'playerId': userId,
+      'playerName': displayName,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    if (challengeId != null) message['challengeId'] = challengeId;
+    if (challengeTitle != null) message['challengeTitle'] = challengeTitle;
+    if (challengeDescription != null) {
+      message['challengeDescription'] = challengeDescription;
+    }
+    if (terminalX != null) message['terminalX'] = terminalX;
+    if (terminalY != null) message['terminalY'] = terminalY;
+
+    await publishJson(
+      message,
+      topic: 'terminal-activity',
+      destinationIdentities: const ['bot-claude'],
+    );
+  }
+
   /// Send a ping message to the bot and wait for pong response.
   ///
   /// Returns the pong response message if received within [timeout],
