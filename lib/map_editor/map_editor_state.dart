@@ -5,6 +5,7 @@ import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/terrain_bitmask.dart';
+import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/terrain_def.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
@@ -146,16 +147,18 @@ class MapEditorState extends ChangeNotifier {
     terrainGrid.setTerrain(x, y, null);
     floorLayerData.setTile(x, y, null);
 
+    // Look up the terrain def by ID so erasure works regardless of the
+    // currently selected brush (fixes stale tiles when brush is switched).
+    final terrain = lookupTerrain(terrainId);
+
     // Re-evaluate neighbors that might have been affected.
     for (final (dx, dy) in Bitmask.offsets) {
       final nx = x + dx;
       final ny = y + dy;
-      if (_inBounds(nx, ny) && terrainGrid.isTerrainAt(nx, ny, terrainId)) {
-        // Look up the terrain def to re-evaluate.
-        final terrain = _activeTerrainBrush;
-        if (terrain != null && terrain.id == terrainId) {
-          _reevaluateTerrainCell(nx, ny, terrain);
-        }
+      if (_inBounds(nx, ny) &&
+          terrain != null &&
+          terrainGrid.isTerrainAt(nx, ny, terrainId)) {
+        _reevaluateTerrainCell(nx, ny, terrain);
       }
     }
 

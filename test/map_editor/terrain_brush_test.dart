@@ -172,6 +172,25 @@ void main() {
       state.eraseTerrainAt(gridSize, 0);
       // No exception.
     });
+
+    test('erasing updates neighbors even after switching to manual mode', () {
+      // Paint two adjacent water cells.
+      state.paintTerrain(10, 10);
+      state.paintTerrain(11, 10);
+
+      // Switch to manual mode (null terrain brush).
+      state.setTerrainBrush(null);
+
+      // Erase the east cell — the west cell should revert to isolated.
+      state.eraseTerrainAt(11, 10);
+
+      final tile = state.floorLayerData.tileAt(10, 10);
+      expect(
+        tile!.tileIndex,
+        waterTerrain.tileIndexForBitmask(0),
+        reason: 'Cell should revert to isolated even after brush switch',
+      );
+    });
   });
 
   group('clearAll integration', () {

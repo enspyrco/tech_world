@@ -82,7 +82,8 @@ class GameMap {
           _listEquality.equals(terminals, other.terminals) &&
           _stringListEquality.equals(tilesetIds, other.tilesetIds) &&
           floorLayer == other.floorLayer &&
-          objectLayer == other.objectLayer;
+          objectLayer == other.objectLayer &&
+          terrainGrid == other.terrainGrid;
 
   @override
   int get hashCode => Object.hash(
@@ -95,5 +96,6 @@ class GameMap {
         _stringListEquality.hash(tilesetIds),
         floorLayer,
         objectLayer,
+        terrainGrid,
       );
 }
