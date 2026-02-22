@@ -113,7 +113,11 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
 
     setState(() {
       _isRequesting = false;
-      if (hint != null) _hintText = hint;
+      if (hint != null) {
+        _hintText = hint;
+        // Insert hint as a comment at the top of the editor
+        _controller.insertText('// Clawd: $hint\n', 0, 0);
+      }
     });
   }
 
