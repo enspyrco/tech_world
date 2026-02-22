@@ -643,6 +643,22 @@ class _MyAppState extends State<MyApp> {
                           challenge: challenge,
                           isCompleted: isCompleted,
                           onClose: techWorld.closeEditor,
+                          onHelpRequest: (code) async {
+                            final chatService =
+                                Locator.maybeLocate<ChatService>();
+                            if (chatService == null) return null;
+
+                            final terminalPos =
+                                techWorld.activeTerminalPosition.value;
+                            return chatService.requestHelp(
+                              challengeId: challenge.id,
+                              challengeTitle: challenge.title,
+                              challengeDescription: challenge.description,
+                              code: code,
+                              terminalX: terminalPos?.x ?? 0,
+                              terminalY: terminalPos?.y ?? 0,
+                            );
+                          },
                           onSubmit: (code) async {
                             // Close the editor immediately so the player
                             // returns to the game while waiting for Clawd.
@@ -766,12 +782,14 @@ class _CodeEditorModal extends StatelessWidget {
     required this.isCompleted,
     required this.onClose,
     required this.onSubmit,
+    this.onHelpRequest,
   });
 
   final Challenge challenge;
   final bool isCompleted;
   final VoidCallback onClose;
   final void Function(String code) onSubmit;
+  final Future<String?> Function(String code)? onHelpRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -809,6 +827,7 @@ class _CodeEditorModal extends StatelessWidget {
                       isCompleted: isCompleted,
                       onClose: onClose,
                       onSubmit: onSubmit,
+                      onHelpRequest: onHelpRequest,
                     ),
                   ),
                 ),
