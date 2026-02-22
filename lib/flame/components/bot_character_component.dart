@@ -8,8 +8,6 @@ import 'package:flame/flame.dart';
 import 'package:flutter/painting.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/shared/constants.dart';
-import 'package:tech_world/flame/shared/direction.dart';
-
 /// A Flame component that renders the Clawd mascot as a character sprite.
 /// Unlike PlayerComponent which uses sprite sheets, this renders a static image.
 /// Tap on the bot to toggle the thinking indicator (for demo purposes).
@@ -35,19 +33,19 @@ class BotCharacterComponent extends PositionComponent with TapCallbacks {
   /// Animate Clawd along a path, matching PlayerComponent's movement style.
   ///
   /// Each step takes 0.2s (same as players) so movement speed looks natural.
-  void move(List<Direction> directions, List<Vector2> largeGridPoints) {
+  void move(List<Vector2> largeGridPoints) {
     _removeAllEffects();
     _pathSegmentNum = 0;
     _moveEffects = [];
 
-    // No directions — just set position directly (e.g. initial spawn)
-    if (directions.isEmpty && largeGridPoints.isNotEmpty) {
-      position = largeGridPoints.first;
+    // Single point — just set position directly (e.g. initial spawn)
+    if (largeGridPoints.length <= 1) {
+      if (largeGridPoints.isNotEmpty) position = largeGridPoints.first;
       return;
     }
 
     // Skip the first point (current position) — effects start from the second
-    // point so each effect corresponds to a direction.
+    // point so each MoveToEffect moves to the next waypoint.
     for (int i = 1; i < largeGridPoints.length; i++) {
       _moveEffects.add(
         MoveToEffect(

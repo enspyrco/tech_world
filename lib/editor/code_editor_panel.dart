@@ -38,6 +38,16 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
   late final String _fileUri;
 
   static const _clawdOrange = Color(0xFFD97757);
+  static const _hintLabelStyle = TextStyle(
+    color: _clawdOrange,
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+  );
+  static const _hintTextStyle = TextStyle(
+    color: Color(0xFFBDBDBD), // Colors.grey[300]
+    fontSize: 13,
+    height: 1.4,
+  );
 
   String? _hintText;
   bool _isRequesting = false;
@@ -244,22 +254,14 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              const Text(
                                 "Clawd's hint:",
-                                style: TextStyle(
-                                  color: _clawdOrange,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                style: _hintLabelStyle,
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 _hintText!,
-                                style: TextStyle(
-                                  color: Colors.grey[300],
-                                  fontSize: 13,
-                                  height: 1.4,
-                                ),
+                                style: _hintTextStyle,
                               ),
                             ],
                           ),

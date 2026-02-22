@@ -560,7 +560,7 @@ class TechWorld extends World with TapCallbacks {
 
       if (path.playerId == _botUserId) {
         // Animate bot along the full path, just like player movement.
-        _botCharacterComponent?.move(path.directions, path.largeGridPoints);
+        _botCharacterComponent?.move(path.largeGridPoints);
       } else {
         // If player component doesn't exist, create it
         if (!_otherPlayerComponentsMap.containsKey(path.playerId)) {
