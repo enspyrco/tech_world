@@ -23,7 +23,9 @@ class ChatService {
   final List<ChatMessage> _messages = [];
   final Map<String, Completer<Map<String, dynamic>?>> _pendingMessages = {};
   final Set<String> _seenMessageIds = {}; // Prevent duplicate messages
+  final Map<String, Completer<String?>> _pendingHelpRequests = {};
   StreamSubscription<DataChannelMessage>? _chatSubscription;
+  StreamSubscription<DataChannelMessage>? _helpResponseSubscription;
   StreamSubscription<RemoteParticipant>? _botJoinedSubscription;
   StreamSubscription<RemoteParticipant>? _botLeftSubscription;
 
@@ -37,6 +39,11 @@ class ChatService {
     _chatSubscription = _liveKitService.dataReceived
         .where((msg) => msg.topic == 'chat' || msg.topic == 'chat-response')
         .listen(_handleMessage);
+
+    // Listen for help-response messages from the bot
+    _helpResponseSubscription = _liveKitService.dataReceived
+        .where((msg) => msg.topic == 'help-response')
+        .listen(_handleHelpResponse);
   }
 
   /// Track bot presence via LiveKit participant events.
@@ -217,8 +224,87 @@ class ChatService {
     }
   }
 
+  /// Handle a help-response message from the bot.
+  void _handleHelpResponse(DataChannelMessage message) {
+    final json = message.json;
+    if (json == null) return;
+
+    final requestId = json['requestId'] as String?;
+    final hint = json['hint'] as String?;
+    if (requestId == null || hint == null) return;
+
+    debugPrint('ChatService: Received help-response for $requestId');
+
+    final completer = _pendingHelpRequests.remove(requestId);
+    completer?.complete(hint);
+  }
+
+  /// Request a hint from Clawd for the current coding challenge.
+  ///
+  /// Publishes a `help-request` message targeted to the bot and waits for a
+  /// `help-response` containing a hint. Returns `null` on timeout or error.
+  Future<String?> requestHelp({
+    required String challengeId,
+    required String challengeTitle,
+    required String challengeDescription,
+    required String code,
+    required int terminalX,
+    required int terminalY,
+  }) async {
+    if (!_liveKitService.isConnected) {
+      debugPrint('ChatService: Not connected, cannot request help');
+      return null;
+    }
+
+    if (botStatusNotifier.value == BotStatus.absent) {
+      debugPrint('ChatService: Bot is absent, cannot request help');
+      return null;
+    }
+
+    final requestId = 'help-${DateTime.now().millisecondsSinceEpoch}';
+    final completer = Completer<String?>();
+    _pendingHelpRequests[requestId] = completer;
+
+    final payload = {
+      'type': 'help-request',
+      'id': requestId,
+      'challengeId': challengeId,
+      'challengeTitle': challengeTitle,
+      'challengeDescription': challengeDescription,
+      'code': code,
+      'terminalX': terminalX,
+      'terminalY': terminalY,
+      'senderName': _liveKitService.displayName,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    await _liveKitService.publishJson(
+      payload,
+      topic: 'help-request',
+      destinationIdentities: const [_botIdentity],
+    );
+
+    debugPrint('ChatService: Sent help-request $requestId');
+
+    try {
+      return await completer.future.timeout(
+        const Duration(seconds: 60),
+        onTimeout: () {
+          debugPrint('ChatService: Help request timeout');
+          _pendingHelpRequests.remove(requestId);
+          return null;
+        },
+      );
+    } catch (e) {
+      debugPrint('ChatService: Error waiting for help response: $e');
+      _pendingHelpRequests.remove(requestId);
+      return null;
+    }
+  }
+
   void dispose() {
     _chatSubscription?.cancel();
+    _helpResponseSubscription?.cancel();
     _botJoinedSubscription?.cancel();
     _botLeftSubscription?.cancel();
     _messagesController.close();

@@ -92,6 +92,11 @@ class TechWorld extends World with TapCallbacks {
   /// Notifier for active challenge ID. Null means no editor open.
   final ValueNotifier<String?> activeChallenge = ValueNotifier(null);
 
+  /// Grid position of the terminal the player is currently interacting with.
+  /// Null when no editor is open.
+  final ValueNotifier<Point<int>?> activeTerminalPosition =
+      ValueNotifier(null);
+
   /// Whether the map editor sidebar is active.
   final ValueNotifier<bool> mapEditorActive = ValueNotifier(false);
 
@@ -103,6 +108,7 @@ class TechWorld extends World with TapCallbacks {
   /// Close the code editor panel.
   void closeEditor() {
     activeChallenge.value = null;
+    activeTerminalPosition.value = null;
   }
 
   /// Enter map editor mode — shows preview overlay on the canvas.
@@ -878,7 +884,7 @@ class TechWorld extends World with TapCallbacks {
     if (mapEditorActive.value) exitEditorMode();
 
     // Close code editor if open — the terminals are about to change.
-    activeChallenge.value = null;
+    closeEditor();
 
     _removeMapComponents();
     await _loadMapComponents(map);
@@ -925,6 +931,7 @@ class TechWorld extends World with TapCallbacks {
     );
     if (distance <= _terminalProximityThreshold) {
       activeChallenge.value = challengeId;
+      activeTerminalPosition.value = terminalPos;
     } else {
       _showHint(
         'Walk closer to use this terminal',
@@ -1008,6 +1015,7 @@ class TechWorld extends World with TapCallbacks {
   void dispose() {
     _authStateChangesSubscription?.cancel();
     activeChallenge.dispose();
+    activeTerminalPosition.dispose();
     mapEditorActive.dispose();
     currentMap.dispose();
     _disconnectFromLiveKit();
