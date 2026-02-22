@@ -197,9 +197,11 @@ class _AnimationTicker {
   /// Advance the animation clock by [dt] seconds.
   void update(double dt) {
     _elapsed += dt;
-    // Prevent floating-point overflow by wrapping at the cycle duration.
+    // Wrap at cycle boundary to prevent floating-point precision loss over
+    // long play sessions. The modulo keeps _elapsed within one cycle so
+    // currentFrameIndex stays accurate.
     final cycleDuration = animation.stepTime * animation.frameCount;
-    if (cycleDuration > 0 && _elapsed >= cycleDuration * 1000) {
+    if (_elapsed >= cycleDuration) {
       _elapsed %= cycleDuration;
     }
   }
