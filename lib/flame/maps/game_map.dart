@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
+import 'package:tech_world/map_editor/terrain_grid.dart';
 
 /// A game map definition containing barrier layout and spawn configuration.
 ///
@@ -22,6 +23,7 @@ class GameMap {
     this.floorLayer,
     this.objectLayer,
     this.tilesetIds = const [],
+    this.terrainGrid,
   });
 
   /// Unique identifier for this map.
@@ -53,6 +55,12 @@ class GameMap {
   /// IDs of tilesets used by this map. Ensures they're loaded before rendering.
   final List<String> tilesetIds;
 
+  /// Optional terrain grid for editor round-trips.
+  ///
+  /// Tracks which terrain type each cell belongs to, enabling the editor to
+  /// re-evaluate bitmask tiles when loading a saved map. Not needed at runtime.
+  final TerrainGrid? terrainGrid;
+
   /// Whether this map uses tileset-based rendering.
   bool get usesTilesets =>
       tilesetIds.isNotEmpty ||
@@ -74,7 +82,8 @@ class GameMap {
           _listEquality.equals(terminals, other.terminals) &&
           _stringListEquality.equals(tilesetIds, other.tilesetIds) &&
           floorLayer == other.floorLayer &&
-          objectLayer == other.objectLayer;
+          objectLayer == other.objectLayer &&
+          terrainGrid == other.terrainGrid;
 
   @override
   int get hashCode => Object.hash(
@@ -87,5 +96,6 @@ class GameMap {
         _stringListEquality.hash(tilesetIds),
         floorLayer,
         objectLayer,
+        terrainGrid,
       );
 }

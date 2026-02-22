@@ -4,9 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/terrain_bitmask.dart';
+import 'package:tech_world/flame/tiles/predefined_terrains.dart';
+import 'package:tech_world/flame/tiles/terrain_def.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
+import 'package:tech_world/map_editor/terrain_grid.dart';
 
 /// Tile types that can be painted on the map grid.
 enum TileType { open, barrier, spawn, terminal }
@@ -81,6 +85,102 @@ class MapEditorState extends ChangeNotifier {
   /// [setTileBrush] as a convenience for single-tile selections.
   TileBrush? _currentBrush;
   TileBrush? get currentBrush => _currentBrush;
+
+  // -------------------------------------------------------------------------
+  // Terrain brush state
+  // -------------------------------------------------------------------------
+
+  /// Parallel grid tracking which terrain type each cell belongs to.
+  ///
+  /// Used during editing to determine bitmask values. At runtime, the
+  /// [TileLayerData] is self-sufficient — this is only needed for editor
+  /// round-trips.
+  final TerrainGrid terrainGrid = TerrainGrid();
+
+  /// The currently active auto-terrain brush, or `null` for manual tile mode.
+  TerrainDef? _activeTerrainBrush;
+  TerrainDef? get activeTerrainBrush => _activeTerrainBrush;
+
+  /// Set the active terrain brush for auto-terrain painting.
+  ///
+  /// Pass `null` to return to manual tile palette mode.
+  void setTerrainBrush(TerrainDef? terrain) {
+    _activeTerrainBrush = terrain;
+    notifyListeners();
+  }
+
+  /// Paint auto-terrain at ([x], [y]) using the active terrain brush.
+  ///
+  /// Sets the terrain in the [terrainGrid], then re-evaluates this cell and
+  /// all 8 neighbors to update the floor tile layer with the correct bitmask
+  /// tiles. Notifies listeners once.
+  void paintTerrain(int x, int y) {
+    if (!_inBounds(x, y)) return;
+    final terrain = _activeTerrainBrush;
+    if (terrain == null) return;
+
+    terrainGrid.setTerrain(x, y, terrain.id);
+
+    // Re-evaluate target cell + all 8 Moore neighbors.
+    _reevaluateTerrainCell(x, y, terrain);
+    for (final (dx, dy) in Bitmask.offsets) {
+      final nx = x + dx;
+      final ny = y + dy;
+      if (_inBounds(nx, ny) && terrainGrid.isTerrainAt(nx, ny, terrain.id)) {
+        _reevaluateTerrainCell(nx, ny, terrain);
+      }
+    }
+
+    notifyListeners();
+  }
+
+  /// Erase terrain at ([x], [y]) and update neighbors.
+  ///
+  /// Clears the terrain from the grid and the tile from the floor layer,
+  /// then re-evaluates all 8 neighbors.
+  void eraseTerrainAt(int x, int y) {
+    if (!_inBounds(x, y)) return;
+
+    final terrainId = terrainGrid.terrainAt(x, y);
+    if (terrainId == null) return;
+
+    terrainGrid.setTerrain(x, y, null);
+    floorLayerData.setTile(x, y, null);
+
+    // Look up the terrain def by ID so erasure works regardless of the
+    // currently selected brush (fixes stale tiles when brush is switched).
+    final terrain = lookupTerrain(terrainId);
+
+    // Re-evaluate neighbors that might have been affected.
+    for (final (dx, dy) in Bitmask.offsets) {
+      final nx = x + dx;
+      final ny = y + dy;
+      if (_inBounds(nx, ny) &&
+          terrain != null &&
+          terrainGrid.isTerrainAt(nx, ny, terrainId)) {
+        _reevaluateTerrainCell(nx, ny, terrain);
+      }
+    }
+
+    notifyListeners();
+  }
+
+  /// Re-evaluate a single cell's tile based on its terrain bitmask.
+  void _reevaluateTerrainCell(int x, int y, TerrainDef terrain) {
+    final bitmask = computeBitmask(
+      x,
+      y,
+      (nx, ny) => terrainGrid.isTerrainAt(nx, ny, terrain.id),
+    );
+    final tileIndex = terrain.tileIndexForBitmask(bitmask);
+    if (tileIndex != null) {
+      floorLayerData.setTile(
+        x,
+        y,
+        TileRef(tilesetId: terrain.tilesetId, tileIndex: tileIndex),
+      );
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Background image
@@ -224,6 +324,8 @@ class MapEditorState extends ChangeNotifier {
     clearGrid();
     _backgroundImage = null;
     _roomId = null;
+    _activeTerrainBrush = null;
+    terrainGrid.clear();
     _clearTileLayer(floorLayerData);
     _clearTileLayer(objectLayerData);
     notifyListeners();
@@ -261,6 +363,12 @@ class MapEditorState extends ChangeNotifier {
     }
     if (map.objectLayer != null) {
       _copyTileLayer(map.objectLayer!, objectLayerData);
+    }
+
+    // Load terrain grid if present.
+    terrainGrid.clear();
+    if (map.terrainGrid != null) {
+      _copyTerrainGrid(map.terrainGrid!, terrainGrid);
     }
 
     notifyListeners();
@@ -349,6 +457,7 @@ class MapEditorState extends ChangeNotifier {
       floorLayer: floorLayerData.isEmpty ? null : floorLayerData,
       objectLayer: objectLayerData.isEmpty ? null : objectLayerData,
       tilesetIds: tilesetIds,
+      terrainGrid: terrainGrid.isEmpty ? null : terrainGrid,
     );
   }
 
@@ -392,6 +501,15 @@ class MapEditorState extends ChangeNotifier {
     for (var y = 0; y < gridSize; y++) {
       for (var x = 0; x < gridSize; x++) {
         dest.setTile(x, y, source.tileAt(x, y));
+      }
+    }
+  }
+
+  /// Copy terrain data from [source] into [dest].
+  void _copyTerrainGrid(TerrainGrid source, TerrainGrid dest) {
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        dest.setTerrain(x, y, source.terrainAt(x, y));
       }
     }
   }
