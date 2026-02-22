@@ -8,6 +8,7 @@ import 'package:flame/flame.dart';
 import 'package:flutter/painting.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+
 /// A Flame component that renders the Clawd mascot as a character sprite.
 /// Unlike PlayerComponent which uses sprite sheets, this renders a static image.
 /// Tap on the bot to toggle the thinking indicator (for demo purposes).
