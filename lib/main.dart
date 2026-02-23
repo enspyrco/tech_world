@@ -193,79 +193,81 @@ class _MyAppState extends State<MyApp> {
       _progress = 0.15;
     });
 
-    _currentRoom = room;
-    _mapEditorState.setRoomId(room.id);
+    try {
+      _currentRoom = room;
+      _mapEditorState.setRoomId(room.id);
 
-    // Load the room's map into the game world.
-    await locate<TechWorld>().loadMap(room.mapData);
-
-    setState(() {
-      _loadingMessage = 'Connecting to server...';
-      _progress = 0.35;
-    });
-
-    // Create services and connect to LiveKit.
-    _liveKitService = LiveKitService(
-      userId: userId,
-      displayName: _currentDisplayName,
-      roomName: room.id,
-    );
-    _chatMessageRepository = ChatMessageRepository();
-    _chatService = ChatService(
-      liveKitService: _liveKitService!,
-      repository: _chatMessageRepository,
-    );
-    _proximityService = ProximityService();
-
-    Locator.add<LiveKitService>(_liveKitService!);
-    Locator.add<ChatService>(_chatService!);
-    Locator.add<ProximityService>(_proximityService!);
-
-    final connected = await _liveKitService!.connect();
-    debugPrint('LiveKit connected to room ${room.id}: $connected');
-
-    if (connected) {
-      setState(() {
-        _loadingMessage = 'Setting up game world...';
-        _progress = 0.55;
-      });
-
-      await locate<TechWorld>().connectToLiveKit(userId, _currentDisplayName);
+      // Load the room's map into the game world.
+      await locate<TechWorld>().loadMap(room.mapData);
 
       setState(() {
-        _loadingMessage = 'Enabling camera...';
-        _progress = 0.70;
+        _loadingMessage = 'Connecting to server...';
+        _progress = 0.35;
       });
 
-      await _liveKitService!.setCameraEnabled(true);
-      await _liveKitService!.setMicrophoneEnabled(true);
+      // Create services and connect to LiveKit.
+      _liveKitService = LiveKitService(
+        userId: userId,
+        displayName: _currentDisplayName,
+        roomName: room.id,
+      );
+      _chatMessageRepository = ChatMessageRepository();
+      _chatService = ChatService(
+        liveKitService: _liveKitService!,
+        repository: _chatMessageRepository,
+      );
+      _proximityService = ProximityService();
+
+      Locator.add<LiveKitService>(_liveKitService!);
+      Locator.add<ChatService>(_chatService!);
+      Locator.add<ProximityService>(_proximityService!);
+
+      final connected = await _liveKitService!.connect();
+      debugPrint('LiveKit connected to room ${room.id}: $connected');
+
+      if (connected) {
+        setState(() {
+          _loadingMessage = 'Setting up game world...';
+          _progress = 0.55;
+        });
+
+        await locate<TechWorld>().connectToLiveKit(userId, _currentDisplayName);
+
+        setState(() {
+          _loadingMessage = 'Enabling camera...';
+          _progress = 0.70;
+        });
+
+        await _liveKitService!.setCameraEnabled(true);
+        await _liveKitService!.setMicrophoneEnabled(true);
+
+        setState(() {
+          _loadingMessage = 'Loading chat history...';
+          _progress = 0.85;
+        });
+
+        await _chatService!.loadHistory(room.id);
+      } else {
+        _liveKitConnectionFailed = true;
+      }
+
+      // Apply saved avatar to game world.
+      if (_selectedAvatar != null) {
+        locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
+      }
 
       setState(() {
-        _loadingMessage = 'Loading chat history...';
-        _progress = 0.85;
+        _loadingMessage = 'Ready!';
+        _progress = 1.0;
       });
 
-      await _chatService!.loadHistory(room.id);
-    } else {
-      _liveKitConnectionFailed = true;
+      // Brief delay to show completion.
+      await Future.delayed(const Duration(milliseconds: 200));
+    } finally {
+      setState(() {
+        _joiningRoom = false;
+      });
     }
-
-    // Apply saved avatar to game world.
-    if (_selectedAvatar != null) {
-      locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
-    }
-
-    setState(() {
-      _loadingMessage = 'Ready!';
-      _progress = 1.0;
-    });
-
-    // Brief delay to show completion.
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    setState(() {
-      _joiningRoom = false;
-    });
   }
 
   /// Create LiveKit, Chat, and Proximity services, connect, and enable media.
