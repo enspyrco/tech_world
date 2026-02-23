@@ -80,6 +80,12 @@ class _MyAppState extends State<MyApp> {
     _initializeApp();
   }
 
+  @override
+  void dispose() {
+    _progressDriftTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _initializeApp() async {
     // Stage 1: Initialize Firebase
     setState(() {
@@ -231,44 +237,12 @@ class _MyAppState extends State<MyApp> {
 
       _setJoinStep(0.35, 'Connecting to server\u2026');
 
-      // Create services and connect to LiveKit.
-      _liveKitService = LiveKitService(
-        userId: userId,
-        displayName: _currentDisplayName,
-        roomName: room.id,
+      await _setupLiveKit(
+        room.id,
+        userId,
+        _currentDisplayName,
+        onProgress: _setJoinStep,
       );
-      _chatMessageRepository = ChatMessageRepository();
-      _chatService = ChatService(
-        liveKitService: _liveKitService!,
-        repository: _chatMessageRepository,
-      );
-      _proximityService = ProximityService();
-
-      Locator.add<LiveKitService>(_liveKitService!);
-      Locator.add<ChatService>(_chatService!);
-      Locator.add<ProximityService>(_proximityService!);
-
-      final connected = await _liveKitService!.connect();
-      debugPrint('LiveKit connected to room ${room.id}: $connected');
-
-      if (connected) {
-        _setJoinStep(0.55, 'Setting up game world\u2026');
-        await locate<TechWorld>().connectToLiveKit(userId, _currentDisplayName);
-
-        _setJoinStep(0.70, 'Enabling camera\u2026');
-        await _liveKitService!.setCameraEnabled(true);
-        await _liveKitService!.setMicrophoneEnabled(true);
-
-        _setJoinStep(0.85, 'Loading chat history\u2026');
-        await _chatService!.loadHistory(room.id);
-      } else {
-        _liveKitConnectionFailed = true;
-      }
-
-      // Apply saved avatar to game world.
-      if (_selectedAvatar != null) {
-        locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
-      }
 
       _progressDriftTimer?.cancel();
       setState(() {
@@ -291,11 +265,15 @@ class _MyAppState extends State<MyApp> {
   ///
   /// Sets [_liveKitConnectionFailed] on failure so the UI can show a banner.
   /// Applies the saved avatar if one is selected.
+  ///
+  /// When [onProgress] is provided, it is called at key stages so the caller
+  /// can update a progress indicator (used by [_joinRoom]).
   Future<void> _setupLiveKit(
     String roomId,
     String userId,
-    String displayName,
-  ) async {
+    String displayName, {
+    void Function(double progress, String message)? onProgress,
+  }) async {
     _liveKitService = LiveKitService(
       userId: userId,
       displayName: displayName,
@@ -316,10 +294,14 @@ class _MyAppState extends State<MyApp> {
     debugPrint('LiveKit connected to room $roomId: $connected');
 
     if (connected) {
+      onProgress?.call(0.55, 'Setting up game world\u2026');
       await locate<TechWorld>().connectToLiveKit(userId, displayName);
+
+      onProgress?.call(0.70, 'Enabling camera\u2026');
       await _liveKitService!.setCameraEnabled(true);
       await _liveKitService!.setMicrophoneEnabled(true);
-      // Load chat history from Firestore.
+
+      onProgress?.call(0.85, 'Loading chat history\u2026');
       await _chatService!.loadHistory(roomId);
     } else {
       _liveKitConnectionFailed = true;
