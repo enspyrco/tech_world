@@ -675,14 +675,41 @@ void main() {
         final service = ChatService(
           liveKitService: fakeLiveKit,
           repository: hangingRepo,
+          historyTimeout: const Duration(milliseconds: 100),
         );
         addTearDown(service.dispose);
 
-        // Should complete within the timeout (10s), not hang forever.
-        // We use a shorter-than-timeout expectation to verify it doesn't hang.
+        // Should complete within the short timeout, not hang forever.
         await expectLater(
           service.loadHistory('room-1'),
           completes,
+        );
+      });
+
+      test('emits conversations even when history load fails mid-loop',
+          () async {
+        final partialRepo = PartialThenHangingRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: partialRepo,
+          historyTimeout: const Duration(milliseconds: 100),
+        );
+        addTearDown(service.dispose);
+
+        final convSnapshots = <List<Conversation>>[];
+        service.conversations.listen(convSnapshots.add);
+
+        await service.loadHistory('room-1');
+        // Allow the async broadcast stream to deliver the event.
+        await Future<void>.delayed(Duration.zero);
+
+        // The finally block should have emitted conversations even though
+        // the second loadMessages call timed out.
+        expect(convSnapshots, isNotEmpty);
+        // The first DM conversation should have been loaded before timeout.
+        expect(
+          convSnapshots.last.any((c) => c.type == ConversationType.dm),
+          isTrue,
         );
       });
 
@@ -756,6 +783,55 @@ class HangingChatMessageRepository implements ChatMessageRepository {
     String conversationId, {
     int limit = 100,
   }) {
+    return Completer<List<ChatMessage>>().future;
+  }
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {}
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+/// A [ChatMessageRepository] that returns one DM conversation successfully,
+/// then hangs on the second — simulating a mid-loop failure.
+class PartialThenHangingRepository implements ChatMessageRepository {
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) async {
+    return {'dm-conv-1', 'dm-conv-2'};
+  }
+
+  int _loadMessagesCallCount = 0;
+
+  @override
+  Future<List<ChatMessage>> loadMessages(
+    String roomId,
+    String conversationId, {
+    int limit = 100,
+  }) {
+    _loadMessagesCallCount++;
+    if (_loadMessagesCallCount == 1) {
+      // First conversation loads successfully.
+      return Future.value([
+        ChatMessage(
+          text: 'Hello from peer',
+          senderName: 'Peer',
+          senderId: 'peer-uid',
+          conversationId: conversationId,
+          timestamp: DateTime(2024),
+        ),
+      ]);
+    }
+    // Subsequent calls hang forever.
     return Completer<List<ChatMessage>>().future;
   }
 
