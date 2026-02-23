@@ -792,7 +792,9 @@ class TechWorld extends World with TapCallbacks {
       }
     } else if (game != null && map.backgroundImage != null) {
       // Legacy background image rendering.
-      final bgImage = game.images.fromCache(map.backgroundImage!);
+      // Use load() instead of fromCache() because the GameWidget may not have
+      // mounted yet (e.g. first room join), so onLoad images aren't cached.
+      final bgImage = await game.images.load(map.backgroundImage!);
       _backgroundSprite =
           SpriteComponent(sprite: Sprite(bgImage), priority: -1);
       add(_backgroundSprite!);
