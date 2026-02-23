@@ -3,28 +3,46 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
 import 'package:tech_world/chat/chat_message.dart';
+import 'package:tech_world/chat/chat_message_repository.dart';
+import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/services/tts_service.dart';
 
-/// Service that manages shared chat with Claude bot via LiveKit data channels.
-/// All participants see all messages (questions and responses).
+/// Service that manages shared chat with Claude bot via LiveKit data channels,
+/// plus private player-to-player DMs.
+///
+/// All participants see group messages (questions and responses).
+/// DMs are delivered via targeted LiveKit data channels and persisted to
+/// Firestore when a [ChatMessageRepository] is provided.
 class ChatService {
-  ChatService({required LiveKitService liveKitService})
-      : _liveKitService = liveKitService,
+  ChatService({
+    required LiveKitService liveKitService,
+    ChatMessageRepository? repository,
+  })  : _liveKitService = liveKitService,
+        _repository = repository,
         _ttsService = TtsService() {
+    // Seed the group conversation.
+    _conversations['group'] = Conversation(
+      id: 'group',
+      type: ConversationType.group,
+    );
     _subscribeToMessages();
     _trackBotPresence();
   }
 
   final LiveKitService _liveKitService;
+  final ChatMessageRepository? _repository;
   final TtsService _ttsService;
+
+  // -- Group chat state (unchanged from before) --
   final _messagesController = StreamController<List<ChatMessage>>.broadcast();
   final List<ChatMessage> _messages = [];
   final Map<String, Completer<Map<String, dynamic>?>> _pendingMessages = {};
   final Set<String> _seenMessageIds = {}; // Prevent duplicate messages
   final Map<String, Completer<String?>> _pendingHelpRequests = {};
   StreamSubscription<DataChannelMessage>? _chatSubscription;
+  StreamSubscription<DataChannelMessage>? _dmSubscription;
   StreamSubscription<DataChannelMessage>? _helpResponseSubscription;
   StreamSubscription<RemoteParticipant>? _botJoinedSubscription;
   StreamSubscription<RemoteParticipant>? _botLeftSubscription;
@@ -34,10 +52,50 @@ class ChatService {
 
   static const _botIdentity = 'bot-claude';
 
+  // -- Conversation / DM state --
+  final Map<String, Conversation> _conversations = {};
+  final Map<String, List<ChatMessage>> _dmMessagesByConversation = {};
+  final _conversationsController =
+      StreamController<List<Conversation>>.broadcast();
+  final Map<String, StreamController<List<ChatMessage>>>
+      _dmStreamControllers = {};
+
+  /// The room ID for Firestore persistence. Set via [loadHistory].
+  String? _roomId;
+
+  /// Stream of all conversations (group + DMs), sorted by last activity.
+  Stream<List<Conversation>> get conversations =>
+      _conversationsController.stream;
+
+  /// Current snapshot of all conversations.
+  List<Conversation> get currentConversations =>
+      List.unmodifiable(_conversations.values.toList()
+        ..sort((a, b) {
+          final aTime = a.lastActivity ?? DateTime(0);
+          final bTime = b.lastActivity ?? DateTime(0);
+          return bTime.compareTo(aTime);
+        }));
+
+  /// Stream of messages for a specific DM conversation.
+  Stream<List<ChatMessage>> dmMessages(String peerId) {
+    final convId =
+        Conversation.conversationIdFor(_liveKitService.userId, peerId);
+    _dmStreamControllers[convId] ??=
+        StreamController<List<ChatMessage>>.broadcast();
+    return _dmStreamControllers[convId]!.stream;
+  }
+
+  /// Total unread DM count across all conversations.
+  final totalUnreadNotifier = ValueNotifier<int>(0);
+
   void _subscribeToMessages() {
-    // Listen for both chat messages and bot responses
+    // Listen for group chat messages and bot responses
     _chatSubscription = _liveKitService.dataReceived
-        .where((msg) => msg.topic == 'chat' || msg.topic == 'chat-response')
+        .where((msg) =>
+            msg.topic == 'chat' ||
+            msg.topic == 'chat-response' ||
+            msg.topic == 'dm' ||
+            msg.topic == 'dm-response')
         .listen(_handleMessage);
 
     // Listen for help-response messages from the bot
@@ -75,47 +133,123 @@ class ChatService {
     // 'messageId' is the ID of the message being responded to (for correlation)
     final ownId = json['id'] as String?;
     final replyToId = json['messageId'] as String?;
-    final senderName = json['senderName'] as String? ?? message.senderId ?? 'Unknown';
+    final senderName =
+        json['senderName'] as String? ?? message.senderId ?? 'Unknown';
+    final senderId = json['senderId'] as String? ?? message.senderId;
 
     if (text == null) return;
 
     // Skip if we've already seen this message (prevents duplicates)
-    // Only check the message's own ID, not the ID it's replying to
     if (ownId != null && _seenMessageIds.contains(ownId)) return;
     if (ownId != null) _seenMessageIds.add(ownId);
 
-    // Skip our own outgoing messages (we add them locally)
+    final isDm =
+        message.topic == 'dm' || message.topic == 'dm-response';
+
+    // Skip our own outgoing group messages (we add them locally).
+    // DMs from self are also added locally in sendDm, so skip those too.
     final isFromSelf = message.senderId == _liveKitService.userId;
-    if (message.topic == 'chat' && isFromSelf) return;
+    if (isFromSelf && (message.topic == 'chat' || message.topic == 'dm')) {
+      return;
+    }
 
-    debugPrint('ChatService: Received ${message.topic} from ${message.senderId}: "${text.substring(0, text.length.clamp(0, 50))}..."');
+    debugPrint(
+        'ChatService: Received ${message.topic} from ${message.senderId}: '
+        '"${text.substring(0, text.length.clamp(0, 50))}..."');
 
-    if (message.topic == 'chat-response') {
+    if (isDm) {
+      _handleDmMessage(
+        text: text,
+        senderName: senderName,
+        senderId: senderId ?? 'unknown',
+        isResponse: message.topic == 'dm-response',
+      );
+    } else if (message.topic == 'chat-response') {
       // Bot response
       botStatusNotifier.value = BotStatus.idle;
       _messages.add(ChatMessage(
         text: text,
         senderName: 'Clawd',
+        senderId: _botIdentity,
+        conversationId: 'group',
         isBot: true,
       ));
       // Speak the response
       _ttsService.speak(text);
+      _messagesController.add(List.from(_messages));
     } else {
-      // Message from another user
+      // Message from another user (group chat)
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
+        senderId: senderId,
+        conversationId: 'group',
         isLocalUser: false,
       ));
+      _messagesController.add(List.from(_messages));
     }
-
-    _messagesController.add(List.from(_messages));
 
     // Complete pending message if this is a response to one of ours
     if (replyToId != null && _pendingMessages.containsKey(replyToId)) {
       _pendingMessages[replyToId]!.complete(json);
       _pendingMessages.remove(replyToId);
     }
+  }
+
+  /// Handle an incoming DM or dm-response.
+  void _handleDmMessage({
+    required String text,
+    required String senderName,
+    required String senderId,
+    required bool isResponse,
+  }) {
+    final convId = Conversation.conversationIdFor(
+      _liveKitService.userId,
+      senderId,
+    );
+
+    final chatMessage = ChatMessage(
+      text: text,
+      senderName: senderName,
+      senderId: senderId,
+      conversationId: convId,
+      isBot: isResponse,
+    );
+
+    // Ensure conversation exists.
+    _conversations[convId] ??= Conversation(
+      id: convId,
+      type: ConversationType.dm,
+      peerId: senderId,
+      peerDisplayName: senderName,
+    );
+
+    _conversations[convId]!.lastActivity = chatMessage.timestamp;
+    _conversations[convId]!.unreadCount += 1;
+    // Update display name in case it changed.
+    _conversations[convId] = Conversation(
+      id: convId,
+      type: ConversationType.dm,
+      peerId: senderId,
+      peerDisplayName: senderName,
+      unreadCount: _conversations[convId]!.unreadCount,
+      lastActivity: _conversations[convId]!.lastActivity,
+    );
+
+    _dmMessagesByConversation[convId] ??= [];
+    _dmMessagesByConversation[convId]!.add(chatMessage);
+
+    // Emit to DM stream.
+    _dmStreamControllers[convId] ??=
+        StreamController<List<ChatMessage>>.broadcast();
+    _dmStreamControllers[convId]!
+        .add(List.from(_dmMessagesByConversation[convId]!));
+
+    _emitConversations();
+    _updateTotalUnread();
+
+    // Persist to Firestore.
+    _persistMessage(chatMessage);
   }
 
   /// Send a message to the shared chat (visible to all participants).
@@ -161,11 +295,14 @@ class ChatService {
     _seenMessageIds.add(messageId); // Mark as seen so we don't duplicate
 
     // Add user message locally
-    _messages.add(ChatMessage(
+    final userMessage = ChatMessage(
       text: text,
       senderName: _liveKitService.displayName,
+      senderId: _liveKitService.userId,
+      conversationId: 'group',
       isLocalUser: true,
-    ));
+    );
+    _messages.add(userMessage);
     _messagesController.add(List.from(_messages));
 
     // Show thinking indicator
@@ -177,8 +314,8 @@ class ChatService {
 
     // Send message to all participants (no destinationIdentities = broadcast)
     const reservedKeys = {'type', 'id', 'text', 'senderName', 'timestamp'};
-    final safeMetadata = metadata?.entries
-        .where((e) => !reservedKeys.contains(e.key));
+    final safeMetadata =
+        metadata?.entries.where((e) => !reservedKeys.contains(e.key));
 
     final payload = {
       'type': 'chat',
@@ -196,6 +333,9 @@ class ChatService {
     );
 
     debugPrint('ChatService: Sent message: "$text"');
+
+    // Persist to Firestore.
+    _persistMessage(userMessage);
 
     // Wait for response with timeout
     try {
@@ -222,6 +362,148 @@ class ChatService {
       debugPrint('ChatService: Error waiting for response: $e');
       return null;
     }
+  }
+
+  /// Send a private direct message to another user.
+  ///
+  /// Uses targeted LiveKit data channels so only the recipient sees it.
+  Future<void> sendDm(
+    String peerId,
+    String text, {
+    required String peerDisplayName,
+  }) async {
+    if (text.trim().isEmpty) return;
+
+    if (!_liveKitService.isConnected) {
+      debugPrint('ChatService: Not connected, cannot send DM');
+      return;
+    }
+
+    final convId = Conversation.conversationIdFor(
+      _liveKitService.userId,
+      peerId,
+    );
+
+    final messageId = DateTime.now().millisecondsSinceEpoch.toString();
+    _seenMessageIds.add(messageId);
+
+    final chatMessage = ChatMessage(
+      text: text,
+      senderName: _liveKitService.displayName,
+      senderId: _liveKitService.userId,
+      conversationId: convId,
+      isLocalUser: true,
+    );
+
+    // Ensure conversation exists.
+    _conversations[convId] ??= Conversation(
+      id: convId,
+      type: ConversationType.dm,
+      peerId: peerId,
+      peerDisplayName: peerDisplayName,
+    );
+    _conversations[convId]!.lastActivity = chatMessage.timestamp;
+
+    _dmMessagesByConversation[convId] ??= [];
+    _dmMessagesByConversation[convId]!.add(chatMessage);
+
+    // Emit to DM stream.
+    _dmStreamControllers[convId] ??=
+        StreamController<List<ChatMessage>>.broadcast();
+    _dmStreamControllers[convId]!
+        .add(List.from(_dmMessagesByConversation[convId]!));
+
+    _emitConversations();
+
+    // Send via LiveKit targeted data channel.
+    final payload = {
+      'type': 'dm',
+      'id': messageId,
+      'text': text,
+      'senderName': _liveKitService.displayName,
+      'senderId': _liveKitService.userId,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    await _liveKitService.publishJson(
+      payload,
+      topic: 'dm',
+      destinationIdentities: [peerId],
+    );
+
+    debugPrint('ChatService: Sent DM to $peerId: "$text"');
+
+    // Persist to Firestore.
+    _persistMessage(chatMessage);
+  }
+
+  /// Mark a conversation as read, resetting its unread count.
+  void markConversationRead(String conversationId) {
+    final conv = _conversations[conversationId];
+    if (conv == null) return;
+
+    conv.unreadCount = 0;
+    _emitConversations();
+    _updateTotalUnread();
+  }
+
+  /// Load chat history from Firestore for the given room.
+  Future<void> loadHistory(String roomId) async {
+    _roomId = roomId;
+    final repository = _repository;
+    if (repository == null) return;
+
+    final conversationIds =
+        await repository.loadConversationIds(roomId, _liveKitService.userId);
+
+    for (final convId in conversationIds) {
+      final messages = await repository.loadMessages(roomId, convId);
+      if (messages.isEmpty) continue;
+
+      if (convId == 'group') {
+        for (final msg in messages) {
+          _messages.add(ChatMessage(
+            text: msg.text,
+            senderName: msg.senderName,
+            senderId: msg.senderId,
+            conversationId: 'group',
+            isLocalUser: msg.senderId == _liveKitService.userId,
+            isBot: msg.senderId == _botIdentity,
+            timestamp: msg.timestamp,
+          ));
+        }
+        _messagesController.add(List.from(_messages));
+      } else {
+        // DM conversation — figure out peer from the conversation ID.
+        _dmMessagesByConversation[convId] = messages.map((msg) {
+          return ChatMessage(
+            text: msg.text,
+            senderName: msg.senderName,
+            senderId: msg.senderId,
+            conversationId: convId,
+            isLocalUser: msg.senderId == _liveKitService.userId,
+            isBot: msg.senderId == _botIdentity,
+            timestamp: msg.timestamp,
+          );
+        }).toList();
+
+        // Determine peer info from the most recent message not from us.
+        final peerMsg = messages.lastWhere(
+          (m) => m.senderId != _liveKitService.userId,
+          orElse: () => messages.last,
+        );
+
+        _conversations[convId] ??= Conversation(
+          id: convId,
+          type: ConversationType.dm,
+          peerId: peerMsg.senderId,
+          peerDisplayName: peerMsg.senderName,
+          lastActivity: messages.last.timestamp,
+        );
+      }
+    }
+
+    _emitConversations();
   }
 
   /// Handle a help-response message from the bot.
@@ -305,12 +587,42 @@ class ChatService {
     }
   }
 
+  void _emitConversations() {
+    _conversationsController.add(currentConversations);
+  }
+
+  void _updateTotalUnread() {
+    var total = 0;
+    for (final conv in _conversations.values) {
+      if (conv.type == ConversationType.dm) {
+        total += conv.unreadCount;
+      }
+    }
+    totalUnreadNotifier.value = total;
+  }
+
+  /// Persist a message to Firestore if a repository and room ID are available.
+  void _persistMessage(ChatMessage message) {
+    final repository = _repository;
+    final roomId = _roomId;
+    if (repository == null || roomId == null) return;
+    // Fire-and-forget — don't block on Firestore writes.
+    repository.saveMessage(roomId, message).catchError((Object e) {
+      debugPrint('ChatService: Failed to persist message: $e');
+    });
+  }
+
   void dispose() {
     _chatSubscription?.cancel();
+    _dmSubscription?.cancel();
     _helpResponseSubscription?.cancel();
     _botJoinedSubscription?.cancel();
     _botLeftSubscription?.cancel();
     _messagesController.close();
+    _conversationsController.close();
+    for (final controller in _dmStreamControllers.values) {
+      controller.close();
+    }
     _ttsService.dispose();
   }
 }

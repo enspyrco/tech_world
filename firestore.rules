@@ -31,6 +31,18 @@ service cloud.firestore {
       // Only owner can delete
       allow delete: if request.auth != null &&
         request.auth.uid == resource.data.ownerId;
+
+      // Chat messages subcollection
+      match /messages/{messageId} {
+        // Read: authenticated + (group chat OR user's UID appears in conversationId)
+        allow read: if request.auth != null &&
+          (resource.data.conversationId == 'group' ||
+           resource.data.conversationId.matches('.*' + request.auth.uid + '.*'));
+
+        // Create: authenticated + senderId must match the caller's UID
+        allow create: if request.auth != null &&
+          request.resource.data.senderId == request.auth.uid;
+      }
     }
   }
 }
