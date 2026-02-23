@@ -471,7 +471,7 @@ class ChatService {
     if (repository == null) return;
 
     try {
-      await _loadHistoryInner(roomId, repository).timeout(_historyTimeout);
+      await _fetchAndCacheHistory(roomId, repository).timeout(_historyTimeout);
     } catch (e) {
       debugPrint('ChatService: Failed to load history: $e');
       // Don't rethrow — allow the room to load without history.
@@ -484,7 +484,7 @@ class ChatService {
   ///
   /// Extracted so [loadHistory] can wrap the entire operation in a single
   /// timeout rather than per-query timeouts that can accumulate.
-  Future<void> _loadHistoryInner(
+  Future<void> _fetchAndCacheHistory(
     String roomId,
     ChatMessageRepository repository,
   ) async {
