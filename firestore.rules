@@ -43,9 +43,12 @@ service cloud.firestore {
            (!('participants' in resource.data) &&
             resource.data.conversationId.matches('.*' + request.auth.uid + '.*')));
 
-        // Create: authenticated + senderId must match the caller's UID
+        // Create: authenticated + senderId must match the caller's UID +
+        // for DMs, sender must be a participant
         allow create: if request.auth != null &&
-          request.resource.data.senderId == request.auth.uid;
+          request.resource.data.senderId == request.auth.uid &&
+          (request.resource.data.conversationId == 'group' ||
+           request.auth.uid in request.resource.data.participants);
 
         // Update/delete: only the original sender
         allow update, delete: if request.auth != null &&

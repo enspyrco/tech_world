@@ -166,12 +166,15 @@ class _DmThreadViewState extends State<DmThreadView> {
                 );
               }
 
-              // Auto-scroll when new messages arrive.
+              // Auto-scroll only when the user is already near the bottom,
+              // so reading history isn't interrupted.
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_scrollController.hasClients) {
-                  _scrollController.jumpTo(
-                    _scrollController.position.maxScrollExtent,
-                  );
+                if (!_scrollController.hasClients) return;
+                final position = _scrollController.position;
+                final isNearBottom =
+                    position.pixels >= position.maxScrollExtent - 80;
+                if (isNearBottom) {
+                  _scrollController.jumpTo(position.maxScrollExtent);
                 }
               });
 
