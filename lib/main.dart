@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,7 +58,13 @@ class _MyAppState extends State<MyApp> {
   final ValueNotifier<String?> _activeDmPeer = ValueNotifier<String?>(null);
   ChatMessageRepository? _chatMessageRepository;
   bool _liveKitConnectionFailed = false;
-  bool _joiningRoom = false;
+
+  /// The room ID currently being joined, or null when not joining.
+  String? _joiningRoomId;
+
+  /// Drift timer that slowly creeps progress between discrete steps.
+  Timer? _progressDriftTimer;
+
   Avatar? _selectedAvatar;
   bool _avatarLoaded = false;
   String? _currentUserId;
@@ -182,28 +190,46 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
+  /// Sets progress to [target] with [message], then starts a drift timer that
+  /// slowly creeps progress forward to give continuous visual motion.
+  void _setJoinStep(double target, String message) {
+    _progressDriftTimer?.cancel();
+    setState(() {
+      _progress = target;
+      _loadingMessage = message;
+    });
+
+    final ceiling = (target + 0.15).clamp(0.0, 0.99);
+    _progressDriftTimer = Timer.periodic(
+      const Duration(milliseconds: 150),
+      (_) {
+        if (_progress != null && _progress! < ceiling) {
+          setState(() {
+            _progress = (_progress! + 0.003).clamp(0.0, ceiling);
+          });
+        }
+      },
+    );
+  }
+
   /// Join a room — load map and connect to LiveKit, with progress feedback.
+  ///
+  /// Progress is shown inline on the tapped room card. [_currentRoom] is set
+  /// at the end so the lobby stays visible throughout.
   Future<void> _joinRoom(RoomData room) async {
     final userId = _currentUserId;
     if (userId == null) return;
 
-    setState(() {
-      _joiningRoom = true;
-      _loadingMessage = 'Loading map...';
-      _progress = 0.15;
-    });
+    setState(() => _joiningRoomId = room.id);
+    _setJoinStep(0.15, 'Loading map\u2026');
 
     try {
-      _currentRoom = room;
       _mapEditorState.setRoomId(room.id);
 
       // Load the room's map into the game world.
       await locate<TechWorld>().loadMap(room.mapData);
 
-      setState(() {
-        _loadingMessage = 'Connecting to server...';
-        _progress = 0.35;
-      });
+      _setJoinStep(0.35, 'Connecting to server\u2026');
 
       // Create services and connect to LiveKit.
       _liveKitService = LiveKitService(
@@ -226,26 +252,14 @@ class _MyAppState extends State<MyApp> {
       debugPrint('LiveKit connected to room ${room.id}: $connected');
 
       if (connected) {
-        setState(() {
-          _loadingMessage = 'Setting up game world...';
-          _progress = 0.55;
-        });
-
+        _setJoinStep(0.55, 'Setting up game world\u2026');
         await locate<TechWorld>().connectToLiveKit(userId, _currentDisplayName);
 
-        setState(() {
-          _loadingMessage = 'Enabling camera...';
-          _progress = 0.70;
-        });
-
+        _setJoinStep(0.70, 'Enabling camera\u2026');
         await _liveKitService!.setCameraEnabled(true);
         await _liveKitService!.setMicrophoneEnabled(true);
 
-        setState(() {
-          _loadingMessage = 'Loading chat history...';
-          _progress = 0.85;
-        });
-
+        _setJoinStep(0.85, 'Loading chat history\u2026');
         await _chatService!.loadHistory(room.id);
       } else {
         _liveKitConnectionFailed = true;
@@ -256,17 +270,20 @@ class _MyAppState extends State<MyApp> {
         locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
       }
 
+      _progressDriftTimer?.cancel();
       setState(() {
         _loadingMessage = 'Ready!';
         _progress = 1.0;
       });
 
-      // Brief delay to show completion.
-      await Future.delayed(const Duration(milliseconds: 200));
+      // Brief delay to show completion before switching to the game view.
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // Now transition to the game — this hides the lobby.
+      setState(() => _currentRoom = room);
     } finally {
-      setState(() {
-        _joiningRoom = false;
-      });
+      _progressDriftTimer?.cancel();
+      setState(() => _joiningRoomId = null);
     }
   }
 
@@ -491,13 +508,13 @@ class _MyAppState extends State<MyApp> {
                                 userId: _currentUserId!,
                                 onJoinRoom: _joinRoom,
                                 onCreateRoom: _onCreateRoom,
-                              );
-                            }
-                            // Show progress while joining a room
-                            if (_joiningRoom) {
-                              return LoadingScreen(
-                                message: _loadingMessage,
-                                progress: _progress,
+                                joiningRoomId: _joiningRoomId,
+                                joinProgress: _joiningRoomId != null
+                                    ? _progress
+                                    : null,
+                                joinMessage: _joiningRoomId != null
+                                    ? _loadingMessage
+                                    : null,
                               );
                             }
                             return Stack(

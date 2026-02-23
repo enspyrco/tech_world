@@ -12,6 +12,9 @@ class RoomBrowser extends StatefulWidget {
     required this.userId,
     required this.onJoinRoom,
     required this.onCreateRoom,
+    this.joiningRoomId,
+    this.joinProgress,
+    this.joinMessage,
     super.key,
   });
 
@@ -23,6 +26,15 @@ class RoomBrowser extends StatefulWidget {
 
   /// Called when the user taps "Create Room" — should open the editor.
   final VoidCallback onCreateRoom;
+
+  /// The room ID currently being joined (null when idle).
+  final String? joiningRoomId;
+
+  /// Join progress 0.0–1.0 for the card identified by [joiningRoomId].
+  final double? joinProgress;
+
+  /// Step message shown on the joining card (e.g. "Connecting to server…").
+  final String? joinMessage;
 
   @override
   State<RoomBrowser> createState() => _RoomBrowserState();
@@ -223,19 +235,30 @@ class _RoomBrowserState extends State<RoomBrowser>
       );
     }
 
+    final joiningId = widget.joiningRoomId;
+
     return RefreshIndicator(
       onRefresh: _loadRooms,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: rooms.length,
-        itemBuilder: (context, index) => _RoomCard(
-          room: rooms[index],
-          isOwner: rooms[index].isOwner(widget.userId),
-          onTap: () => widget.onJoinRoom(rooms[index]),
-          onDelete: rooms[index].isOwner(widget.userId)
-              ? () => _deleteRoom(rooms[index])
-              : null,
-        ),
+        itemBuilder: (context, index) {
+          final room = rooms[index];
+          final isJoining = joiningId != null && room.id == joiningId;
+          final isOtherJoining = joiningId != null && room.id != joiningId;
+
+          return _RoomCard(
+            room: room,
+            isOwner: room.isOwner(widget.userId),
+            onTap: () => widget.onJoinRoom(room),
+            onDelete: room.isOwner(widget.userId)
+                ? () => _deleteRoom(room)
+                : null,
+            joinProgress: isJoining ? widget.joinProgress : null,
+            joinMessage: isJoining ? widget.joinMessage : null,
+            disabled: isOtherJoining,
+          );
+        },
       ),
     );
   }
@@ -271,12 +294,20 @@ class _RoomBrowserState extends State<RoomBrowser>
 }
 
 /// A card representing a single room in the browser list.
+///
+/// When [joinProgress] is non-null the card shows an animated color fill
+/// sweeping left-to-right with [joinMessage] replacing the room name.
+/// When [disabled] is true the card is dimmed and non-interactive (used for
+/// cards that are not the one being joined).
 class _RoomCard extends StatelessWidget {
   const _RoomCard({
     required this.room,
     required this.isOwner,
     required this.onTap,
     this.onDelete,
+    this.joinProgress,
+    this.joinMessage,
+    this.disabled = false,
   });
 
   final RoomData room;
@@ -284,89 +315,161 @@ class _RoomCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onDelete;
 
+  /// 0.0–1.0 join progress, or null when not joining this room.
+  final double? joinProgress;
+
+  /// Step label shown while joining (e.g. "Connecting to server…").
+  final String? joinMessage;
+
+  /// True for cards that are not the joining card while a join is in progress.
+  final bool disabled;
+
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: const Color(0xFF16213E),
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: const BorderSide(color: Color(0xFF2D2D5C)),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
+    final isJoining = joinProgress != null;
+
+    return AnimatedOpacity(
+      opacity: disabled ? 0.45 : 1.0,
+      duration: const Duration(milliseconds: 250),
+      child: Card(
+        color: const Color(0xFF16213E),
+        margin: const EdgeInsets.only(bottom: 8),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+            color: isJoining
+                ? const Color(0xFF4FC3F7).withValues(alpha: 0.6)
+                : const Color(0xFF2D2D5C),
+          ),
+        ),
+        child: InkWell(
+          onTap: (isJoining || disabled) ? null : onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Stack(
             children: [
-              // Map icon
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
+              // Animated progress fill
+              if (isJoining)
+                Positioned.fill(
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(end: joinProgress!),
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOut,
+                    builder: (context, value, _) {
+                      return FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: value.clamp(0.0, 1.0),
+                        child: Container(
+                          color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-                child: const Icon(
-                  Icons.map,
-                  color: Color(0xFF4FC3F7),
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 16),
-              // Room info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              // Card content
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
                   children: [
-                    Text(
-                      room.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
+                    // Map icon
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: isJoining
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF4FC3F7),
+                                  ),
+                                ),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.map,
+                              color: Color(0xFF4FC3F7),
+                              size: 24,
+                            ),
+                    ),
+                    const SizedBox(width: 16),
+                    // Room info / join message
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isJoining ? (joinMessage ?? 'Joining\u2026') : room.name,
+                            style: TextStyle(
+                              color: isJoining
+                                  ? const Color(0xFF4FC3F7)
+                                  : Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (isJoining)
+                            Text(
+                              room.name,
+                              style: const TextStyle(
+                                color: Colors.white38,
+                                fontSize: 12,
+                              ),
+                            )
+                          else
+                            Text(
+                              'by ${room.ownerDisplayName.isNotEmpty ? room.ownerDisplayName : 'Unknown'}',
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'by ${room.ownerDisplayName.isNotEmpty ? room.ownerDisplayName : 'Unknown'}',
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 12,
+                    // Owner badge (hidden while joining)
+                    if (!isJoining && isOwner)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF4CAF50).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'Owner',
+                          style: TextStyle(
+                            color: Color(0xFF4CAF50),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
-                    ),
+                    // Delete button (hidden while joining)
+                    if (!isJoining && onDelete != null)
+                      IconButton(
+                        onPressed: onDelete,
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        color: Colors.red.shade300,
+                        tooltip: 'Delete room',
+                      ),
+                    // Join arrow (hidden while joining)
+                    if (!isJoining)
+                      const Icon(Icons.chevron_right, color: Colors.white38),
                   ],
                 ),
               ),
-              // Owner badge
-              if (isOwner)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'Owner',
-                    style: TextStyle(
-                      color: Color(0xFF4CAF50),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              // Delete button
-              if (onDelete != null)
-                IconButton(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  color: Colors.red.shade300,
-                  tooltip: 'Delete room',
-                ),
-              // Join arrow
-              const Icon(Icons.chevron_right, color: Colors.white38),
             ],
           ),
         ),
