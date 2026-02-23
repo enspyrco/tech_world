@@ -457,62 +457,74 @@ class ChatService {
   }
 
   /// Load chat history from Firestore for the given room.
+  ///
+  /// This is called on the critical sign-in path, so it must never throw.
+  /// Failures are logged and silently ignored — the UI proceeds without
+  /// history, and new messages will still arrive via LiveKit.
   Future<void> loadHistory(String roomId) async {
     _roomId = roomId;
     final repository = _repository;
     if (repository == null) return;
 
-    final conversationIds =
-        await repository.loadConversationIds(roomId, _liveKitService.userId);
+    try {
+      final conversationIds = await repository
+          .loadConversationIds(roomId, _liveKitService.userId)
+          .timeout(const Duration(seconds: 10));
 
-    for (final convId in conversationIds) {
-      final messages = await repository.loadMessages(roomId, convId);
-      if (messages.isEmpty) continue;
+      for (final convId in conversationIds) {
+        final messages = await repository
+            .loadMessages(roomId, convId)
+            .timeout(const Duration(seconds: 10));
+        if (messages.isEmpty) continue;
 
-      if (convId == 'group') {
-        for (final msg in messages) {
-          _messages.add(ChatMessage(
-            text: msg.text,
-            senderName: msg.senderName,
-            senderId: msg.senderId,
-            conversationId: 'group',
-            isLocalUser: msg.senderId == _liveKitService.userId,
-            isBot: msg.senderId == _botIdentity,
-            timestamp: msg.timestamp,
-          ));
-        }
-        _messagesController.add(List.from(_messages));
-      } else {
-        // DM conversation — figure out peer from the conversation ID.
-        _dmMessagesByConversation[convId] = messages.map((msg) {
-          return ChatMessage(
-            text: msg.text,
-            senderName: msg.senderName,
-            senderId: msg.senderId,
-            conversationId: convId,
-            isLocalUser: msg.senderId == _liveKitService.userId,
-            isBot: msg.senderId == _botIdentity,
-            timestamp: msg.timestamp,
+        if (convId == 'group') {
+          for (final msg in messages) {
+            _messages.add(ChatMessage(
+              text: msg.text,
+              senderName: msg.senderName,
+              senderId: msg.senderId,
+              conversationId: 'group',
+              isLocalUser: msg.senderId == _liveKitService.userId,
+              isBot: msg.senderId == _botIdentity,
+              timestamp: msg.timestamp,
+            ));
+          }
+          _messagesController.add(List.from(_messages));
+        } else {
+          // DM conversation — figure out peer from the conversation ID.
+          _dmMessagesByConversation[convId] = messages.map((msg) {
+            return ChatMessage(
+              text: msg.text,
+              senderName: msg.senderName,
+              senderId: msg.senderId,
+              conversationId: convId,
+              isLocalUser: msg.senderId == _liveKitService.userId,
+              isBot: msg.senderId == _botIdentity,
+              timestamp: msg.timestamp,
+            );
+          }).toList();
+
+          // Determine peer info from the most recent message not from us.
+          final peerMsg = messages.lastWhere(
+            (m) => m.senderId != _liveKitService.userId,
+            orElse: () => messages.last,
           );
-        }).toList();
 
-        // Determine peer info from the most recent message not from us.
-        final peerMsg = messages.lastWhere(
-          (m) => m.senderId != _liveKitService.userId,
-          orElse: () => messages.last,
-        );
-
-        _conversations[convId] ??= Conversation(
-          id: convId,
-          type: ConversationType.dm,
-          peerId: peerMsg.senderId,
-          peerDisplayName: peerMsg.senderName,
-          lastActivity: messages.last.timestamp,
-        );
+          _conversations[convId] ??= Conversation(
+            id: convId,
+            type: ConversationType.dm,
+            peerId: peerMsg.senderId,
+            peerDisplayName: peerMsg.senderName,
+            lastActivity: messages.last.timestamp,
+          );
+        }
       }
-    }
 
-    _emitConversations();
+      _emitConversations();
+    } catch (e) {
+      debugPrint('ChatService: Failed to load history: $e');
+      // Don't rethrow — allow the room to load without history.
+    }
   }
 
   /// Handle a help-response message from the bot.

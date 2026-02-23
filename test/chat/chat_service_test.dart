@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
 import 'package:tech_world/chat/chat_message.dart';
+import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
@@ -652,7 +653,126 @@ void main() {
         expect(conv.type, equals(ConversationType.dm));
       });
     });
+
+    group('loadHistory (regression)', () {
+      test('does not throw when repository fails', () async {
+        final failingRepo = FailingChatMessageRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: failingRepo,
+        );
+        addTearDown(service.dispose);
+
+        // Should complete without throwing — room loading must not block.
+        await service.loadHistory('room-1');
+
+        // Service should still be functional after failed history load.
+        expect(service.currentMessages, isEmpty);
+      });
+
+      test('does not throw on timeout', () async {
+        final hangingRepo = HangingChatMessageRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: hangingRepo,
+        );
+        addTearDown(service.dispose);
+
+        // Should complete within the timeout (10s), not hang forever.
+        // We use a shorter-than-timeout expectation to verify it doesn't hang.
+        await expectLater(
+          service.loadHistory('room-1'),
+          completes,
+        );
+      });
+
+      test('still allows sending messages after failed history load', () async {
+        final failingRepo = FailingChatMessageRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: failingRepo,
+        );
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+
+        // Service should work normally despite failed history load.
+        fakeLiveKit.connected = true;
+        botStatusNotifier.value = BotStatus.idle;
+        unawaited(service.sendMessage('Hello after failed history'));
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(service.currentMessages.length, equals(1));
+        expect(service.currentMessages.first.text,
+            equals('Hello after failed history'));
+      });
+    });
   });
+}
+
+/// A [ChatMessageRepository] that always throws, simulating Firestore failures.
+class FailingChatMessageRepository implements ChatMessageRepository {
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) {
+    throw Exception('Firestore unavailable');
+  }
+
+  @override
+  Future<List<ChatMessage>> loadMessages(
+    String roomId,
+    String conversationId, {
+    int limit = 100,
+  }) {
+    throw Exception('Firestore unavailable');
+  }
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {}
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+/// A [ChatMessageRepository] that never completes, simulating network hangs.
+class HangingChatMessageRepository implements ChatMessageRepository {
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) {
+    // Never completes — simulates a network hang.
+    return Completer<Set<String>>().future;
+  }
+
+  @override
+  Future<List<ChatMessage>> loadMessages(
+    String roomId,
+    String conversationId, {
+    int limit = 100,
+  }) {
+    return Completer<List<ChatMessage>>().future;
+  }
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {}
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
 }
 
 /// Fake LiveKitService for testing
