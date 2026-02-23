@@ -9,6 +9,7 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/avatar_selection_screen.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
+import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/editor/challenge.dart';
@@ -52,6 +53,8 @@ class _MyAppState extends State<MyApp> {
   ProgressService? _progressService;
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
+  final ValueNotifier<String?> _activeDmPeer = ValueNotifier<String?>(null);
+  ChatMessageRepository? _chatMessageRepository;
   bool _liveKitConnectionFailed = false;
   Avatar? _selectedAvatar;
   bool _avatarLoaded = false;
@@ -208,7 +211,11 @@ class _MyAppState extends State<MyApp> {
       displayName: displayName,
       roomName: roomId,
     );
-    _chatService = ChatService(liveKitService: _liveKitService!);
+    _chatMessageRepository = ChatMessageRepository();
+    _chatService = ChatService(
+      liveKitService: _liveKitService!,
+      repository: _chatMessageRepository,
+    );
     _proximityService = ProximityService();
 
     Locator.add<LiveKitService>(_liveKitService!);
@@ -222,6 +229,8 @@ class _MyAppState extends State<MyApp> {
       await locate<TechWorld>().connectToLiveKit(userId, displayName);
       await _liveKitService!.setCameraEnabled(true);
       await _liveKitService!.setMicrophoneEnabled(true);
+      // Load chat history from Firestore.
+      await _chatService!.loadHistory(roomId);
     } else {
       _liveKitConnectionFailed = true;
     }
@@ -241,7 +250,9 @@ class _MyAppState extends State<MyApp> {
     _proximityService?.dispose();
     _liveKitService = null;
     _chatService = null;
+    _chatMessageRepository = null;
     _proximityService = null;
+    _activeDmPeer.value = null;
     _liveKitConnectionFailed = false;
     Locator.remove<LiveKitService>();
     Locator.remove<ChatService>();
@@ -483,19 +494,68 @@ class _MyAppState extends State<MyApp> {
                                       child: Padding(
                                         padding:
                                             const EdgeInsets.only(top: 12),
-                                        child: IconButton(
-                                          onPressed: () =>
-                                              _chatCollapsed.value = false,
-                                          icon:
-                                              const Icon(Icons.chat_bubble),
-                                          color: const Color(0xFFD97757),
-                                          tooltip: 'Open chat',
-                                          style: IconButton.styleFrom(
-                                            backgroundColor:
-                                                const Color(0xFFD97757)
-                                                    .withValues(
-                                                        alpha: 0.1),
-                                          ),
+                                        child: ValueListenableBuilder<int>(
+                                          valueListenable: chatService
+                                              .totalUnreadNotifier,
+                                          builder:
+                                              (context, unread, child) {
+                                            return Stack(
+                                              clipBehavior: Clip.none,
+                                              children: [
+                                                IconButton(
+                                                  onPressed: () =>
+                                                      _chatCollapsed
+                                                          .value = false,
+                                                  icon: const Icon(
+                                                      Icons.chat_bubble),
+                                                  color: const Color(
+                                                      0xFFD97757),
+                                                  tooltip: 'Open chat',
+                                                  style: IconButton
+                                                      .styleFrom(
+                                                    backgroundColor:
+                                                        const Color(
+                                                                0xFFD97757)
+                                                            .withValues(
+                                                                alpha:
+                                                                    0.1),
+                                                  ),
+                                                ),
+                                                if (unread > 0)
+                                                  Positioned(
+                                                    top: -2,
+                                                    right: -2,
+                                                    child: Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 5,
+                                                          vertical: 1),
+                                                      decoration:
+                                                          BoxDecoration(
+                                                        color: const Color(
+                                                            0xFFD97757),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(
+                                                                    10),
+                                                      ),
+                                                      child: Text(
+                                                        '$unread',
+                                                        style:
+                                                            const TextStyle(
+                                                          color:
+                                                              Colors.white,
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight
+                                                                  .bold,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          },
                                         ),
                                       ),
                                     ),
@@ -505,10 +565,18 @@ class _MyAppState extends State<MyApp> {
                                   width: constraints.maxWidth >= 800
                                       ? 320
                                       : 280,
-                                  child: ChatPanel(
-                                    chatService: chatService,
-                                    onCollapse: () =>
-                                        _chatCollapsed.value = true,
+                                  child: ValueListenableBuilder<String?>(
+                                    valueListenable: _activeDmPeer,
+                                    builder: (context, dmPeer, _) {
+                                      return ChatPanel(
+                                        chatService: chatService,
+                                        onCollapse: () =>
+                                            _chatCollapsed.value = true,
+                                        initialDmPeerId: dmPeer,
+                                        onDmPeerConsumed: () =>
+                                            _activeDmPeer.value = null,
+                                      );
+                                    },
                                   ),
                                 );
                               },

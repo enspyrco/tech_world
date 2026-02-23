@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
@@ -410,6 +411,247 @@ void main() {
 
       expect(response, isNull);
     });
+
+    group('DM support', () {
+      test('sendDm publishes to dm topic with destinationIdentities', () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('peer-uid', 'Hey there!', peerDisplayName: 'Peer');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(fakeLiveKit.publishedMessages.length, equals(1));
+
+        final published = fakeLiveKit.publishedMessages.first;
+        expect(published['topic'], equals('dm'));
+        expect(
+          published['destinationIdentities'],
+          equals(['peer-uid']),
+        );
+
+        final payload = published['payload'] as Map<String, dynamic>;
+        expect(payload['text'], equals('Hey there!'));
+        expect(payload['senderName'], equals('Test User'));
+      });
+
+      test('sendDm adds message to correct DM conversation', () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('peer-uid', 'Hello', peerDisplayName: 'Peer');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'peer-uid',
+        );
+
+        final conversations = chatService.currentConversations;
+        final dmConv = conversations.firstWhere(
+          (c) => c.id == expectedConvId,
+        );
+        expect(dmConv.type, equals(ConversationType.dm));
+      });
+
+      test('receiving dm creates new conversation', () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Hey!',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'alice-uid',
+        );
+        final conversations = chatService.currentConversations;
+        expect(conversations.any((c) => c.id == expectedConvId), isTrue);
+      });
+
+      test('receiving dm increments unread when not active', () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Message 1',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'alice-uid',
+        );
+        final conv = chatService.currentConversations.firstWhere(
+          (c) => c.id == expectedConvId,
+        );
+        expect(conv.unreadCount, equals(1));
+      });
+
+      test('markConversationRead resets unread to zero', () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Unread message',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'alice-uid',
+        );
+
+        chatService.markConversationRead(expectedConvId);
+
+        final conv = chatService.currentConversations.firstWhere(
+          (c) => c.id == expectedConvId,
+        );
+        expect(conv.unreadCount, equals(0));
+      });
+
+      test('totalUnreadNotifier reflects sum of DM unreads', () async {
+        fakeLiveKit.connected = true;
+
+        // DM from Alice
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Hi',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        // DM from Bob
+        fakeLiveKit.simulateDm('bob-uid', {
+          'text': 'Hey',
+          'id': 'dm-2',
+          'senderName': 'Bob',
+          'senderId': 'bob-uid',
+        });
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(chatService.totalUnreadNotifier.value, equals(2));
+      });
+
+      test('lastDmMessageText returns last message text', () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('peer-uid', 'First', peerDisplayName: 'Peer');
+        await chatService.sendDm('peer-uid', 'Second', peerDisplayName: 'Peer');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'peer-uid',
+        );
+
+        expect(chatService.lastDmMessageText(expectedConvId), equals('Second'));
+      });
+
+      test('lastDmMessageText returns null for unknown conversation', () {
+        expect(chatService.lastDmMessageText('nonexistent'), isNull);
+      });
+
+      test('localUserId returns the LiveKit user ID', () {
+        expect(chatService.localUserId, equals('test-user-id'));
+      });
+
+      test('sendDm does nothing for empty text', () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('peer-uid', '', peerDisplayName: 'Peer');
+        await chatService.sendDm('peer-uid', '   ', peerDisplayName: 'Peer');
+
+        expect(fakeLiveKit.publishedMessages, isEmpty);
+      });
+
+      test('sendDm does nothing when not connected', () async {
+        fakeLiveKit.connected = false;
+
+        await chatService.sendDm('peer-uid', 'Hello', peerDisplayName: 'Peer');
+
+        expect(fakeLiveKit.publishedMessages, isEmpty);
+      });
+
+      test('dm messages stream emits for correct conversation', () async {
+        fakeLiveKit.connected = true;
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'alice-uid',
+        );
+
+        final dmMsgs = <List<ChatMessage>>[];
+        chatService.dmMessages('alice-uid').listen(dmMsgs.add);
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Hello via DM',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(dmMsgs.length, greaterThan(0));
+        expect(dmMsgs.last.first.text, equals('Hello via DM'));
+        expect(dmMsgs.last.first.conversationId, equals(expectedConvId));
+      });
+
+      test('conversations stream emits on new DM', () async {
+        fakeLiveKit.connected = true;
+
+        final convSnapshots = <List<Conversation>>[];
+        chatService.conversations.listen(convSnapshots.add);
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'New DM!',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(convSnapshots.length, greaterThan(0));
+        expect(convSnapshots.last.length, greaterThanOrEqualTo(2)); // group + DM
+      });
+
+      test('receiving dm-response adds to DM conversation', () async {
+        fakeLiveKit.connected = true;
+
+        // First send a DM to the bot to create the conversation
+        await chatService.sendDm('bot-claude', 'Help me', peerDisplayName: 'Clawd');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        // Simulate bot DM response
+        fakeLiveKit.simulateDmResponse('bot-claude', {
+          'text': 'Sure, here is help!',
+          'id': 'dm-resp-1',
+          'senderName': 'Clawd',
+          'senderId': 'bot-claude',
+        });
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'bot-claude',
+        );
+        final conv = chatService.currentConversations.firstWhere(
+          (c) => c.id == expectedConvId,
+        );
+        expect(conv.type, equals(ConversationType.dm));
+      });
+    });
   });
 }
 
@@ -489,6 +731,24 @@ class FakeLiveKitService implements LiveKitService {
     _dataReceivedController.add(DataChannelMessage(
       senderId: userId, // Same as our userId
       topic: 'chat',
+      data: utf8.encode(jsonEncode(message)),
+    ));
+  }
+
+  /// Simulate an incoming DM from another user.
+  void simulateDm(String senderId, Map<String, dynamic> message) {
+    _dataReceivedController.add(DataChannelMessage(
+      senderId: senderId,
+      topic: 'dm',
+      data: utf8.encode(jsonEncode(message)),
+    ));
+  }
+
+  /// Simulate a DM response from the bot.
+  void simulateDmResponse(String senderId, Map<String, dynamic> message) {
+    _dataReceivedController.add(DataChannelMessage(
+      senderId: senderId,
+      topic: 'dm-response',
       data: utf8.encode(jsonEncode(message)),
     ));
   }
