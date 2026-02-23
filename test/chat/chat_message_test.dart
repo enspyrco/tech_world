@@ -187,6 +187,27 @@ void main() {
       });
     });
 
+    group('participants field', () {
+      test('defaults to null', () {
+        final message = ChatMessage(
+          text: 'Hello',
+          senderName: 'User',
+        );
+
+        expect(message.participants, isNull);
+      });
+
+      test('accepts participants list', () {
+        final message = ChatMessage(
+          text: 'DM',
+          senderName: 'Alice',
+          participants: ['alice-uid', 'bob-uid'],
+        );
+
+        expect(message.participants, equals(['alice-uid', 'bob-uid']));
+      });
+    });
+
     group('Firestore serialization', () {
       test('toFirestore includes all fields', () {
         final timestamp = DateTime(2024, 6, 15, 14, 30);
@@ -206,6 +227,61 @@ void main() {
         expect(json['senderId'], equals('alice-uid'));
         expect(json['conversationId'], equals('group'));
         expect(json['timestamp'], equals(timestamp.toIso8601String()));
+      });
+
+      test('toFirestore includes participants for DMs', () {
+        final message = ChatMessage(
+          text: 'Hey',
+          senderName: 'Alice',
+          senderId: 'alice-uid',
+          conversationId: 'dm_alice-uid_bob-uid',
+          participants: ['alice-uid', 'bob-uid'],
+          timestamp: DateTime(2024, 6, 15, 14, 30),
+        );
+
+        final json = message.toFirestore();
+
+        expect(json['participants'], equals(['alice-uid', 'bob-uid']));
+      });
+
+      test('toFirestore omits null participants', () {
+        final message = ChatMessage(
+          text: 'Group message',
+          senderName: 'Alice',
+          conversationId: 'group',
+        );
+
+        final json = message.toFirestore();
+
+        expect(json.containsKey('participants'), isFalse);
+      });
+
+      test('fromFirestore parses participants', () {
+        final json = {
+          'text': 'DM',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+          'conversationId': 'dm_alice-uid_bob-uid',
+          'participants': ['alice-uid', 'bob-uid'],
+          'timestamp': DateTime(2024, 6, 15).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+
+        expect(message.participants, equals(['alice-uid', 'bob-uid']));
+      });
+
+      test('fromFirestore handles missing participants (legacy)', () {
+        final json = {
+          'text': 'Old DM',
+          'senderName': 'Alice',
+          'conversationId': 'dm_alice-uid_bob-uid',
+          'timestamp': DateTime(2024, 6, 15).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+
+        expect(message.participants, isNull);
       });
 
       test('toFirestore omits null senderId and conversationId', () {

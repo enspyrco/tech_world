@@ -46,6 +46,68 @@ void main() {
     });
   });
 
+  group('Conversation.copyWith', () {
+    test('returns copy with updated fields', () {
+      final now = DateTime.now();
+      final original = Conversation(
+        id: 'dm_a_b',
+        type: ConversationType.dm,
+        peerId: 'a',
+        peerDisplayName: 'Alice',
+        unreadCount: 2,
+        lastActivity: now,
+      );
+
+      final later = now.add(const Duration(minutes: 5));
+      final updated = original.copyWith(
+        unreadCount: 3,
+        lastActivity: later,
+      );
+
+      expect(updated.id, equals('dm_a_b'));
+      expect(updated.type, equals(ConversationType.dm));
+      expect(updated.peerId, equals('a'));
+      expect(updated.peerDisplayName, equals('Alice'));
+      expect(updated.unreadCount, equals(3));
+      expect(updated.lastActivity, equals(later));
+    });
+
+    test('preserves all fields when no arguments given', () {
+      final now = DateTime.now();
+      final original = Conversation(
+        id: 'dm_a_b',
+        type: ConversationType.dm,
+        peerId: 'a',
+        peerDisplayName: 'Alice',
+        unreadCount: 5,
+        lastActivity: now,
+      );
+
+      final copy = original.copyWith();
+
+      expect(copy.id, equals(original.id));
+      expect(copy.type, equals(original.type));
+      expect(copy.peerId, equals(original.peerId));
+      expect(copy.peerDisplayName, equals(original.peerDisplayName));
+      expect(copy.unreadCount, equals(original.unreadCount));
+      expect(copy.lastActivity, equals(original.lastActivity));
+    });
+
+    test('can update peerDisplayName', () {
+      final original = Conversation(
+        id: 'dm_a_b',
+        type: ConversationType.dm,
+        peerId: 'a',
+        peerDisplayName: 'Old Name',
+      );
+
+      final updated = original.copyWith(peerDisplayName: 'New Name');
+
+      expect(updated.peerDisplayName, equals('New Name'));
+      expect(updated.peerId, equals('a'));
+    });
+  });
+
   group('Conversation.conversationIdFor', () {
     test('sorts UIDs alphabetically and joins with underscore', () {
       final id = Conversation.conversationIdFor('bob-uid', 'alice-uid');

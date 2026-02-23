@@ -7,9 +7,12 @@ enum ConversationType {
   dm,
 }
 
-/// A chat conversation — either the shared group chat or a private DM thread.
+/// An immutable chat conversation — either the shared group chat or a private
+/// DM thread.
+///
+/// Use [copyWith] to derive a new instance with updated fields.
 class Conversation {
-  Conversation({
+  const Conversation({
     required this.id,
     required this.type,
     this.peerId,
@@ -32,10 +35,29 @@ class Conversation {
   final String? peerDisplayName;
 
   /// Number of unread messages in this conversation.
-  int unreadCount;
+  final int unreadCount;
 
   /// Timestamp of the most recent message, used for sorting.
-  DateTime? lastActivity;
+  final DateTime? lastActivity;
+
+  /// Returns a copy of this conversation with the given fields replaced.
+  Conversation copyWith({
+    String? id,
+    ConversationType? type,
+    String? peerId,
+    String? peerDisplayName,
+    int? unreadCount,
+    DateTime? lastActivity,
+  }) {
+    return Conversation(
+      id: id ?? this.id,
+      type: type ?? this.type,
+      peerId: peerId ?? this.peerId,
+      peerDisplayName: peerDisplayName ?? this.peerDisplayName,
+      unreadCount: unreadCount ?? this.unreadCount,
+      lastActivity: lastActivity ?? this.lastActivity,
+    );
+  }
 
   /// Compute a deterministic conversation ID for a DM between two users.
   ///

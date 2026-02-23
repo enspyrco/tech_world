@@ -43,6 +43,7 @@ void main() {
           senderName: 'Alice',
           senderId: 'alice-uid',
           conversationId: 'dm_alice-uid_bob-uid',
+          participants: ['alice-uid', 'bob-uid'],
           timestamp: DateTime(2024, 6, 15),
         );
 
@@ -55,6 +56,77 @@ void main() {
             .get();
         expect(snapshot.docs.first.data()['conversationId'],
             equals('dm_alice-uid_bob-uid'));
+        expect(snapshot.docs.first.data()['participants'],
+            equals(['alice-uid', 'bob-uid']));
+      });
+    });
+
+    group('saveConversation', () {
+      test('creates conversation metadata document', () async {
+        await repository.saveConversation(
+          'room-1',
+          conversationId: 'dm_alice-uid_bob-uid',
+          participants: ['alice-uid', 'bob-uid'],
+          type: 'dm',
+          lastMessageText: 'Hey Bob',
+        );
+
+        final doc = await fakeFirestore
+            .collection('rooms')
+            .doc('room-1')
+            .collection('conversations')
+            .doc('dm_alice-uid_bob-uid')
+            .get();
+
+        expect(doc.exists, isTrue);
+        expect(doc.data()!['participants'], equals(['alice-uid', 'bob-uid']));
+        expect(doc.data()!['type'], equals('dm'));
+        expect(doc.data()!['lastMessageText'], equals('Hey Bob'));
+      });
+
+      test('upserts on repeated calls (merge)', () async {
+        await repository.saveConversation(
+          'room-1',
+          conversationId: 'dm_alice-uid_bob-uid',
+          participants: ['alice-uid', 'bob-uid'],
+          type: 'dm',
+          lastMessageText: 'First message',
+        );
+
+        await repository.saveConversation(
+          'room-1',
+          conversationId: 'dm_alice-uid_bob-uid',
+          participants: ['alice-uid', 'bob-uid'],
+          type: 'dm',
+          lastMessageText: 'Second message',
+        );
+
+        final doc = await fakeFirestore
+            .collection('rooms')
+            .doc('room-1')
+            .collection('conversations')
+            .doc('dm_alice-uid_bob-uid')
+            .get();
+
+        expect(doc.data()!['lastMessageText'], equals('Second message'));
+      });
+
+      test('omits lastMessageText when null', () async {
+        await repository.saveConversation(
+          'room-1',
+          conversationId: 'dm_alice-uid_bob-uid',
+          participants: ['alice-uid', 'bob-uid'],
+          type: 'dm',
+        );
+
+        final doc = await fakeFirestore
+            .collection('rooms')
+            .doc('room-1')
+            .collection('conversations')
+            .doc('dm_alice-uid_bob-uid')
+            .get();
+
+        expect(doc.data()!.containsKey('lastMessageText'), isFalse);
       });
     });
 
@@ -159,56 +231,61 @@ void main() {
     });
 
     group('loadConversationIds', () {
-      test('returns distinct conversationIds for a user', () async {
-        final messagesRef = fakeFirestore
+      test('returns group plus DM conversation IDs from subcollection',
+          () async {
+        final convsRef = fakeFirestore
             .collection('rooms')
             .doc('room-1')
-            .collection('messages');
+            .collection('conversations');
 
-        await messagesRef.add({
-          'text': 'Group msg',
-          'senderName': 'Alice',
-          'senderId': 'alice-uid',
-          'conversationId': 'group',
-          'timestamp': DateTime(2024, 6, 15).toIso8601String(),
+        // Alice's DM with Bob
+        await convsRef.doc('dm_alice-uid_bob-uid').set({
+          'participants': ['alice-uid', 'bob-uid'],
+          'type': 'dm',
         });
-        await messagesRef.add({
-          'text': 'DM to Bob',
-          'senderName': 'Alice',
-          'senderId': 'alice-uid',
-          'conversationId': 'dm_alice-uid_bob-uid',
-          'timestamp': DateTime(2024, 6, 15).toIso8601String(),
-        });
-        await messagesRef.add({
-          'text': 'DM from Bob',
-          'senderName': 'Bob',
-          'senderId': 'bob-uid',
-          'conversationId': 'dm_alice-uid_bob-uid',
-          'timestamp': DateTime(2024, 6, 15).toIso8601String(),
-        });
-        // A DM between other users — Alice's UID not in conversationId
-        await messagesRef.add({
-          'text': 'Other DM',
-          'senderName': 'Charlie',
-          'senderId': 'charlie-uid',
-          'conversationId': 'dm_bob-uid_charlie-uid',
-          'timestamp': DateTime(2024, 6, 15).toIso8601String(),
+        // Bob's DM with Charlie — Alice is not a participant
+        await convsRef.doc('dm_bob-uid_charlie-uid').set({
+          'participants': ['bob-uid', 'charlie-uid'],
+          'type': 'dm',
         });
 
         final ids =
             await repository.loadConversationIds('room-1', 'alice-uid');
 
-        // Should include 'group' and 'dm_alice-uid_bob-uid' but not
-        // 'dm_bob-uid_charlie-uid' (alice is not a participant).
         expect(ids, contains('group'));
         expect(ids, contains('dm_alice-uid_bob-uid'));
         expect(ids, isNot(contains('dm_bob-uid_charlie-uid')));
       });
 
-      test('returns empty set when no messages exist', () async {
+      test('always includes group even with no conversations', () async {
         final ids =
             await repository.loadConversationIds('room-1', 'alice-uid');
-        expect(ids, isEmpty);
+
+        expect(ids, equals({'group'}));
+      });
+
+      test('returns multiple DM conversations for same user', () async {
+        final convsRef = fakeFirestore
+            .collection('rooms')
+            .doc('room-1')
+            .collection('conversations');
+
+        await convsRef.doc('dm_alice-uid_bob-uid').set({
+          'participants': ['alice-uid', 'bob-uid'],
+          'type': 'dm',
+        });
+        await convsRef.doc('dm_alice-uid_charlie-uid').set({
+          'participants': ['alice-uid', 'charlie-uid'],
+          'type': 'dm',
+        });
+
+        final ids =
+            await repository.loadConversationIds('room-1', 'alice-uid');
+
+        expect(ids, contains('group'));
+        expect(ids, contains('dm_alice-uid_bob-uid'));
+        expect(ids, contains('dm_alice-uid_charlie-uid'));
+        expect(ids.length, equals(3));
       });
     });
   });

@@ -542,6 +542,29 @@ void main() {
         expect(chatService.totalUnreadNotifier.value, equals(2));
       });
 
+      test('lastDmMessageText returns last message text', () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('peer-uid', 'First', peerDisplayName: 'Peer');
+        await chatService.sendDm('peer-uid', 'Second', peerDisplayName: 'Peer');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'peer-uid',
+        );
+
+        expect(chatService.lastDmMessageText(expectedConvId), equals('Second'));
+      });
+
+      test('lastDmMessageText returns null for unknown conversation', () {
+        expect(chatService.lastDmMessageText('nonexistent'), isNull);
+      });
+
+      test('localUserId returns the LiveKit user ID', () {
+        expect(chatService.localUserId, equals('test-user-id'));
+      });
+
       test('sendDm does nothing for empty text', () async {
         fakeLiveKit.connected = true;
 

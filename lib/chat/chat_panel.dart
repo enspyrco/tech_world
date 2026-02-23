@@ -80,11 +80,15 @@ class _ChatPanelState extends State<ChatPanel>
     if (existing.isNotEmpty) {
       setState(() => _activeDmConversation = existing.first);
     } else {
-      // Create a placeholder — the real conversation will be created on first
-      // message send.
+      // Create a placeholder with the real conversation ID so that messages
+      // sent before the conversation is persisted use the correct key.
+      final convId = Conversation.conversationIdFor(
+        widget.chatService.localUserId,
+        peerId,
+      );
       setState(() {
         _activeDmConversation = Conversation(
-          id: '', // Will be set properly by ChatService.
+          id: convId,
           type: ConversationType.dm,
           peerId: peerId,
           peerDisplayName: peerId, // Best we can do without lookup.
@@ -505,7 +509,8 @@ class _ChatPanelState extends State<ChatPanel>
             final conv = conversations[index];
             return ConversationListTile(
               conversation: conv,
-              lastMessageText: null,
+              lastMessageText:
+                  widget.chatService.lastDmMessageText(conv.id),
               onTap: () {
                 widget.chatService.markConversationRead(conv.id);
                 setState(() => _activeDmConversation = conv);

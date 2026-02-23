@@ -42,7 +42,6 @@ class ChatService {
   final Set<String> _seenMessageIds = {}; // Prevent duplicate messages
   final Map<String, Completer<String?>> _pendingHelpRequests = {};
   StreamSubscription<DataChannelMessage>? _chatSubscription;
-  StreamSubscription<DataChannelMessage>? _dmSubscription;
   StreamSubscription<DataChannelMessage>? _helpResponseSubscription;
   StreamSubscription<RemoteParticipant>? _botJoinedSubscription;
   StreamSubscription<RemoteParticipant>? _botLeftSubscription;
@@ -85,8 +84,19 @@ class ChatService {
     return _dmStreamControllers[convId]!.stream;
   }
 
+  /// The local user's ID, exposed for computing DM conversation IDs.
+  String get localUserId => _liveKitService.userId;
+
   /// Total unread DM count across all conversations.
   final totalUnreadNotifier = ValueNotifier<int>(0);
+
+  /// Returns the text of the most recent message in the given conversation,
+  /// or `null` if no messages exist.
+  String? lastDmMessageText(String conversationId) {
+    final messages = _dmMessagesByConversation[conversationId];
+    if (messages == null || messages.isEmpty) return null;
+    return messages.last.text;
+  }
 
   void _subscribeToMessages() {
     // Listen for group chat messages and bot responses
@@ -203,37 +213,31 @@ class ChatService {
     required String senderId,
     required bool isResponse,
   }) {
-    final convId = Conversation.conversationIdFor(
-      _liveKitService.userId,
-      senderId,
-    );
+    final localUid = _liveKitService.userId;
+    final convId = Conversation.conversationIdFor(localUid, senderId);
 
     final chatMessage = ChatMessage(
       text: text,
       senderName: senderName,
       senderId: senderId,
       conversationId: convId,
+      participants: [localUid, senderId],
       isBot: isResponse,
     );
 
-    // Ensure conversation exists.
-    _conversations[convId] ??= Conversation(
-      id: convId,
-      type: ConversationType.dm,
-      peerId: senderId,
-      peerDisplayName: senderName,
-    );
+    // Ensure conversation exists, then update with new activity.
+    final existing = _conversations[convId] ??
+        Conversation(
+          id: convId,
+          type: ConversationType.dm,
+          peerId: senderId,
+          peerDisplayName: senderName,
+        );
 
-    _conversations[convId]!.lastActivity = chatMessage.timestamp;
-    _conversations[convId]!.unreadCount += 1;
-    // Update display name in case it changed.
-    _conversations[convId] = Conversation(
-      id: convId,
-      type: ConversationType.dm,
-      peerId: senderId,
+    _conversations[convId] = existing.copyWith(
       peerDisplayName: senderName,
-      unreadCount: _conversations[convId]!.unreadCount,
-      lastActivity: _conversations[convId]!.lastActivity,
+      unreadCount: existing.unreadCount + 1,
+      lastActivity: chatMessage.timestamp,
     );
 
     _dmMessagesByConversation[convId] ??= [];
@@ -387,22 +391,27 @@ class ChatService {
     final messageId = DateTime.now().millisecondsSinceEpoch.toString();
     _seenMessageIds.add(messageId);
 
+    final localUid = _liveKitService.userId;
     final chatMessage = ChatMessage(
       text: text,
       senderName: _liveKitService.displayName,
-      senderId: _liveKitService.userId,
+      senderId: localUid,
       conversationId: convId,
+      participants: [localUid, peerId],
       isLocalUser: true,
     );
 
-    // Ensure conversation exists.
-    _conversations[convId] ??= Conversation(
-      id: convId,
-      type: ConversationType.dm,
-      peerId: peerId,
-      peerDisplayName: peerDisplayName,
+    // Ensure conversation exists, then update last activity.
+    final existing = _conversations[convId] ??
+        Conversation(
+          id: convId,
+          type: ConversationType.dm,
+          peerId: peerId,
+          peerDisplayName: peerDisplayName,
+        );
+    _conversations[convId] = existing.copyWith(
+      lastActivity: chatMessage.timestamp,
     );
-    _conversations[convId]!.lastActivity = chatMessage.timestamp;
 
     _dmMessagesByConversation[convId] ??= [];
     _dmMessagesByConversation[convId]!.add(chatMessage);
@@ -442,7 +451,7 @@ class ChatService {
     final conv = _conversations[conversationId];
     if (conv == null) return;
 
-    conv.unreadCount = 0;
+    _conversations[conversationId] = conv.copyWith(unreadCount: 0);
     _emitConversations();
     _updateTotalUnread();
   }
@@ -602,19 +611,39 @@ class ChatService {
   }
 
   /// Persist a message to Firestore if a repository and room ID are available.
+  ///
+  /// Also upserts conversation metadata for DMs so that
+  /// [ChatMessageRepository.loadConversationIds] can use an efficient query.
   void _persistMessage(ChatMessage message) {
     final repository = _repository;
     final roomId = _roomId;
     if (repository == null || roomId == null) return;
+
     // Fire-and-forget — don't block on Firestore writes.
     repository.saveMessage(roomId, message).catchError((Object e) {
       debugPrint('ChatService: Failed to persist message: $e');
     });
+
+    // Upsert conversation metadata for DMs.
+    final convId = message.conversationId;
+    final participants = message.participants;
+    if (convId != null && convId != 'group' && participants != null) {
+      repository
+          .saveConversation(
+        roomId,
+        conversationId: convId,
+        participants: participants,
+        type: 'dm',
+        lastMessageText: message.text,
+      )
+          .catchError((Object e) {
+        debugPrint('ChatService: Failed to persist conversation: $e');
+      });
+    }
   }
 
   void dispose() {
     _chatSubscription?.cancel();
-    _dmSubscription?.cancel();
     _helpResponseSubscription?.cancel();
     _botJoinedSubscription?.cancel();
     _botLeftSubscription?.cancel();
