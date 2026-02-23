@@ -570,6 +570,7 @@ class _MyAppState extends State<MyApp> {
                                     builder: (context, dmPeer, _) {
                                       return ChatPanel(
                                         chatService: chatService,
+                                        liveKitService: _liveKitService!,
                                         onCollapse: () =>
                                             _chatCollapsed.value = true,
                                         initialDmPeerId: dmPeer,

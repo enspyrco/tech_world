@@ -5,6 +5,7 @@ import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/chat/conversation_list_tile.dart';
 import 'package:tech_world/chat/dm_thread_view.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
+import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/services/stt_service.dart';
 
 /// Side panel for chatting — tabbed with "Group" (Clawd + all players) and
@@ -12,6 +13,7 @@ import 'package:tech_world/services/stt_service.dart';
 class ChatPanel extends StatefulWidget {
   const ChatPanel({
     required this.chatService,
+    required this.liveKitService,
     this.onCollapse,
     this.initialDmPeerId,
     this.onDmPeerConsumed,
@@ -19,6 +21,7 @@ class ChatPanel extends StatefulWidget {
   });
 
   final ChatService chatService;
+  final LiveKitService liveKitService;
   final VoidCallback? onCollapse;
 
   /// When set, the panel auto-opens a DM thread with this peer on first build.
@@ -71,7 +74,7 @@ class _ChatPanelState extends State<ChatPanel>
     }
   }
 
-  void _openDmForPeer(String peerId) {
+  void _openDmForPeer(String peerId, {String? displayName}) {
     // Try to find an existing conversation for this peer.
     final existing = widget.chatService.currentConversations.where(
       (c) => c.peerId == peerId,
@@ -91,7 +94,7 @@ class _ChatPanelState extends State<ChatPanel>
           id: convId,
           type: ConversationType.dm,
           peerId: peerId,
-          peerDisplayName: peerId, // Best we can do without lookup.
+          peerDisplayName: displayName ?? peerId,
         );
       });
     }
@@ -321,7 +324,10 @@ class _ChatPanelState extends State<ChatPanel>
                             final senderId = messages[index].senderId;
                             if (senderId == null) return;
                             _tabController.animateTo(1);
-                            _openDmForPeer(senderId);
+                            _openDmForPeer(
+                              senderId,
+                              displayName: messages[index].senderName,
+                            );
                           },
                   );
                 },
@@ -462,63 +468,135 @@ class _ChatPanelState extends State<ChatPanel>
       );
     }
 
-    return StreamBuilder<List<Conversation>>(
-      stream: widget.chatService.conversations,
-      builder: (context, snapshot) {
-        final conversations = (snapshot.data ??
-                widget.chatService.currentConversations)
-            .where((c) => c.type == ConversationType.dm)
-            .toList();
+    return Stack(
+      children: [
+        StreamBuilder<List<Conversation>>(
+          stream: widget.chatService.conversations,
+          builder: (context, snapshot) {
+            final conversations = (snapshot.data ??
+                    widget.chatService.currentConversations)
+                .where((c) => c.type == ConversationType.dm)
+                .toList();
 
-        if (conversations.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.chat_bubble_outline,
-                      size: 48, color: Colors.grey[600]),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No direct messages yet',
-                    style: TextStyle(
-                      color: Colors.grey[400],
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
+            if (conversations.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.chat_bubble_outline,
+                          size: 48, color: Colors.grey[600]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No direct messages yet',
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Tap a player's name in group chat\nor use + to start a conversation",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "Tap a player's name in group chat\nto start a conversation",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
+                ),
+              );
+            }
 
-        return ListView.builder(
-          itemCount: conversations.length,
-          itemBuilder: (context, index) {
-            final conv = conversations[index];
-            return ConversationListTile(
-              conversation: conv,
-              lastMessageText:
-                  widget.chatService.lastDmMessageText(conv.id),
-              onTap: () {
-                widget.chatService.markConversationRead(conv.id);
-                setState(() => _activeDmConversation = conv);
+            return ListView.builder(
+              itemCount: conversations.length,
+              itemBuilder: (context, index) {
+                final conv = conversations[index];
+                return ConversationListTile(
+                  conversation: conv,
+                  lastMessageText:
+                      widget.chatService.lastDmMessageText(conv.id),
+                  onTap: () {
+                    widget.chatService.markConversationRead(conv.id);
+                    setState(() => _activeDmConversation = conv);
+                  },
+                );
               },
             );
           },
-        );
-      },
+        ),
+        // "New message" FAB
+        Positioned(
+          right: 12,
+          bottom: 12,
+          child: FloatingActionButton.small(
+            onPressed: _showPlayerPicker,
+            backgroundColor: clawdOrange,
+            tooltip: 'New message',
+            child: const Icon(Icons.add, color: Colors.white),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Shows a dialog listing remote participants to start a DM with.
+  void _showPlayerPicker() {
+    final participants = widget.liveKitService.remoteParticipants.values
+        .where((p) => p.identity != 'bot-claude')
+        .toList();
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2D2D4D),
+        title:
+            const Text('New message', style: TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: participants.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    'No other players in the room',
+                    style: TextStyle(color: Colors.grey[400]),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: participants.length,
+                  itemBuilder: (context, index) {
+                    final p = participants[index];
+                    final name = p.name.isNotEmpty ? p.name : p.identity;
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.blue.withValues(alpha: 0.2),
+                        child: Text(
+                          name[0].toUpperCase(),
+                          style: const TextStyle(color: Colors.blue),
+                        ),
+                      ),
+                      title: Text(name,
+                          style: const TextStyle(color: Colors.white)),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _openDmForPeer(p.identity, displayName: name);
+                      },
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
     );
   }
 }
