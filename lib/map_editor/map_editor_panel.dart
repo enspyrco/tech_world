@@ -11,6 +11,7 @@ import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/map_editor/available_backgrounds.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
+import 'package:tech_world/map_editor/predefined_rules.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
 import 'package:tech_world/map_editor/tile_palette.dart';
 
@@ -518,6 +519,18 @@ class _MapToolbarState extends State<_MapToolbar> {
                 _toolButton(EditorTool.eraser, Icons.cleaning_services,
                     'Eraser', Colors.grey),
                 const Spacer(),
+                IconButton(
+                  onPressed: () {
+                    widget.state.applyAutomapRules(allAutomapRules);
+                  },
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  color: Colors.amber,
+                  tooltip: 'Apply automapping rules',
+                  iconSize: 18,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                ),
                 IconButton(
                   onPressed: widget.state.clearGrid,
                   icon: const Icon(Icons.delete_sweep, size: 18),
