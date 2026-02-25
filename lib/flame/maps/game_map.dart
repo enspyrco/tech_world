@@ -10,8 +10,8 @@ import 'package:tech_world/map_editor/terrain_grid.dart';
 /// Barriers are specified in mini-grid coordinates (0 to gridSize-1).
 ///
 /// Maps can optionally include tileset-based rendering via [floorLayer] and
-/// [objectLayer]. When [usesTilesets] is true, the tile layers are rendered
-/// instead of a plain background image.
+/// [objectLayer]. Tile layers can coexist with a [backgroundImage] (e.g.
+/// a legacy map with automap-generated decoration tiles on top).
 class GameMap {
   const GameMap({
     required this.id,

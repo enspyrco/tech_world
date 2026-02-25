@@ -114,9 +114,23 @@ Paint custom maps on the 50x50 grid with live preview in the game canvas.
 
 **Workflow:** Enter via toolbar button → `TechWorld.enterEditorMode()` shows `MapPreviewComponent`, hides barriers and wall occlusion → edit grid → export as ASCII or load existing maps → exit via button or map switch.
 
-### Wall Occlusion
+### Y-Based Depth Sorting (Occlusion)
 
-`WallOcclusionComponent` (`lib/flame/components/wall_occlusion_component.dart`) creates sprite overlays from the background PNG for walls. Each overlay extends 1 cell above a barrier and uses y-priority so characters walking behind walls are occluded. Only active for maps with a `backgroundImage`. Hidden during editor mode.
+All world-level components use the grid row (y index) as their Flame `priority`, so Flame's `World` sorts them back-to-front automatically:
+
+| Component | Priority | Source |
+|-----------|----------|--------|
+| `TileObjectLayerComponent` sprites | `y` (grid row) | `tile_object_layer_component.dart:52` |
+| `PlayerComponent` | `position.y.round() ~/ gridSquareSize` (updated per frame) | `player_component.dart:129` |
+| `WallOcclusionComponent` overlays | `barrier.y` | `wall_occlusion_component.dart:57` |
+
+**Result:** A player north of a wall (lower y) renders *behind* it; a player south (higher y) renders *in front*. Auto-barriers ensure the player can never occupy a wall cell, so there are no ambiguous same-cell ties.
+
+**`TileObjectLayerComponent`** — Sprites are injected into the parent `World` (not as children of the component) so they participate in the World's global priority sort alongside players and occlusion overlays.
+
+**`WallOcclusionComponent`** — Creates sprite overlays from the background PNG for walls. Each overlay extends 1 cell above a barrier. Only active for maps with a `backgroundImage`. Hidden during editor mode.
+
+**Edge case:** Multi-cell-tall objects would need height metadata, but the LimeZu tilesets avoid this by composing tall objects from multiple single-cell tiles, each with its own correct y-priority.
 
 ### Proximity Detection
 
