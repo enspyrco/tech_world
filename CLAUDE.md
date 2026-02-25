@@ -237,7 +237,7 @@ gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-t
 2. `flutter analyze --fatal-infos`
 3. `flutter test --coverage` with **45% coverage threshold** on merge to main.
 
-**Excluded from coverage:** `video_frame_ffi.dart`, `video_frame_web_stub.dart`, `video_frame_web_v2_stub.dart`, `video_bubble_component.dart`, `auth_service.dart`.
+**Excluded from coverage:** `video_frame_ffi.dart`, `video_frame_web_stub.dart`, `video_frame_web_v2_stub.dart`, `video_bubble_component.dart`, `auth_service.dart`, `predefined_tilesets.dart`.
 
 ## Configuration Required
 
