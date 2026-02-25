@@ -34,7 +34,7 @@ final roomBuilderOffice = Tileset(
 
 /// Wall tiles in room_builder_office: rows 0–4 (indices 0–79).
 final Set<int> _roomBuilderOfficeBarriers = {
-  for (final i in List.generate(80, (i) => i)) i,
+  for (var i = 0; i < 80; i++) i,
 };
 
 /// Modern Office — desks, chairs, computers, decorations (16×53 = 848 tiles).
@@ -112,6 +112,8 @@ final extHotelHospital = Tileset(
 /// Building facade (rows 0–33) and props/furniture (rows 58–98) are barriers.
 /// Basketball courts (rows 34–57) and soccer fields (rows 99–115) are excluded
 /// as walkable playing surfaces.
+// TODO: Split into separate floor (courts/fields) and objects (buildings)
+// tilesets so each layer gets only the relevant tiles.
 final extSchool = Tileset(
   id: 'ext_school',
   name: 'Ext: School',
