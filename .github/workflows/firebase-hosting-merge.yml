@@ -61,6 +61,7 @@ jobs:
             '*/native/video_frame_web_v2_stub.dart' \
             '*/flame/components/video_bubble_component.dart' \
             '*/auth/auth_service.dart' \
+            '*/flame/tiles/predefined_tilesets.dart' \
             -o coverage/lcov.info
       - name: Check coverage threshold
         uses: VeryGoodOpenSource/very_good_coverage@v3
