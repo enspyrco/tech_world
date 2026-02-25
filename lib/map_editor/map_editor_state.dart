@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/predefined_tilesets.dart'
+    show allTilesets;
 import 'package:tech_world/flame/tiles/terrain_bitmask.dart';
 import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/terrain_def.dart';
@@ -206,8 +208,17 @@ class MapEditorState extends ChangeNotifier {
   }
 
   /// Switch the active editing layer.
+  ///
+  /// Clears the current brush if its tileset is not available on the new layer,
+  /// preventing an invisible brush from painting tiles.
   void setActiveLayer(ActiveLayer layer) {
     _activeLayer = layer;
+    if (_currentBrush != null) {
+      final brushAvailable = allTilesets.any((ts) =>
+          ts.id == _currentBrush!.tilesetId &&
+          ts.availableLayers.contains(layer));
+      if (!brushAvailable) _currentBrush = null;
+    }
     notifyListeners();
   }
 
