@@ -113,6 +113,31 @@ void main() {
       // No barriers → no shadows or trims.
       expect(state.objectLayerData.isEmpty, isTrue);
     });
+
+    test('re-apply preserves manual overwrite of automap cell', () {
+      // 1. Create a barrier and run automap — generates a shadow at (10, 6).
+      state.setTool(EditorTool.barrier);
+      state.paintTile(10, 5);
+      state.applyAutomapRules(allAutomapRules);
+      expect(state.objectLayerData.tileAt(10, 6), isNotNull);
+
+      // 2. User manually paints over the automap-generated shadow cell.
+      state.setActiveLayer(ActiveLayer.objects);
+      state.setTileBrush(
+        const TileRef(tilesetId: 'manual', tileIndex: 42),
+        columns: 16,
+      );
+      state.paintTileRef(10, 6);
+      expect(state.objectLayerData.tileAt(10, 6)!.tilesetId, 'manual');
+
+      // 3. Re-apply automap — the manual tile must survive because the user
+      //    overwrote the automap cell (pruned from _automappedCells).
+      state.applyAutomapRules(allAutomapRules);
+      final tile = state.objectLayerData.tileAt(10, 6);
+      expect(tile, isNotNull);
+      expect(tile!.tilesetId, 'manual');
+      expect(tile.tileIndex, 42);
+    });
   });
 
   group('clearAutomapTiles', () {
