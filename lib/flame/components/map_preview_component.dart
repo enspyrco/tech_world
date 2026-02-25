@@ -44,22 +44,12 @@ class MapPreviewComponent extends Component {
     final registry = game?.tilesetRegistry;
 
     // Render background image if selected and already loaded.
+    // Draw at native image size to match the normal game's SpriteComponent
+    // (which also renders at native size with no explicit size parameter).
     final bgImage = editorState.backgroundImage;
     if (bgImage != null && game != null && game.images.containsKey(bgImage)) {
       final image = game.images.fromCache(bgImage);
-      final worldWidth = gridSize * gridSquareSizeDouble;
-      final worldHeight = gridSize * gridSquareSizeDouble;
-      canvas.drawImageRect(
-        image,
-        Rect.fromLTWH(
-          0,
-          0,
-          image.width.toDouble(),
-          image.height.toDouble(),
-        ),
-        Rect.fromLTWH(0, 0, worldWidth, worldHeight),
-        paint,
-      );
+      canvas.drawImage(image, Offset.zero, paint);
     }
 
     // Render floor tile layer first (below structure).

@@ -122,5 +122,47 @@ void main() {
 
       expect(find.text('JD'), findsOneWidget);
     });
+
+    testWidgets('shows Change Avatar item in dropdown menu', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AuthMenu(
+              displayName: 'Test User',
+              onChangeAvatar: () {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(AuthMenu));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Change Avatar'), findsOneWidget);
+      expect(find.byIcon(Icons.face), findsOneWidget);
+    });
+
+    testWidgets('tapping Change Avatar calls onChangeAvatar callback',
+        (tester) async {
+      var called = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AuthMenu(
+              displayName: 'Test User',
+              onChangeAvatar: () => called = true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(AuthMenu));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Change Avatar'));
+      await tester.pumpAndSettle();
+
+      expect(called, isTrue);
+    });
   });
 }

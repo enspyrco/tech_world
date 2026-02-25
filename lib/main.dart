@@ -406,6 +406,13 @@ class _MyAppState extends State<MyApp> {
     setState(() {});
   }
 
+  /// Resets avatar selection so the user can pick a new one.
+  void _changeAvatar() {
+    setState(() {
+      _selectedAvatar = null;
+    });
+  }
+
   /// Called when the user confirms an avatar choice from the selection screen.
   Future<void> _onAvatarSelected(Avatar avatar) async {
     _selectedAvatar = avatar;
@@ -720,6 +727,7 @@ class _MyAppState extends State<MyApp> {
                             const SizedBox(width: 8),
                             AuthMenu(
                               displayName: snapshot.data!.displayName,
+                              onChangeAvatar: _changeAvatar,
                             ),
                           ],
                         ),

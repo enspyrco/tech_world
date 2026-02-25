@@ -777,7 +777,7 @@ class TechWorld extends World with TapCallbacks {
       // mounted yet (e.g. first room join), so onLoad images aren't cached.
       final bgImage = await game.images.load(map.backgroundImage!);
       _backgroundSprite =
-          SpriteComponent(sprite: Sprite(bgImage), priority: -1);
+          SpriteComponent(sprite: Sprite(bgImage), priority: -2);
       add(_backgroundSprite!);
 
       // Exclude auto-barriers from object tiles — those cells render their

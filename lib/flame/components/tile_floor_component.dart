@@ -15,13 +15,13 @@ import 'package:tech_world/flame/tiles/tileset_registry.dart';
 /// rendered via shared [AnimationTicker]s so all instances of the same
 /// animation play in sync (standard for pixel-art water, lava, etc.).
 ///
-/// Priority is -2, placing it below the background image layer (-1) and all
-/// game objects.
+/// Priority is -1, placing it above the background image layer (-2) but below
+/// all game objects (priority >= 0).
 class TileFloorComponent extends Component {
   TileFloorComponent({
     required this.layerData,
     required this.registry,
-  }) : super(priority: -2) {
+  }) : super(priority: -1) {
     _partitionTiles();
   }
 

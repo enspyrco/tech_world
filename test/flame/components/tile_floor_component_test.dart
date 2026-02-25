@@ -23,13 +23,13 @@ void main() {
       expect(component.registry, same(registry));
     });
 
-    test('has priority -2', () {
+    test('has priority -1 (above background image at -2)', () {
       final component = TileFloorComponent(
         layerData: TileLayerData(),
         registry: registry,
       );
 
-      expect(component.priority, -2);
+      expect(component.priority, -1);
     });
 
     test('animatedTileCount is 0 for empty layer', () {
