@@ -1044,11 +1044,17 @@ class _GridPainter extends CustomPainter {
             canvas.drawRect(rect, paint);
           }
 
-          // Show structure as a dim overlay on tile layers.
+          // Show structure as a small corner dot on tile layers so tile
+          // colors remain clearly visible.
           final structTile = state.tileAt(x, y);
           if (structTile != TileType.open) {
-            paint.color = _colorForTile(structTile).withValues(alpha: 0.3);
-            canvas.drawRect(rect, paint);
+            paint.color = _colorForTile(structTile);
+            final dotRadius = cellSize * 0.2;
+            canvas.drawCircle(
+              Offset(rect.right - dotRadius, rect.top + dotRadius),
+              dotRadius,
+              paint,
+            );
           }
         }
       }

@@ -152,16 +152,17 @@ class TechWorld extends World with TapCallbacks {
         _removeMapComponents();
         await _loadMapComponents(editedMap);
         currentMap.value = editedMap;
+      } else {
+        // Only re-show when we didn't rebuild — fresh components are already
+        // visible from onLoad().
+        _wallOcclusion?.show();
+        _tileObjectLayer?.show();
       }
     }
 
     // Stop listening for editor changes.
     _editorState?.removeListener(_onEditorStateChanged);
     _editorState = null;
-
-    // Restore wall occlusion overlays and tile objects.
-    _wallOcclusion?.show();
-    _tileObjectLayer?.show();
 
     // Rebuild pathfinding grid from default barriers.
     _pathComponent?.invalidateGrid();
@@ -769,10 +770,33 @@ class TechWorld extends World with TapCallbacks {
       await add(terminal);
     }
 
-    // Tile layers (tileset-based maps) or background image + wall occlusion.
+    // Background image + wall occlusion (can coexist with tile layers).
     final game = findGame() as TechWorldGame?;
+    if (game != null && map.backgroundImage != null) {
+      // Use load() instead of fromCache() because the GameWidget may not have
+      // mounted yet (e.g. first room join), so onLoad images aren't cached.
+      final bgImage = await game.images.load(map.backgroundImage!);
+      _backgroundSprite =
+          SpriteComponent(sprite: Sprite(bgImage), priority: -1);
+      add(_backgroundSprite!);
+
+      // Exclude auto-barriers from object tiles — those cells render their
+      // own sprites and shouldn't be covered by an opaque background slice.
+      final wallBarriers = map.objectLayer != null
+          ? map.barriers
+                .where((b) => map.objectLayer!.tileAt(b.x, b.y) == null)
+                .toList()
+          : map.barriers;
+
+      _wallOcclusion = WallOcclusionComponent(
+        backgroundImage: bgImage,
+        barriers: wallBarriers,
+      );
+      await add(_wallOcclusion!);
+    }
+
+    // Tile layers (can coexist with background image).
     if (game != null && map.usesTilesets) {
-      // Tileset-based rendering.
       final registry = game.tilesetRegistry;
 
       if (map.floorLayer != null) {
@@ -790,20 +814,6 @@ class TechWorld extends World with TapCallbacks {
         );
         await add(_tileObjectLayer!);
       }
-    } else if (game != null && map.backgroundImage != null) {
-      // Legacy background image rendering.
-      // Use load() instead of fromCache() because the GameWidget may not have
-      // mounted yet (e.g. first room join), so onLoad images aren't cached.
-      final bgImage = await game.images.load(map.backgroundImage!);
-      _backgroundSprite =
-          SpriteComponent(sprite: Sprite(bgImage), priority: -1);
-      add(_backgroundSprite!);
-
-      _wallOcclusion = WallOcclusionComponent(
-        backgroundImage: bgImage,
-        barriers: map.barriers,
-      );
-      await add(_wallOcclusion!);
     }
   }
 
