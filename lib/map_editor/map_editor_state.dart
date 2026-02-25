@@ -263,6 +263,7 @@ class MapEditorState extends ChangeNotifier {
     if (brush == null) {
       // Eraser — clear single cell.
       layer.setTile(x, y, null);
+      _automappedCells.remove((x, y));
     } else {
       for (var dy = 0; dy < brush.height; dy++) {
         for (var dx = 0; dx < brush.width; dx++) {
@@ -270,6 +271,9 @@ class MapEditorState extends ChangeNotifier {
           final ty = y + dy;
           if (tx >= 0 && tx < gridSize && ty >= 0 && ty < gridSize) {
             layer.setTile(tx, ty, brush.tileRefAt(dx, dy));
+            // If the user paints over an automap-generated cell, stop
+            // tracking it so re-apply won't erase the manual edit.
+            _automappedCells.remove((tx, ty));
           }
         }
       }
