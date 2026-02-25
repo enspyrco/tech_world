@@ -6,7 +6,6 @@ import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart'
     show allTilesets;
-import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/flame/tiles/terrain_bitmask.dart';
 import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/terrain_def.dart';
@@ -225,9 +224,8 @@ class MapEditorState extends ChangeNotifier {
     _activeLayer = layer;
     if (_currentBrush != null) {
       final tileset = allTilesets
-          .cast<Tileset?>()
-          .firstWhere((ts) => ts!.id == _currentBrush!.tilesetId,
-              orElse: () => null);
+          .where((ts) => ts.id == _currentBrush!.tilesetId)
+          .firstOrNull;
       if (tileset == null || !tileset.availableLayers.contains(layer)) {
         _currentBrush = null;
       } else {

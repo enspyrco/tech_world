@@ -212,12 +212,22 @@ class _TilesetSectionState extends State<_TilesetSection> {
   }
 
   /// Build stacked clipped strips of the tileset image, one per row range.
+  ///
+  /// The [Image.asset] widget is created once and shared across strips so
+  /// Flutter resolves the same image cache entry for each clip region.
   Widget _buildClippedStrips(
     List<(int, int)> ranges,
     double availableWidth,
     double fullSheetHeight,
   ) {
     final tds = _tileDisplaySize;
+    final sheetImage = Image.asset(
+      'assets/images/${_tileset.imagePath}',
+      width: availableWidth,
+      height: fullSheetHeight,
+      fit: BoxFit.fill,
+      filterQuality: FilterQuality.none,
+    );
     final strips = <Widget>[];
     for (final (startRow, endRow) in ranges) {
       final stripHeight = (endRow - startRow) * tds;
@@ -232,13 +242,7 @@ class _TilesetSectionState extends State<_TilesetSection> {
               maxHeight: fullSheetHeight,
               child: Transform.translate(
                 offset: Offset(0, -startRow * tds),
-                child: Image.asset(
-                  'assets/images/${_tileset.imagePath}',
-                  width: availableWidth,
-                  height: fullSheetHeight,
-                  fit: BoxFit.fill,
-                  filterQuality: FilterQuality.none,
-                ),
+                child: sheetImage,
               ),
             ),
           ),
@@ -356,40 +360,17 @@ class _TilesetSectionState extends State<_TilesetSection> {
   void _onLongPressEnd(double tileDisplaySize) {
     if (!_isDragging) return;
 
-    var startVisualRow = min(_dragStartRow!, _dragEndRow!);
-    var endVisualRow = max(_dragStartRow!, _dragEndRow!);
-
-    // Clamp to the row range containing the drag start.
     final ranges = _visibleRanges;
-    final startActual = Tileset.visualRowToActualRow(_dragStartRow!, ranges);
-    final endActual = Tileset.visualRowToActualRow(endVisualRow, ranges);
-
-    // Find which range contains the drag-start row.
-    (int, int)? startRange;
-    for (final range in ranges) {
-      if (startActual >= range.$1 && startActual < range.$2) {
-        startRange = range;
-        break;
-      }
-    }
-
-    if (startRange != null && endActual >= startRange.$1 &&
-        endActual < startRange.$2) {
-      // Both in same range — no clamping needed.
-    } else if (startRange != null) {
-      // Different ranges — clamp end to start's range.
-      final rangeVisualStart = Tileset.actualRowToVisualRow(startRange.$1, ranges)!;
-      final rangeVisualEnd =
-          rangeVisualStart + (startRange.$2 - startRange.$1) - 1;
-      endVisualRow = endVisualRow.clamp(rangeVisualStart, rangeVisualEnd);
-      startVisualRow =
-          startVisualRow.clamp(rangeVisualStart, rangeVisualEnd);
-    }
+    final (startVisualRow, endVisualRow) = Tileset.clampSelectionToRange(
+      _dragStartRow!,
+      _dragEndRow!,
+      ranges,
+    );
 
     final actualStartRow = Tileset.visualRowToActualRow(startVisualRow, ranges);
     final startCol = min(_dragStartCol!, _dragEndCol!);
     final w = (_dragStartCol! - _dragEndCol!).abs() + 1;
-    final h = (startVisualRow - endVisualRow).abs() + 1;
+    final h = (endVisualRow - startVisualRow).abs() + 1;
 
     _state.setBrush(TileBrush(
       tilesetId: _tileset.id,

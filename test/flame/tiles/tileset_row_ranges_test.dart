@@ -190,6 +190,45 @@ void main() {
     });
   });
 
+  group('Tileset.clampSelectionToRange', () {
+    test('no clamping when both rows in same range', () {
+      // extSchool objects: [(0, 34), (58, 99)]
+      // Visual rows 0–33 map to actual 0–33 (first range).
+      final ranges = extSchool.rowRangesForLayer(ActiveLayer.objects);
+      final (start, end) = Tileset.clampSelectionToRange(5, 10, ranges);
+      expect(start, 5);
+      expect(end, 10);
+    });
+
+    test('clamps drag across range boundary to start range', () {
+      // extSchool objects: [(0, 34), (58, 99)]
+      // Visual 0–33 = actual 0–33, visual 34–74 = actual 58–98.
+      // Drag from visual 30 (actual 30, range 1) to visual 40 (actual 64, range 2).
+      final ranges = extSchool.rowRangesForLayer(ActiveLayer.objects);
+      final (start, end) = Tileset.clampSelectionToRange(30, 40, ranges);
+      // Clamped to range 1: visual 0–33.
+      expect(start, 30);
+      expect(end, 33);
+    });
+
+    test('clamps reverse drag across range boundary', () {
+      // Drag from visual 40 (range 2) to visual 30 (range 1).
+      final ranges = extSchool.rowRangesForLayer(ActiveLayer.objects);
+      final (start, end) = Tileset.clampSelectionToRange(40, 30, ranges);
+      // Clamped to range 2: visual 34–74.
+      expect(start, 34);
+      expect(end, 40);
+    });
+
+    test('single range never clamps', () {
+      // roomBuilderOffice floor: [(5, 14)] → 9 visible rows, visual 0–8.
+      final ranges = roomBuilderOffice.rowRangesForLayer(ActiveLayer.floor);
+      final (start, end) = Tileset.clampSelectionToRange(0, 8, ranges);
+      expect(start, 0);
+      expect(end, 8);
+    });
+  });
+
   group('MapEditorState.setActiveLayer brush clearing', () {
     test('clears brush when rows not visible on new layer', () {
       final state = MapEditorState();

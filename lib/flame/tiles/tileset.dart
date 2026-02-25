@@ -108,6 +108,49 @@ class Tileset {
     }
     return null;
   }
+
+  /// Clamp a visual row selection to a single row range.
+  ///
+  /// Given a drag start and end in visual coordinates, if the two rows fall in
+  /// different ranges, both are clamped to the range containing [dragStartVisualRow].
+  /// Returns `(startVisualRow, endVisualRow)` in min/max order.
+  static (int, int) clampSelectionToRange(
+    int dragStartVisualRow,
+    int dragEndVisualRow,
+    List<(int, int)> ranges,
+  ) {
+    var startVisualRow = dragStartVisualRow < dragEndVisualRow
+        ? dragStartVisualRow
+        : dragEndVisualRow;
+    var endVisualRow = dragStartVisualRow < dragEndVisualRow
+        ? dragEndVisualRow
+        : dragStartVisualRow;
+
+    // Use the drag origin (not min/max) to determine the anchor range.
+    final anchorActual = visualRowToActualRow(dragStartVisualRow, ranges);
+    final otherActual = visualRowToActualRow(dragEndVisualRow, ranges);
+
+    // Find which range contains the drag-start (anchor) row.
+    (int, int)? anchorRange;
+    for (final range in ranges) {
+      if (anchorActual >= range.$1 && anchorActual < range.$2) {
+        anchorRange = range;
+        break;
+      }
+    }
+
+    if (anchorRange != null &&
+        !(otherActual >= anchorRange.$1 && otherActual < anchorRange.$2)) {
+      // Different ranges — clamp both ends to the anchor's range.
+      final rangeVisualStart = actualRowToVisualRow(anchorRange.$1, ranges)!;
+      final rangeVisualEnd =
+          rangeVisualStart + (anchorRange.$2 - anchorRange.$1) - 1;
+      endVisualRow = endVisualRow.clamp(rangeVisualStart, rangeVisualEnd);
+      startVisualRow = startVisualRow.clamp(rangeVisualStart, rangeVisualEnd);
+    }
+
+    return (startVisualRow, endVisualRow);
+  }
 }
 
 /// A [Tileset] paired with its loaded [SpriteSheet], ready for rendering.
