@@ -12,7 +12,7 @@ class TileAnimation {
     required this.baseTileIndex,
     required this.frameIndices,
     this.stepTime = 0.3,
-  });
+  }) : assert(stepTime > 0, 'stepTime must be positive');
 
   /// The canonical tile index for this animation — typically the first frame.
   ///
@@ -24,7 +24,7 @@ class TileAnimation {
   /// meaningful animation.
   final List<int> frameIndices;
 
-  /// Seconds per frame. Defaults to 0.3s (≈3.3 fps).
+  /// Seconds per frame. Must be positive. Defaults to 0.3s (≈3.3 fps).
   final double stepTime;
 
   /// The number of frames in this animation.
