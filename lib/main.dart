@@ -504,13 +504,15 @@ class _MyAppState extends State<MyApp> {
                         },
                       ),
                     ),
-                    // Side panel - map editor or chat (hidden in lobby)
+                    // Side panel - map editor or chat (hidden in lobby and
+                    // during avatar selection)
                     StreamBuilder<AuthUser>(
                       stream: locate<AuthService>().authStateChanges,
                       builder: (context, snapshot) {
                         if (!snapshot.hasData ||
                             snapshot.data is SignedOutUser ||
-                            _currentRoom == null) {
+                            _currentRoom == null ||
+                            _selectedAvatar == null) {
                           return const SizedBox.shrink();
                         }
                         final techWorld = locate<TechWorld>();
@@ -652,13 +654,15 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ],
                 ),
-                // Toolbar — top right when in a room
+                // Toolbar — top right when in a room (hidden during avatar
+                // selection)
                 StreamBuilder<AuthUser>(
                   stream: locate<AuthService>().authStateChanges,
                   builder: (context, snapshot) {
                     if (!snapshot.hasData ||
                         snapshot.data is SignedOutUser ||
-                        _currentRoom == null) {
+                        _currentRoom == null ||
+                        _selectedAvatar == null) {
                       return const SizedBox.shrink();
                     }
                     return ValueListenableBuilder<bool>(
@@ -743,7 +747,8 @@ class _MyAppState extends State<MyApp> {
                   builder: (context, snapshot) {
                     if (!snapshot.hasData ||
                         snapshot.data is SignedOutUser ||
-                        _currentRoom == null) {
+                        _currentRoom == null ||
+                        _selectedAvatar == null) {
                       return const SizedBox.shrink();
                     }
                     final techWorld = locate<TechWorld>();
