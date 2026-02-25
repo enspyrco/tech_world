@@ -79,7 +79,6 @@ Use `Locator.maybeLocate<T>()` for services that may not be registered yet.
 **Toolbar** (top-right when authenticated): `MapSelector` + map editor button + `AuthMenu`.
 
 **Responsive breakpoints:**
-- `>= 1200`: Welcome panel shown on left
 - `>= 800`: Side panels 480px (editor) / 320px (chat); below 800: 360px / 280px
 
 **Connection failure**: Orange banner at bottom-left when LiveKit connection fails.

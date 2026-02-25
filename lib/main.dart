@@ -445,29 +445,7 @@ class _MyAppState extends State<MyApp> {
               children: [
                 Row(
                   children: [
-                    Visibility(
-                      visible: constraints.maxWidth >= 1200,
-                      child: Expanded(
-                        child: Container(
-                          height: double.infinity,
-                          color: Theme.of(context).colorScheme.primary,
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'Welcome to Tech World',
-                                  style:
-                                      Theme.of(context).textTheme.headlineMedium,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                     Expanded(
-                      flex: 2,
                       child: StreamBuilder<AuthUser>(
                         stream: locate<AuthService>().authStateChanges,
                         builder: (context, snapshot) {
