@@ -39,7 +39,8 @@ class TilePalette extends StatelessWidget {
                 padding: const EdgeInsets.all(8),
                 children: [
                   for (final tileset in allTilesets)
-                    _TilesetSection(tileset: tileset, state: state),
+                    if (tileset.availableLayers.contains(state.activeLayer))
+                      _TilesetSection(tileset: tileset, state: state),
                 ],
               ),
             ),
