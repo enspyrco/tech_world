@@ -15,6 +15,7 @@ class Tileset {
     required this.rows,
     this.barrierTileIndices = const {},
     this.availableLayers = const {ActiveLayer.floor, ActiveLayer.objects},
+    this.layerRowRanges = const {},
   });
 
   /// Unique identifier used in [TileRef.tilesetId].
@@ -49,11 +50,64 @@ class Tileset {
   /// and object-only tilesets (e.g. furniture) are hidden from the Floor tab.
   final Set<ActiveLayer> availableLayers;
 
+  /// Per-layer row ranges that control which rows the [TilePalette] displays.
+  ///
+  /// Each entry maps an [ActiveLayer] to a list of `(startRow, endRow)`
+  /// ranges (inclusive start, exclusive end). When empty, all rows are shown
+  /// for every layer the tileset appears on.
+  final Map<ActiveLayer, List<(int, int)>> layerRowRanges;
+
   /// Whether [tileIndex] represents a solid, impassable tile.
   bool isTileBarrier(int tileIndex) => barrierTileIndices.contains(tileIndex);
 
   /// Total number of tiles in the sheet.
   int get tileCount => columns * rows;
+
+  /// Row ranges to display for [layer].
+  ///
+  /// Returns the configured ranges if present, otherwise falls back to the
+  /// full sheet `[(0, rows)]`.
+  List<(int, int)> rowRangesForLayer(ActiveLayer layer) {
+    return layerRowRanges[layer] ?? [(0, rows)];
+  }
+
+  /// Whether [row] is visible for [layer] based on [layerRowRanges].
+  bool isRowVisibleForLayer(int row, ActiveLayer layer) {
+    final ranges = rowRangesForLayer(layer);
+    return ranges.any((range) => row >= range.$1 && row < range.$2);
+  }
+
+  /// Map a visual row (position in the compacted palette) to an actual
+  /// tileset row within the given [ranges].
+  ///
+  /// Clamps to the last visible row if [visualRow] exceeds the total.
+  static int visualRowToActualRow(
+      int visualRow, List<(int, int)> ranges) {
+    var remaining = visualRow;
+    for (final (start, end) in ranges) {
+      final rangeSize = end - start;
+      if (remaining < rangeSize) return start + remaining;
+      remaining -= rangeSize;
+    }
+    // Clamp to last visible row.
+    final (_, lastEnd) = ranges.last;
+    return lastEnd - 1;
+  }
+
+  /// Map an actual tileset row to a visual row in the compacted palette.
+  ///
+  /// Returns `null` if the row is not in any visible range.
+  static int? actualRowToVisualRow(
+      int actualRow, List<(int, int)> ranges) {
+    var offset = 0;
+    for (final (start, end) in ranges) {
+      if (actualRow >= start && actualRow < end) {
+        return offset + (actualRow - start);
+      }
+      offset += end - start;
+    }
+    return null;
+  }
 }
 
 /// A [Tileset] paired with its loaded [SpriteSheet], ready for rendering.

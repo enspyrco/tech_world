@@ -29,7 +29,7 @@ void main() {
         registry: registry,
       );
 
-      expect(component.priority, -2);
+      expect(component.priority, -1);
     });
 
     test('animatedTileCount is 0 for empty layer', () {
