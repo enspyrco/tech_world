@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
+import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart'
     show allTilesets;
@@ -470,6 +471,24 @@ class MapEditorState extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  /// Import a Tiled `.tmx` XML string into the editor.
+  ///
+  /// Parses the TMX via [TmxImporter], loads the resulting [GameMap], and
+  /// returns any non-fatal warnings for the caller to display.
+  List<TmxImportWarning> loadFromTmx(
+    String tmxXml, {
+    String? mapId,
+    String? mapName,
+  }) {
+    final result = TmxImporter.import(
+      tmxXml,
+      mapId: mapId,
+      mapName: mapName,
+    );
+    loadFromGameMap(result.gameMap);
+    return result.warnings;
   }
 
   /// Load grid state from an ASCII art string (same format as [parseAsciiMap]).
