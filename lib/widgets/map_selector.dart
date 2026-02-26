@@ -123,8 +123,6 @@ class _MapSelectorState extends State<MapSelector> {
                 widget.techWorld.loadMap(map);
               case _LoadSavedRoom(:final room):
                 widget.onLoadRoom?.call(room);
-              case _DeleteSavedRoom(:final room):
-                _confirmDelete(room);
             }
           },
           child: Container(
@@ -220,8 +218,7 @@ class _MapSelectorState extends State<MapSelector> {
                     value: _LoadSavedRoom(room),
                     child: Row(
                       children: [
-                        const SizedBox(width: 16),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 24),
                         Expanded(
                           child: Text(
                             room.name,
@@ -286,7 +283,3 @@ class _LoadSavedRoom extends _MapAction {
   final RoomData room;
 }
 
-class _DeleteSavedRoom extends _MapAction {
-  _DeleteSavedRoom(this.room);
-  final RoomData room;
-}

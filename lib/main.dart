@@ -428,10 +428,26 @@ class _MyAppState extends State<MyApp> {
   }
 
   /// Load a saved room's map into the editor.
-  void _loadSavedRoom(RoomData room) {
-    _mapEditorState.loadFromGameMap(room.mapData);
-    _mapEditorState.setRoomId(room.id);
-    locate<TechWorld>().loadMap(room.mapData);
+  ///
+  /// Updates [_currentRoom] so that the fork-on-save logic in [_saveRoom]
+  /// correctly detects ownership of the loaded room.
+  Future<void> _loadSavedRoom(RoomData room) async {
+    try {
+      _mapEditorState.loadFromGameMap(room.mapData);
+      _mapEditorState.setRoomId(room.id);
+      _currentRoom = room;
+      await locate<TechWorld>().loadMap(room.mapData);
+      setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load map: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
   }
 
   /// Delete a saved room after confirmation.
