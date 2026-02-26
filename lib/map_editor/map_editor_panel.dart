@@ -10,6 +10,7 @@ import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/map_editor/available_backgrounds.dart';
+import 'package:tech_world/map_editor/import_dialog.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/predefined_rules.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
@@ -319,44 +320,9 @@ class MapEditorPanel extends StatelessWidget {
   }
 
   void _showImportDialog(BuildContext context) {
-    final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _headerBg,
-        title: const Text('Import ASCII Map',
-            style: TextStyle(color: Colors.white)),
-        content: SizedBox(
-          width: 500,
-          height: 400,
-          child: TextField(
-            controller: controller,
-            maxLines: null,
-            expands: true,
-            style: const TextStyle(
-                color: Colors.white, fontFamily: 'monospace', fontSize: 10),
-            decoration: InputDecoration(
-              hintText: 'Paste ASCII art here (50x50, .#ST)...',
-              hintStyle: TextStyle(color: Colors.grey.shade600),
-              border: OutlineInputBorder(
-                  borderSide: BorderSide(color: Colors.grey.shade700)),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              state.loadFromAscii(controller.text);
-              Navigator.pop(ctx);
-            },
-            child: const Text('Import'),
-          ),
-        ],
-      ),
+      builder: (ctx) => ImportDialog(state: state),
     );
   }
 

@@ -29,6 +29,7 @@ dependencies:
       url: https://github.com/nickmeinhold/code_forge_web.git
       ref: 51f0e2b
   re_highlight: ^0.0.3
+  tiled: ^0.11.1 # TMX/TSX parser only — no rendering
 
 dev_dependencies:
   flutter_test:
