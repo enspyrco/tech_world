@@ -171,7 +171,12 @@ class TechWorld extends World with TapCallbacks {
       _mapPreviewComponent!.removeFromParent();
       _mapPreviewComponent = null;
     }
-    _barriersComponent.renderBarriers = !currentMap.value.usesTilesets;
+    // Show debug barriers only for maps without visual layers. Maps with a
+    // background image or tilesets render walls visually, so the blue debug
+    // rectangles would be distracting.
+    final map = currentMap.value;
+    _barriersComponent.renderBarriers =
+        !map.usesTilesets && map.backgroundImage == null;
   }
 
   MapEditorState? _editorState;
