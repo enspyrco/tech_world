@@ -4,9 +4,11 @@ import 'dart:ui' as ui;
 import 'package:flame/components.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 
-/// Creates sprite overlays for each barrier cell using a sub-region of the
-/// background PNG. These overlays sit above the background but use y-based
-/// priority so that characters walking behind (north of) walls are occluded.
+/// Creates sprite overlays for north-facing barrier edges using a sub-region
+/// of the background PNG. Only barriers whose cell directly above is open
+/// receive overlays — interior barriers are skipped since no player can stand
+/// above them. The overlays sit above the background but use y-based priority
+/// so that characters walking behind (north of) walls are occluded.
 ///
 /// Each overlay extends [_wallArtHeight] cells above the barrier to cover the
 /// visible wall face in the PNG. The priority equals the barrier's y so that
