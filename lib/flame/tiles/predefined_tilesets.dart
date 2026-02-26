@@ -30,6 +30,10 @@ final roomBuilderOffice = Tileset(
   columns: 16,
   rows: 14,
   barrierTileIndices: _roomBuilderOfficeBarriers,
+  layerRowRanges: {
+    ActiveLayer.objects: [(0, 5)],
+    ActiveLayer.floor: [(5, 14)],
+  },
 );
 
 /// Wall tiles in room_builder_office: rows 0–4 (indices 0–79).
@@ -112,8 +116,6 @@ final extHotelHospital = Tileset(
 /// Building facade (rows 0–33) and props/furniture (rows 58–98) are barriers.
 /// Basketball courts (rows 34–57) and soccer fields (rows 99–115) are excluded
 /// as walkable playing surfaces.
-// TODO: Split into separate floor (courts/fields) and objects (buildings)
-// tilesets so each layer gets only the relevant tiles.
 final extSchool = Tileset(
   id: 'ext_school',
   name: 'Ext: School',
@@ -122,6 +124,10 @@ final extSchool = Tileset(
   columns: 32,
   rows: 116,
   barrierTileIndices: _extSchoolBarriers,
+  layerRowRanges: {
+    ActiveLayer.objects: [(0, 34), (58, 99)],
+    ActiveLayer.floor: [(34, 58), (99, 116)],
+  },
 );
 
 /// Office — exterior office buildings, signage, props (32×95).

@@ -96,11 +96,11 @@ class _TilesetSection extends StatefulWidget {
 class _TilesetSectionState extends State<_TilesetSection> {
   static const _selectedColor = Color(0xFF4FC3F7);
 
-  /// Start of the drag selection (col, row in the tileset grid).
+  /// Start of the drag selection (col, row in **visual** coordinates).
   int? _dragStartCol;
   int? _dragStartRow;
 
-  /// Current end of the drag selection.
+  /// Current end of the drag selection (visual coordinates).
   int? _dragEndCol;
   int? _dragEndRow;
 
@@ -113,13 +113,34 @@ class _TilesetSectionState extends State<_TilesetSection> {
   Tileset get _tileset => widget.tileset;
   MapEditorState get _state => widget.state;
 
+  // -------------------------------------------------------------------------
+  // Visual ↔ actual row conversion
+  // -------------------------------------------------------------------------
+
+  /// Row ranges visible for the current active layer.
+  List<(int, int)> get _visibleRanges =>
+      _tileset.rowRangesForLayer(_state.activeLayer);
+
+  /// Total number of visible rows across all ranges.
+  int get _visibleRowCount {
+    var count = 0;
+    for (final (start, end) in _visibleRanges) {
+      count += end - start;
+    }
+    return count;
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final availableWidth = constraints.maxWidth;
         _tileDisplaySize = availableWidth / _tileset.columns;
-        final sheetHeight = _tileset.rows * _tileDisplaySize;
+        final ranges = _visibleRanges;
+        final sheetHeight = _visibleRowCount * _tileDisplaySize;
+
+        // Full sheet height for clipping calculations.
+        final fullSheetHeight = _tileset.rows * _tileDisplaySize;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,13 +190,14 @@ class _TilesetSectionState extends State<_TilesetSection> {
               },
               child: Stack(
                 children: [
+                  // Render visible row ranges as stacked clipped strips.
                   SizedBox(
                     width: availableWidth,
                     height: sheetHeight,
-                    child: Image.asset(
-                      'assets/images/${_tileset.imagePath}',
-                      fit: BoxFit.fill,
-                      filterQuality: FilterQuality.none,
+                    child: _buildClippedStrips(
+                      ranges,
+                      availableWidth,
+                      fullSheetHeight,
                     ),
                   ),
                   // Selection highlight — during drag or for current brush
@@ -189,26 +211,74 @@ class _TilesetSectionState extends State<_TilesetSection> {
     );
   }
 
+  /// Build stacked clipped strips of the tileset image, one per row range.
+  ///
+  /// The [Image.asset] widget is created once and shared across strips so
+  /// Flutter resolves the same image cache entry for each clip region.
+  Widget _buildClippedStrips(
+    List<(int, int)> ranges,
+    double availableWidth,
+    double fullSheetHeight,
+  ) {
+    final tds = _tileDisplaySize;
+    final sheetImage = Image.asset(
+      'assets/images/${_tileset.imagePath}',
+      width: availableWidth,
+      height: fullSheetHeight,
+      fit: BoxFit.fill,
+      filterQuality: FilterQuality.none,
+    );
+    final strips = <Widget>[];
+    for (final (startRow, endRow) in ranges) {
+      final stripHeight = (endRow - startRow) * tds;
+      strips.add(
+        SizedBox(
+          width: availableWidth,
+          height: stripHeight,
+          child: ClipRect(
+            child: OverflowBox(
+              alignment: Alignment.topLeft,
+              maxWidth: availableWidth,
+              maxHeight: fullSheetHeight,
+              child: Transform.translate(
+                offset: Offset(0, -startRow * tds),
+                child: sheetImage,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(children: strips);
+  }
+
   /// Build the cyan selection rectangle overlay.
+  ///
+  /// Coordinates are in visual (compacted) space so the highlight aligns
+  /// with the clipped strips.
   Widget _buildSelectionHighlight(double tileDisplaySize) {
-    int? selCol, selRow, selW, selH;
+    int? selCol, selVisualRow, selW, selH;
 
     if (_isDragging &&
         _dragStartCol != null &&
         _dragEndCol != null) {
-      // Live drag preview.
+      // Live drag preview — already in visual coordinates.
       selCol = min(_dragStartCol!, _dragEndCol!);
-      selRow = min(_dragStartRow!, _dragEndRow!);
+      selVisualRow = min(_dragStartRow!, _dragEndRow!);
       selW = (_dragStartCol! - _dragEndCol!).abs() + 1;
       selH = (_dragStartRow! - _dragEndRow!).abs() + 1;
     } else {
-      // Show the committed brush selection.
+      // Show the committed brush selection (actual row → visual row).
       final brush = _state.currentBrush;
       if (brush != null && brush.tilesetId == _tileset.id) {
-        selCol = brush.startCol;
-        selRow = brush.startRow;
-        selW = brush.width;
-        selH = brush.height;
+        final visualRow =
+            Tileset.actualRowToVisualRow(brush.startRow, _visibleRanges);
+        if (visualRow != null) {
+          selCol = brush.startCol;
+          selVisualRow = visualRow;
+          selW = brush.width;
+          selH = brush.height;
+        }
       }
     }
 
@@ -216,7 +286,7 @@ class _TilesetSectionState extends State<_TilesetSection> {
 
     return Positioned(
       left: selCol * tileDisplaySize,
-      top: selRow! * tileDisplaySize,
+      top: selVisualRow! * tileDisplaySize,
       child: IgnorePointer(
         child: Container(
           width: selW! * tileDisplaySize,
@@ -235,28 +305,33 @@ class _TilesetSectionState extends State<_TilesetSection> {
 
   /// Tap → single tile (1×1) brush.
   void _onTap(Offset pos, double tileDisplaySize) {
-    final col = (pos.dx / tileDisplaySize).floor().clamp(0, _tileset.columns - 1);
-    final row = (pos.dy / tileDisplaySize).floor().clamp(0, _tileset.rows - 1);
+    final col =
+        (pos.dx / tileDisplaySize).floor().clamp(0, _tileset.columns - 1);
+    final visualRow =
+        (pos.dy / tileDisplaySize).floor().clamp(0, _visibleRowCount - 1);
+    final actualRow = Tileset.visualRowToActualRow(visualRow, _visibleRanges);
 
     _state.setBrush(TileBrush(
       tilesetId: _tileset.id,
       startCol: col,
-      startRow: row,
+      startRow: actualRow,
       columns: _tileset.columns,
     ));
   }
 
   /// Long press start → begin rectangular selection.
   void _onLongPressStart(Offset pos, double tileDisplaySize) {
-    final col = (pos.dx / tileDisplaySize).floor().clamp(0, _tileset.columns - 1);
-    final row = (pos.dy / tileDisplaySize).floor().clamp(0, _tileset.rows - 1);
+    final col =
+        (pos.dx / tileDisplaySize).floor().clamp(0, _tileset.columns - 1);
+    final visualRow =
+        (pos.dy / tileDisplaySize).floor().clamp(0, _visibleRowCount - 1);
 
     setState(() {
       _isDragging = true;
       _dragStartCol = col;
-      _dragStartRow = row;
+      _dragStartRow = visualRow;
       _dragEndCol = col;
-      _dragEndRow = row;
+      _dragEndRow = visualRow;
     });
   }
 
@@ -264,30 +339,43 @@ class _TilesetSectionState extends State<_TilesetSection> {
   void _onLongPressMove(Offset pos, double tileDisplaySize) {
     if (!_isDragging) return;
 
-    final col = (pos.dx / tileDisplaySize).floor().clamp(0, _tileset.columns - 1);
-    final row = (pos.dy / tileDisplaySize).floor().clamp(0, _tileset.rows - 1);
+    final col =
+        (pos.dx / tileDisplaySize).floor().clamp(0, _tileset.columns - 1);
+    final visualRow =
+        (pos.dy / tileDisplaySize).floor().clamp(0, _visibleRowCount - 1);
 
-    if (col != _dragEndCol || row != _dragEndRow) {
+    if (col != _dragEndCol || visualRow != _dragEndRow) {
       setState(() {
         _dragEndCol = col;
-        _dragEndRow = row;
+        _dragEndRow = visualRow;
       });
     }
   }
 
   /// Long press end → commit rectangular brush.
+  ///
+  /// If drag start and end are in different row ranges, clamps the selection
+  /// to the range containing the drag start to prevent brushes that span
+  /// hidden rows.
   void _onLongPressEnd(double tileDisplaySize) {
     if (!_isDragging) return;
 
+    final ranges = _visibleRanges;
+    final (startVisualRow, endVisualRow) = Tileset.clampSelectionToRange(
+      _dragStartRow!,
+      _dragEndRow!,
+      ranges,
+    );
+
+    final actualStartRow = Tileset.visualRowToActualRow(startVisualRow, ranges);
     final startCol = min(_dragStartCol!, _dragEndCol!);
-    final startRow = min(_dragStartRow!, _dragEndRow!);
     final w = (_dragStartCol! - _dragEndCol!).abs() + 1;
-    final h = (_dragStartRow! - _dragEndRow!).abs() + 1;
+    final h = (endVisualRow - startVisualRow).abs() + 1;
 
     _state.setBrush(TileBrush(
       tilesetId: _tileset.id,
       startCol: startCol,
-      startRow: startRow,
+      startRow: actualStartRow,
       columns: _tileset.columns,
       width: w,
       height: h,
