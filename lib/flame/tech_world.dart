@@ -9,6 +9,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
@@ -61,7 +62,7 @@ class TechWorld extends World with TapCallbacks {
   // final GridComponent _gridComponent = GridComponent();
   BarriersComponent _barriersComponent =
       BarriersComponent(barriers: defaultMap.barriers);
-  late PathComponent _pathComponent;
+  PathComponent? _pathComponent;
 
   /// The currently loaded map.
   final ValueNotifier<GameMap> currentMap = ValueNotifier(defaultMap);
@@ -80,12 +81,22 @@ class TechWorld extends World with TapCallbacks {
   final Set<String> _audioEnabledParticipants = {}; // track audio state
   Point<int>? _lastPlayerGridPosition; // track to skip unnecessary updates
 
+  /// Current player grid position, updated each frame for UI consumers
+  /// (e.g. the map editor mini-grid).
+  final ValueNotifier<Point<int>> playerGridPosition =
+      ValueNotifier(defaultMap.spawnPoint);
+
   // LiveKit integration for video bubbles
   LiveKitService? _liveKitService;
   ui.FragmentProgram? _shaderProgram; // Keep reference for creating new shaders
 
   /// Notifier for active challenge ID. Null means no editor open.
   final ValueNotifier<String?> activeChallenge = ValueNotifier(null);
+
+  /// Grid position of the terminal the player is currently interacting with.
+  /// Null when no editor is open.
+  final ValueNotifier<Point<int>?> activeTerminalPosition =
+      ValueNotifier(null);
 
   /// Whether the map editor sidebar is active.
   final ValueNotifier<bool> mapEditorActive = ValueNotifier(false);
@@ -97,13 +108,18 @@ class TechWorld extends World with TapCallbacks {
 
   /// Close the code editor panel.
   void closeEditor() {
+    // Only publish if we were actually in the editor.
+    if (activeChallenge.value != null) {
+      _liveKitService?.publishTerminalActivity(action: 'close');
+    }
     activeChallenge.value = null;
+    activeTerminalPosition.value = null;
   }
 
   /// Enter map editor mode — shows preview overlay on the canvas.
   void enterEditorMode(MapEditorState editorState) {
-    // Close code editor if open.
-    activeChallenge.value = null;
+    // Close code editor if open (also notifies the bot).
+    closeEditor();
 
     // Pre-load the current map so the editor and canvas show existing layout.
     editorState.loadFromGameMap(currentMap.value);
@@ -124,33 +140,45 @@ class TechWorld extends World with TapCallbacks {
     editorState.addListener(_onEditorStateChanged);
   }
 
-  /// Exit map editor mode — removes preview, restores barriers.
-  void exitEditorMode() {
+  /// Exit map editor mode — removes preview, applies editor changes to game.
+  Future<void> exitEditorMode() async {
     mapEditorActive.value = false;
+
+    // Apply the full edited map to the game world so barriers, terminals,
+    // background, and wall occlusion all reflect whatever was changed.
+    if (_editorState != null) {
+      final editedMap = _editorState!.toGameMap();
+      if (editedMap != currentMap.value) {
+        _removeMapComponents();
+        await _loadMapComponents(editedMap);
+        currentMap.value = editedMap;
+      } else {
+        // Only re-show when we didn't rebuild — fresh components are already
+        // visible from onLoad().
+        _wallOcclusion?.show();
+        _tileObjectLayer?.show();
+      }
+    }
 
     // Stop listening for editor changes.
     _editorState?.removeListener(_onEditorStateChanged);
     _editorState = null;
 
-    // Restore wall occlusion overlays and tile objects.
-    _wallOcclusion?.show();
-    _tileObjectLayer?.show();
-
     // Rebuild pathfinding grid from default barriers.
-    _pathComponent.invalidateGrid();
+    _pathComponent?.invalidateGrid();
 
     if (_mapPreviewComponent != null) {
       _mapPreviewComponent!.removeFromParent();
       _mapPreviewComponent = null;
     }
-    _barriersComponent.renderBarriers = true;
+    _barriersComponent.renderBarriers = !currentMap.value.usesTilesets;
   }
 
   MapEditorState? _editorState;
 
   /// Called when the editor state changes — rebuild pathfinding grid.
   void _onEditorStateChanged() {
-    _pathComponent.setGridFromEditor(_editorState!);
+    _pathComponent?.setGridFromEditor(_editorState!);
   }
 
   /// Check if a challenge is completed via the [ProgressService].
@@ -222,6 +250,7 @@ class TechWorld extends World with TapCallbacks {
       return;
     }
     _lastPlayerGridPosition = playerGrid;
+    playerGridPosition.value = playerGrid;
 
     // Check each other player for proximity
     final nearbyPlayerIds = <String>{};
@@ -421,15 +450,22 @@ class TechWorld extends World with TapCallbacks {
 
     // Create component based on participant type
     if (participant.identity == _botUserId) {
-      // Create bot character component at default position
+      // Create bot character component at the map's spawn point
       if (_botCharacterComponent == null) {
+        final spawn = currentMap.value.spawnPoint;
         _botCharacterComponent = BotCharacterComponent(
-          position: Vector2(200, 200),
+          position: Vector2(
+            spawn.x * gridSquareSizeDouble,
+            spawn.y * gridSquareSizeDouble,
+          ),
           id: participant.identity,
           displayName: 'Claude',
         );
         add(_botCharacterComponent!);
       }
+
+      // Send the current map layout so the bot knows about barriers/terminals
+      _liveKitService?.publishMapInfo(currentMap.value);
     } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
       // Apply pending avatar if one arrived before the component was created
       final pendingSpriteAsset = _pendingAvatars.remove(participant.identity);
@@ -486,10 +522,8 @@ class TechWorld extends World with TapCallbacks {
       if (path.playerId == userId) return;
 
       if (path.playerId == _botUserId) {
-        // Set bot position directly (bot doesn't animate movement)
-        if (_botCharacterComponent != null && path.largeGridPoints.isNotEmpty) {
-          _botCharacterComponent!.position = path.largeGridPoints.first;
-        }
+        // Animate bot along the full path, just like player movement.
+        _botCharacterComponent?.move(path.largeGridPoints);
       } else {
         // If player component doesn't exist, create it
         if (!_otherPlayerComponentsMap.containsKey(path.playerId)) {
@@ -683,7 +717,7 @@ class TechWorld extends World with TapCallbacks {
 
     // Grid lines hidden for now — uncomment to restore:
     // await add(_gridComponent);
-    await add(_pathComponent);
+    await add(_pathComponent!);
     await add(_userPlayerComponent);
 
     // Load initial map components.
@@ -699,6 +733,8 @@ class TechWorld extends World with TapCallbacks {
       if (authUser is SignedOutUser) {
         // User signed out - clear LiveKit state so we can reconnect on next sign-in
         _disconnectFromLiveKit();
+        // Clear stale terminal completion indicators from the previous user.
+        refreshTerminalStates();
       } else if (authUser is! PlaceholderUser) {
         _userPlayerComponent.id = authUser.id;
         _userPlayerComponent.displayName = authUser.displayName;
@@ -715,7 +751,7 @@ class TechWorld extends World with TapCallbacks {
     // Barriers
     _barriersComponent = BarriersComponent(barriers: map.barriers);
     await add(_barriersComponent);
-    _pathComponent.barriers = _barriersComponent;
+    _pathComponent?.barriers = _barriersComponent;
 
     // Terminals
     for (var i = 0; i < map.terminals.length; i++) {
@@ -727,17 +763,40 @@ class TechWorld extends World with TapCallbacks {
           terminalPos.x * gridSquareSizeDouble,
           terminalPos.y * gridSquareSizeDouble,
         ),
-        onInteract: () => _onTerminalInteract(terminalPos, challenge.id),
+        onInteract: () => _onTerminalInteract(terminalPos, challenge),
         isCompleted: _isChallengeCompleted(challenge.id),
       );
       _terminalComponents.add(terminal);
       await add(terminal);
     }
 
-    // Tile layers (tileset-based maps) or background image + wall occlusion.
+    // Background image + wall occlusion (can coexist with tile layers).
     final game = findGame() as TechWorldGame?;
+    if (game != null && map.backgroundImage != null) {
+      // Use load() instead of fromCache() because the GameWidget may not have
+      // mounted yet (e.g. first room join), so onLoad images aren't cached.
+      final bgImage = await game.images.load(map.backgroundImage!);
+      _backgroundSprite =
+          SpriteComponent(sprite: Sprite(bgImage), priority: -2);
+      add(_backgroundSprite!);
+
+      // Exclude auto-barriers from object tiles — those cells render their
+      // own sprites and shouldn't be covered by an opaque background slice.
+      final wallBarriers = map.objectLayer != null
+          ? map.barriers
+                .where((b) => map.objectLayer!.tileAt(b.x, b.y) == null)
+                .toList()
+          : map.barriers;
+
+      _wallOcclusion = WallOcclusionComponent(
+        backgroundImage: bgImage,
+        barriers: wallBarriers,
+      );
+      await add(_wallOcclusion!);
+    }
+
+    // Tile layers (can coexist with background image).
     if (game != null && map.usesTilesets) {
-      // Tileset-based rendering.
       final registry = game.tilesetRegistry;
 
       if (map.floorLayer != null) {
@@ -755,18 +814,6 @@ class TechWorld extends World with TapCallbacks {
         );
         await add(_tileObjectLayer!);
       }
-    } else if (game != null && map.backgroundImage != null) {
-      // Legacy background image rendering.
-      final bgImage = game.images.fromCache(map.backgroundImage!);
-      _backgroundSprite =
-          SpriteComponent(sprite: Sprite(bgImage), priority: -1);
-      add(_backgroundSprite!);
-
-      _wallOcclusion = WallOcclusionComponent(
-        backgroundImage: bgImage,
-        barriers: map.barriers,
-      );
-      await add(_wallOcclusion!);
     }
   }
 
@@ -808,10 +855,10 @@ class TechWorld extends World with TapCallbacks {
     if (map.id == currentMap.value.id) return; // Already on this map.
 
     // Auto-exit editor mode if active.
-    if (mapEditorActive.value) exitEditorMode();
+    if (mapEditorActive.value) await exitEditorMode();
 
     // Close code editor if open — the terminals are about to change.
-    activeChallenge.value = null;
+    closeEditor();
 
     _removeMapComponents();
     await _loadMapComponents(map);
@@ -821,8 +868,12 @@ class TechWorld extends World with TapCallbacks {
       map.spawnPoint.x * gridSquareSizeDouble,
       map.spawnPoint.y * gridSquareSizeDouble,
     );
+    playerGridPosition.value = map.spawnPoint;
 
     currentMap.value = map;
+
+    // Notify the bot about the new map layout
+    _liveKitService?.publishMapInfo(map);
   }
 
   @override
@@ -832,28 +883,42 @@ class TechWorld extends World with TapCallbacks {
     int miniGridX = (worldPosition.x / gridSquareSize).floor();
     int miniGridY = (worldPosition.y / gridSquareSize).floor();
 
-    _pathComponent.calculatePath(
+    final pathComponent = _pathComponent;
+    if (pathComponent == null) return;
+
+    pathComponent.calculatePath(
         start: _userPlayerComponent.miniGridTuple, end: (miniGridX, miniGridY));
 
     _userPlayerComponent.move(
-        _pathComponent.directions, _pathComponent.largeGridPoints);
+        pathComponent.directions, pathComponent.largeGridPoints);
 
     // Publish position via LiveKit data channel
     _liveKitService?.publishPosition(
-      points: _pathComponent.largeGridPoints,
-      directions: _pathComponent.directions,
+      points: pathComponent.largeGridPoints,
+      directions: pathComponent.directions,
     );
   }
 
   /// Handle terminal interaction - check proximity before opening editor.
-  void _onTerminalInteract(Point<int> terminalPos, String challengeId) {
+  void _onTerminalInteract(Point<int> terminalPos, Challenge challenge) {
     final playerGrid = _userPlayerComponent.miniGridPosition;
     final distance = max(
       (terminalPos.x - playerGrid.x).abs(),
       (terminalPos.y - playerGrid.y).abs(),
     );
     if (distance <= _terminalProximityThreshold) {
-      activeChallenge.value = challengeId;
+      activeChallenge.value = challenge.id;
+      activeTerminalPosition.value = terminalPos;
+
+      // Notify the bot that we opened a terminal editor.
+      _liveKitService?.publishTerminalActivity(
+        action: 'open',
+        challengeId: challenge.id,
+        challengeTitle: challenge.title,
+        challengeDescription: challenge.description,
+        terminalX: terminalPos.x,
+        terminalY: terminalPos.y,
+      );
     } else {
       _showHint(
         'Walk closer to use this terminal',
@@ -937,6 +1002,7 @@ class TechWorld extends World with TapCallbacks {
   void dispose() {
     _authStateChangesSubscription?.cancel();
     activeChallenge.dispose();
+    activeTerminalPosition.dispose();
     mapEditorActive.dispose();
     currentMap.dispose();
     _disconnectFromLiveKit();

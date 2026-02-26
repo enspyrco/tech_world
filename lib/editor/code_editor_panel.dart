@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:re_highlight/languages/dart.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/lsp_config.dart';
+import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 
 /// Panel that displays a code editor for a coding challenge.
@@ -12,6 +13,7 @@ class CodeEditorPanel extends StatefulWidget {
     required this.challenge,
     required this.onClose,
     required this.onSubmit,
+    this.onHelpRequest,
     this.isCompleted = false,
     super.key,
   });
@@ -19,6 +21,10 @@ class CodeEditorPanel extends StatefulWidget {
   final Challenge challenge;
   final VoidCallback onClose;
   final void Function(String code) onSubmit;
+
+  /// Callback to request a hint from Clawd. Returns the hint text, or null
+  /// if the request failed or timed out.
+  final Future<String?> Function(String code)? onHelpRequest;
 
   /// Whether this challenge has already been completed.
   final bool isCompleted;
@@ -32,6 +38,19 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
   late final String _fileUri;
 
   static const _clawdOrange = Color(0xFFD97757);
+  static const _hintLabelStyle = TextStyle(
+    color: _clawdOrange,
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+  );
+  static const _hintTextStyle = TextStyle(
+    color: Color(0xFFBDBDBD), // Colors.grey[300]
+    fontSize: 13,
+    height: 1.4,
+  );
+
+  String? _hintText;
+  bool _isRequesting = false;
 
   @override
   void initState() {
@@ -79,6 +98,23 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
   void _handleSubmit() {
     final code = _controller.text;
     widget.onSubmit(code);
+  }
+
+  Future<void> _handleHelpRequest() async {
+    if (_isRequesting || widget.onHelpRequest == null) return;
+
+    setState(() => _isRequesting = true);
+
+    final hint = await widget.onHelpRequest!(_controller.text);
+
+    // Guard against the widget being disposed while awaiting the hint
+    // (e.g. player closed the editor).
+    if (!mounted) return;
+
+    setState(() {
+      _isRequesting = false;
+      if (hint != null) _hintText = hint;
+    });
   }
 
   @override
@@ -196,6 +232,57 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
             ),
           ),
 
+          // Hint section — slides open when a hint arrives
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: _hintText != null
+                ? Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF252525),
+                      border: Border(
+                        bottom: BorderSide(color: Color(0xFF3D3D3D)),
+                        left: BorderSide(color: _clawdOrange, width: 3),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Clawd's hint:",
+                                style: _hintLabelStyle,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _hintText!,
+                                style: _hintTextStyle,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () =>
+                              setState(() => _hintText = null),
+                          icon: const Icon(Icons.close, size: 16),
+                          color: Colors.grey[500],
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                            minWidth: 24,
+                            minHeight: 24,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+
           // Code editor
           Expanded(
             child: CodeForgeWeb(
@@ -212,7 +299,7 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
             ),
           ),
 
-          // Footer with submit button
+          // Footer with help and submit buttons
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
@@ -222,8 +309,47 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
               ),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                // Help button — left side
+                if (widget.onHelpRequest != null)
+                  ValueListenableBuilder<BotStatus>(
+                    valueListenable: botStatusNotifier,
+                    builder: (context, botStatus, _) {
+                      final enabled =
+                          !_isRequesting && botStatus != BotStatus.absent;
+                      return TextButton.icon(
+                        onPressed: enabled ? _handleHelpRequest : null,
+                        icon: _isRequesting
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: _clawdOrange,
+                                ),
+                              )
+                            : Icon(
+                                Icons.lightbulb_outline,
+                                size: 16,
+                                color: enabled
+                                    ? _clawdOrange
+                                    : Colors.grey[600],
+                              ),
+                        label: Text(
+                          _isRequesting
+                              ? 'Clawd is coming...'
+                              : "Help, I'm stuck",
+                          style: TextStyle(
+                            color: enabled
+                                ? _clawdOrange
+                                : Colors.grey[600],
+                            fontSize: 13,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                const Spacer(),
                 TextButton(
                   onPressed: widget.onClose,
                   child: Text(

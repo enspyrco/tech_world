@@ -6,7 +6,14 @@ import 'package:tech_world/utils/locator.dart';
 class AuthMenu extends StatelessWidget {
   final String displayName;
 
-  const AuthMenu({super.key, required this.displayName});
+  /// Called when the user taps "Change Avatar". If null, the item is hidden.
+  final VoidCallback? onChangeAvatar;
+
+  const AuthMenu({
+    super.key,
+    required this.displayName,
+    this.onChangeAvatar,
+  });
 
   String get _initials {
     if (displayName.isEmpty) return '?';
@@ -57,6 +64,17 @@ class AuthMenu extends StatelessWidget {
           ),
         ),
         const PopupMenuDivider(),
+        if (onChangeAvatar != null)
+          const PopupMenuItem<String>(
+            value: 'avatar',
+            child: Row(
+              children: [
+                Icon(Icons.face, size: 20),
+                SizedBox(width: 8),
+                Text('Change Avatar'),
+              ],
+            ),
+          ),
         const PopupMenuItem<String>(
           value: 'signout',
           child: Row(
@@ -69,7 +87,9 @@ class AuthMenu extends StatelessWidget {
         ),
       ],
       onSelected: (value) async {
-        if (value == 'signout') {
+        if (value == 'avatar') {
+          onChangeAvatar?.call();
+        } else if (value == 'signout') {
           await locate<AuthService>().signOut();
         }
       },

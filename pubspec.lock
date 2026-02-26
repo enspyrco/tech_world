@@ -189,8 +189,8 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "feat/alt-arrow-word-navigation"
-      resolved-ref: "06f065e17e2e150f3820b83334f56b53deb1b5f1"
+      ref: "51f0e2b"
+      resolved-ref: "51f0e2bcdd197b9cef505555907257d085f27eaa"
       url: "https://github.com/nickmeinhold/code_forge_web.git"
     source: git
     version: "1.4.1"

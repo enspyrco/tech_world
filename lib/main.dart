@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +11,7 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/avatar_selection_screen.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
+import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/editor/challenge.dart';
@@ -22,8 +25,10 @@ import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
+import 'package:tech_world/rooms/room_browser.dart';
+import 'package:tech_world/rooms/room_data.dart';
+import 'package:tech_world/rooms/room_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
-import 'package:tech_world/widgets/map_selector.dart';
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -50,15 +55,35 @@ class _MyAppState extends State<MyApp> {
   ProgressService? _progressService;
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
+  final ValueNotifier<String?> _activeDmPeer = ValueNotifier<String?>(null);
+  ChatMessageRepository? _chatMessageRepository;
   bool _liveKitConnectionFailed = false;
+
+  /// The room ID currently being joined, or null when not joining.
+  String? _joiningRoomId;
+
+  /// Drift timer that slowly creeps progress between discrete steps.
+  Timer? _progressDriftTimer;
+
   Avatar? _selectedAvatar;
   bool _avatarLoaded = false;
   String? _currentUserId;
+  String _currentDisplayName = '';
+  RoomService? _roomService;
+
+  /// The room the user is currently inside. Null = lobby view.
+  RoomData? _currentRoom;
 
   @override
   void initState() {
     super.initState();
     _initializeApp();
+  }
+
+  @override
+  void dispose() {
+    _progressDriftTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _initializeApp() async {
@@ -120,29 +145,26 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _onAuthStateChanged(AuthUser user) async {
     if (user is SignedOutUser) {
-      // User signed out - disconnect LiveKit
-      _liveKitService?.dispose();
-      _chatService?.dispose();
-      _proximityService?.dispose();
+      // User signed out — tear down everything.
+      await _leaveRoom();
       _progressService?.dispose();
-      _liveKitService = null;
-      _chatService = null;
-      _proximityService = null;
       _progressService = null;
+      Locator.remove<ProgressService>();
+      _roomService = null;
+      Locator.remove<RoomService>();
       _liveKitConnectionFailed = false;
       _selectedAvatar = null;
       _avatarLoaded = false;
       _currentUserId = null;
-      Locator.remove<LiveKitService>();
-      Locator.remove<ChatService>();
-      Locator.remove<ProximityService>();
-      Locator.remove<ProgressService>();
-      debugPrint('User signed out - LiveKit disconnected');
-      setState(() {}); // Trigger rebuild to remove overlay
+      _currentDisplayName = '';
+      _currentRoom = null;
+      debugPrint('User signed out - cleaned up');
+      setState(() {});
     } else {
-      // User signed in - create and connect LiveKit
+      // User signed in — set up profile & services, show lobby.
       debugPrint('User signed in: ${user.id} (${user.displayName})');
       _currentUserId = user.id;
+      _currentDisplayName = user.displayName;
 
       // Load saved avatar from Firestore
       try {
@@ -162,48 +184,233 @@ class _MyAppState extends State<MyApp> {
         await _progressService!.loadProgress();
       } catch (e) {
         debugPrint('Failed to load progress: $e');
-        // Continue — terminals will render as incomplete, which is safe.
       }
       Locator.add<ProgressService>(_progressService!);
+      locate<TechWorld>().refreshTerminalStates();
 
-      _liveKitService = LiveKitService(
-        userId: user.id,
-        displayName: user.displayName,
-        roomName: 'tech-world',
+      // Register RoomService for the lobby.
+      _roomService = RoomService();
+      Locator.add<RoomService>(_roomService!);
+
+      setState(() {}); // Show lobby (or avatar picker first).
+    }
+  }
+
+  /// Sets progress to [target] with [message], then starts a drift timer that
+  /// slowly creeps progress forward to give continuous visual motion.
+  void _setJoinStep(double target, String message) {
+    _progressDriftTimer?.cancel();
+    setState(() {
+      _progress = target;
+      _loadingMessage = message;
+    });
+
+    final ceiling = (target + 0.15).clamp(0.0, 0.99);
+    _progressDriftTimer = Timer.periodic(
+      const Duration(milliseconds: 150),
+      (_) {
+        if (_progress != null && _progress! < ceiling) {
+          setState(() {
+            _progress = (_progress! + 0.003).clamp(0.0, ceiling);
+          });
+        }
+      },
+    );
+  }
+
+  /// Join a room — load map and connect to LiveKit, with progress feedback.
+  ///
+  /// Progress is shown inline on the tapped room card. [_currentRoom] is set
+  /// at the end so the lobby stays visible throughout.
+  Future<void> _joinRoom(RoomData room) async {
+    final userId = _currentUserId;
+    if (userId == null) return;
+
+    setState(() => _joiningRoomId = room.id);
+    _setJoinStep(0.15, 'Loading map\u2026');
+
+    try {
+      _mapEditorState.setRoomId(room.id);
+
+      // Load the room's map into the game world.
+      await locate<TechWorld>().loadMap(room.mapData);
+
+      _setJoinStep(0.35, 'Connecting to server\u2026');
+
+      await _setupLiveKit(
+        room.id,
+        userId,
+        _currentDisplayName,
+        onProgress: _setJoinStep,
       );
 
-      _chatService = ChatService(liveKitService: _liveKitService!);
-      _proximityService = ProximityService();
+      _progressDriftTimer?.cancel();
+      setState(() {
+        _loadingMessage = 'Ready!';
+        _progress = 1.0;
+      });
 
-      Locator.add<LiveKitService>(_liveKitService!);
-      Locator.add<ChatService>(_chatService!);
-      Locator.add<ProximityService>(_proximityService!);
+      // Brief delay to show completion before switching to the game view.
+      await Future.delayed(const Duration(milliseconds: 300));
 
-      // Connect to LiveKit
-      final connected = await _liveKitService!.connect();
-      debugPrint('LiveKit connected: $connected');
-
-      if (connected) {
-        // Tell TechWorld to set up LiveKit subscriptions now that the
-        // service is registered and connected. TechWorld's own auth
-        // listener fires before this point, so its initial attempt
-        // to locate LiveKitService will have failed.
-        await locate<TechWorld>().connectToLiveKit(user.id, user.displayName);
-
-        // Enable camera and microphone
-        await _liveKitService!.setCameraEnabled(true);
-        await _liveKitService!.setMicrophoneEnabled(true);
-      } else {
-        _liveKitConnectionFailed = true;
-      }
-
-      // Apply saved avatar to game world
-      if (_selectedAvatar != null) {
-        locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
-      }
-
-      setState(() {}); // Trigger rebuild to show overlay
+      // Now transition to the game — this hides the lobby.
+      setState(() => _currentRoom = room);
+    } finally {
+      _progressDriftTimer?.cancel();
+      setState(() => _joiningRoomId = null);
     }
+  }
+
+  /// Create LiveKit, Chat, and Proximity services, connect, and enable media.
+  ///
+  /// Sets [_liveKitConnectionFailed] on failure so the UI can show a banner.
+  /// Applies the saved avatar if one is selected.
+  ///
+  /// When [onProgress] is provided, it is called at key stages so the caller
+  /// can update a progress indicator (used by [_joinRoom]).
+  Future<void> _setupLiveKit(
+    String roomId,
+    String userId,
+    String displayName, {
+    void Function(double progress, String message)? onProgress,
+  }) async {
+    _liveKitService = LiveKitService(
+      userId: userId,
+      displayName: displayName,
+      roomName: roomId,
+    );
+    _chatMessageRepository = ChatMessageRepository();
+    _chatService = ChatService(
+      liveKitService: _liveKitService!,
+      repository: _chatMessageRepository,
+    );
+    _proximityService = ProximityService();
+
+    Locator.add<LiveKitService>(_liveKitService!);
+    Locator.add<ChatService>(_chatService!);
+    Locator.add<ProximityService>(_proximityService!);
+
+    final connected = await _liveKitService!.connect();
+    debugPrint('LiveKit connected to room $roomId: $connected');
+
+    if (connected) {
+      onProgress?.call(0.55, 'Setting up game world\u2026');
+      await locate<TechWorld>().connectToLiveKit(userId, displayName);
+
+      onProgress?.call(0.70, 'Enabling camera\u2026');
+      await _liveKitService!.setCameraEnabled(true);
+      await _liveKitService!.setMicrophoneEnabled(true);
+
+      onProgress?.call(0.85, 'Loading chat history\u2026');
+      await _chatService!.loadHistory(roomId);
+    } else {
+      _liveKitConnectionFailed = true;
+    }
+
+    // Apply saved avatar to game world.
+    if (_selectedAvatar != null) {
+      locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
+    }
+  }
+
+  /// Leave the current room — disconnect LiveKit and return to lobby.
+  Future<void> _leaveRoom() async {
+    if (_currentRoom == null) return;
+
+    _liveKitService?.dispose();
+    _chatService?.dispose();
+    _proximityService?.dispose();
+    _liveKitService = null;
+    _chatService = null;
+    _chatMessageRepository = null;
+    _proximityService = null;
+    _activeDmPeer.value = null;
+    _liveKitConnectionFailed = false;
+    Locator.remove<LiveKitService>();
+    Locator.remove<ChatService>();
+    Locator.remove<ProximityService>();
+    _currentRoom = null;
+    _mapEditorState.setRoomId(null);
+
+    // Exit editor mode if active.
+    final techWorld = locate<TechWorld>();
+    if (techWorld.mapEditorActive.value) {
+      await techWorld.exitEditorMode();
+    }
+
+    setState(() {});
+  }
+
+  /// Create a new room — enter editor with empty map, then save.
+  Future<void> _onCreateRoom() async {
+    // Jump into a temporary "new room" in the game with a blank map
+    // and open the editor. The save button will create the Firestore doc.
+    _mapEditorState.clearAll();
+    _mapEditorState.setRoomId(null);
+    _mapEditorState.setMapName('New Room');
+    _mapEditorState.setMapId('new_room');
+
+    // Use a transient room so the user can see the editor.
+    // We load the blank map into the game world.
+    final blankMap = _mapEditorState.toGameMap();
+    _currentRoom = RoomData(
+      id: '',
+      name: 'New Room',
+      ownerId: _currentUserId ?? '',
+      ownerDisplayName: _currentDisplayName,
+      mapData: blankMap,
+    );
+
+    await locate<TechWorld>().loadMap(blankMap);
+    locate<TechWorld>().enterEditorMode(_mapEditorState);
+
+    setState(() {});
+  }
+
+  /// Save the current editor state as a room. Creates a new room or updates existing.
+  Future<void> _saveRoom() async {
+    final userId = _currentUserId;
+    if (userId == null || _roomService == null) return;
+
+    final gameMap = _mapEditorState.toGameMap();
+
+    if (_mapEditorState.roomId != null && _mapEditorState.roomId!.isNotEmpty) {
+      // Update existing room.
+      await _roomService!.updateRoomMap(_mapEditorState.roomId!, gameMap);
+      await _roomService!.updateRoomName(
+        _mapEditorState.roomId!,
+        _mapEditorState.mapName,
+      );
+      // Update local state.
+      _currentRoom = _currentRoom?.copyWith(
+        name: _mapEditorState.mapName,
+        mapData: gameMap,
+      );
+    } else {
+      // Create new room.
+      final room = await _roomService!.createRoom(
+        name: _mapEditorState.mapName,
+        ownerId: userId,
+        ownerDisplayName: _currentDisplayName,
+        map: gameMap,
+      );
+      _mapEditorState.setRoomId(room.id);
+      _currentRoom = room;
+
+      // Now connect LiveKit for the new room.
+      if (_liveKitService == null) {
+        await _setupLiveKit(room.id, userId, _currentDisplayName);
+      }
+    }
+
+    setState(() {});
+  }
+
+  /// Resets avatar selection so the user can pick a new one.
+  void _changeAvatar() {
+    setState(() {
+      _selectedAvatar = null;
+    });
   }
 
   /// Called when the user confirms an avatar choice from the selection screen.
@@ -245,29 +452,7 @@ class _MyAppState extends State<MyApp> {
               children: [
                 Row(
                   children: [
-                    Visibility(
-                      visible: constraints.maxWidth >= 1200,
-                      child: Expanded(
-                        child: Container(
-                          height: double.infinity,
-                          color: Theme.of(context).colorScheme.primary,
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'Welcome to Tech World',
-                                  style:
-                                      Theme.of(context).textTheme.headlineMedium,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                     Expanded(
-                      flex: 2,
                       child: StreamBuilder<AuthUser>(
                         stream: locate<AuthService>().authStateChanges,
                         builder: (context, snapshot) {
@@ -281,6 +466,22 @@ class _MyAppState extends State<MyApp> {
                             if (_avatarLoaded && _selectedAvatar == null) {
                               return AvatarSelectionScreen(
                                 onAvatarSelected: _onAvatarSelected,
+                              );
+                            }
+                            // Show room browser (lobby) if not in a room
+                            if (_currentRoom == null && _roomService != null) {
+                              return RoomBrowser(
+                                roomService: _roomService!,
+                                userId: _currentUserId!,
+                                onJoinRoom: _joinRoom,
+                                onCreateRoom: _onCreateRoom,
+                                joiningRoomId: _joiningRoomId,
+                                joinProgress: _joiningRoomId != null
+                                    ? _progress
+                                    : null,
+                                joinMessage: _joiningRoomId != null
+                                    ? _loadingMessage
+                                    : null,
                               );
                             }
                             return Stack(
@@ -303,12 +504,15 @@ class _MyAppState extends State<MyApp> {
                         },
                       ),
                     ),
-                    // Side panel - map editor or chat
+                    // Side panel - map editor or chat (hidden in lobby and
+                    // during avatar selection)
                     StreamBuilder<AuthUser>(
                       stream: locate<AuthService>().authStateChanges,
                       builder: (context, snapshot) {
                         if (!snapshot.hasData ||
-                            snapshot.data is SignedOutUser) {
+                            snapshot.data is SignedOutUser ||
+                            _currentRoom == null ||
+                            _selectedAvatar == null) {
                           return const SizedBox.shrink();
                         }
                         final techWorld = locate<TechWorld>();
@@ -316,12 +520,19 @@ class _MyAppState extends State<MyApp> {
                           valueListenable: techWorld.mapEditorActive,
                           builder: (context, editorActive, _) {
                             if (editorActive) {
+                              final canEdit = _currentRoom != null &&
+                                  _currentUserId != null &&
+                                  _currentRoom!.canEdit(_currentUserId!);
                               return SizedBox(
                                 width: constraints.maxWidth >= 800 ? 480 : 360,
                                 child: MapEditorPanel(
                                   state: _mapEditorState,
                                   onClose: techWorld.exitEditorMode,
                                   referenceMap: techWorld.currentMap.value,
+                                  playerPosition:
+                                      techWorld.playerGridPosition,
+                                  onSave: canEdit ? _saveRoom : null,
+                                  canEdit: canEdit,
                                 ),
                               );
                             }
@@ -349,19 +560,68 @@ class _MyAppState extends State<MyApp> {
                                       child: Padding(
                                         padding:
                                             const EdgeInsets.only(top: 12),
-                                        child: IconButton(
-                                          onPressed: () =>
-                                              _chatCollapsed.value = false,
-                                          icon:
-                                              const Icon(Icons.chat_bubble),
-                                          color: const Color(0xFFD97757),
-                                          tooltip: 'Open chat',
-                                          style: IconButton.styleFrom(
-                                            backgroundColor:
-                                                const Color(0xFFD97757)
-                                                    .withValues(
-                                                        alpha: 0.1),
-                                          ),
+                                        child: ValueListenableBuilder<int>(
+                                          valueListenable: chatService
+                                              .totalUnreadNotifier,
+                                          builder:
+                                              (context, unread, child) {
+                                            return Stack(
+                                              clipBehavior: Clip.none,
+                                              children: [
+                                                IconButton(
+                                                  onPressed: () =>
+                                                      _chatCollapsed
+                                                          .value = false,
+                                                  icon: const Icon(
+                                                      Icons.chat_bubble),
+                                                  color: const Color(
+                                                      0xFFD97757),
+                                                  tooltip: 'Open chat',
+                                                  style: IconButton
+                                                      .styleFrom(
+                                                    backgroundColor:
+                                                        const Color(
+                                                                0xFFD97757)
+                                                            .withValues(
+                                                                alpha:
+                                                                    0.1),
+                                                  ),
+                                                ),
+                                                if (unread > 0)
+                                                  Positioned(
+                                                    top: -2,
+                                                    right: -2,
+                                                    child: Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 5,
+                                                          vertical: 1),
+                                                      decoration:
+                                                          BoxDecoration(
+                                                        color: const Color(
+                                                            0xFFD97757),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(
+                                                                    10),
+                                                      ),
+                                                      child: Text(
+                                                        '$unread',
+                                                        style:
+                                                            const TextStyle(
+                                                          color:
+                                                              Colors.white,
+                                                          fontSize: 10,
+                                                          fontWeight:
+                                                              FontWeight
+                                                                  .bold,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            );
+                                          },
                                         ),
                                       ),
                                     ),
@@ -371,10 +631,19 @@ class _MyAppState extends State<MyApp> {
                                   width: constraints.maxWidth >= 800
                                       ? 320
                                       : 280,
-                                  child: ChatPanel(
-                                    chatService: chatService,
-                                    onCollapse: () =>
-                                        _chatCollapsed.value = true,
+                                  child: ValueListenableBuilder<String?>(
+                                    valueListenable: _activeDmPeer,
+                                    builder: (context, dmPeer, _) {
+                                      return ChatPanel(
+                                        chatService: chatService,
+                                        liveKitService: _liveKitService!,
+                                        onCollapse: () =>
+                                            _chatCollapsed.value = true,
+                                        initialDmPeerId: dmPeer,
+                                        onDmPeerConsumed: () =>
+                                            _activeDmPeer.value = null,
+                                      );
+                                    },
                                   ),
                                 );
                               },
@@ -385,11 +654,15 @@ class _MyAppState extends State<MyApp> {
                     ),
                   ],
                 ),
-                // Auth menu + map editor button - top right when authenticated
+                // Toolbar — top right when in a room (hidden during avatar
+                // selection)
                 StreamBuilder<AuthUser>(
                   stream: locate<AuthService>().authStateChanges,
                   builder: (context, snapshot) {
-                    if (!snapshot.hasData || snapshot.data is SignedOutUser) {
+                    if (!snapshot.hasData ||
+                        snapshot.data is SignedOutUser ||
+                        _currentRoom == null ||
+                        _selectedAvatar == null) {
                       return const SizedBox.shrink();
                     }
                     return ValueListenableBuilder<bool>(
@@ -412,7 +685,44 @@ class _MyAppState extends State<MyApp> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            MapSelector(techWorld: locate<TechWorld>()),
+                            // Leave room button
+                            IconButton(
+                              onPressed: _leaveRoom,
+                              icon: const Icon(Icons.arrow_back,
+                                  color: Colors.white70, size: 20),
+                              tooltip: 'Leave room',
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.black54,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Room name indicator
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.meeting_room,
+                                      color: Colors.white70, size: 16),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _currentRoom?.name ?? '',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                             const SizedBox(width: 8),
                             _MapEditorButton(
                               mapEditorState: _mapEditorState,
@@ -421,6 +731,7 @@ class _MyAppState extends State<MyApp> {
                             const SizedBox(width: 8),
                             AuthMenu(
                               displayName: snapshot.data!.displayName,
+                              onChangeAvatar: _changeAvatar,
                             ),
                           ],
                         ),
@@ -434,7 +745,10 @@ class _MyAppState extends State<MyApp> {
                 StreamBuilder<AuthUser>(
                   stream: locate<AuthService>().authStateChanges,
                   builder: (context, snapshot) {
-                    if (!snapshot.hasData || snapshot.data is SignedOutUser) {
+                    if (!snapshot.hasData ||
+                        snapshot.data is SignedOutUser ||
+                        _currentRoom == null ||
+                        _selectedAvatar == null) {
                       return const SizedBox.shrink();
                     }
                     final techWorld = locate<TechWorld>();
@@ -456,6 +770,22 @@ class _MyAppState extends State<MyApp> {
                           challenge: challenge,
                           isCompleted: isCompleted,
                           onClose: techWorld.closeEditor,
+                          onHelpRequest: (code) async {
+                            final chatService =
+                                Locator.maybeLocate<ChatService>();
+                            if (chatService == null) return null;
+
+                            final terminalPos =
+                                techWorld.activeTerminalPosition.value;
+                            return chatService.requestHelp(
+                              challengeId: challenge.id,
+                              challengeTitle: challenge.title,
+                              challengeDescription: challenge.description,
+                              code: code,
+                              terminalX: terminalPos?.x ?? 0,
+                              terminalY: terminalPos?.y ?? 0,
+                            );
+                          },
                           onSubmit: (code) async {
                             // Close the editor immediately so the player
                             // returns to the game while waiting for Clawd.
@@ -546,9 +876,9 @@ class _MapEditorButton extends StatelessWidget {
       valueListenable: techWorld.mapEditorActive,
       builder: (context, active, _) {
         return IconButton(
-          onPressed: () {
+          onPressed: () async {
             if (active) {
-              techWorld.exitEditorMode();
+              await techWorld.exitEditorMode();
             } else {
               techWorld.enterEditorMode(mapEditorState);
             }
@@ -579,12 +909,14 @@ class _CodeEditorModal extends StatelessWidget {
     required this.isCompleted,
     required this.onClose,
     required this.onSubmit,
+    this.onHelpRequest,
   });
 
   final Challenge challenge;
   final bool isCompleted;
   final VoidCallback onClose;
   final void Function(String code) onSubmit;
+  final Future<String?> Function(String code)? onHelpRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -622,6 +954,7 @@ class _CodeEditorModal extends StatelessWidget {
                       isCompleted: isCompleted,
                       onClose: onClose,
                       onSubmit: onSubmit,
+                      onHelpRequest: onHelpRequest,
                     ),
                   ),
                 ),

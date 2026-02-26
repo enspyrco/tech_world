@@ -20,7 +20,9 @@ import 'package:tech_world/map_editor/tile_colors.dart';
 class MapPreviewComponent extends Component {
   MapPreviewComponent({required this.editorState}) {
     editorState.addListener(_invalidateCache);
-    _rebuildCache();
+    // Don't build cache here — findGame() is null before the component is
+    // mounted. The first render() call will trigger _rebuildCache() because
+    // _cachedPicture starts as null.
   }
 
   final MapEditorState editorState;
@@ -40,6 +42,15 @@ class MapPreviewComponent extends Component {
     // Try to get tileset registry for rendering tile sprites.
     final game = findGame() as TechWorldGame?;
     final registry = game?.tilesetRegistry;
+
+    // Render background image if selected and already loaded.
+    // Draw at native image size to match the normal game's SpriteComponent
+    // (which also renders at native size with no explicit size parameter).
+    final bgImage = editorState.backgroundImage;
+    if (bgImage != null && game != null && game.images.containsKey(bgImage)) {
+      final image = game.images.fromCache(bgImage);
+      canvas.drawImage(image, Offset.zero, paint);
+    }
 
     // Render floor tile layer first (below structure).
     if (registry != null) {

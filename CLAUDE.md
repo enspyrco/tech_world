@@ -79,7 +79,6 @@ Use `Locator.maybeLocate<T>()` for services that may not be registered yet.
 **Toolbar** (top-right when authenticated): `MapSelector` + map editor button + `AuthMenu`.
 
 **Responsive breakpoints:**
-- `>= 1200`: Welcome panel shown on left
 - `>= 800`: Side panels 480px (editor) / 320px (chat); below 800: 360px / 280px
 
 **Connection failure**: Orange banner at bottom-left when LiveKit connection fails.
@@ -115,9 +114,23 @@ Paint custom maps on the 50x50 grid with live preview in the game canvas.
 
 **Workflow:** Enter via toolbar button → `TechWorld.enterEditorMode()` shows `MapPreviewComponent`, hides barriers and wall occlusion → edit grid → export as ASCII or load existing maps → exit via button or map switch.
 
-### Wall Occlusion
+### Y-Based Depth Sorting (Occlusion)
 
-`WallOcclusionComponent` (`lib/flame/components/wall_occlusion_component.dart`) creates sprite overlays from the background PNG for walls. Each overlay extends 1 cell above a barrier and uses y-priority so characters walking behind walls are occluded. Only active for maps with a `backgroundImage`. Hidden during editor mode.
+All world-level components use the grid row (y index) as their Flame `priority`, so Flame's `World` sorts them back-to-front automatically:
+
+| Component | Priority | Source |
+|-----------|----------|--------|
+| `TileObjectLayerComponent` sprites | `y` (grid row) | `tile_object_layer_component.dart:52` |
+| `PlayerComponent` | `position.y.round() ~/ gridSquareSize` (updated per frame) | `player_component.dart:129` |
+| `WallOcclusionComponent` overlays | `barrier.y` | `wall_occlusion_component.dart:57` |
+
+**Result:** A player north of a wall (lower y) renders *behind* it; a player south (higher y) renders *in front*. Auto-barriers ensure the player can never occupy a wall cell, so there are no ambiguous same-cell ties.
+
+**`TileObjectLayerComponent`** — Sprites are injected into the parent `World` (not as children of the component) so they participate in the World's global priority sort alongside players and occlusion overlays.
+
+**`WallOcclusionComponent`** — Creates sprite overlays from the background PNG for walls. Each overlay extends 1 cell above a barrier. Only active for maps with a `backgroundImage`. Hidden during editor mode.
+
+**Edge case:** Multi-cell-tall objects would need height metadata, but the LimeZu tilesets avoid this by composing tall objects from multiple single-cell tiles, each with its own correct y-priority.
 
 ### Proximity Detection
 
@@ -237,7 +250,7 @@ gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-t
 2. `flutter analyze --fatal-infos`
 3. `flutter test --coverage` with **45% coverage threshold** on merge to main.
 
-**Excluded from coverage:** `video_frame_ffi.dart`, `video_frame_web_stub.dart`, `video_frame_web_v2_stub.dart`, `video_bubble_component.dart`, `auth_service.dart`.
+**Excluded from coverage:** `video_frame_ffi.dart`, `video_frame_web_stub.dart`, `video_frame_web_v2_stub.dart`, `video_bubble_component.dart`, `auth_service.dart`, `predefined_tilesets.dart`.
 
 ## Configuration Required
 
@@ -259,11 +272,34 @@ LIVEKIT_API_SECRET=<secret>
 
 ## Claude Bot (Clawd — AI Tutor)
 
-- **Source Code**: `../tech_world_bot/` — Node.js using `@livekit/agents` framework
-- **Deployment**: GCP Compute Engine (`tech-world-bot` instance)
+- **Source Code**: `../tech_world_bot/` — Node.js using `@livekit/agents` framework (v1.0+)
+- **Deployment**: GCP Compute Engine (`tech-world-bot` instance), managed by PM2
 - **Joins LiveKit**: As participant `bot-claude`, listens for `chat` topic messages
-- **Claude API**: Uses Claude 3.5 Haiku for fast, cost-effective responses
+- **Claude API**: Uses Claude Haiku 4.5 for fast, cost-effective responses
 - **Shared Chat**: All participants see all questions and answers
+
+### Agent Dispatch
+
+The bot uses the `@livekit/agents` SDK to register as a worker with LiveKit Cloud. LiveKit dispatches the bot to rooms via **token-based dispatch**: the Firebase Cloud Function (`retrieveLiveKitToken`) embeds a `RoomAgentDispatch` in every user's access token. When a user joins a room, LiveKit automatically dispatches the bot.
+
+**Why token-based dispatch?** LiveKit's automatic dispatch only fires for *new* rooms. The `tech-world` room has a 5-minute `empty_timeout`, so if users sign out and back in quickly, the room persists and automatic dispatch never triggers. Token-based dispatch ensures the bot is dispatched every time any user connects, regardless of room age.
+
+**If the bot disappears:** Check these in order:
+1. `pm2 logs tech-world-bot` — Is the worker registered? Look for `"registered worker"`.
+2. Room exists? Use LiveKit API: `POST /twirp/livekit.RoomService/ListRooms`
+3. Dispatch happening? Look for `"received job request"` and `"[Bot] Connected to room"` in logs.
+4. If worker registers but no dispatch, the `@livekit/agents` SDK version may be incompatible with LiveKit Cloud. Check `npm outdated @livekit/agents`.
+5. Manual dispatch (emergency): `POST /twirp/livekit.AgentDispatchService/CreateDispatch {"room": "tech-world"}`
+
+### Bot Presence Indicator
+
+`ChatService` tracks bot presence via LiveKit participant events (`participantJoined`/`participantLeft` for identity `bot-claude`). The `botStatusNotifier` (`ValueNotifier<BotStatus>`) drives UI state:
+
+- `BotStatus.absent` — Bot not in room. Chat panel shows "Clawd is offline" banner, input disabled.
+- `BotStatus.idle` — Bot connected, ready for messages.
+- `BotStatus.thinking` — Bot is processing a message (set on send, cleared on response).
+
+`sendMessage()` has a fast guard: if bot is absent, it immediately shows a system message instead of waiting for the 30-second timeout.
 
 ```bash
 # Check status
@@ -303,3 +339,25 @@ For ~50 concurrent users:
 | Ports | 443, 7881, UDP 50000-60000 |
 
 ARM64 compatible — can run on OCI free tier (4 OCPU / 24 GB Ampere).
+
+## Current Work
+
+### Recently completed: Animated tile rendering (#150, #153)
+
+Built native animated tile rendering instead of adopting `flame_tiled`. Water tiles in `ext_terrains` now animate via shared `AnimationTicker`s while static tiles stay in a cached `Picture`. PR #153 merged; follow-up review feedback (O(1) lookup index, double-lookup elimination, extracted `AnimationTicker` with tests) is on `fix/animated-tile-review-feedback`.
+
+### Next up: Auto-terrain brush (#151)
+
+**What:** A terrain brush for the map editor that automatically selects the correct edge/corner/transition tile based on neighboring tiles. Paint "water" and the brush picks the right water-to-grass edge tile for each cell.
+
+**Why this before #152 (automapping rules):** Auto-terrain handles tile *selection* (which sprite variant for this position), automapping handles tile *generation* (place shadows below walls, trim where floor meets wall). #152 explicitly depends on #151. Also, the bitmask neighbor-lookup algorithm is more satisfying to implement — it's the core of what makes `flame_tiled`/Tiled's Wangset system powerful, and building it natively means it integrates cleanly with our in-game editor.
+
+**Why native instead of flame_tiled:** The in-game editor is tightly coupled to our custom tile system (`TileLayerData`, `TileRef`, `TilesetRegistry`, `MapEditorState`). Adopting `flame_tiled` would mean either replacing the editor or maintaining two systems. Building auto-terrain natively keeps one unified system and is more educational for the meetup group.
+
+**Algorithm (Wang blob tileset, 8-bit bitmask):**
+1. For each cell, read 8 neighbors (Moore neighborhood)
+2. Encode as 8-bit bitmask (1 = same terrain, 0 = different/empty)
+3. Look up the bitmask in a `TerrainDef.bitmaskToTileIndex` map → get tile index
+4. On any paint/erase, re-evaluate the cell + all 8 neighbors
+
+**Claude's preference:** Start with the water terrain in `ext_terrains.png` — we already know those tiles from #153. Audit the tileset at full resolution to identify which tiles correspond to which bitmask positions (center, edges, outer corners, inner corners). The LimeZu tilesets likely follow the 47-tile blob pattern.

@@ -1,4 +1,5 @@
 import 'package:flame/sprite.dart';
+import 'package:tech_world/map_editor/map_editor_state.dart' show ActiveLayer;
 
 /// Metadata describing a tileset sprite sheet.
 ///
@@ -12,6 +13,8 @@ class Tileset {
     required this.tileSize,
     required this.columns,
     required this.rows,
+    this.barrierTileIndices = const {},
+    this.availableLayers = const {ActiveLayer.floor, ActiveLayer.objects},
   });
 
   /// Unique identifier used in [TileRef.tilesetId].
@@ -31,6 +34,23 @@ class Tileset {
 
   /// Number of tile rows in the sprite sheet.
   final int rows;
+
+  /// Tile indices within this tileset that represent solid/impassable objects.
+  ///
+  /// When a tile with one of these indices is painted on a visual layer, the
+  /// map editor can automatically create a barrier on the structure grid.
+  /// Defaults to empty (no tiles tagged).
+  final Set<int> barrierTileIndices;
+
+  /// Which editor layers this tileset should appear in.
+  ///
+  /// Defaults to both [ActiveLayer.floor] and [ActiveLayer.objects].
+  /// Floor-only tilesets (e.g. terrains) are hidden from the Objects tab,
+  /// and object-only tilesets (e.g. furniture) are hidden from the Floor tab.
+  final Set<ActiveLayer> availableLayers;
+
+  /// Whether [tileIndex] represents a solid, impassable tile.
+  bool isTileBarrier(int tileIndex) => barrierTileIndices.contains(tileIndex);
 
   /// Total number of tiles in the sheet.
   int get tileCount => columns * rows;

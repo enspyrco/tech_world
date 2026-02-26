@@ -5,6 +5,7 @@ import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/tile_map_format.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
+import 'package:tech_world/map_editor/terrain_grid.dart';
 
 void main() {
   group('TileMapFormat', () {
@@ -125,7 +126,62 @@ void main() {
       expect(map.tilesetIds, isEmpty);
       expect(map.floorLayer, isNull);
       expect(map.objectLayer, isNull);
+      expect(map.terrainGrid, isNull);
       expect(map.usesTilesets, isFalse);
+    });
+
+    test('serializes and deserializes terrain grid', () {
+      final terrainGrid = TerrainGrid();
+      terrainGrid.setTerrain(5, 10, 'water');
+      terrainGrid.setTerrain(6, 10, 'water');
+
+      final map = GameMap(
+        id: 'terrain_map',
+        name: 'Terrain Map',
+        barriers: const [],
+        terrainGrid: terrainGrid,
+      );
+
+      final json = TileMapFormat.toJson(map);
+      expect(json.containsKey('terrainGrid'), isTrue);
+      expect(json['terrainGrid'], hasLength(2));
+
+      final restored = TileMapFormat.fromJson(json);
+      expect(restored.terrainGrid, isNotNull);
+      expect(restored.terrainGrid!.terrainAt(5, 10), 'water');
+      expect(restored.terrainGrid!.terrainAt(6, 10), 'water');
+      expect(restored.terrainGrid!.terrainAt(0, 0), isNull);
+    });
+
+    test('omits terrainGrid from JSON when null', () {
+      const map = GameMap(
+        id: 'no_terrain',
+        name: 'No Terrain',
+        barriers: [],
+      );
+
+      final json = TileMapFormat.toJson(map);
+      expect(json.containsKey('terrainGrid'), isFalse);
+    });
+
+    test('terrain grid survives JSON string round-trip', () {
+      final terrainGrid = TerrainGrid();
+      terrainGrid.setTerrain(10, 20, 'water');
+      terrainGrid.setTerrain(11, 20, 'sand');
+
+      final map = GameMap(
+        id: 'terrain_roundtrip',
+        name: 'Terrain Round Trip',
+        barriers: const [],
+        terrainGrid: terrainGrid,
+      );
+
+      final jsonString = TileMapFormat.toJsonString(map);
+      final restored = TileMapFormat.fromJsonString(jsonString);
+
+      expect(restored.terrainGrid, isNotNull);
+      expect(restored.terrainGrid!.terrainAt(10, 20), 'water');
+      expect(restored.terrainGrid!.terrainAt(11, 20), 'sand');
     });
   });
 }

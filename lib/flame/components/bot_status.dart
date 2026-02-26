@@ -2,6 +2,9 @@ import 'package:flutter/foundation.dart';
 
 /// Status of the Claude bot for UI display.
 enum BotStatus {
+  /// Bot is not present in the LiveKit room.
+  absent,
+
   /// Bot is idle/sleeping - shows "zzz" indicator
   idle,
 
@@ -11,4 +14,4 @@ enum BotStatus {
 
 /// Global notifier for bot status changes.
 /// UI components can listen to this to update their display.
-final botStatusNotifier = ValueNotifier<BotStatus>(BotStatus.idle);
+final botStatusNotifier = ValueNotifier<BotStatus>(BotStatus.absent);

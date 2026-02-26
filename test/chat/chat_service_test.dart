@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
 import 'package:tech_world/chat/chat_message.dart';
+import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
@@ -409,7 +412,443 @@ void main() {
 
       expect(response, isNull);
     });
+
+    group('DM support', () {
+      test('sendDm publishes to dm topic with destinationIdentities', () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('peer-uid', 'Hey there!', peerDisplayName: 'Peer');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(fakeLiveKit.publishedMessages.length, equals(1));
+
+        final published = fakeLiveKit.publishedMessages.first;
+        expect(published['topic'], equals('dm'));
+        expect(
+          published['destinationIdentities'],
+          equals(['peer-uid']),
+        );
+
+        final payload = published['payload'] as Map<String, dynamic>;
+        expect(payload['text'], equals('Hey there!'));
+        expect(payload['senderName'], equals('Test User'));
+      });
+
+      test('sendDm adds message to correct DM conversation', () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('peer-uid', 'Hello', peerDisplayName: 'Peer');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'peer-uid',
+        );
+
+        final conversations = chatService.currentConversations;
+        final dmConv = conversations.firstWhere(
+          (c) => c.id == expectedConvId,
+        );
+        expect(dmConv.type, equals(ConversationType.dm));
+      });
+
+      test('receiving dm creates new conversation', () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Hey!',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'alice-uid',
+        );
+        final conversations = chatService.currentConversations;
+        expect(conversations.any((c) => c.id == expectedConvId), isTrue);
+      });
+
+      test('receiving dm increments unread when not active', () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Message 1',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'alice-uid',
+        );
+        final conv = chatService.currentConversations.firstWhere(
+          (c) => c.id == expectedConvId,
+        );
+        expect(conv.unreadCount, equals(1));
+      });
+
+      test('markConversationRead resets unread to zero', () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Unread message',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'alice-uid',
+        );
+
+        chatService.markConversationRead(expectedConvId);
+
+        final conv = chatService.currentConversations.firstWhere(
+          (c) => c.id == expectedConvId,
+        );
+        expect(conv.unreadCount, equals(0));
+      });
+
+      test('totalUnreadNotifier reflects sum of DM unreads', () async {
+        fakeLiveKit.connected = true;
+
+        // DM from Alice
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Hi',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        // DM from Bob
+        fakeLiveKit.simulateDm('bob-uid', {
+          'text': 'Hey',
+          'id': 'dm-2',
+          'senderName': 'Bob',
+          'senderId': 'bob-uid',
+        });
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(chatService.totalUnreadNotifier.value, equals(2));
+      });
+
+      test('lastDmMessageText returns last message text', () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('peer-uid', 'First', peerDisplayName: 'Peer');
+        await chatService.sendDm('peer-uid', 'Second', peerDisplayName: 'Peer');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'peer-uid',
+        );
+
+        expect(chatService.lastDmMessageText(expectedConvId), equals('Second'));
+      });
+
+      test('lastDmMessageText returns null for unknown conversation', () {
+        expect(chatService.lastDmMessageText('nonexistent'), isNull);
+      });
+
+      test('localUserId returns the LiveKit user ID', () {
+        expect(chatService.localUserId, equals('test-user-id'));
+      });
+
+      test('sendDm does nothing for empty text', () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('peer-uid', '', peerDisplayName: 'Peer');
+        await chatService.sendDm('peer-uid', '   ', peerDisplayName: 'Peer');
+
+        expect(fakeLiveKit.publishedMessages, isEmpty);
+      });
+
+      test('sendDm does nothing when not connected', () async {
+        fakeLiveKit.connected = false;
+
+        await chatService.sendDm('peer-uid', 'Hello', peerDisplayName: 'Peer');
+
+        expect(fakeLiveKit.publishedMessages, isEmpty);
+      });
+
+      test('dm messages stream emits for correct conversation', () async {
+        fakeLiveKit.connected = true;
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'alice-uid',
+        );
+
+        final dmMsgs = <List<ChatMessage>>[];
+        chatService.dmMessages('alice-uid').listen(dmMsgs.add);
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Hello via DM',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(dmMsgs.length, greaterThan(0));
+        expect(dmMsgs.last.first.text, equals('Hello via DM'));
+        expect(dmMsgs.last.first.conversationId, equals(expectedConvId));
+      });
+
+      test('conversations stream emits on new DM', () async {
+        fakeLiveKit.connected = true;
+
+        final convSnapshots = <List<Conversation>>[];
+        chatService.conversations.listen(convSnapshots.add);
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'New DM!',
+          'id': 'dm-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(convSnapshots.length, greaterThan(0));
+        expect(convSnapshots.last.length, greaterThanOrEqualTo(2)); // group + DM
+      });
+
+      test('receiving dm-response adds to DM conversation', () async {
+        fakeLiveKit.connected = true;
+
+        // First send a DM to the bot to create the conversation
+        await chatService.sendDm('bot-claude', 'Help me', peerDisplayName: 'Clawd');
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        // Simulate bot DM response
+        fakeLiveKit.simulateDmResponse('bot-claude', {
+          'text': 'Sure, here is help!',
+          'id': 'dm-resp-1',
+          'senderName': 'Clawd',
+          'senderId': 'bot-claude',
+        });
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        final expectedConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'bot-claude',
+        );
+        final conv = chatService.currentConversations.firstWhere(
+          (c) => c.id == expectedConvId,
+        );
+        expect(conv.type, equals(ConversationType.dm));
+      });
+    });
+
+    group('loadHistory (regression)', () {
+      test('does not throw when repository fails', () async {
+        final failingRepo = FailingChatMessageRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: failingRepo,
+        );
+        addTearDown(service.dispose);
+
+        // Should complete without throwing — room loading must not block.
+        await service.loadHistory('room-1');
+
+        // Service should still be functional after failed history load.
+        expect(service.currentMessages, isEmpty);
+      });
+
+      test('does not throw on timeout', () async {
+        final hangingRepo = HangingChatMessageRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: hangingRepo,
+          historyTimeout: const Duration(milliseconds: 100),
+        );
+        addTearDown(service.dispose);
+
+        // Should complete within the short timeout, not hang forever.
+        await expectLater(
+          service.loadHistory('room-1'),
+          completes,
+        );
+      });
+
+      test('emits conversations even when history load fails mid-loop',
+          () async {
+        final partialRepo = PartialThenHangingRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: partialRepo,
+          historyTimeout: const Duration(milliseconds: 100),
+        );
+        addTearDown(service.dispose);
+
+        final convSnapshots = <List<Conversation>>[];
+        service.conversations.listen(convSnapshots.add);
+
+        await service.loadHistory('room-1');
+        // Allow the async broadcast stream to deliver the event.
+        await Future<void>.delayed(Duration.zero);
+
+        // The finally block should have emitted conversations even though
+        // the second loadMessages call timed out.
+        expect(convSnapshots, isNotEmpty);
+        // The first DM conversation should have been loaded before timeout.
+        expect(
+          convSnapshots.last.any((c) => c.type == ConversationType.dm),
+          isTrue,
+        );
+      });
+
+      test('still allows sending messages after failed history load', () async {
+        final failingRepo = FailingChatMessageRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: failingRepo,
+        );
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+
+        // Service should work normally despite failed history load.
+        fakeLiveKit.connected = true;
+        botStatusNotifier.value = BotStatus.idle;
+        unawaited(service.sendMessage('Hello after failed history'));
+        await Future.delayed(const Duration(milliseconds: 10));
+
+        expect(service.currentMessages.length, equals(1));
+        expect(service.currentMessages.first.text,
+            equals('Hello after failed history'));
+      });
+    });
   });
+}
+
+/// A [ChatMessageRepository] that always throws, simulating Firestore failures.
+class FailingChatMessageRepository implements ChatMessageRepository {
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) {
+    throw Exception('Firestore unavailable');
+  }
+
+  @override
+  Future<List<ChatMessage>> loadMessages(
+    String roomId,
+    String conversationId, {
+    int limit = 100,
+  }) {
+    throw Exception('Firestore unavailable');
+  }
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {}
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+/// A [ChatMessageRepository] that never completes, simulating network hangs.
+class HangingChatMessageRepository implements ChatMessageRepository {
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) {
+    // Never completes — simulates a network hang.
+    return Completer<Set<String>>().future;
+  }
+
+  @override
+  Future<List<ChatMessage>> loadMessages(
+    String roomId,
+    String conversationId, {
+    int limit = 100,
+  }) {
+    return Completer<List<ChatMessage>>().future;
+  }
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {}
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+/// A [ChatMessageRepository] that returns one DM conversation successfully,
+/// then hangs on the second — simulating a mid-loop failure.
+class PartialThenHangingRepository implements ChatMessageRepository {
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) async {
+    return {'dm-conv-1', 'dm-conv-2'};
+  }
+
+  int _loadMessagesCallCount = 0;
+
+  @override
+  Future<List<ChatMessage>> loadMessages(
+    String roomId,
+    String conversationId, {
+    int limit = 100,
+  }) {
+    _loadMessagesCallCount++;
+    if (_loadMessagesCallCount == 1) {
+      // First conversation loads successfully.
+      return Future.value([
+        ChatMessage(
+          text: 'Hello from peer',
+          senderName: 'Peer',
+          senderId: 'peer-uid',
+          conversationId: conversationId,
+          timestamp: DateTime(2024),
+        ),
+      ]);
+    }
+    // Subsequent calls hang forever.
+    return Completer<List<ChatMessage>>().future;
+  }
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {}
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
 }
 
 /// Fake LiveKitService for testing
@@ -492,9 +931,41 @@ class FakeLiveKitService implements LiveKitService {
     ));
   }
 
+  /// Simulate an incoming DM from another user.
+  void simulateDm(String senderId, Map<String, dynamic> message) {
+    _dataReceivedController.add(DataChannelMessage(
+      senderId: senderId,
+      topic: 'dm',
+      data: utf8.encode(jsonEncode(message)),
+    ));
+  }
+
+  /// Simulate a DM response from the bot.
+  void simulateDmResponse(String senderId, Map<String, dynamic> message) {
+    _dataReceivedController.add(DataChannelMessage(
+      senderId: senderId,
+      topic: 'dm-response',
+      data: utf8.encode(jsonEncode(message)),
+    ));
+  }
+
+  final _participantJoinedController = StreamController<RemoteParticipant>.broadcast();
+  final _participantLeftController = StreamController<RemoteParticipant>.broadcast();
+
+  @override
+  Map<String, RemoteParticipant> get remoteParticipants => {};
+
+  @override
+  Stream<RemoteParticipant> get participantJoined => _participantJoinedController.stream;
+
+  @override
+  Stream<RemoteParticipant> get participantLeft => _participantLeftController.stream;
+
   @override
   void dispose() {
     _dataReceivedController.close();
+    _participantJoinedController.close();
+    _participantLeftController.close();
   }
 
   // Unused methods - just satisfy interface

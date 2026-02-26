@@ -55,6 +55,8 @@ class BotBubbleComponent extends PositionComponent {
   @override
   void render(Canvas canvas) {
     switch (_currentStatus) {
+      case BotStatus.absent:
+        return; // Nothing to render when bot is absent.
       case BotStatus.idle:
         _renderSleepingZzz(canvas);
       case BotStatus.thinking:
