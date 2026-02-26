@@ -44,9 +44,14 @@ class AuthService {
     if (credential.user == null) {
       _user = SignedOutUser(id: _user.id, displayName: _user.displayName);
     } else {
+      String displayName = credential.user!.displayName ?? '';
+      if (displayName.isEmpty) {
+        displayName =
+            await _userProfileService.getDisplayName(credential.user!.uid);
+      }
       _user = AuthUser(
         id: credential.user!.uid,
-        displayName: credential.user!.displayName ?? '',
+        displayName: displayName,
       );
     }
   }

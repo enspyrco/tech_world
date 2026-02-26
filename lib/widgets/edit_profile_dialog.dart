@@ -11,12 +11,10 @@ class EditProfileResult {
   const EditProfileResult({
     required this.displayName,
     this.profilePictureUrl,
-    this.pictureRemoved = false,
   });
 
   final String displayName;
   final String? profilePictureUrl;
-  final bool pictureRemoved;
 }
 
 /// Dialog for editing the user's display name and profile picture.
@@ -40,6 +38,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   late final TextEditingController _nameController;
   bool _saving = false;
   bool _uploadingPhoto = false;
+  String? _error;
 
   /// The new photo bytes picked by the user, or null if unchanged.
   Uint8List? _pendingPhotoBytes;
@@ -47,9 +46,6 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
   /// The current profile picture URL (may be updated after upload).
   String? _currentPhotoUrl;
-
-  /// Whether the user explicitly removed their photo.
-  bool _photoRemoved = false;
 
   @override
   void initState() {
@@ -75,28 +71,37 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   }
 
   Future<void> _pickPhoto() async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 512,
-      maxHeight: 512,
-      imageQuality: 85,
-    );
-    if (image == null) return;
+    try {
+      final picker = ImagePicker();
+      final image = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (image == null) return;
 
-    final bytes = await image.readAsBytes();
-    setState(() {
-      _pendingPhotoBytes = bytes;
-      _pendingPhotoMime = image.mimeType ?? 'image/jpeg';
-      _photoRemoved = false;
-    });
+      final bytes = await image.readAsBytes();
+      setState(() {
+        _pendingPhotoBytes = bytes;
+        _pendingPhotoMime = image.mimeType ?? 'image/jpeg';
+        _error = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Could not open photo library.');
+      }
+    }
   }
 
   Future<void> _save() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
 
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
@@ -127,8 +132,11 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         Navigator.of(context).pop(EditProfileResult(
           displayName: name,
           profilePictureUrl: newPhotoUrl,
-          pictureRemoved: _photoRemoved,
         ));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Failed to save profile. Please try again.');
       }
     } finally {
       if (mounted) setState(() { _saving = false; _uploadingPhoto = false; });
@@ -170,11 +178,11 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                       backgroundColor: Colors.blue,
                       backgroundImage: _pendingPhotoBytes != null
                           ? MemoryImage(_pendingPhotoBytes!)
-                          : (_currentPhotoUrl != null && !_photoRemoved
+                          : (_currentPhotoUrl != null
                               ? NetworkImage(_currentPhotoUrl!)
                               : null),
                       child: (_pendingPhotoBytes == null &&
-                              (_currentPhotoUrl == null || _photoRemoved))
+                              _currentPhotoUrl == null)
                           ? Text(
                               _initials,
                               style: const TextStyle(
@@ -247,6 +255,17 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                         style: TextStyle(color: Colors.white54, fontSize: 13),
                       ),
                     ],
+                  ),
+                ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Colors.red.shade300,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               Row(

@@ -25,26 +25,6 @@ class ProfilePictureService {
     return ref.getDownloadURL();
   }
 
-  /// Returns the download URL for a user's profile picture, or `null` if none
-  /// exists.
-  Future<String?> getProfilePictureUrl(String uid) async {
-    try {
-      // Try common extensions in order of likelihood.
-      for (final ext in ['jpg', 'png', 'webp', 'gif']) {
-        try {
-          final ref = _storage.ref('profile_pictures/$uid/profile.$ext');
-          return await ref.getDownloadURL();
-        } on FirebaseException catch (e) {
-          if (e.code == 'object-not-found') continue;
-          rethrow;
-        }
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   String _extensionFromMime(String mimeType) {
     return switch (mimeType) {
       'image/png' => 'png',

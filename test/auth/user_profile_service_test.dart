@@ -151,6 +151,66 @@ void main() {
         expect(displayName, equals('Fallback'));
       });
     });
+
+    group('saveProfilePictureUrl', () {
+      test('saves profile picture URL to Firestore', () async {
+        await service.saveProfilePictureUrl(
+          'user-pic',
+          'https://storage.example.com/photo.jpg',
+        );
+
+        final doc =
+            await fakeFirestore.collection('users').doc('user-pic').get();
+        expect(doc.exists, isTrue);
+        expect(doc.data()?['profilePictureUrl'],
+            equals('https://storage.example.com/photo.jpg'));
+        expect(doc.data()?['updatedAt'], isNotNull);
+      });
+
+      test('merges without overwriting existing fields', () async {
+        await service.saveUserProfile(
+          uid: 'user-merge-pic',
+          displayName: 'Keep This Name',
+        );
+
+        await service.saveProfilePictureUrl(
+          'user-merge-pic',
+          'https://storage.example.com/photo.jpg',
+        );
+
+        final doc =
+            await fakeFirestore.collection('users').doc('user-merge-pic').get();
+        expect(doc.data()?['displayName'], equals('Keep This Name'));
+        expect(doc.data()?['profilePictureUrl'],
+            equals('https://storage.example.com/photo.jpg'));
+      });
+    });
+
+    group('getUserProfile with profilePictureUrl', () {
+      test('returns profilePictureUrl when stored', () async {
+        await fakeFirestore.collection('users').doc('user-with-pic').set({
+          'displayName': 'Photo User',
+          'profilePictureUrl': 'https://storage.example.com/photo.jpg',
+        });
+
+        final profile = await service.getUserProfile('user-with-pic');
+
+        expect(profile, isNotNull);
+        expect(profile?.profilePictureUrl,
+            equals('https://storage.example.com/photo.jpg'));
+      });
+
+      test('returns null profilePictureUrl when not stored', () async {
+        await fakeFirestore.collection('users').doc('user-no-pic').set({
+          'displayName': 'No Photo',
+        });
+
+        final profile = await service.getUserProfile('user-no-pic');
+
+        expect(profile, isNotNull);
+        expect(profile?.profilePictureUrl, isNull);
+      });
+    });
   });
 
   group('UserProfile', () {
@@ -159,19 +219,23 @@ void main() {
         uid: 'test-uid',
         displayName: 'Test User',
         email: 'test@example.com',
+        profilePictureUrl: 'https://example.com/photo.jpg',
       );
 
       expect(profile.uid, equals('test-uid'));
       expect(profile.displayName, equals('Test User'));
       expect(profile.email, equals('test@example.com'));
+      expect(
+          profile.profilePictureUrl, equals('https://example.com/photo.jpg'));
     });
 
-    test('allows null displayName and email', () {
+    test('allows null displayName, email, and profilePictureUrl', () {
       const profile = UserProfile(uid: 'test-uid');
 
       expect(profile.uid, equals('test-uid'));
       expect(profile.displayName, isNull);
       expect(profile.email, isNull);
+      expect(profile.profilePictureUrl, isNull);
     });
   });
 }

@@ -425,8 +425,6 @@ class _MyAppState extends State<MyApp> {
         _currentDisplayName = result.displayName;
         if (result.profilePictureUrl != null) {
           _currentProfilePictureUrl = result.profilePictureUrl;
-        } else if (result.pictureRemoved) {
-          _currentProfilePictureUrl = null;
         }
       });
     }
