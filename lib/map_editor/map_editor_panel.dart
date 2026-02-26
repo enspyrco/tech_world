@@ -9,6 +9,7 @@ import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
+import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/map_editor/available_backgrounds.dart';
 import 'package:tech_world/map_editor/import_dialog.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
@@ -29,6 +30,7 @@ class MapEditorPanel extends StatelessWidget {
     this.playerPosition,
     this.onSave,
     this.canEdit = true,
+    this.savedRooms,
     super.key,
   });
 
@@ -46,6 +48,10 @@ class MapEditorPanel extends StatelessWidget {
 
   /// Whether the current user can edit (owner or editor). Controls paint tools.
   final bool canEdit;
+
+  /// User's saved rooms, shown in the "Load existing map" dropdown after
+  /// predefined maps.
+  final List<RoomData>? savedRooms;
 
   static const _headerBg = Color(0xFF2D2D2D);
   static const _panelBg = Color(0xFF1E1E1E);
@@ -254,7 +260,11 @@ class MapEditorPanel extends StatelessWidget {
           if (onSave != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: _SaveButton(onSave: onSave!, roomId: state.roomId),
+              child: _SaveButton(
+                onSave: onSave!,
+                roomId: state.roomId,
+                canEdit: canEdit,
+              ),
             ),
           // Generate procedural map
           _GenerateSection(state: state),
@@ -262,26 +272,60 @@ class MapEditorPanel extends StatelessWidget {
           // Load existing map dropdown
           SizedBox(
             width: double.infinity,
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<int>(
-                isExpanded: true,
-                hint: const Text('Load existing map...',
-                    style: TextStyle(color: Colors.grey, fontSize: 13)),
-                dropdownColor: _headerBg,
-                iconEnabledColor: Colors.grey,
-                items: [
-                  for (var i = 0; i < allMaps.length; i++)
-                    DropdownMenuItem(
-                      value: i,
-                      child: Text(allMaps[i].name,
+            child: PopupMenuButton<GameMap>(
+              offset: const Offset(0, -200),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+              onSelected: (map) => state.loadFromGameMap(map),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade700),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    Text('Load existing map...',
+                        style: TextStyle(
+                            color: Colors.grey.shade400, fontSize: 13)),
+                    const Spacer(),
+                    Icon(Icons.arrow_drop_down,
+                        color: Colors.grey.shade400, size: 18),
+                  ],
+                ),
+              ),
+              itemBuilder: (context) => [
+                for (final map in allMaps)
+                  PopupMenuItem<GameMap>(
+                    value: map,
+                    child: Text(map.name,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 13)),
+                  ),
+                if (savedRooms != null && savedRooms!.isNotEmpty) ...[
+                  const PopupMenuDivider(),
+                  const PopupMenuItem<GameMap>(
+                    enabled: false,
+                    height: 28,
+                    child: Text(
+                      'My Maps',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  for (final room in savedRooms!)
+                    PopupMenuItem<GameMap>(
+                      value: room.mapData,
+                      child: Text(room.name,
                           style: const TextStyle(
                               color: Colors.white, fontSize: 13)),
                     ),
                 ],
-                onChanged: (index) {
-                  if (index != null) state.loadFromGameMap(allMaps[index]);
-                },
-              ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
@@ -763,10 +807,18 @@ class _MapToolbarState extends State<_MapToolbar> {
 // ---------------------------------------------------------------------------
 
 class _SaveButton extends StatefulWidget {
-  const _SaveButton({required this.onSave, this.roomId});
+  const _SaveButton({
+    required this.onSave,
+    this.roomId,
+    this.canEdit = true,
+  });
 
   final Future<void> Function() onSave;
   final String? roomId;
+
+  /// Whether the user owns/can edit the current room. When false, saving
+  /// creates a fork (new room), so the label reflects that.
+  final bool canEdit;
 
   @override
   State<_SaveButton> createState() => _SaveButtonState();
@@ -803,7 +855,12 @@ class _SaveButtonState extends State<_SaveButton> {
 
   @override
   Widget build(BuildContext context) {
-    final label = widget.roomId != null ? 'Save Room' : 'Save as New Room';
+    final String label;
+    if (widget.roomId != null && widget.canEdit) {
+      label = 'Save Room';
+    } else {
+      label = 'Save as New Room';
+    }
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
