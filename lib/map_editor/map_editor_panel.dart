@@ -1026,7 +1026,7 @@ class _GridPainter extends CustomPainter {
         if (activeLayer == ActiveLayer.structure) {
           // Editable structure grid on top.
           final tile = state.tileAt(x, y);
-          if (tile != TileType.open) {
+          if (tile != TileType.open || referenceMap != null) {
             paint.color = _colorForTile(tile);
             canvas.drawRect(rect, paint);
           }

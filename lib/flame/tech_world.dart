@@ -780,13 +780,19 @@ class TechWorld extends World with TapCallbacks {
           SpriteComponent(sprite: Sprite(bgImage), priority: -2);
       add(_backgroundSprite!);
 
-      // Exclude auto-barriers from object tiles — those cells render their
-      // own sprites and shouldn't be covered by an opaque background slice.
-      final wallBarriers = map.objectLayer != null
-          ? map.barriers
-                .where((b) => map.objectLayer!.tileAt(b.x, b.y) == null)
-                .toList()
-          : map.barriers;
+      // Only create occlusion for north-facing barrier edges — barriers
+      // where the cell above is open. Interior barriers can't have a player
+      // above them, so their overlays just make the background hide the player.
+      final barrierSet = map.barriers.toSet();
+      final wallBarriers = map.barriers.where((b) {
+        // Skip barriers with object-layer tiles (they render own sprites).
+        if (map.objectLayer != null &&
+            map.objectLayer!.tileAt(b.x, b.y) != null) {
+          return false;
+        }
+        // Only keep north-facing edges (open cell above).
+        return !barrierSet.contains(Point(b.x, b.y - 1));
+      }).toList();
 
       _wallOcclusion = WallOcclusionComponent(
         backgroundImage: bgImage,

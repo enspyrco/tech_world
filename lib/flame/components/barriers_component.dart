@@ -69,7 +69,7 @@ class BarriersComponent extends PositionComponent with HasWorldReference {
         position: Vector2(_points[i].x * gridSquareSizeDouble,
             _points[i].y * gridSquareSizeDouble),
         size: Vector2.array([gridSquareSizeDouble, gridSquareSizeDouble]),
-        anchor: Anchor.center,
+        anchor: Anchor.topLeft,
         paint: Paint()..color = _paint.color,
       );
       _rectangles.add(rect);

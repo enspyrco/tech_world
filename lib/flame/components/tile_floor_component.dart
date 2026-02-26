@@ -16,7 +16,7 @@ import 'package:tech_world/flame/tiles/tileset_registry.dart';
 /// animation play in sync (standard for pixel-art water, lava, etc.).
 ///
 /// Priority is -1, placing it above the background image layer (-2) but below
-/// all game objects (which use y-index priorities starting at 0).
+/// all game objects (priority >= 0).
 class TileFloorComponent extends Component {
   TileFloorComponent({
     required this.layerData,

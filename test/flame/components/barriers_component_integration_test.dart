@@ -80,9 +80,9 @@ void main() {
         final rectangles =
             game.world.children.whereType<RectangleComponent>().toList();
 
-        // Each barrier should have center anchor
+        // Each barrier should have topLeft anchor so they align with the grid
         for (final rect in rectangles) {
-          expect(rect.anchor, equals(Anchor.center));
+          expect(rect.anchor, equals(Anchor.topLeft));
         }
       },
     );
