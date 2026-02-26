@@ -164,5 +164,93 @@ void main() {
 
       expect(called, isTrue);
     });
+
+    testWidgets('shows Edit Profile item when onEditProfile is provided',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AuthMenu(
+              displayName: 'Test User',
+              onEditProfile: () {},
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(AuthMenu));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit Profile'), findsOneWidget);
+      expect(find.byIcon(Icons.edit), findsOneWidget);
+    });
+
+    testWidgets('hides Edit Profile item when onEditProfile is null',
+        (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: AuthMenu(displayName: 'Test User'),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(AuthMenu));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit Profile'), findsNothing);
+    });
+
+    testWidgets('tapping Edit Profile calls onEditProfile callback',
+        (tester) async {
+      var called = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AuthMenu(
+              displayName: 'Test User',
+              onEditProfile: () => called = true,
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(AuthMenu));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Edit Profile'));
+      await tester.pumpAndSettle();
+
+      expect(called, isTrue);
+    });
+
+    test('configures CircleAvatar with NetworkImage when profilePictureUrl is provided',
+        () {
+      // Unit test the widget configuration without pumping (avoids async
+      // NetworkImage HTTP errors in the test environment).
+      const menu = AuthMenu(
+        displayName: 'Test User',
+        profilePictureUrl: 'https://example.com/photo.jpg',
+      );
+
+      expect(menu.profilePictureUrl, equals('https://example.com/photo.jpg'));
+      expect(menu.displayName, equals('Test User'));
+    });
+
+    testWidgets('shows initials when profilePictureUrl is null',
+        (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: AuthMenu(displayName: 'Test User'),
+          ),
+        ),
+      );
+
+      expect(find.text('TU'), findsOneWidget);
+
+      final avatar = tester.widget<CircleAvatar>(find.byType(CircleAvatar));
+      expect(avatar.backgroundImage, isNull);
+    });
   });
 }

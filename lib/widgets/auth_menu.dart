@@ -9,10 +9,18 @@ class AuthMenu extends StatelessWidget {
   /// Called when the user taps "Change Avatar". If null, the item is hidden.
   final VoidCallback? onChangeAvatar;
 
+  /// Called when the user taps "Edit Profile". If null, the item is hidden.
+  final VoidCallback? onEditProfile;
+
+  /// URL for the user's profile picture. When set, shown in the avatar circle.
+  final String? profilePictureUrl;
+
   const AuthMenu({
     super.key,
     required this.displayName,
     this.onChangeAvatar,
+    this.onEditProfile,
+    this.profilePictureUrl,
   });
 
   String get _initials {
@@ -41,14 +49,19 @@ class AuthMenu extends StatelessWidget {
             CircleAvatar(
               radius: 16,
               backgroundColor: Colors.blue,
-              child: Text(
-                _initials,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              backgroundImage: profilePictureUrl != null
+                  ? NetworkImage(profilePictureUrl!)
+                  : null,
+              child: profilePictureUrl != null
+                  ? null
+                  : Text(
+                      _initials,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
             ),
             const SizedBox(width: 8),
             const Icon(Icons.arrow_drop_down, color: Colors.white),
@@ -64,6 +77,17 @@ class AuthMenu extends StatelessWidget {
           ),
         ),
         const PopupMenuDivider(),
+        if (onEditProfile != null)
+          const PopupMenuItem<String>(
+            value: 'edit_profile',
+            child: Row(
+              children: [
+                Icon(Icons.edit, size: 20),
+                SizedBox(width: 8),
+                Text('Edit Profile'),
+              ],
+            ),
+          ),
         if (onChangeAvatar != null)
           const PopupMenuItem<String>(
             value: 'avatar',
@@ -87,7 +111,9 @@ class AuthMenu extends StatelessWidget {
         ),
       ],
       onSelected: (value) async {
-        if (value == 'avatar') {
+        if (value == 'edit_profile') {
+          onEditProfile?.call();
+        } else if (value == 'avatar') {
           onChangeAvatar?.call();
         } else if (value == 'signout') {
           await locate<AuthService>().signOut();

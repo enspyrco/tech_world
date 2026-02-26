@@ -25,8 +25,12 @@ class AuthService {
       if (firebaseUser == null) {
         _user = SignedOutUser(id: _user.id, displayName: _user.displayName);
       } else {
-        _user = AuthUser(
-            id: firebaseUser.uid, displayName: firebaseUser.displayName ?? '');
+        String displayName = firebaseUser.displayName ?? '';
+        if (displayName.isEmpty) {
+          displayName =
+              await _userProfileService.getDisplayName(firebaseUser.uid);
+        }
+        _user = AuthUser(id: firebaseUser.uid, displayName: displayName);
       }
       yield _user;
     }
@@ -40,9 +44,14 @@ class AuthService {
     if (credential.user == null) {
       _user = SignedOutUser(id: _user.id, displayName: _user.displayName);
     } else {
+      String displayName = credential.user!.displayName ?? '';
+      if (displayName.isEmpty) {
+        displayName =
+            await _userProfileService.getDisplayName(credential.user!.uid);
+      }
       _user = AuthUser(
         id: credential.user!.uid,
-        displayName: credential.user!.displayName ?? '',
+        displayName: displayName,
       );
     }
   }
@@ -54,23 +63,40 @@ class AuthService {
     if (credential.user == null) {
       _user = SignedOutUser(id: _user.id, displayName: _user.displayName);
     } else {
+      String displayName = credential.user!.displayName ?? '';
+      if (displayName.isEmpty) {
+        displayName =
+            await _userProfileService.getDisplayName(credential.user!.uid);
+      }
       _user = AuthUser(
         id: credential.user!.uid,
-        displayName: credential.user!.displayName ?? '',
+        displayName: displayName,
       );
     }
   }
 
-  Future<void> createUserWithEmailAndPassword(
-      {required String email, required String password}) async {
+  Future<void> createUserWithEmailAndPassword({
+    required String email,
+    required String password,
+    String? displayName,
+  }) async {
     final credential = await FirebaseAuth.instance
         .createUserWithEmailAndPassword(email: email, password: password);
     if (credential.user == null) {
       _user = SignedOutUser(id: _user.id, displayName: _user.displayName);
     } else {
+      if (displayName != null && displayName.isNotEmpty) {
+        await credential.user!.updateDisplayName(displayName);
+        await credential.user!.reload();
+      }
+      await _userProfileService.saveUserProfile(
+        uid: credential.user!.uid,
+        displayName: displayName,
+        email: email,
+      );
       _user = AuthUser(
         id: credential.user!.uid,
-        displayName: credential.user!.displayName ?? '',
+        displayName: displayName ?? '',
       );
     }
   }
