@@ -142,7 +142,10 @@ class Tileset {
     if (anchorRange != null &&
         !(otherActual >= anchorRange.$1 && otherActual < anchorRange.$2)) {
       // Different ranges — clamp both ends to the anchor's range.
-      final rangeVisualStart = actualRowToVisualRow(anchorRange.$1, ranges)!;
+      // anchorRange came from iterating ranges, so its start is always found.
+      final rangeVisualStart = actualRowToVisualRow(anchorRange.$1, ranges);
+      assert(rangeVisualStart != null, 'anchor range start must exist in ranges');
+      if (rangeVisualStart == null) return (startVisualRow, endVisualRow);
       final rangeVisualEnd =
           rangeVisualStart + (anchorRange.$2 - anchorRange.$1) - 1;
       endVisualRow = endVisualRow.clamp(rangeVisualStart, rangeVisualEnd);
