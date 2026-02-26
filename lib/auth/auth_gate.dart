@@ -50,6 +50,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   TextEditingController emailController = TextEditingController();
   TextEditingController passwordController = TextEditingController();
+  TextEditingController displayNameController = TextEditingController();
 
   GlobalKey<FormState> formKey = GlobalKey<FormState>();
   String error = '';
@@ -67,6 +68,7 @@ class _AuthGateState extends State<AuthGate> {
     _errorTimer?.cancel();
     emailController.dispose();
     passwordController.dispose();
+    displayNameController.dispose();
     super.dispose();
   }
 
@@ -143,6 +145,22 @@ class _AuthGateState extends State<AuthGate> {
                           const SizedBox(height: 20),
                           Column(
                             children: [
+                              if (mode == AuthMode.register) ...[
+                                TextFormField(
+                                  controller: displayNameController,
+                                  decoration: const InputDecoration(
+                                    hintText: 'Display Name',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  autofillHints: const [AutofillHints.name],
+                                  validator: (value) =>
+                                      mode == AuthMode.register &&
+                                              (value == null || value.isEmpty)
+                                          ? 'Required'
+                                          : null,
+                                ),
+                                const SizedBox(height: 20),
+                              ],
                               TextFormField(
                                 controller: emailController,
                                 decoration: const InputDecoration(
@@ -342,7 +360,9 @@ class _AuthGateState extends State<AuthGate> {
               email: emailController.text, password: passwordController.text);
         } else if (mode == AuthMode.register) {
           await locate<AuthService>().createUserWithEmailAndPassword(
-              email: emailController.text, password: passwordController.text);
+              email: emailController.text,
+              password: passwordController.text,
+              displayName: displayNameController.text.trim());
         }
       } on FirebaseAuthException catch (e) {
         _setError(_friendlyAuthError(e.code));

@@ -29,6 +29,8 @@ import 'package:tech_world/rooms/room_browser.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
+import 'package:tech_world/widgets/edit_profile_dialog.dart'
+    show EditProfileDialog, EditProfileResult;
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -69,6 +71,7 @@ class _MyAppState extends State<MyApp> {
   bool _avatarLoaded = false;
   String? _currentUserId;
   String _currentDisplayName = '';
+  String? _currentProfilePictureUrl;
   RoomService? _roomService;
 
   /// The room the user is currently inside. Null = lobby view.
@@ -157,6 +160,7 @@ class _MyAppState extends State<MyApp> {
       _avatarLoaded = false;
       _currentUserId = null;
       _currentDisplayName = '';
+      _currentProfilePictureUrl = null;
       _currentRoom = null;
       debugPrint('User signed out - cleaned up');
       setState(() {});
@@ -166,15 +170,16 @@ class _MyAppState extends State<MyApp> {
       _currentUserId = user.id;
       _currentDisplayName = user.displayName;
 
-      // Load saved avatar from Firestore
+      // Load saved avatar and profile picture from Firestore
       try {
         final profileService = UserProfileService();
-        final savedAvatarId = await profileService.getAvatarId(user.id);
-        if (savedAvatarId != null) {
-          _selectedAvatar = avatarById(savedAvatarId) ?? defaultAvatar;
+        final profile = await profileService.getUserProfile(user.id);
+        if (profile?.avatarId != null) {
+          _selectedAvatar = avatarById(profile!.avatarId!) ?? defaultAvatar;
         }
+        _currentProfilePictureUrl = profile?.profilePictureUrl;
       } catch (e) {
-        debugPrint('Failed to load avatar: $e');
+        debugPrint('Failed to load profile: $e');
       }
       _avatarLoaded = true;
 
@@ -404,6 +409,27 @@ class _MyAppState extends State<MyApp> {
     }
 
     setState(() {});
+  }
+
+  /// Opens the edit profile dialog and updates state on save.
+  Future<void> _editProfile() async {
+    final result = await showDialog<EditProfileResult>(
+      context: context,
+      builder: (context) => EditProfileDialog(
+        currentDisplayName: _currentDisplayName,
+        currentProfilePictureUrl: _currentProfilePictureUrl,
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _currentDisplayName = result.displayName;
+        if (result.profilePictureUrl != null) {
+          _currentProfilePictureUrl = result.profilePictureUrl;
+        } else if (result.pictureRemoved) {
+          _currentProfilePictureUrl = null;
+        }
+      });
+    }
   }
 
   /// Resets avatar selection so the user can pick a new one.
@@ -730,8 +756,12 @@ class _MyAppState extends State<MyApp> {
                             ),
                             const SizedBox(width: 8),
                             AuthMenu(
-                              displayName: snapshot.data!.displayName,
+                              displayName: _currentDisplayName.isNotEmpty
+                                  ? _currentDisplayName
+                                  : snapshot.data!.displayName,
                               onChangeAvatar: _changeAvatar,
+                              onEditProfile: _editProfile,
+                              profilePictureUrl: _currentProfilePictureUrl,
                             ),
                           ],
                         ),

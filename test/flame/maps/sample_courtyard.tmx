@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal"
+     renderorder="right-down" width="10" height="10"
+     tilewidth="32" tileheight="32" infinite="0"
+     nextlayerid="4" nextobjectid="4">
+
+ <!-- Tileset 1: ext_terrains (ground tiles) — 32 columns × 74 rows = 2368 tiles -->
+ <tileset firstgid="1" name="ext_terrains" tilewidth="32" tileheight="32"
+          tilecount="2368" columns="32">
+  <image source="../../../assets/images/tilesets/ext_terrains.png"
+         width="1024" height="2368"/>
+ </tileset>
+
+ <!-- Tileset 2: room_builder_office (walls/furniture) — 16 columns × 14 rows = 224 tiles -->
+ <tileset firstgid="2369" name="room_builder_office" tilewidth="32" tileheight="32"
+          tilecount="224" columns="16">
+  <image source="../../../assets/images/tilesets/room_builder_office.png"
+         width="512" height="448"/>
+ </tileset>
+
+ <!-- Ground layer: grass (tile index 0 = GID 1) with a dirt path (tile index 64 = GID 65) -->
+ <layer id="1" name="Ground" width="10" height="10">
+  <data encoding="csv">
+1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,65,65,1,1,1,1,
+1,1,1,1,65,65,1,1,1,1,
+1,1,1,1,65,65,1,1,1,1,
+1,65,65,65,65,65,65,65,65,1,
+1,65,65,65,65,65,65,65,65,1,
+1,1,1,1,65,65,1,1,1,1,
+1,1,1,1,65,65,1,1,1,1,
+1,1,1,1,65,65,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1
+</data>
+ </layer>
+
+ <!-- Object layer: walls around the edges using room_builder_office tiles -->
+ <!-- GID 2369 = first tile of room_builder_office (wall top-left) -->
+ <layer id="2" name="Walls" width="10" height="10">
+  <data encoding="csv">
+2369,2370,2371,2372,0,0,0,0,0,0,
+2385,0,0,2388,0,0,0,0,0,0,
+2401,0,0,2404,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0
+</data>
+ </layer>
+
+ <!-- Object groups: spawn point and a terminal -->
+ <objectgroup id="3" name="Objects">
+  <object id="1" name="Player Start" type="spawn" x="160" y="160"/>
+  <object id="2" name="Coding Station" type="terminal" x="64" y="64"/>
+  <object id="3" name="Coding Station 2" type="terminal" x="256" y="256"/>
+ </objectgroup>
+</map>

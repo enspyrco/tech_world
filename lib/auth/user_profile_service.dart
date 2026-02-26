@@ -46,6 +46,7 @@ class UserProfileService {
       displayName: data['displayName'] as String?,
       email: data['email'] as String?,
       avatarId: data['avatarId'] as String?,
+      profilePictureUrl: data['profilePictureUrl'] as String?,
     );
   }
 
@@ -72,6 +73,17 @@ class UserProfileService {
     final profile = await getUserProfile(uid);
     return profile?.avatarId;
   }
+
+  /// Save a profile picture URL to the user's profile.
+  Future<void> saveProfilePictureUrl(String uid, String url) async {
+    await _collection.doc(uid).set(
+      {
+        'profilePictureUrl': url,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
 }
 
 /// User profile data stored in Firestore.
@@ -81,10 +93,12 @@ class UserProfile {
     this.displayName,
     this.email,
     this.avatarId,
+    this.profilePictureUrl,
   });
 
   final String uid;
   final String? displayName;
   final String? email;
   final String? avatarId;
+  final String? profilePictureUrl;
 }

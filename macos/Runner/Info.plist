@@ -34,5 +34,7 @@
 	<string>Tech World uses camera for video chat with nearby players</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Tech World uses microphone for voice chat with nearby players</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Tech World uses your photo library to set a profile picture</string>
 </dict>
 </plist>
