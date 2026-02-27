@@ -37,6 +37,8 @@ class _ScreenSharePanelState extends State<ScreenSharePanel> {
   static const _defaultHeight = 400.0;
   static const _minWidth = 320.0;
   static const _minHeight = 200.0;
+  static const _maxWidth = 1920.0;
+  static const _maxHeight = 1080.0;
   static const _titleBarHeight = 36.0;
 
   late Offset _position;
@@ -174,8 +176,8 @@ class _ScreenSharePanelState extends State<ScreenSharePanel> {
       onPanUpdate: (details) {
         setState(() {
           _size = Size(
-            (_size.width + details.delta.dx).clamp(_minWidth, double.infinity),
-            (_size.height + details.delta.dy).clamp(_minHeight, double.infinity),
+            (_size.width + details.delta.dx).clamp(_minWidth, _maxWidth),
+            (_size.height + details.delta.dy).clamp(_minHeight, _maxHeight),
           );
         });
       },

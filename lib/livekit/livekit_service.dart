@@ -277,9 +277,9 @@ class LiveKitService {
   /// Enable/disable local screen share.
   ///
   /// On web, the browser's built-in screen picker is shown automatically.
-  /// On desktop, use [ScreenSelectDialog] to pick a source first, then call
-  /// this — LiveKit's [setScreenShareEnabled] handles the native picker on
-  /// desktop as well.
+  /// On desktop, LiveKit's `setScreenShareEnabled` triggers the native picker.
+  ///
+  /// Rethrows exceptions so callers can update UI state correctly on failure.
   Future<void> setScreenShareEnabled(bool enabled,
       {ScreenShareCaptureOptions? options}) async {
     if (_room?.localParticipant == null) return;
@@ -292,6 +292,7 @@ class LiveKitService {
           'LiveKitService: Screen share ${enabled ? 'enabled' : 'disabled'}');
     } catch (e) {
       debugPrint('LiveKitService: Failed to set screen share: $e');
+      rethrow;
     }
   }
 
