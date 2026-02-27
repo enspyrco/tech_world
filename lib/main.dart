@@ -4,7 +4,8 @@ import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:livekit_client/livekit_client.dart' show lkPlatformIsDesktop;
+import 'package:livekit_client/livekit_client.dart'
+    show LocalTrackPublication, lkPlatformIsDesktop;
 import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -1009,8 +1010,11 @@ class _MapEditorButton extends StatelessWidget {
 
 /// Toggle button for starting/stopping screen share.
 ///
-/// On desktop, shows LiveKit's [ScreenSelectDialog] to pick a window/screen.
-/// On web, the browser's native picker is used automatically.
+/// On web, the browser's native picker is shown automatically.
+/// On desktop, LiveKit's `setScreenShareEnabled` triggers the native picker.
+///
+/// Listens to [LiveKitService.localTrackPublished] to stay in sync when the
+/// share is stopped externally (e.g. browser's "Stop sharing" bar).
 class _ScreenShareButton extends StatefulWidget {
   const _ScreenShareButton({required this.liveKitService});
 
@@ -1021,22 +1025,45 @@ class _ScreenShareButton extends StatefulWidget {
 }
 
 class _ScreenShareButtonState extends State<_ScreenShareButton> {
-  bool _sharing = false;
+  StreamSubscription<LocalTrackPublication>? _trackPubSub;
+
+  bool get _sharing => widget.liveKitService?.isScreenShareEnabled ?? false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(_ScreenShareButton old) {
+    super.didUpdateWidget(old);
+    if (old.liveKitService != widget.liveKitService) {
+      _trackPubSub?.cancel();
+      _subscribe();
+    }
+  }
+
+  void _subscribe() {
+    // Rebuild whenever local tracks change so _sharing reflects reality.
+    _trackPubSub = widget.liveKitService?.localTrackPublished.listen((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _trackPubSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> _toggleScreenShare() async {
     final service = widget.liveKitService;
     if (service == null || !service.isConnected) return;
 
-    if (_sharing) {
-      await service.setScreenShareEnabled(false);
-      setState(() => _sharing = false);
-      return;
-    }
-
-    // On web, the browser shows its own picker dialog — just enable directly.
-    // On desktop, LiveKit's setScreenShareEnabled triggers the native picker.
-    await service.setScreenShareEnabled(true);
-    setState(() => _sharing = service.isScreenShareEnabled);
+    await service.setScreenShareEnabled(!_sharing);
+    // Rebuild to pick up the new isScreenShareEnabled state.
+    if (mounted) setState(() {});
   }
 
   @override

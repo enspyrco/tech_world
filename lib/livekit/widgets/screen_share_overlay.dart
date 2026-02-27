@@ -45,9 +45,6 @@ class _ScreenShareOverlayState extends State<ScreenShareOverlay> {
   late final StreamSubscription<(Participant, VideoTrack)> _subscribedSub;
   late final StreamSubscription<(Participant, VideoTrack)> _unsubscribedSub;
 
-  /// Running count used to stagger panel positions so they don't overlap.
-  int _panelCount = 0;
-
   @override
   void initState() {
     super.initState();
@@ -78,8 +75,8 @@ class _ScreenShareOverlayState extends State<ScreenShareOverlay> {
     if (_entries.containsKey(key)) return;
 
     // Stagger panels by 40px each to avoid stacking on top of each other.
-    final offset = Offset(40.0 * _panelCount + 40, 40.0 * _panelCount + 40);
-    _panelCount++;
+    final index = _entries.length;
+    final offset = Offset(40.0 * index + 40, 40.0 * index + 40);
 
     setState(() {
       _entries[key] = _ScreenShareEntry(
