@@ -1,8 +1,11 @@
 import 'dart:async';
 
 import 'package:flame/game.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:livekit_client/livekit_client.dart'
+    show LocalTrackPublication, lkPlatformIsDesktop;
 import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -21,6 +24,7 @@ import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/widgets/proximity_video_overlay.dart';
+import 'package:tech_world/livekit/widgets/screen_share_overlay.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
@@ -817,6 +821,12 @@ class _MyAppState extends State<MyApp> {
                               mapEditorState: _mapEditorState,
                               techWorld: locate<TechWorld>(),
                             ),
+                            if (kIsWeb || lkPlatformIsDesktop()) ...[
+                              const SizedBox(width: 8),
+                              _ScreenShareButton(
+                                liveKitService: _liveKitService,
+                              ),
+                            ],
                             const SizedBox(width: 8),
                             AuthMenu(
                               displayName: _currentDisplayName.isNotEmpty
@@ -911,6 +921,9 @@ class _MyAppState extends State<MyApp> {
                     );
                   },
                 ),
+                // Screen share floating panels
+                if (_liveKitService != null)
+                  ScreenShareOverlay(liveKitService: _liveKitService!),
                 // Connection failure banner
                 if (_liveKitConnectionFailed)
                   Positioned(
@@ -991,6 +1004,86 @@ class _MapEditorButton extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Toggle button for starting/stopping screen share.
+///
+/// On web, the browser's native picker is shown automatically.
+/// On desktop, LiveKit's `setScreenShareEnabled` triggers the native picker.
+///
+/// Listens to [LiveKitService.localTrackPublished] to stay in sync when the
+/// share is stopped externally (e.g. browser's "Stop sharing" bar).
+class _ScreenShareButton extends StatefulWidget {
+  const _ScreenShareButton({required this.liveKitService});
+
+  final LiveKitService? liveKitService;
+
+  @override
+  State<_ScreenShareButton> createState() => _ScreenShareButtonState();
+}
+
+class _ScreenShareButtonState extends State<_ScreenShareButton> {
+  StreamSubscription<LocalTrackPublication>? _trackPubSub;
+
+  bool get _sharing => widget.liveKitService?.isScreenShareEnabled ?? false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribe();
+  }
+
+  @override
+  void didUpdateWidget(_ScreenShareButton old) {
+    super.didUpdateWidget(old);
+    if (old.liveKitService != widget.liveKitService) {
+      _trackPubSub?.cancel();
+      _subscribe();
+    }
+  }
+
+  void _subscribe() {
+    // Rebuild whenever local tracks change so _sharing reflects reality.
+    _trackPubSub = widget.liveKitService?.localTrackPublished.listen((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _trackPubSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _toggleScreenShare() async {
+    final service = widget.liveKitService;
+    if (service == null || !service.isConnected) return;
+
+    await service.setScreenShareEnabled(!_sharing);
+    // Rebuild to pick up the new isScreenShareEnabled state.
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: _toggleScreenShare,
+      icon: Icon(
+        _sharing ? Icons.stop_screen_share : Icons.screen_share,
+        color: _sharing ? Colors.red.shade300 : Colors.white70,
+        size: 20,
+      ),
+      tooltip: _sharing ? 'Stop sharing' : 'Share screen',
+      style: IconButton.styleFrom(
+        backgroundColor: _sharing
+            ? Colors.red.shade300.withValues(alpha: 0.2)
+            : Colors.black54,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
     );
   }
 }
