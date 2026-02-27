@@ -482,9 +482,12 @@ class _MyAppState extends State<MyApp> {
   }
 
   /// Opens the edit profile dialog and updates state on save.
-  Future<void> _editProfile() async {
+  ///
+  /// Takes [dialogContext] from below the [MaterialApp] so that
+  /// [showDialog] can find [MaterialLocalizations].
+  Future<void> _editProfile(BuildContext dialogContext) async {
     final result = await showDialog<EditProfileResult>(
-      context: context,
+      context: dialogContext,
       builder: (context) => EditProfileDialog(
         currentDisplayName: _currentDisplayName,
         currentProfilePictureUrl: _currentProfilePictureUrl,
@@ -621,7 +624,10 @@ class _MyAppState extends State<MyApp> {
                                 width: constraints.maxWidth >= 800 ? 480 : 360,
                                 child: MapEditorPanel(
                                   state: _mapEditorState,
-                                  onClose: techWorld.exitEditorMode,
+                                  onApply: techWorld.exitEditorMode,
+                                  onCancel: () => techWorld.exitEditorMode(
+                                    applyChanges: false,
+                                  ),
                                   referenceMap: techWorld.currentMap.value,
                                   playerPosition:
                                       techWorld.playerGridPosition,

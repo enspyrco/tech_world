@@ -571,10 +571,10 @@ class MapEditorState extends ChangeNotifier {
       spawnPoint: spawnPoint ?? const Point(25, 25),
       terminals: terminals,
       backgroundImage: _backgroundImage,
-      floorLayer: floorLayerData.isEmpty ? null : floorLayerData,
-      objectLayer: objectLayerData.isEmpty ? null : objectLayerData,
+      floorLayer: floorLayerData.isEmpty ? null : floorLayerData.copy(),
+      objectLayer: objectLayerData.isEmpty ? null : objectLayerData.copy(),
       tilesetIds: tilesetIds,
-      terrainGrid: terrainGrid.isEmpty ? null : terrainGrid,
+      terrainGrid: terrainGrid.isEmpty ? null : terrainGrid.copy(),
     );
   }
 

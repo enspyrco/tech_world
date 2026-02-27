@@ -135,8 +135,9 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         ));
       }
     } catch (e) {
+      debugPrint('Profile save error: $e');
       if (mounted) {
-        setState(() => _error = 'Failed to save profile. Please try again.');
+        setState(() => _error = 'Failed to save profile: $e');
       }
     } finally {
       if (mounted) setState(() { _saving = false; _uploadingPhoto = false; });

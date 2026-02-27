@@ -389,4 +389,47 @@ void main() {
       expect(state.floorLayerData.tileAt(5, 5), isNull);
     });
   });
+
+  group('toGameMap defensive copies', () {
+    test('toGameMap floor layer is a separate copy from editor state', () {
+      state.setActiveLayer(ActiveLayer.floor);
+      state.setBrush(const TileBrush(
+        tilesetId: 'test',
+        startCol: 0,
+        startRow: 0,
+        columns: 4,
+      ));
+      state.paintTileRef(3, 3);
+
+      final map = state.toGameMap();
+
+      // Mutating the editor state should not affect the exported map.
+      state.clearAll();
+      expect(map.floorLayer, isNotNull);
+      expect(map.floorLayer!.tileAt(3, 3), isNotNull,
+          reason: 'Exported GameMap should be independent of editor state');
+    });
+
+    test('loadFromGameMap on same instance preserves manual tiles', () {
+      state.setActiveLayer(ActiveLayer.floor);
+      state.setBrush(const TileBrush(
+        tilesetId: 'test',
+        startCol: 0,
+        startRow: 0,
+        columns: 4,
+      ));
+      state.paintTileRef(3, 3);
+      state.paintTileRef(4, 4);
+
+      final map = state.toGameMap();
+
+      // Re-load into the SAME instance — simulates re-entering editor mode.
+      state.loadFromGameMap(map);
+
+      expect(state.floorLayerData.tileAt(3, 3), isNotNull,
+          reason: 'Floor tile should survive same-instance roundtrip');
+      expect(state.floorLayerData.tileAt(4, 4), isNotNull,
+          reason: 'Floor tile should survive same-instance roundtrip');
+    });
+  });
 }

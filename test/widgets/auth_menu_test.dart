@@ -172,7 +172,7 @@ void main() {
           home: Scaffold(
             body: AuthMenu(
               displayName: 'Test User',
-              onEditProfile: () {},
+              onEditProfile: (_) {},
             ),
           ),
         ),
@@ -209,7 +209,7 @@ void main() {
           home: Scaffold(
             body: AuthMenu(
               displayName: 'Test User',
-              onEditProfile: () => called = true,
+              onEditProfile: (_) => called = true,
             ),
           ),
         ),

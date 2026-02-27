@@ -25,7 +25,8 @@ import 'package:tech_world/map_editor/tile_palette.dart';
 class MapEditorPanel extends StatelessWidget {
   const MapEditorPanel({
     required this.state,
-    required this.onClose,
+    required this.onApply,
+    required this.onCancel,
     this.referenceMap,
     this.playerPosition,
     this.onSave,
@@ -35,7 +36,12 @@ class MapEditorPanel extends StatelessWidget {
   });
 
   final MapEditorState state;
-  final Future<void> Function() onClose;
+
+  /// Apply edits to the game world and close the editor.
+  final Future<void> Function() onApply;
+
+  /// Discard edits and close the editor.
+  final Future<void> Function() onCancel;
 
   /// Optional game map to render as a faint reference layer under the grid.
   final GameMap? referenceMap;
@@ -120,10 +126,19 @@ class MapEditorPanel extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: onClose,
+            onPressed: onCancel,
             icon: const Icon(Icons.close),
             color: Colors.grey,
             iconSize: 20,
+            tooltip: 'Discard changes',
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            onPressed: onApply,
+            icon: const Icon(Icons.check),
+            color: const Color(0xFF4FC3F7),
+            iconSize: 20,
+            tooltip: 'Apply changes',
           ),
         ],
       ),

@@ -245,5 +245,27 @@ void main() {
         )),
       );
     });
+
+    test('toGameMap then loadFromGameMap on SAME instance preserves tiles', () {
+      // This reproduces the enterEditorMode bug: toGameMap shares the mutable
+      // TileLayerData reference, so loading back into the same state clears the
+      // source before copying.
+      state.setTerrainBrush(waterTerrain);
+      state.paintTerrain(5, 5);
+      state.paintTerrain(6, 5);
+
+      final map = state.toGameMap();
+
+      // Re-load into the SAME instance (simulates enterEditorMode calling
+      // editorState.loadFromGameMap(currentMap.value)).
+      state.loadFromGameMap(map);
+
+      expect(state.floorLayerData.tileAt(5, 5), isNotNull,
+          reason: 'Floor tile at (5,5) should survive same-instance roundtrip');
+      expect(state.floorLayerData.tileAt(6, 5), isNotNull,
+          reason: 'Floor tile at (6,5) should survive same-instance roundtrip');
+      expect(state.terrainGrid.terrainAt(5, 5), 'water');
+      expect(state.terrainGrid.terrainAt(6, 5), 'water');
+    });
   });
 }
