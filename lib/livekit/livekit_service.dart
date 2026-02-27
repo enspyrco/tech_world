@@ -50,6 +50,8 @@ class LiveKitService {
       StreamController<(Participant, VideoTrack)>.broadcast();
   final _localTrackPublishedController =
       StreamController<LocalTrackPublication>.broadcast();
+  final _trackUnsubscribedController =
+      StreamController<(Participant, VideoTrack)>.broadcast();
   final _dataReceivedController =
       StreamController<DataChannelMessage>.broadcast();
 
@@ -68,6 +70,10 @@ class LiveKitService {
   /// Stream of video track subscription events (participant, videoTrack)
   Stream<(Participant, VideoTrack)> get trackSubscribed =>
       _trackSubscribedController.stream;
+
+  /// Stream of video track unsubscription events (participant, videoTrack)
+  Stream<(Participant, VideoTrack)> get trackUnsubscribed =>
+      _trackUnsubscribedController.stream;
 
   /// Stream of local track publication events (fires when camera/mic is published)
   Stream<LocalTrackPublication> get localTrackPublished =>
@@ -267,6 +273,31 @@ class LiveKitService {
       debugPrint('LiveKitService: Failed to set microphone: $e');
     }
   }
+
+  /// Enable/disable local screen share.
+  ///
+  /// On web, the browser's built-in screen picker is shown automatically.
+  /// On desktop, use [ScreenSelectDialog] to pick a source first, then call
+  /// this — LiveKit's [setScreenShareEnabled] handles the native picker on
+  /// desktop as well.
+  Future<void> setScreenShareEnabled(bool enabled,
+      {ScreenShareCaptureOptions? options}) async {
+    if (_room?.localParticipant == null) return;
+    try {
+      await _room!.localParticipant!.setScreenShareEnabled(
+        enabled,
+        screenShareCaptureOptions: options,
+      );
+      debugPrint(
+          'LiveKitService: Screen share ${enabled ? 'enabled' : 'disabled'}');
+    } catch (e) {
+      debugPrint('LiveKitService: Failed to set screen share: $e');
+    }
+  }
+
+  /// Whether the local participant is currently sharing their screen.
+  bool get isScreenShareEnabled =>
+      _room?.localParticipant?.isScreenShareEnabled() ?? false;
 
   /// Enable or disable audio playback for a remote participant.
   ///
@@ -497,6 +528,10 @@ class LiveKitService {
       ..on<TrackUnsubscribedEvent>((event) {
         debugPrint(
             'LiveKitService: Track unsubscribed: ${event.participant.identity}');
+        if (event.track is VideoTrack) {
+          _trackUnsubscribedController
+              .add((event.participant, event.track as VideoTrack));
+        }
       })
       ..on<ActiveSpeakersChangedEvent>((event) {
         // Emit speaking state for active speakers
@@ -531,6 +566,7 @@ class LiveKitService {
     _participantLeftController.close();
     _speakingChangedController.close();
     _trackSubscribedController.close();
+    _trackUnsubscribedController.close();
     _localTrackPublishedController.close();
     _dataReceivedController.close();
   }
