@@ -29,6 +29,7 @@ import 'package:tech_world/rooms/room_browser.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
+import 'package:tech_world/widgets/map_selector.dart';
 import 'package:tech_world/widgets/edit_profile_dialog.dart'
     show EditProfileDialog, EditProfileResult;
 import 'package:tech_world/widgets/loading_screen.dart';
@@ -73,6 +74,9 @@ class _MyAppState extends State<MyApp> {
   String _currentDisplayName = '';
   String? _currentProfilePictureUrl;
   RoomService? _roomService;
+
+  /// Cached list of the user's saved rooms. Invalidated on save/delete.
+  List<RoomData>? _myRooms;
 
   /// The room the user is currently inside. Null = lobby view.
   RoomData? _currentRoom;
@@ -154,6 +158,7 @@ class _MyAppState extends State<MyApp> {
       _progressService = null;
       Locator.remove<ProgressService>();
       _roomService = null;
+      _myRooms = null;
       Locator.remove<RoomService>();
       _liveKitConnectionFailed = false;
       _selectedAvatar = null;
@@ -373,17 +378,25 @@ class _MyAppState extends State<MyApp> {
   }
 
   /// Save the current editor state as a room. Creates a new room or updates existing.
+  ///
+  /// If the user owns the room, updates it in place. If the user doesn't own
+  /// the room (or it's a new room), creates a new room (fork-on-save).
   Future<void> _saveRoom() async {
     final userId = _currentUserId;
     if (userId == null || _roomService == null) return;
 
     final gameMap = _mapEditorState.toGameMap();
+    final existingRoomId = _mapEditorState.roomId;
+    final isOwnedRoom = existingRoomId != null &&
+        existingRoomId.isNotEmpty &&
+        _currentRoom != null &&
+        _currentRoom!.isOwner(userId);
 
-    if (_mapEditorState.roomId != null && _mapEditorState.roomId!.isNotEmpty) {
-      // Update existing room.
-      await _roomService!.updateRoomMap(_mapEditorState.roomId!, gameMap);
+    if (isOwnedRoom) {
+      // Update existing room the user owns.
+      await _roomService!.updateRoomMap(existingRoomId, gameMap);
       await _roomService!.updateRoomName(
-        _mapEditorState.roomId!,
+        existingRoomId,
         _mapEditorState.mapName,
       );
       // Update local state.
@@ -392,7 +405,7 @@ class _MyAppState extends State<MyApp> {
         mapData: gameMap,
       );
     } else {
-      // Create new room.
+      // Create new room (fork or brand new).
       final room = await _roomService!.createRoom(
         name: _mapEditorState.mapName,
         ownerId: userId,
@@ -408,13 +421,73 @@ class _MyAppState extends State<MyApp> {
       }
     }
 
+    // Invalidate cached room list so it refreshes on next open.
+    _myRooms = null;
+
     setState(() {});
   }
 
+  /// Load a saved room's map into the editor.
+  ///
+  /// Updates [_currentRoom] so that the fork-on-save logic in [_saveRoom]
+  /// correctly detects ownership of the loaded room.
+  Future<void> _loadSavedRoom(RoomData room) async {
+    try {
+      _mapEditorState.loadFromGameMap(room.mapData);
+      _mapEditorState.setRoomId(room.id);
+      _currentRoom = room;
+      await locate<TechWorld>().loadMap(room.mapData);
+      setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load map: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Delete a saved room after confirmation.
+  Future<void> _deleteSavedRoom(RoomData room) async {
+    if (_roomService == null) return;
+    try {
+      await _roomService!.deleteRoom(room.id);
+      // Invalidate cache so it refreshes on next open.
+      _myRooms = null;
+      setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Delete failed: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Refresh the cached list of the user's saved rooms.
+  Future<void> _refreshMyRooms() async {
+    if (_roomService == null || _currentUserId == null) return;
+    try {
+      _myRooms = await _roomService!.listMyRooms(_currentUserId!);
+      setState(() {});
+    } catch (e) {
+      debugPrint('Failed to refresh saved rooms: $e');
+    }
+  }
+
   /// Opens the edit profile dialog and updates state on save.
-  Future<void> _editProfile() async {
+  ///
+  /// Takes [dialogContext] from below the [MaterialApp] so that
+  /// [showDialog] can find [MaterialLocalizations].
+  Future<void> _editProfile(BuildContext dialogContext) async {
     final result = await showDialog<EditProfileResult>(
-      context: context,
+      context: dialogContext,
       builder: (context) => EditProfileDialog(
         currentDisplayName: _currentDisplayName,
         currentProfilePictureUrl: _currentProfilePictureUrl,
@@ -551,12 +624,18 @@ class _MyAppState extends State<MyApp> {
                                 width: constraints.maxWidth >= 800 ? 480 : 360,
                                 child: MapEditorPanel(
                                   state: _mapEditorState,
-                                  onClose: techWorld.exitEditorMode,
+                                  onApply: techWorld.exitEditorMode,
+                                  onCancel: () => techWorld.exitEditorMode(
+                                    applyChanges: false,
+                                  ),
                                   referenceMap: techWorld.currentMap.value,
                                   playerPosition:
                                       techWorld.playerGridPosition,
-                                  onSave: canEdit ? _saveRoom : null,
+                                  onSave: _currentUserId != null
+                                      ? _saveRoom
+                                      : null,
                                   canEdit: canEdit,
+                                  savedRooms: _myRooms,
                                 ),
                               );
                             }
@@ -723,29 +802,15 @@ class _MyAppState extends State<MyApp> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            // Room name indicator
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.black54,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.meeting_room,
-                                      color: Colors.white70, size: 16),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    _currentRoom?.name ?? '',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            // Map selector with saved rooms
+                            MapSelector(
+                              techWorld: techWorld,
+                              roomService: _roomService,
+                              userId: _currentUserId,
+                              savedRooms: _myRooms,
+                              onPopupOpened: _refreshMyRooms,
+                              onLoadRoom: _loadSavedRoom,
+                              onDeleteRoom: _deleteSavedRoom,
                             ),
                             const SizedBox(width: 8),
                             _MapEditorButton(

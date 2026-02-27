@@ -10,7 +10,8 @@ class AuthMenu extends StatelessWidget {
   final VoidCallback? onChangeAvatar;
 
   /// Called when the user taps "Edit Profile". If null, the item is hidden.
-  final VoidCallback? onEditProfile;
+  /// Receives the [BuildContext] below [MaterialApp] so dialogs work correctly.
+  final void Function(BuildContext context)? onEditProfile;
 
   /// URL for the user's profile picture. When set, shown in the avatar circle.
   final String? profilePictureUrl;
@@ -112,7 +113,7 @@ class AuthMenu extends StatelessWidget {
       ],
       onSelected: (value) async {
         if (value == 'edit_profile') {
-          onEditProfile?.call();
+          onEditProfile?.call(context);
         } else if (value == 'avatar') {
           onChangeAvatar?.call();
         } else if (value == 'signout') {

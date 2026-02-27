@@ -140,24 +140,30 @@ class TechWorld extends World with TapCallbacks {
     editorState.addListener(_onEditorStateChanged);
   }
 
-  /// Exit map editor mode — removes preview, applies editor changes to game.
-  Future<void> exitEditorMode() async {
+  /// Exit map editor mode — removes preview, optionally applies changes.
+  ///
+  /// When [applyChanges] is true (the default), the edited map is compared
+  /// to [currentMap] and applied if different. When false, edits are discarded
+  /// and the original map components are simply re-shown.
+  Future<void> exitEditorMode({bool applyChanges = true}) async {
     mapEditorActive.value = false;
 
-    // Apply the full edited map to the game world so barriers, terminals,
-    // background, and wall occlusion all reflect whatever was changed.
-    if (_editorState != null) {
+    if (applyChanges && _editorState != null) {
+      // Apply the full edited map to the game world so barriers, terminals,
+      // background, and wall occlusion all reflect whatever was changed.
       final editedMap = _editorState!.toGameMap();
       if (editedMap != currentMap.value) {
         _removeMapComponents();
         await _loadMapComponents(editedMap);
         currentMap.value = editedMap;
       } else {
-        // Only re-show when we didn't rebuild — fresh components are already
-        // visible from onLoad().
         _wallOcclusion?.show();
         _tileObjectLayer?.show();
       }
+    } else {
+      // Discard — just re-show the original wall occlusion and tile objects.
+      _wallOcclusion?.show();
+      _tileObjectLayer?.show();
     }
 
     // Stop listening for editor changes.
@@ -171,7 +177,12 @@ class TechWorld extends World with TapCallbacks {
       _mapPreviewComponent!.removeFromParent();
       _mapPreviewComponent = null;
     }
-    _barriersComponent.renderBarriers = !currentMap.value.usesTilesets;
+    // Show debug barriers only for maps without visual layers. Maps with a
+    // background image or tilesets render walls visually, so the blue debug
+    // rectangles would be distracting.
+    final map = currentMap.value;
+    _barriersComponent.renderBarriers =
+        !map.usesTilesets && map.backgroundImage == null;
   }
 
   MapEditorState? _editorState;

@@ -57,22 +57,29 @@ class MapPreviewComponent extends Component {
       _renderTileLayer(canvas, editorState.floorLayerData, registry, paint);
     }
 
-    // Render structure grid.
+    // Render structure grid with fill + border for visibility against any
+    // background (dark wall art previously made horizontal barriers invisible).
+    final borderPaint = Paint()..style = PaintingStyle.stroke;
     for (var y = 0; y < gridSize; y++) {
       for (var x = 0; x < gridSize; x++) {
         final tile = editorState.tileAt(x, y);
         // Skip open tiles so the background shows through.
         if (tile == TileType.open) continue;
-        paint.color = _colorForTile(tile).withValues(alpha: 0.6);
-        canvas.drawRect(
-          Rect.fromLTWH(
-            x * gridSquareSizeDouble,
-            y * gridSquareSizeDouble,
-            gridSquareSizeDouble,
-            gridSquareSizeDouble,
-          ),
-          paint,
+        final color = _colorForTile(tile);
+        final rect = Rect.fromLTWH(
+          x * gridSquareSizeDouble,
+          y * gridSquareSizeDouble,
+          gridSquareSizeDouble,
+          gridSquareSizeDouble,
         );
+        // Semi-transparent fill.
+        paint.color = color.withValues(alpha: 0.7);
+        canvas.drawRect(rect, paint);
+        // Opaque border so the tile boundary is visible against dark backgrounds.
+        borderPaint
+          ..color = color
+          ..strokeWidth = 1.0;
+        canvas.drawRect(rect, borderPaint);
       }
     }
 

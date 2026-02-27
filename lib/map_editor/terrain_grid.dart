@@ -52,6 +52,17 @@ class TerrainGrid {
     }
   }
 
+  /// Create a deep copy of this grid.
+  TerrainGrid copy() {
+    final clone = TerrainGrid();
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        clone._grid[y][x] = _grid[y][x];
+      }
+    }
+    return clone;
+  }
+
   /// Serialize to a sparse JSON list (only non-null cells).
   ///
   /// Format: `[{x, y, terrain}, ...]`

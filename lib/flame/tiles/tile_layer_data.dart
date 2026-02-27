@@ -94,6 +94,17 @@ class TileLayerData {
     return hash;
   }
 
+  /// Create a deep copy of this layer.
+  TileLayerData copy() {
+    final clone = TileLayerData();
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        clone._grid[y][x] = _grid[y][x];
+      }
+    }
+    return clone;
+  }
+
   /// Deserialize from a sparse JSON list.
   factory TileLayerData.fromJson(List<dynamic> json) {
     final layer = TileLayerData();
