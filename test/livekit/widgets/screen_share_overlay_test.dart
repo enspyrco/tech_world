@@ -39,7 +39,7 @@ class FakeLiveKitService implements LiveKitService {
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() async {
     _trackSubscribedController.close();
     _trackUnsubscribedController.close();
   }

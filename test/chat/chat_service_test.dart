@@ -1,13 +1,26 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flame/components.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
+import 'package:livekit_client/livekit_client.dart'
+    show
+        LocalParticipant,
+        LocalTrackPublication,
+        Participant,
+        RemoteParticipant,
+        Room,
+        ScreenShareCaptureOptions,
+        VideoTrack;
+import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
+import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/shared/direction.dart';
+import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
 void main() {
@@ -764,9 +777,6 @@ class FailingChatMessageRepository implements ChatMessageRepository {
     required String type,
     String? lastMessageText,
   }) async {}
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => null;
 }
 
 /// A [ChatMessageRepository] that never completes, simulating network hangs.
@@ -797,9 +807,6 @@ class HangingChatMessageRepository implements ChatMessageRepository {
     required String type,
     String? lastMessageText,
   }) async {}
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => null;
 }
 
 /// A [ChatMessageRepository] that returns one DM conversation successfully,
@@ -846,16 +853,18 @@ class PartialThenHangingRepository implements ChatMessageRepository {
     required String type,
     String? lastMessageText,
   }) async {}
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-/// Fake LiveKitService for testing
+/// Fake LiveKitService for testing.
+///
+/// Explicitly implements all [LiveKitService] members so that adding new
+/// methods to the real class causes a compile-time error here, ensuring tests
+/// stay in sync with the interface.
 class FakeLiveKitService implements LiveKitService {
   bool connected = true;
   final List<Map<String, dynamic>> publishedMessages = [];
-  final _dataReceivedController = StreamController<DataChannelMessage>.broadcast();
+  final _dataReceivedController =
+      StreamController<DataChannelMessage>.broadcast();
 
   @override
   bool get isConnected => connected;
@@ -867,7 +876,11 @@ class FakeLiveKitService implements LiveKitService {
   String get displayName => 'Test User';
 
   @override
-  Stream<DataChannelMessage> get dataReceived => _dataReceivedController.stream;
+  String get roomName => 'tech-world';
+
+  @override
+  Stream<DataChannelMessage> get dataReceived =>
+      _dataReceivedController.stream;
 
   @override
   Future<void> publishJson(
@@ -899,7 +912,8 @@ class FakeLiveKitService implements LiveKitService {
     ));
   }
 
-  void simulateMessageWithTopic(String topic, Map<String, dynamic> response) {
+  void simulateMessageWithTopic(
+      String topic, Map<String, dynamic> response) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: 'bot-claude',
       topic: topic,
@@ -907,7 +921,8 @@ class FakeLiveKitService implements LiveKitService {
     ));
   }
 
-  void simulateResponseWithId(String id, Map<String, dynamic> response) {
+  void simulateResponseWithId(
+      String id, Map<String, dynamic> response) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: 'bot-claude',
       topic: 'chat-response',
@@ -915,7 +930,8 @@ class FakeLiveKitService implements LiveKitService {
     ));
   }
 
-  void simulateChatFromOtherUser(String senderId, Map<String, dynamic> message) {
+  void simulateChatFromOtherUser(
+      String senderId, Map<String, dynamic> message) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: senderId,
       topic: 'chat',
@@ -941,7 +957,8 @@ class FakeLiveKitService implements LiveKitService {
   }
 
   /// Simulate a DM response from the bot.
-  void simulateDmResponse(String senderId, Map<String, dynamic> message) {
+  void simulateDmResponse(
+      String senderId, Map<String, dynamic> message) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: senderId,
       topic: 'dm-response',
@@ -949,26 +966,133 @@ class FakeLiveKitService implements LiveKitService {
     ));
   }
 
-  final _participantJoinedController = StreamController<RemoteParticipant>.broadcast();
-  final _participantLeftController = StreamController<RemoteParticipant>.broadcast();
+  final _participantJoinedController =
+      StreamController<RemoteParticipant>.broadcast();
+  final _participantLeftController =
+      StreamController<RemoteParticipant>.broadcast();
+  final _speakingChangedController =
+      StreamController<(Participant, bool)>.broadcast();
+  final _trackSubscribedController =
+      StreamController<(Participant, VideoTrack)>.broadcast();
+  final _trackUnsubscribedController =
+      StreamController<(Participant, VideoTrack)>.broadcast();
+  final _localTrackPublishedController =
+      StreamController<LocalTrackPublication>.broadcast();
+  final _connectionLostController = StreamController<String?>.broadcast();
 
   @override
   Map<String, RemoteParticipant> get remoteParticipants => {};
 
   @override
-  Stream<RemoteParticipant> get participantJoined => _participantJoinedController.stream;
+  Stream<RemoteParticipant> get participantJoined =>
+      _participantJoinedController.stream;
 
   @override
-  Stream<RemoteParticipant> get participantLeft => _participantLeftController.stream;
+  Stream<RemoteParticipant> get participantLeft =>
+      _participantLeftController.stream;
 
   @override
-  void dispose() {
+  Stream<(Participant, bool)> get speakingChanged =>
+      _speakingChangedController.stream;
+
+  @override
+  Stream<(Participant, VideoTrack)> get trackSubscribed =>
+      _trackSubscribedController.stream;
+
+  @override
+  Stream<(Participant, VideoTrack)> get trackUnsubscribed =>
+      _trackUnsubscribedController.stream;
+
+  @override
+  Stream<LocalTrackPublication> get localTrackPublished =>
+      _localTrackPublishedController.stream;
+
+  @override
+  Stream<String?> get connectionLost => _connectionLostController.stream;
+
+  @override
+  Stream<PlayerPath> get positionReceived => const Stream.empty();
+
+  @override
+  Stream<AvatarUpdate> get avatarReceived => const Stream.empty();
+
+  @override
+  Room? get room => null;
+
+  @override
+  LocalParticipant? get localParticipant => null;
+
+  @override
+  bool get isScreenShareEnabled => false;
+
+  @override
+  Future<void> dispose() async {
     _dataReceivedController.close();
     _participantJoinedController.close();
     _participantLeftController.close();
+    _speakingChangedController.close();
+    _trackSubscribedController.close();
+    _trackUnsubscribedController.close();
+    _localTrackPublishedController.close();
+    _connectionLostController.close();
   }
 
-  // Unused methods - just satisfy interface
   @override
-  dynamic noSuchMethod(Invocation invocation) => null;
+  Future<ConnectionResult> connect() async =>
+      connected ? ConnectionResult.connected : ConnectionResult.roomFailed;
+
+  @override
+  Future<void> disconnect() async {}
+
+  @override
+  Future<void> setCameraEnabled(bool enabled) async {}
+
+  @override
+  Future<void> setMicrophoneEnabled(bool enabled) async {}
+
+  @override
+  Future<void> setScreenShareEnabled(bool enabled,
+      {ScreenShareCaptureOptions? options}) async {}
+
+  @override
+  void setParticipantAudioEnabled(String identity, bool enabled) {}
+
+  @override
+  Participant? getParticipant(String identity) => null;
+
+  @override
+  Future<void> publishData(
+    List<int> data, {
+    bool reliable = true,
+    List<String>? destinationIdentities,
+    String? topic,
+  }) async {}
+
+  @override
+  Future<void> publishMapInfo(GameMap map) async {}
+
+  @override
+  Future<void> publishPosition({
+    required List<Vector2> points,
+    required List<Direction> directions,
+  }) async {}
+
+  @override
+  Future<void> publishTerminalActivity({
+    required String action,
+    String? challengeId,
+    String? challengeTitle,
+    String? challengeDescription,
+    int? terminalX,
+    int? terminalY,
+  }) async {}
+
+  @override
+  Future<void> publishAvatar(Avatar avatar) async {}
+
+  @override
+  Future<DataChannelMessage?> sendPing({
+    Duration timeout = const Duration(seconds: 5),
+  }) async =>
+      null;
 }

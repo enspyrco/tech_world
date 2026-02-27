@@ -67,23 +67,26 @@ class MapEditorPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: _panelBg,
-      child: ListenableBuilder(
-        listenable: state,
-        builder: (context, _) {
-          return Column(
-            children: [
-              _buildHeader(),
-              _LayerTabs(state: state),
-              _MapToolbar(state: state),
-              Expanded(
-                child: state.activeLayer == ActiveLayer.structure
+      child: Column(
+        children: [
+          _buildHeader(),
+          _LayerTabs(state: state),
+          _MapToolbar(state: state),
+          // Only the grid area needs to rebuild on every state change.
+          // The header, layer tabs, toolbar, and footer manage their own
+          // listeners or are static.
+          Expanded(
+            child: ListenableBuilder(
+              listenable: state,
+              builder: (context, _) {
+                return state.activeLayer == ActiveLayer.structure
                     ? _buildGridArea()
-                    : _buildTileLayerEditor(),
-              ),
-              _buildFooter(context),
-            ],
-          );
-        },
+                    : _buildTileLayerEditor();
+              },
+            ),
+          ),
+          _buildFooter(context),
+        ],
       ),
     );
   }
