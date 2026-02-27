@@ -216,7 +216,7 @@ class LiveKitService {
       if (tokenResult.token == null) {
         debugPrint('LiveKitService: Failed to retrieve token');
         _isConnecting = false;
-        return tokenResult.errorResult;
+        return tokenResult.connectionResult;
       }
 
       // Create room with options
@@ -263,9 +263,11 @@ class LiveKitService {
     } catch (e) {
       debugPrint('LiveKitService: Connection failed: $e');
       // Clean up dangling _room and _listener created before the failure.
+      // Await disconnect so the room is fully torn down before the caller
+      // can retry, preventing state collisions on rapid retries.
       await _listener?.dispose();
       _listener = null;
-      _room?.disconnect();
+      await _room?.disconnect();
       _room = null;
       _isConnecting = false;
       return ConnectionResult.roomFailed;
@@ -637,13 +639,14 @@ class LiveKitService {
 /// Internal result from [LiveKitService._retrieveToken].
 class _TokenResult {
   const _TokenResult.success(String this.token)
-      : errorResult = ConnectionResult.connected;
-  const _TokenResult.failure(this.errorResult) : token = null;
+      : connectionResult = ConnectionResult.connected;
+  const _TokenResult.failure(this.connectionResult) : token = null;
 
   final String? token;
 
-  /// The [ConnectionResult] to return when token retrieval fails.
-  final ConnectionResult errorResult;
+  /// The [ConnectionResult] describing the outcome — [ConnectionResult.connected]
+  /// on success, or a specific failure reason otherwise.
+  final ConnectionResult connectionResult;
 }
 
 /// A message received via LiveKit data channel.
