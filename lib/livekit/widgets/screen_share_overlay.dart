@@ -42,23 +42,40 @@ class _ScreenShareOverlayState extends State<ScreenShareOverlay> {
   /// Active screen share panels, keyed by `'${identity}_${track.sid}'`.
   final Map<String, _ScreenShareEntry> _entries = {};
 
-  late final StreamSubscription<(Participant, VideoTrack)> _subscribedSub;
-  late final StreamSubscription<(Participant, VideoTrack)> _unsubscribedSub;
+  StreamSubscription<(Participant, VideoTrack)>? _subscribedSub;
+  StreamSubscription<(Participant, VideoTrack)>? _unsubscribedSub;
 
   @override
   void initState() {
     super.initState();
+    _subscribe();
+  }
 
+  @override
+  void didUpdateWidget(ScreenShareOverlay old) {
+    super.didUpdateWidget(old);
+    if (old.liveKitService != widget.liveKitService) {
+      _unsubscribe();
+      _entries.clear();
+      _subscribe();
+    }
+  }
+
+  void _subscribe() {
     _subscribedSub =
         widget.liveKitService.trackSubscribed.listen(_onTrackSubscribed);
     _unsubscribedSub =
         widget.liveKitService.trackUnsubscribed.listen(_onTrackUnsubscribed);
   }
 
+  void _unsubscribe() {
+    _subscribedSub?.cancel();
+    _unsubscribedSub?.cancel();
+  }
+
   @override
   void dispose() {
-    _subscribedSub.cancel();
-    _unsubscribedSub.cancel();
+    _unsubscribe();
     super.dispose();
   }
 

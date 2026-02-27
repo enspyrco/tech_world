@@ -22,6 +22,14 @@ class FakeLiveKitService implements LiveKitService {
   Stream<(Participant, VideoTrack)> get trackUnsubscribed =>
       _trackUnsubscribedController.stream;
 
+  /// Whether the subscribed stream currently has listeners.
+  bool get hasSubscribedListeners =>
+      _trackSubscribedController.hasListener;
+
+  /// Whether the unsubscribed stream currently has listeners.
+  bool get hasUnsubscribedListeners =>
+      _trackUnsubscribedController.hasListener;
+
   void simulateTrackSubscribed(Participant participant, VideoTrack track) {
     _trackSubscribedController.add((participant, track));
   }
@@ -69,5 +77,86 @@ void main() {
       // Should render nothing visible.
       expect(find.byType(ScreenSharePanel), findsNothing);
     });
+
+    testWidgets('subscribes to both streams on init', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ScreenShareOverlay(liveKitService: fakeLiveKit),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(fakeLiveKit.hasSubscribedListeners, isTrue);
+      expect(fakeLiveKit.hasUnsubscribedListeners, isTrue);
+    });
+
+    testWidgets('cancels subscriptions on dispose', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ScreenShareOverlay(liveKitService: fakeLiveKit),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      // Dispose the widget by replacing it.
+      await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+
+      // Streams should no longer have listeners from the overlay.
+      expect(fakeLiveKit.hasSubscribedListeners, isFalse);
+      expect(fakeLiveKit.hasUnsubscribedListeners, isFalse);
+    });
+
+    testWidgets('resubscribes when liveKitService changes', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ScreenShareOverlay(liveKitService: fakeLiveKit),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(fakeLiveKit.hasSubscribedListeners, isTrue);
+
+      // Swap to a new service.
+      final newService = FakeLiveKitService();
+      addTearDown(newService.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                ScreenShareOverlay(liveKitService: newService),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      // Old service should lose its listeners; new service should gain them.
+      expect(fakeLiveKit.hasSubscribedListeners, isFalse);
+      expect(newService.hasSubscribedListeners, isTrue);
+      expect(newService.hasUnsubscribedListeners, isTrue);
+    });
+
+    // Note: Testing subscribe/unsubscribe track flows would require mocking
+    // Participant.getTrackPublicationBySource(), which returns a
+    // TrackPublication whose track.sid must match. LiveKit's SDK classes
+    // don't have simple test constructors, so these flows are best verified
+    // via integration tests with a real LiveKit room.
   });
 }

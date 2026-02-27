@@ -1061,7 +1061,11 @@ class _ScreenShareButtonState extends State<_ScreenShareButton> {
     final service = widget.liveKitService;
     if (service == null || !service.isConnected) return;
 
-    await service.setScreenShareEnabled(!_sharing);
+    try {
+      await service.setScreenShareEnabled(!_sharing);
+    } catch (e) {
+      debugPrint('Screen share toggle failed: $e');
+    }
     // Rebuild to pick up the new isScreenShareEnabled state.
     if (mounted) setState(() {});
   }
