@@ -877,7 +877,10 @@ class TechWorld extends World with TapCallbacks {
   /// components.
   Future<void> loadMap(GameMap map) async {
     if (map.id == currentMap.value.id) return; // Already on this map.
-    if (_isLoadingMap) return; // Another load is in progress.
+    if (_isLoadingMap) {
+      debugPrint('TechWorld: loadMap ignored — another load is in progress');
+      return;
+    }
 
     _isLoadingMap = true;
     try {
