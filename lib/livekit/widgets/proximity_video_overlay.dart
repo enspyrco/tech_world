@@ -40,6 +40,9 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
   final Map<String, ({Point<int> position, int distance})>
       _nearbyPlayerData = {};
 
+  /// Snapshot of the local player's grid position from the previous tick.
+  Point<int>? _prevLocalPos;
+
   @override
   void initState() {
     super.initState();
@@ -58,10 +61,14 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
       });
     });
 
-    // Poll for position updates and proximity checks
-    _updateTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+    // Poll for position updates and proximity checks.
+    // 200ms (5 Hz) is sufficient for smooth overlay positioning.
+    _updateTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
       final positions = widget.techWorld.otherPlayerPositions;
       final localPos = widget.techWorld.localPlayerPosition;
+
+      // Track whether any data actually changed to avoid needless rebuilds.
+      var changed = false;
 
       // Update positions and distances of nearby players
       for (final playerId in _nearbyPlayerData.keys.toList()) {
@@ -71,10 +78,14 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
             (otherPos.x - localPos.x).abs(),
             (otherPos.y - localPos.y).abs(),
           );
-          _nearbyPlayerData[playerId] = (
-            position: otherPos,
-            distance: distance,
-          );
+          final prev = _nearbyPlayerData[playerId]!;
+          if (prev.position != otherPos || prev.distance != distance) {
+            _nearbyPlayerData[playerId] = (
+              position: otherPos,
+              distance: distance,
+            );
+            changed = true;
+          }
         }
       }
 
@@ -84,8 +95,14 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
         otherPlayerPositions: positions,
       );
 
-      // Trigger rebuild for position updates
-      if (_nearbyPlayerData.isNotEmpty) {
+      // Also rebuild if the local player moved (viewport shifts).
+      if (_prevLocalPos != localPos) {
+        _prevLocalPos = localPos;
+        changed = true;
+      }
+
+      // Only trigger rebuild when position data actually changed.
+      if (changed && _nearbyPlayerData.isNotEmpty) {
         setState(() {});
       }
     });

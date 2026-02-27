@@ -68,6 +68,8 @@ class _MyAppState extends State<MyApp> {
   final ValueNotifier<String?> _activeDmPeer = ValueNotifier<String?>(null);
   ChatMessageRepository? _chatMessageRepository;
   bool _liveKitConnectionFailed = false;
+  String? _connectionFailureMessage;
+  StreamSubscription<AuthUser>? _authSubscription;
 
   /// The room ID currently being joined, or null when not joining.
   String? _joiningRoomId;
@@ -96,6 +98,7 @@ class _MyAppState extends State<MyApp> {
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _progressDriftTimer?.cancel();
     super.dispose();
   }
@@ -141,7 +144,7 @@ class _MyAppState extends State<MyApp> {
     Locator.add<TechWorldGame>(techWorldGame);
 
     // Listen for auth changes to set up LiveKit when user signs in
-    authService.authStateChanges.listen(_onAuthStateChanged);
+    _authSubscription = authService.authStateChanges.listen(_onAuthStateChanged);
 
     // Complete
     setState(() {
@@ -168,6 +171,7 @@ class _MyAppState extends State<MyApp> {
       _myRooms = null;
       Locator.remove<RoomService>();
       _liveKitConnectionFailed = false;
+      _connectionFailureMessage = null;
       _selectedAvatar = null;
       _avatarLoaded = false;
       _currentUserId = null;
@@ -307,10 +311,10 @@ class _MyAppState extends State<MyApp> {
     Locator.add<ChatService>(_chatService!);
     Locator.add<ProximityService>(_proximityService!);
 
-    final connected = await _liveKitService!.connect();
-    debugPrint('LiveKit connected to room $roomId: $connected');
+    final result = await _liveKitService!.connect();
+    debugPrint('LiveKit connection result for room $roomId: $result');
 
-    if (connected) {
+    if (result == ConnectionResult.connected) {
       onProgress?.call(0.55, 'Setting up game world\u2026');
       await locate<TechWorld>().connectToLiveKit(userId, displayName);
 
@@ -320,8 +324,17 @@ class _MyAppState extends State<MyApp> {
 
       onProgress?.call(0.85, 'Loading chat history\u2026');
       await _chatService!.loadHistory(roomId);
-    } else {
+    } else if (result != ConnectionResult.alreadyConnected) {
       _liveKitConnectionFailed = true;
+      _connectionFailureMessage = switch (result) {
+        ConnectionResult.tokenAuthError =>
+          'Session expired — please sign in again',
+        ConnectionResult.tokenNetworkError =>
+          'Could not reach server — check your connection',
+        ConnectionResult.roomFailed =>
+          'Room connection failed — try again later',
+        _ => 'Video & chat unavailable — connection failed',
+      };
     }
 
     // Apply saved avatar to game world.
@@ -331,29 +344,38 @@ class _MyAppState extends State<MyApp> {
   }
 
   /// Leave the current room — disconnect LiveKit and return to lobby.
+  ///
+  /// Disposal order: TechWorld subscriptions first (cancels stream listeners
+  /// while the underlying services are still alive), then consumers before
+  /// producers (ChatService → ProximityService → LiveKitService).
   Future<void> _leaveRoom() async {
     if (_currentRoom == null) return;
 
-    _liveKitService?.dispose();
+    // Exit editor mode if active (before tearing down services).
+    final techWorld = locate<TechWorld>();
+    if (techWorld.mapEditorActive.value) {
+      await techWorld.exitEditorMode();
+    }
+
+    // Cancel TechWorld's LiveKit subscriptions before disposing services.
+    techWorld.disconnectFromLiveKit();
+
+    // Dispose consumers before producers.
     _chatService?.dispose();
     _proximityService?.dispose();
-    _liveKitService = null;
+    await _liveKitService?.dispose();
     _chatService = null;
     _chatMessageRepository = null;
     _proximityService = null;
+    _liveKitService = null;
     _activeDmPeer.value = null;
     _liveKitConnectionFailed = false;
+    _connectionFailureMessage = null;
     Locator.remove<LiveKitService>();
     Locator.remove<ChatService>();
     Locator.remove<ProximityService>();
     _currentRoom = null;
     _mapEditorState.setRoomId(null);
-
-    // Exit editor mode if active.
-    final techWorld = locate<TechWorld>();
-    if (techWorld.mapEditorActive.value) {
-      await techWorld.exitEditorMode();
-    }
 
     setState(() {});
   }
@@ -446,6 +468,7 @@ class _MyAppState extends State<MyApp> {
 
     // Invalidate cached room list so it refreshes on next open.
     _myRooms = null;
+    _mapEditorState.markClean();
 
     setState(() {});
   }
@@ -469,6 +492,45 @@ class _MyAppState extends State<MyApp> {
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       registry.loadFromImage(tileset, frame.image);
+    }
+  }
+
+  /// Show a confirmation dialog when discarding unsaved editor changes.
+  ///
+  /// If the editor has no unsaved changes, exits immediately. Otherwise shows
+  /// a dialog asking the user to confirm.
+  Future<void> _confirmDiscardEditorChanges(
+    BuildContext context,
+    TechWorld techWorld,
+  ) async {
+    if (!_mapEditorState.isDirty) {
+      await techWorld.exitEditorMode(applyChanges: false);
+      return;
+    }
+
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard changes?'),
+        content: const Text(
+          'You have unsaved changes that will be lost.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+
+    if (discard == true) {
+      await techWorld.exitEditorMode(applyChanges: false);
+      _mapEditorState.markClean();
     }
   }
 
@@ -669,9 +731,13 @@ class _MyAppState extends State<MyApp> {
                                 width: constraints.maxWidth >= 800 ? 480 : 360,
                                 child: MapEditorPanel(
                                   state: _mapEditorState,
-                                  onApply: techWorld.exitEditorMode,
-                                  onCancel: () => techWorld.exitEditorMode(
-                                    applyChanges: false,
+                                  onApply: () async {
+                                    await techWorld.exitEditorMode();
+                                    _mapEditorState.markClean();
+                                  },
+                                  onCancel: () => _confirmDiscardEditorChanges(
+                                    context,
+                                    techWorld,
                                   ),
                                   referenceMap: techWorld.currentMap.value,
                                   playerPosition:
@@ -983,14 +1049,15 @@ class _MyAppState extends State<MyApp> {
                           color: Colors.orange.shade800,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.wifi_off, color: Colors.white, size: 18),
-                            SizedBox(width: 8),
+                            const Icon(Icons.wifi_off, color: Colors.white, size: 18),
+                            const SizedBox(width: 8),
                             Text(
-                              'Video & chat unavailable — connection failed',
-                              style: TextStyle(
+                              _connectionFailureMessage ??
+                                  'Video & chat unavailable — connection failed',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 13,
                               ),
@@ -1028,6 +1095,7 @@ class _MapEditorButton extends StatelessWidget {
           onPressed: () async {
             if (active) {
               await techWorld.exitEditorMode();
+              mapEditorState.markClean();
             } else {
               techWorld.enterEditorMode(mapEditorState);
             }

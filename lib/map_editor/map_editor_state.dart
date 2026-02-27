@@ -56,6 +56,23 @@ class MapEditorState extends ChangeNotifier {
 
   final List<List<TileType>> _grid;
 
+  /// Whether the editor has unsaved changes since the last load/save.
+  bool _isDirty = false;
+  bool get isDirty => _isDirty;
+
+  /// Mark the editor as having unsaved changes. Called by mutating methods.
+  void _markDirty() {
+    if (!_isDirty) {
+      _isDirty = true;
+      // Don't notifyListeners — the caller's mutating method will do that.
+    }
+  }
+
+  /// Reset the dirty flag (after a successful save or load).
+  void markClean() {
+    _isDirty = false;
+  }
+
   EditorTool _currentTool = EditorTool.barrier;
   EditorTool get currentTool => _currentTool;
 
@@ -183,6 +200,7 @@ class MapEditorState extends ChangeNotifier {
       }
     }
 
+    _markDirty();
     notifyListeners();
   }
 
@@ -214,6 +232,7 @@ class MapEditorState extends ChangeNotifier {
       }
     }
 
+    _markDirty();
     notifyListeners();
   }
 
@@ -245,6 +264,7 @@ class MapEditorState extends ChangeNotifier {
   /// Set the background image filename, or `null` for no background.
   void setBackgroundImage(String? filename) {
     _backgroundImage = filename;
+    _markDirty();
     notifyListeners();
   }
 
@@ -341,6 +361,7 @@ class MapEditorState extends ChangeNotifier {
         }
       }
     }
+    _markDirty();
     notifyListeners();
   }
 
@@ -374,6 +395,7 @@ class MapEditorState extends ChangeNotifier {
       _automappedCells.add((x, y));
     }
 
+    _markDirty();
     notifyListeners();
   }
 
@@ -383,6 +405,7 @@ class MapEditorState extends ChangeNotifier {
       objectLayerData.setTile(x, y, null);
     }
     _automappedCells.clear();
+    _markDirty();
     notifyListeners();
   }
 
@@ -407,12 +430,14 @@ class MapEditorState extends ChangeNotifier {
   /// Set the map name.
   void setMapName(String name) {
     _mapName = name;
+    _markDirty();
     notifyListeners();
   }
 
   /// Set the map ID.
   void setMapId(String id) {
     _mapId = id;
+    _markDirty();
     notifyListeners();
   }
 
@@ -435,6 +460,7 @@ class MapEditorState extends ChangeNotifier {
       case EditorTool.eraser:
         _grid[y][x] = TileType.open;
     }
+    _markDirty();
     notifyListeners();
   }
 
@@ -446,12 +472,13 @@ class MapEditorState extends ChangeNotifier {
       }
     }
     _autoBarrierCells.clear();
+    _markDirty();
     notifyListeners();
   }
 
   /// Reset all layers including tile data.
   void clearAll() {
-    clearGrid();
+    clearGrid(); // Already calls _markDirty().
     _backgroundImage = null;
     _roomId = null;
     _activeTerrainBrush = null;
@@ -466,6 +493,8 @@ class MapEditorState extends ChangeNotifier {
   }
 
   /// Load grid state from an existing [GameMap].
+  ///
+  /// Resets the dirty flag since this is a "fresh start" from a saved state.
   void loadFromGameMap(GameMap map) {
     clearGrid();
     _autoBarrierCells.clear();
@@ -512,6 +541,7 @@ class MapEditorState extends ChangeNotifier {
     // a map without custom tilesets.
     _customTilesets = List.of(map.customTilesets);
 
+    _isDirty = false; // Fresh load — no unsaved changes.
     notifyListeners();
   }
 
@@ -595,6 +625,7 @@ class MapEditorState extends ChangeNotifier {
         }
       }
     }
+    _isDirty = false; // Fresh load — no unsaved changes.
     notifyListeners();
   }
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
@@ -42,7 +43,11 @@ class ChatService {
   final _messagesController = StreamController<List<ChatMessage>>.broadcast();
   final List<ChatMessage> _messages = [];
   final Map<String, Completer<Map<String, dynamic>?>> _pendingMessages = {};
-  final Set<String> _seenMessageIds = {}; // Prevent duplicate messages
+  /// Prevents duplicate messages. Capped at [_maxSeenIds] entries; when
+  /// exceeded, the oldest half is removed. Uses [LinkedHashSet] to preserve
+  /// insertion order for trimming.
+  final LinkedHashSet<String> _seenMessageIds = LinkedHashSet<String>();
+  static const _maxSeenIds = 500;
   final Map<String, Completer<String?>> _pendingHelpRequests = {};
   StreamSubscription<DataChannelMessage>? _chatSubscription;
   StreamSubscription<DataChannelMessage>? _helpResponseSubscription;
@@ -101,6 +106,19 @@ class ChatService {
     return messages.last.text;
   }
 
+  /// Track a message ID for deduplication, trimming the oldest entries when
+  /// the set exceeds [_maxSeenIds].
+  void _markSeen(String id) {
+    _seenMessageIds.add(id);
+    if (_seenMessageIds.length > _maxSeenIds) {
+      // Remove the oldest half. Collect IDs first to avoid concurrent
+      // modification during iteration.
+      final toRemove = _seenMessageIds.length ~/ 2;
+      final oldIds = _seenMessageIds.take(toRemove).toList();
+      oldIds.forEach(_seenMessageIds.remove);
+    }
+  }
+
   void _subscribeToMessages() {
     // Listen for group chat messages and bot responses
     _chatSubscription = _liveKitService.dataReceived
@@ -118,12 +136,13 @@ class ChatService {
   }
 
   /// Track bot presence via LiveKit participant events.
+  ///
+  /// Uses the "subscribe-then-check" pattern: subscriptions are created
+  /// *before* the initial participant check so that events arriving in the
+  /// gap between creation and check are not missed. The subsequent check is
+  /// idempotent (setting idle when already idle is a no-op).
   void _trackBotPresence() {
-    // Set initial status based on whether bot is already in the room.
-    final botPresent =
-        _liveKitService.remoteParticipants.containsKey(_botIdentity);
-    botStatusNotifier.value = botPresent ? BotStatus.idle : BotStatus.absent;
-
+    // Subscribe FIRST so no events are missed.
     _botJoinedSubscription = _liveKitService.participantJoined
         .where((p) => p.identity == _botIdentity)
         .listen((_) {
@@ -135,6 +154,11 @@ class ChatService {
         .listen((_) {
       botStatusNotifier.value = BotStatus.absent;
     });
+
+    // THEN check current state — idempotent if subscription already fired.
+    final botPresent =
+        _liveKitService.remoteParticipants.containsKey(_botIdentity);
+    botStatusNotifier.value = botPresent ? BotStatus.idle : BotStatus.absent;
   }
 
   void _handleMessage(DataChannelMessage message) {
@@ -154,7 +178,7 @@ class ChatService {
 
     // Skip if we've already seen this message (prevents duplicates)
     if (ownId != null && _seenMessageIds.contains(ownId)) return;
-    if (ownId != null) _seenMessageIds.add(ownId);
+    if (ownId != null) _markSeen(ownId);
 
     final isDm =
         message.topic == 'dm' || message.topic == 'dm-response';
@@ -299,7 +323,7 @@ class ChatService {
 
     // Generate a unique message ID
     final messageId = DateTime.now().millisecondsSinceEpoch.toString();
-    _seenMessageIds.add(messageId); // Mark as seen so we don't duplicate
+    _markSeen(messageId); // Mark as seen so we don't duplicate
 
     // Add user message locally
     final userMessage = ChatMessage(
@@ -367,6 +391,11 @@ class ChatService {
       );
     } catch (e) {
       debugPrint('ChatService: Error waiting for response: $e');
+      _pendingMessages.remove(messageId);
+      // Reset bot status so the UI doesn't stay in "thinking" state.
+      if (botStatusNotifier.value == BotStatus.thinking) {
+        botStatusNotifier.value = BotStatus.idle;
+      }
       return null;
     }
   }
@@ -392,7 +421,7 @@ class ChatService {
     );
 
     final messageId = DateTime.now().millisecondsSinceEpoch.toString();
-    _seenMessageIds.add(messageId);
+    _markSeen(messageId);
 
     final localUid = _liveKitService.userId;
     final chatMessage = ChatMessage(

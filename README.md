@@ -4,15 +4,30 @@ An educational multiplayer 2D virtual world where players solve coding challenge
 
 ## Features
 
-- **Multiplayer** — Real-time player positions and chat via LiveKit data channels
-- **6 maps with runtime switching** — Open Arena, The L-Room, Four Corners, Simple Maze, The Library, The Workshop
-- **Map editor** — Paint barriers, spawn points, and terminals on a 50x50 grid; import/export ASCII format
-- **23 coding challenges** — Beginner (10), Intermediate (7), and Advanced (6) tiers with Dart syntax-highlighted editor
+### Multiplayer & Social
+- **Room browser / lobby** — Browse and join public rooms or create your own, with animated join progress and owner/editor permissions
+- **Player-to-player DMs** — Private direct messages delivered via targeted LiveKit data channels and persisted to Firestore
+- **Proximity-based video chat** — LiveKit video/audio streams rendered as in-game bubbles when players are nearby
+- **User profiles** — Set a display name and upload a profile picture, stored in Firestore and Firebase Storage
+
+### Game World
+- **6 predefined maps** — Open Arena, The L-Room, Four Corners, Simple Maze, The Library, The Workshop — with runtime switching
+- **Animated tiles** — Water and other terrain tiles animate via shared tickers while static tiles stay in a cached `Picture`
+- **Wall occlusion** — Characters walk behind walls and object tiles using y-priority sprite overlays
+- **Cross-platform** — macOS, web, iOS, Android
+
+### Map Editor
+- **Paint custom maps** — Place tiles on a 50×50 grid with layer-aware palette (floor, structure, objects)
+- **Auto-barriers** — Painting solid object tiles automatically places movement barriers
+- **Automapping rules engine** — Declarative rules auto-place decorative tiles (shadows, transitions) based on neighbors
+- **TMX import** — Import maps from the Tiled map editor (`.tmx` format)
+- **Save / load / delete** — Persist custom maps to Firestore, browse them in the lobby
+- **Procedural generation** — Generate maps using BSP dungeon, recursive-backtracker maze, or cellular-automata cave algorithms
+
+### Coding & AI
+- **23 coding challenges** — Beginner (10), Intermediate (7), and Advanced (6) tiers with LSP-powered code completion and hover docs
 - **AI tutor (Clawd)** — Claude-powered bot that reviews code submissions and answers questions
 - **Voice input/output** — Browser Speech-to-Text and Text-to-Speech for hands-free interaction with Clawd (web only)
-- **Proximity-based video chat** — LiveKit video/audio streams rendered as in-game bubbles when players are nearby
-- **Wall occlusion** — Characters walk behind walls using y-priority sprite overlays
-- **Cross-platform** — macOS, web, iOS, Android
 
 ## Prerequisites
 
@@ -53,7 +68,7 @@ CI runs analysis then tests with coverage. The merge-to-main threshold is 45%. S
 
 ## Architecture
 
-The app uses a service locator pattern (`Locator`) and Flame's component system. All real-time communication goes through LiveKit (data channels for positions/chat, tracks for video/audio). There is no separate game server.
+The app uses a service locator pattern (`Locator`) and Flame's component system. Real-time communication (player positions, chat, video/audio) goes through LiveKit. Persistent data (rooms, maps, DM history, user profiles) lives in Firestore and Firebase Storage. There is no separate game server.
 
 For detailed architecture, component descriptions, and development notes, see [`CLAUDE.md`](CLAUDE.md).
 

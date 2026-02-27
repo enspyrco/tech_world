@@ -106,6 +106,7 @@ class TechWorld extends World with TapCallbacks {
   WallOcclusionComponent? _wallOcclusion;
   TileFloorComponent? _tileFloor;
   TileObjectLayerComponent? _tileObjectLayer;
+  bool _isLoadingMap = false;
 
   /// Close the code editor panel.
   void closeEditor() {
@@ -219,6 +220,7 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<RemoteParticipant>? _participantJoinedSubscription;
   StreamSubscription<RemoteParticipant>? _participantLeftSubscription;
   StreamSubscription<AvatarUpdate>? _avatarSubscription;
+  StreamSubscription<(Participant, bool)>? _speakingSubscription;
 
   // Avatar tracking — stores updates for players not yet created
   final Map<String, String> _pendingAvatars = {};
@@ -591,7 +593,8 @@ class TechWorld extends World with TapCallbacks {
       bubble?.removeFromParent();
     });
 
-    _liveKitService!.speakingChanged.listen((event) {
+    _speakingSubscription =
+        _liveKitService!.speakingChanged.listen((event) {
       final (participant, isSpeaking) = event;
       _updateBubbleSpeakingState(participant.identity, isSpeaking);
     });
@@ -744,7 +747,7 @@ class TechWorld extends World with TapCallbacks {
     _authStateChangesSubscription = _authStateChanges.listen((authUser) async {
       if (authUser is SignedOutUser) {
         // User signed out - clear LiveKit state so we can reconnect on next sign-in
-        _disconnectFromLiveKit();
+        disconnectFromLiveKit();
         // Clear stale terminal completion indicators from the previous user.
         refreshTerminalStates();
       } else if (authUser is! PlaceholderUser) {
@@ -900,29 +903,39 @@ class TechWorld extends World with TapCallbacks {
   }
 
   /// Switch to a different map at runtime.
+  ///
+  /// Guarded against concurrent calls — if a map load is already in progress,
+  /// the second call returns immediately to prevent double removal of
+  /// components.
   Future<void> loadMap(GameMap map) async {
     if (map.id == currentMap.value.id) return; // Already on this map.
+    if (_isLoadingMap) return; // Another load is in progress.
 
-    // Auto-exit editor mode if active.
-    if (mapEditorActive.value) await exitEditorMode();
+    _isLoadingMap = true;
+    try {
+      // Auto-exit editor mode if active.
+      if (mapEditorActive.value) await exitEditorMode();
 
-    // Close code editor if open — the terminals are about to change.
-    closeEditor();
+      // Close code editor if open — the terminals are about to change.
+      closeEditor();
 
-    _removeMapComponents();
-    await _loadMapComponents(map);
+      _removeMapComponents();
+      await _loadMapComponents(map);
 
-    // Reposition player to new map's spawn point.
-    _userPlayerComponent.position = Vector2(
-      map.spawnPoint.x * gridSquareSizeDouble,
-      map.spawnPoint.y * gridSquareSizeDouble,
-    );
-    playerGridPosition.value = map.spawnPoint;
+      // Reposition player to new map's spawn point.
+      _userPlayerComponent.position = Vector2(
+        map.spawnPoint.x * gridSquareSizeDouble,
+        map.spawnPoint.y * gridSquareSizeDouble,
+      );
+      playerGridPosition.value = map.spawnPoint;
 
-    currentMap.value = map;
+      currentMap.value = map;
 
-    // Notify the bot about the new map layout
-    _liveKitService?.publishMapInfo(map);
+      // Notify the bot about the new map layout
+      _liveKitService?.publishMapInfo(map);
+    } finally {
+      _isLoadingMap = false;
+    }
   }
 
   @override
@@ -1001,8 +1014,11 @@ class TechWorld extends World with TapCallbacks {
   }
 
   /// Disconnect from LiveKit and clear all related state.
-  /// Called when user signs out so we can reconnect on next sign-in.
-  void _disconnectFromLiveKit() {
+  ///
+  /// Called from [main.dart] before disposing services so that stream
+  /// subscriptions are cancelled while the underlying service is still alive.
+  /// Also called internally when the user signs out.
+  void disconnectFromLiveKit() {
     debugPrint('TechWorld: Disconnecting from LiveKit');
 
     // Cancel all LiveKit-related subscriptions
@@ -1018,6 +1034,8 @@ class TechWorld extends World with TapCallbacks {
     _participantLeftSubscription = null;
     _avatarSubscription?.cancel();
     _avatarSubscription = null;
+    _speakingSubscription?.cancel();
+    _speakingSubscription = null;
 
     // Clear pending avatar data
     _pendingAvatars.clear();
@@ -1054,7 +1072,7 @@ class TechWorld extends World with TapCallbacks {
     activeTerminalPosition.dispose();
     mapEditorActive.dispose();
     currentMap.dispose();
-    _disconnectFromLiveKit();
+    disconnectFromLiveKit();
   }
 }
 
