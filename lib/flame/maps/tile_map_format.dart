@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
+import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
 
 /// JSON serialization/deserialization for tileset-based maps.
@@ -49,6 +50,10 @@ class TileMapFormat {
       if (map.floorLayer != null) 'floorLayer': map.floorLayer!.toJson(),
       if (map.objectLayer != null) 'objectLayer': map.objectLayer!.toJson(),
       if (map.terrainGrid != null) 'terrainGrid': map.terrainGrid!.toJson(),
+      if (map.customTilesets.isNotEmpty)
+        'customTilesets': [
+          for (final ts in map.customTilesets) ts.toJson(),
+        ],
     };
   }
 
@@ -96,6 +101,11 @@ class TileMapFormat {
       terrainGrid: json['terrainGrid'] != null
           ? TerrainGrid.fromJson(json['terrainGrid'] as List<dynamic>)
           : null,
+      customTilesets: (json['customTilesets'] as List<dynamic>?)
+              ?.map((ts) =>
+                  Tileset.fromJson(ts as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 }

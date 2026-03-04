@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
+import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
 
 /// A game map definition containing barrier layout and spawn configuration.
@@ -24,6 +25,7 @@ class GameMap {
     this.objectLayer,
     this.tilesetIds = const [],
     this.terrainGrid,
+    this.customTilesets = const [],
   });
 
   /// Unique identifier for this map.
@@ -61,6 +63,13 @@ class GameMap {
   /// re-evaluate bitmask tiles when loading a saved map. Not needed at runtime.
   final TerrainGrid? terrainGrid;
 
+  /// Custom tilesets used by this map that are not predefined in assets.
+  ///
+  /// Their images are stored in Firebase Storage and downloaded on demand.
+  /// Metadata is persisted via [TileMapFormat] so other clients know which
+  /// tilesets to fetch.
+  final List<Tileset> customTilesets;
+
   /// Whether this map uses tileset-based rendering.
   bool get usesTilesets =>
       tilesetIds.isNotEmpty ||
@@ -69,6 +78,7 @@ class GameMap {
 
   static const _listEquality = ListEquality<Point<int>>();
   static const _stringListEquality = ListEquality<String>();
+  static const _tilesetListEquality = ListEquality<Tileset>();
 
   @override
   bool operator ==(Object other) =>
@@ -83,7 +93,8 @@ class GameMap {
           _stringListEquality.equals(tilesetIds, other.tilesetIds) &&
           floorLayer == other.floorLayer &&
           objectLayer == other.objectLayer &&
-          terrainGrid == other.terrainGrid;
+          terrainGrid == other.terrainGrid &&
+          _tilesetListEquality.equals(customTilesets, other.customTilesets);
 
   @override
   int get hashCode => Object.hash(
@@ -97,5 +108,6 @@ class GameMap {
         floorLayer,
         objectLayer,
         terrainGrid,
+        _tilesetListEquality.hash(customTilesets),
       );
 }

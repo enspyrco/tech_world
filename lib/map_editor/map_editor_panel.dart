@@ -11,6 +11,7 @@ import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/map_editor/available_backgrounds.dart';
+import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/map_editor/import_dialog.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/predefined_rules.dart';
@@ -32,6 +33,7 @@ class MapEditorPanel extends StatelessWidget {
     this.onSave,
     this.canEdit = true,
     this.savedRooms,
+    this.onRegisterCustomTilesets,
     super.key,
   });
 
@@ -58,6 +60,11 @@ class MapEditorPanel extends StatelessWidget {
   /// User's saved rooms, shown in the "Load existing map" dropdown after
   /// predefined maps.
   final List<RoomData>? savedRooms;
+
+  /// Called when a zip import produces custom tilesets that need to be
+  /// decoded and registered with the [TilesetRegistry] for immediate preview.
+  final Future<void> Function(TmxImportResultWithCustomTilesets)?
+      onRegisterCustomTilesets;
 
   static const _headerBg = Color(0xFF2D2D2D);
   static const _panelBg = Color(0xFF1E1E1E);
@@ -378,11 +385,18 @@ class MapEditorPanel extends StatelessWidget {
     );
   }
 
-  void _showImportDialog(BuildContext context) {
-    showDialog(
+  Future<void> _showImportDialog(BuildContext context) async {
+    final result = await showDialog<TmxImportResultWithCustomTilesets>(
       context: context,
       builder: (ctx) => ImportDialog(state: state),
     );
+
+    // If the import returned custom tilesets, register them for preview.
+    if (result != null &&
+        result.customTilesets.isNotEmpty &&
+        onRegisterCustomTilesets != null) {
+      await onRegisterCustomTilesets!(result);
+    }
   }
 
   void _exportToClipboard(BuildContext context) {

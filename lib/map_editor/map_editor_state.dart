@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:tiled/tiled.dart' as tiled;
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
@@ -15,6 +16,7 @@ import 'package:tech_world/flame/tiles/predefined_tilesets.dart'
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
+import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/automap_engine.dart';
 import 'package:tech_world/map_editor/automap_rule.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
@@ -70,6 +72,36 @@ class MapEditorState extends ChangeNotifier {
   /// Set the room ID (used when loading from an existing room).
   void setRoomId(String? id) {
     _roomId = id;
+  }
+
+  // -------------------------------------------------------------------------
+  // Custom tileset state
+  // -------------------------------------------------------------------------
+
+  /// Custom tilesets imported from zip bundles (not predefined in assets).
+  List<Tileset> _customTilesets = [];
+
+  /// Unmodifiable view of custom tilesets for external consumers.
+  List<Tileset> get customTilesets => List.unmodifiable(_customTilesets);
+
+  /// Raw PNG bytes for custom tileset images, keyed by [Tileset.imagePath].
+  ///
+  /// Populated during import and used for Firebase upload and TilePalette
+  /// rendering. Cleared on [clearAll].
+  Map<String, Uint8List> _customTilesetBytes = {};
+
+  /// Unmodifiable view of custom tileset image bytes.
+  Map<String, Uint8List> get customTilesetBytes =>
+      Map.unmodifiable(_customTilesetBytes);
+
+  /// Set custom tileset data directly (used by import and tests).
+  void setCustomTilesetData(
+    List<Tileset> tilesets,
+    Map<String, Uint8List> bytes,
+  ) {
+    _customTilesets = List.of(tilesets);
+    _customTilesetBytes = Map.of(bytes);
+    notifyListeners();
   }
 
   // -------------------------------------------------------------------------
@@ -225,8 +257,11 @@ class MapEditorState extends ChangeNotifier {
     _activeLayer = layer;
     if (_currentBrush != null) {
       final tileset = allTilesets
-          .where((ts) => ts.id == _currentBrush!.tilesetId)
-          .firstOrNull;
+              .where((ts) => ts.id == _currentBrush!.tilesetId)
+              .firstOrNull ??
+          _customTilesets
+              .where((ts) => ts.id == _currentBrush!.tilesetId)
+              .firstOrNull;
       if (tileset == null || !tileset.availableLayers.contains(layer)) {
         _currentBrush = null;
       } else {
@@ -425,6 +460,8 @@ class MapEditorState extends ChangeNotifier {
     terrainGrid.clear();
     _clearTileLayer(floorLayerData);
     _clearTileLayer(objectLayerData);
+    _customTilesets = [];
+    _customTilesetBytes = {};
     notifyListeners();
   }
 
@@ -470,6 +507,11 @@ class MapEditorState extends ChangeNotifier {
       _copyTerrainGrid(map.terrainGrid!, terrainGrid);
     }
 
+    // Restore custom tilesets from the map (bytes may already be loaded
+    // from a prior import). Always assign to clear stale data when loading
+    // a map without custom tilesets.
+    _customTilesets = List.of(map.customTilesets);
+
     notifyListeners();
   }
 
@@ -489,6 +531,37 @@ class MapEditorState extends ChangeNotifier {
     );
     loadFromGameMap(result.gameMap);
     return result.warnings;
+  }
+
+  /// Import a Tiled `.tmx` XML string with custom tileset images.
+  ///
+  /// Like [loadFromTmx] but accepts [customImages] (image source → PNG bytes)
+  /// and optional [tsxProviders] for external TSX resolution.
+  ///
+  /// Returns the import result including custom [Tileset] objects that need
+  /// to be registered with [TilesetRegistry.loadFromImage] by the caller.
+  TmxImportResultWithCustomTilesets loadFromTmxWithCustomTilesets(
+    String tmxXml, {
+    Map<String, Uint8List> customImages = const {},
+    List<tiled.TsxProvider>? tsxProviders,
+    String? mapId,
+    String? mapName,
+  }) {
+    final result = TmxImporter.importWithCustomTilesets(
+      tmxXml,
+      customImages: customImages,
+      tsxProviders: tsxProviders,
+      mapId: mapId,
+      mapName: mapName,
+    );
+    loadFromGameMap(result.gameMap);
+
+    // Store custom tileset metadata and image bytes for persistence and
+    // tile palette rendering.
+    _customTilesets = List.of(result.customTilesets);
+    _customTilesetBytes = Map.of(result.customImageBytes);
+
+    return result;
   }
 
   /// Load grid state from an ASCII art string (same format as [parseAsciiMap]).
@@ -575,6 +648,7 @@ class MapEditorState extends ChangeNotifier {
       objectLayer: objectLayerData.isEmpty ? null : objectLayerData.copy(),
       tilesetIds: tilesetIds,
       terrainGrid: terrainGrid.isEmpty ? null : terrainGrid.copy(),
+      customTilesets: List.unmodifiable(_customTilesets),
     );
   }
 

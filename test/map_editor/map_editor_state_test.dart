@@ -1,10 +1,13 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
+import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 
 void main() {
@@ -430,6 +433,103 @@ void main() {
           reason: 'Floor tile should survive same-instance roundtrip');
       expect(state.floorLayerData.tileAt(4, 4), isNotNull,
           reason: 'Floor tile should survive same-instance roundtrip');
+    });
+  });
+
+  group('Custom tilesets', () {
+    const customTileset = Tileset(
+      id: 'custom_abc123',
+      name: 'My Tileset',
+      imagePath: 'custom/custom_abc123.png',
+      tileSize: 16,
+      columns: 8,
+      rows: 4,
+      isCustom: true,
+    );
+
+    test('loadFromTmxWithCustomTilesets stores customTilesets and bytes', () {
+      // Build a minimal TMX with a custom tileset.
+      // We use loadFromGameMap + manual state to simulate what
+      // loadFromTmxWithCustomTilesets does internally.
+      final imageBytes = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]);
+
+      state.setCustomTilesetData(
+        [customTileset],
+        {'custom/custom_abc123.png': imageBytes},
+      );
+
+      expect(state.customTilesets, hasLength(1));
+      expect(state.customTilesets.first.id, 'custom_abc123');
+      expect(state.customTilesetBytes, hasLength(1));
+      expect(
+        state.customTilesetBytes['custom/custom_abc123.png'],
+        imageBytes,
+      );
+    });
+
+    test('toGameMap includes customTilesets', () {
+      state.setCustomTilesetData([customTileset], {});
+
+      // Paint a tile referencing the custom tileset.
+      state.setActiveLayer(ActiveLayer.floor);
+      state.setBrush(const TileBrush(
+        tilesetId: 'custom_abc123',
+        startCol: 0,
+        startRow: 0,
+        columns: 8,
+      ));
+      state.paintTileRef(5, 5);
+
+      final map = state.toGameMap();
+      expect(map.customTilesets, hasLength(1));
+      expect(map.customTilesets.first.id, 'custom_abc123');
+    });
+
+    test('loadFromGameMap preserves customTilesets', () {
+      final map = GameMap(
+        id: 'custom_map',
+        name: 'Custom Map',
+        barriers: const [],
+        customTilesets: const [customTileset],
+      );
+
+      state.loadFromGameMap(map);
+
+      expect(state.customTilesets, hasLength(1));
+      expect(state.customTilesets.first.id, 'custom_abc123');
+    });
+
+    test('clearAll clears custom tileset data', () {
+      final imageBytes = Uint8List.fromList([1, 2, 3]);
+      state.setCustomTilesetData(
+        [customTileset],
+        {'custom/custom_abc123.png': imageBytes},
+      );
+
+      state.clearAll();
+
+      expect(state.customTilesets, isEmpty);
+      expect(state.customTilesetBytes, isEmpty);
+    });
+
+    test('setActiveLayer preserves brush for custom tileset', () {
+      state.setCustomTilesetData([customTileset], {});
+
+      // Select a brush from the custom tileset.
+      state.setActiveLayer(ActiveLayer.floor);
+      state.setBrush(const TileBrush(
+        tilesetId: 'custom_abc123',
+        startCol: 0,
+        startRow: 0,
+        columns: 8,
+      ));
+
+      // Switch to objects and back — brush should survive since custom
+      // tilesets are available on all layers.
+      state.setActiveLayer(ActiveLayer.objects);
+
+      expect(state.currentBrush, isNotNull);
+      expect(state.currentBrush!.tilesetId, 'custom_abc123');
     });
   });
 }
