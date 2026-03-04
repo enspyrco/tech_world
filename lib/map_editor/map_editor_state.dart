@@ -507,10 +507,10 @@ class MapEditorState extends ChangeNotifier {
       _copyTerrainGrid(map.terrainGrid!, terrainGrid);
     }
 
-    // Preserve custom tilesets from the map (bytes may already be loaded).
-    if (map.customTilesets.isNotEmpty) {
-      _customTilesets = List.of(map.customTilesets);
-    }
+    // Restore custom tilesets from the map (bytes may already be loaded
+    // from a prior import). Always assign to clear stale data when loading
+    // a map without custom tilesets.
+    _customTilesets = List.of(map.customTilesets);
 
     notifyListeners();
   }

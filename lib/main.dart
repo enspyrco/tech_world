@@ -392,11 +392,12 @@ class _MyAppState extends State<MyApp> {
     final userId = _currentUserId;
     if (userId == null || _roomService == null) return;
 
-    // Upload custom tileset images to Firebase Storage (idempotent).
+    // Upload custom tileset images to Firebase Storage in parallel
+    // (idempotent — content-hash IDs mean re-uploads are no-ops).
     final customBytes = _mapEditorState.customTilesetBytes;
     if (customBytes.isNotEmpty) {
       final storageService = TilesetStorageService();
-      for (final tileset in _mapEditorState.customTilesets) {
+      await Future.wait(_mapEditorState.customTilesets.map((tileset) async {
         final bytes = customBytes[tileset.imagePath];
         if (bytes != null) {
           await storageService.uploadTilesetImage(
@@ -404,7 +405,7 @@ class _MyAppState extends State<MyApp> {
             imageBytes: bytes,
           );
         }
-      }
+      }));
     }
 
     final gameMap = _mapEditorState.toGameMap();

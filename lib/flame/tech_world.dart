@@ -818,22 +818,26 @@ class TechWorld extends World with TapCallbacks {
       final registry = game.tilesetRegistry;
 
       // Download and register custom tilesets not already loaded.
-      for (final tileset in map.customTilesets) {
-        if (registry.isLoaded(tileset.id)) continue;
-        try {
-          final storageService = TilesetStorageService();
-          final bytes =
-              await storageService.downloadTilesetImage(tileset.id);
-          if (bytes != null) {
-            final codec = await ui.instantiateImageCodec(bytes);
-            final frame = await codec.getNextFrame();
-            registry.loadFromImage(tileset, frame.image);
+      // Downloads run in parallel for faster map loading.
+      final unloadedTilesets =
+          map.customTilesets.where((ts) => !registry.isLoaded(ts.id));
+      if (unloadedTilesets.isNotEmpty) {
+        final storageService = TilesetStorageService();
+        await Future.wait(unloadedTilesets.map((tileset) async {
+          try {
+            final bytes =
+                await storageService.downloadTilesetImage(tileset.id);
+            if (bytes != null) {
+              final codec = await ui.instantiateImageCodec(bytes);
+              final frame = await codec.getNextFrame();
+              registry.loadFromImage(tileset, frame.image);
+            }
+          } catch (e) {
+            debugPrint(
+              'Failed to download custom tileset ${tileset.id}: $e',
+            );
           }
-        } catch (e) {
-          debugPrint(
-            'Failed to download custom tileset ${tileset.id}: $e',
-          );
-        }
+        }));
       }
 
       if (map.floorLayer != null) {
