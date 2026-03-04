@@ -16,6 +16,7 @@ class Tileset {
     this.barrierTileIndices = const {},
     this.availableLayers = const {ActiveLayer.floor, ActiveLayer.objects},
     this.layerRowRanges = const {},
+    this.isCustom = false,
   });
 
   /// Unique identifier used in [TileRef.tilesetId].
@@ -57,6 +58,12 @@ class Tileset {
   /// for every layer the tileset appears on.
   final Map<ActiveLayer, List<(int, int)>> layerRowRanges;
 
+  /// Whether this tileset was loaded dynamically (not from predefined assets).
+  ///
+  /// Custom tilesets store their image as a Firebase Storage download URL in
+  /// [imagePath] rather than an asset-relative path.
+  final bool isCustom;
+
   /// Whether [tileIndex] represents a solid, impassable tile.
   bool isTileBarrier(int tileIndex) => barrierTileIndices.contains(tileIndex);
 
@@ -76,6 +83,34 @@ class Tileset {
     final ranges = rowRangesForLayer(layer);
     return ranges.any((range) => row >= range.$1 && row < range.$2);
   }
+
+  /// Serialize this tileset's structural metadata to JSON.
+  ///
+  /// Only serializes the fields needed to reconstruct a custom tileset:
+  /// id, name, imagePath, tileSize, columns, rows. Barrier indices and
+  /// layer ranges are properties of predefined tilesets and are not persisted.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'imagePath': imagePath,
+        'tileSize': tileSize,
+        'columns': columns,
+        'rows': rows,
+      };
+
+  /// Deserialize a custom tileset from JSON.
+  ///
+  /// The resulting tileset has [isCustom] = true, no barrier indices, and
+  /// is available on all editor layers.
+  factory Tileset.fromJson(Map<String, dynamic> json) => Tileset(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        imagePath: json['imagePath'] as String,
+        tileSize: json['tileSize'] as int,
+        columns: json['columns'] as int,
+        rows: json['rows'] as int,
+        isCustom: true,
+      );
 
   /// Map a visual row (position in the compacted palette) to an actual
   /// tileset row within the given [ranges].
