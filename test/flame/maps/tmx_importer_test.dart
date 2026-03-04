@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
@@ -63,6 +64,79 @@ String buildTmx({
   sb.writeln('</map>');
   return sb.toString();
 }
+
+/// Build a TMX XML with an external TSX reference (tileset source attribute).
+///
+/// In Tiled, external tilesets look like:
+///   `<tileset firstgid="1" source="desert.tsx"/>`
+/// The actual tileset metadata lives in the TSX file.
+String buildTmxWithExternalTsx({
+  int width = 3,
+  int height = 3,
+  int tileWidth = 32,
+  int tileHeight = 32,
+  List<({String source, int firstGid})> externalTilesets = const [],
+  List<({String name, int firstGid, String image, int columns, int tileCount})>
+      inlineTilesets = const [],
+  List<({String name, String csv})> layers = const [],
+}) {
+  final sb = StringBuffer();
+  sb.writeln('<?xml version="1.0" encoding="UTF-8"?>');
+  sb.write('<map version="1.10" tiledversion="1.11.2" ');
+  sb.write('orientation="orthogonal" ');
+  sb.write('renderorder="right-down" ');
+  sb.write('width="$width" height="$height" ');
+  sb.write('tilewidth="$tileWidth" tileheight="$tileHeight" ');
+  sb.writeln('infinite="0">');
+
+  // External TSX references.
+  for (final ts in externalTilesets) {
+    sb.writeln(' <tileset firstgid="${ts.firstGid}" source="${ts.source}"/>');
+  }
+
+  // Inline tilesets.
+  for (final ts in inlineTilesets) {
+    sb.write(' <tileset firstgid="${ts.firstGid}" name="${ts.name}" ');
+    sb.write('tilewidth="$tileWidth" tileheight="$tileHeight" ');
+    sb.write('tilecount="${ts.tileCount}" columns="${ts.columns}">');
+    sb.write('<image source="${ts.image}" ');
+    sb.write('width="${ts.columns * tileWidth}" ');
+    sb.writeln('height="${(ts.tileCount ~/ ts.columns) * tileHeight}"/>');
+    sb.writeln(' </tileset>');
+  }
+
+  for (final layer in layers) {
+    sb.writeln(
+        ' <layer name="${layer.name}" width="$width" height="$height">');
+    sb.writeln('  <data encoding="csv">');
+    sb.writeln(layer.csv);
+    sb.writeln('  </data>');
+    sb.writeln(' </layer>');
+  }
+
+  sb.writeln('</map>');
+  return sb.toString();
+}
+
+/// Build a valid TSX XML string.
+String buildTsx({
+  required String name,
+  required String imageSource,
+  int tileWidth = 32,
+  int tileHeight = 32,
+  required int columns,
+  required int tileCount,
+}) {
+  final imageWidth = columns * tileWidth;
+  final imageHeight = (tileCount ~/ columns) * tileHeight;
+  return '''<?xml version="1.0" encoding="UTF-8"?>
+<tileset version="1.10" tiledversion="1.11.2" name="$name" tilewidth="$tileWidth" tileheight="$tileHeight" tilecount="$tileCount" columns="$columns">
+ <image source="$imageSource" width="$imageWidth" height="$imageHeight"/>
+</tileset>''';
+}
+
+/// Dummy PNG bytes for testing (not a real PNG, just placeholder bytes).
+final _dummyPngBytes = Uint8List.fromList(List.filled(64, 0xFF));
 
 void main() {
   group('TmxImporter', () {
@@ -992,6 +1066,304 @@ void main() {
         final result = TmxImporter.import(tmx);
         expect(result.gameMap.name, 'Imported Map');
         expect(result.gameMap.id, 'imported_map');
+      });
+    });
+
+    // -----------------------------------------------------------------
+    // analyze()
+    // -----------------------------------------------------------------
+
+    group('analyze', () {
+      test('identifies predefined tilesets as resolved', () {
+        final tmx = buildTmx(
+          width: 1,
+          height: 1,
+          tilesets: [
+            (
+              name: 'Test',
+              firstGid: 1,
+              image: '../tilesets/test_tileset.png',
+              columns: 4,
+              tileCount: 16,
+            ),
+          ],
+          layers: [
+            (name: 'Floor', csv: '1'),
+          ],
+        );
+
+        final analysis = TmxImporter.analyze(tmx);
+
+        expect(analysis.resolvedTilesets, hasLength(1));
+        expect(analysis.resolvedTilesets.first, 'test');
+        expect(analysis.unresolvedTilesets, isEmpty);
+      });
+
+      test('identifies unknown tilesets as unresolved', () {
+        final tmx = buildTmx(
+          width: 1,
+          height: 1,
+          tilesets: [
+            (
+              name: 'Desert',
+              firstGid: 1,
+              image: 'desert_tiles.png',
+              columns: 8,
+              tileCount: 64,
+            ),
+          ],
+          layers: [
+            (name: 'Floor', csv: '1'),
+          ],
+        );
+
+        final analysis = TmxImporter.analyze(tmx);
+
+        expect(analysis.resolvedTilesets, isEmpty);
+        expect(analysis.unresolvedTilesets, hasLength(1));
+        expect(analysis.unresolvedTilesets.first.imageSource,
+            'desert_tiles.png');
+      });
+
+      test('separates mixed predefined and unknown tilesets', () {
+        final tmx = buildTmx(
+          width: 2,
+          height: 1,
+          tilesets: [
+            (
+              name: 'Test',
+              firstGid: 1,
+              image: '../tilesets/test_tileset.png',
+              columns: 4,
+              tileCount: 16,
+            ),
+            (
+              name: 'Desert',
+              firstGid: 17,
+              image: 'desert_tiles.png',
+              columns: 8,
+              tileCount: 64,
+            ),
+          ],
+          layers: [
+            (name: 'Floor', csv: '1,17'),
+          ],
+        );
+
+        final analysis = TmxImporter.analyze(tmx);
+
+        expect(analysis.resolvedTilesets, ['test']);
+        expect(analysis.unresolvedTilesets, hasLength(1));
+        expect(analysis.unresolvedTilesets.first.name, 'Desert');
+      });
+
+      test('resolves external TSX tilesets via providers', () {
+        final tmx = buildTmxWithExternalTsx(
+          width: 1,
+          height: 1,
+          externalTilesets: [
+            (source: 'desert.tsx', firstGid: 1),
+          ],
+          layers: [
+            (name: 'Floor', csv: '1'),
+          ],
+        );
+
+        final tsxXml = buildTsx(
+          name: 'Desert',
+          imageSource: 'desert_tiles.png',
+          columns: 8,
+          tileCount: 64,
+        );
+
+        final analysis = TmxImporter.analyze(
+          tmx,
+          tsxProviders: [InMemoryTsxProvider('desert.tsx', tsxXml)],
+        );
+
+        // TSX resolved, but image not predefined → unresolved.
+        expect(analysis.unresolvedTilesets, hasLength(1));
+        expect(analysis.unresolvedTilesets.first.imageSource,
+            'desert_tiles.png');
+      });
+    });
+
+    // -----------------------------------------------------------------
+    // importWithCustomTilesets()
+    // -----------------------------------------------------------------
+
+    group('importWithCustomTilesets', () {
+      test('imports unknown tileset when image bytes provided', () {
+        final tmx = buildTmx(
+          width: 1,
+          height: 1,
+          tilesets: [
+            (
+              name: 'Desert',
+              firstGid: 1,
+              image: 'desert_tiles.png',
+              columns: 8,
+              tileCount: 64,
+            ),
+          ],
+          layers: [
+            (name: 'Floor', csv: '1'),
+          ],
+        );
+
+        final result = TmxImporter.importWithCustomTilesets(
+          tmx,
+          customImages: {'desert_tiles.png': _dummyPngBytes},
+        );
+
+        // Should not throw, should produce a valid map with tiles.
+        final c = (gridSize - 1) ~/ 2;
+        expect(result.gameMap.floorLayer, isNotNull);
+        expect(result.gameMap.floorLayer!.tileAt(c, c), isNotNull);
+        // The tile should reference a custom tileset.
+        expect(
+          result.gameMap.floorLayer!.tileAt(c, c)!.tilesetId,
+          startsWith('custom_'),
+        );
+        // Custom tilesets should be in the result.
+        expect(result.customTilesets, hasLength(1));
+        expect(result.customTilesets.first.isCustom, isTrue);
+        expect(result.customTilesets.first.columns, 8);
+      });
+
+      test('mixes predefined and custom tilesets', () {
+        final tmx = buildTmx(
+          width: 2,
+          height: 1,
+          tilesets: [
+            (
+              name: 'Test',
+              firstGid: 1,
+              image: '../tilesets/test_tileset.png',
+              columns: 4,
+              tileCount: 16,
+            ),
+            (
+              name: 'Desert',
+              firstGid: 17,
+              image: 'desert_tiles.png',
+              columns: 8,
+              tileCount: 64,
+            ),
+          ],
+          layers: [
+            // GID 1 → predefined, GID 17 → custom.
+            (name: 'Floor', csv: '1,17'),
+          ],
+        );
+
+        final result = TmxImporter.importWithCustomTilesets(
+          tmx,
+          customImages: {'desert_tiles.png': _dummyPngBytes},
+        );
+
+        final ox = (gridSize - 2) ~/ 2;
+        final oy = (gridSize - 1) ~/ 2;
+
+        // Predefined tile.
+        expect(
+          result.gameMap.floorLayer!.tileAt(ox, oy)!.tilesetId,
+          'test',
+        );
+        // Custom tile.
+        expect(
+          result.gameMap.floorLayer!.tileAt(ox + 1, oy)!.tilesetId,
+          startsWith('custom_'),
+        );
+      });
+
+      test('resolves external TSX and imports with custom images', () {
+        final tmx = buildTmxWithExternalTsx(
+          width: 1,
+          height: 1,
+          externalTilesets: [
+            (source: 'desert.tsx', firstGid: 1),
+          ],
+          layers: [
+            (name: 'Floor', csv: '1'),
+          ],
+        );
+
+        final tsxXml = buildTsx(
+          name: 'Desert',
+          imageSource: 'desert_tiles.png',
+          columns: 8,
+          tileCount: 64,
+        );
+
+        final result = TmxImporter.importWithCustomTilesets(
+          tmx,
+          customImages: {'desert_tiles.png': _dummyPngBytes},
+          tsxProviders: [InMemoryTsxProvider('desert.tsx', tsxXml)],
+        );
+
+        final c = (gridSize - 1) ~/ 2;
+        expect(result.gameMap.floorLayer!.tileAt(c, c), isNotNull);
+        expect(result.customTilesets, hasLength(1));
+      });
+
+      test('same image bytes produce same custom tileset ID (content hash)',
+          () {
+        final tmx = buildTmx(
+          width: 1,
+          height: 1,
+          tilesets: [
+            (
+              name: 'Desert',
+              firstGid: 1,
+              image: 'desert_tiles.png',
+              columns: 8,
+              tileCount: 64,
+            ),
+          ],
+          layers: [
+            (name: 'Floor', csv: '1'),
+          ],
+        );
+
+        final result1 = TmxImporter.importWithCustomTilesets(
+          tmx,
+          customImages: {'desert_tiles.png': _dummyPngBytes},
+        );
+        final result2 = TmxImporter.importWithCustomTilesets(
+          tmx,
+          customImages: {'desert_tiles.png': _dummyPngBytes},
+        );
+
+        // Same content → same ID.
+        expect(
+          result1.customTilesets.first.id,
+          result2.customTilesets.first.id,
+        );
+      });
+
+      test('backward compatible: existing import() still works unchanged', () {
+        final tmx = buildTmx(
+          width: 1,
+          height: 1,
+          tilesets: [
+            (
+              name: 'Test',
+              firstGid: 1,
+              image: '../tilesets/test_tileset.png',
+              columns: 4,
+              tileCount: 16,
+            ),
+          ],
+          layers: [
+            (name: 'Floor', csv: '1'),
+          ],
+        );
+
+        // Original API should still work.
+        final result = TmxImporter.import(tmx);
+        final c = (gridSize - 1) ~/ 2;
+        expect(result.gameMap.floorLayer!.tileAt(c, c)!.tilesetId, 'test');
       });
     });
   });
