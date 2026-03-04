@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
@@ -25,6 +28,7 @@ class _ImportDialogState extends State<ImportDialog>
   final _tmxController = TextEditingController();
   final _nameController = TextEditingController();
   final _idController = TextEditingController();
+  String? _pickedFileName;
 
   @override
   void initState() {
@@ -163,6 +167,37 @@ class _ImportDialogState extends State<ImportDialog>
           ],
         ),
         const SizedBox(height: 8),
+        // File picker row
+        Row(
+          children: [
+            ElevatedButton.icon(
+              onPressed: _pickTmxFile,
+              icon: const Icon(Icons.file_open, size: 16),
+              label: const Text('Choose .tmx File'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4FC3F7),
+                foregroundColor: Colors.black87,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                textStyle: const TextStyle(fontSize: 12),
+              ),
+            ),
+            if (_pickedFileName != null) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _pickedFileName!,
+                  style: TextStyle(
+                    color: Colors.grey.shade400,
+                    fontSize: 11,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
         // TMX XML paste area
         Expanded(
           child: TextField(
@@ -175,7 +210,7 @@ class _ImportDialogState extends State<ImportDialog>
               fontSize: 10,
             ),
             decoration: InputDecoration(
-              hintText: 'Paste TMX XML here...',
+              hintText: 'Select a .tmx file or paste XML below...',
               hintStyle: TextStyle(color: Colors.grey.shade600),
               border: OutlineInputBorder(
                 borderSide: BorderSide(color: Colors.grey.shade700),
@@ -185,6 +220,38 @@ class _ImportDialogState extends State<ImportDialog>
         ),
       ],
     );
+  }
+
+  Future<void> _pickTmxFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['tmx'],
+      withData: true,
+    );
+
+    if (result == null || result.files.isEmpty) return;
+
+    final file = result.files.first;
+    if (file.bytes == null) return;
+
+    final content = utf8.decode(file.bytes!);
+    setState(() {
+      _tmxController.text = content;
+      _pickedFileName = file.name;
+    });
+
+    // Auto-populate map name from filename if empty.
+    if (_nameController.text.trim().isEmpty) {
+      final baseName = file.name.replaceAll(RegExp(r'\.tmx$', caseSensitive: false), '');
+      // Convert snake_case/kebab-case to Title Case.
+      final titleCase = baseName
+          .replaceAll(RegExp(r'[_-]'), ' ')
+          .split(' ')
+          .where((w) => w.isNotEmpty)
+          .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
+          .join(' ');
+      _nameController.text = titleCase;
+    }
   }
 
   void _handleImport() {
