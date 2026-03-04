@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:tiled/tiled.dart' as tiled;
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
@@ -489,6 +490,31 @@ class MapEditorState extends ChangeNotifier {
     );
     loadFromGameMap(result.gameMap);
     return result.warnings;
+  }
+
+  /// Import a Tiled `.tmx` XML string with custom tileset images.
+  ///
+  /// Like [loadFromTmx] but accepts [customImages] (image source → PNG bytes)
+  /// and optional [tsxProviders] for external TSX resolution.
+  ///
+  /// Returns the import result including custom [Tileset] objects that need
+  /// to be registered with [TilesetRegistry.loadFromImage] by the caller.
+  TmxImportResultWithCustomTilesets loadFromTmxWithCustomTilesets(
+    String tmxXml, {
+    Map<String, Uint8List> customImages = const {},
+    List<tiled.TsxProvider>? tsxProviders,
+    String? mapId,
+    String? mapName,
+  }) {
+    final result = TmxImporter.importWithCustomTilesets(
+      tmxXml,
+      customImages: customImages,
+      tsxProviders: tsxProviders,
+      mapId: mapId,
+      mapName: mapName,
+    );
+    loadFromGameMap(result.gameMap);
+    return result;
   }
 
   /// Load grid state from an ASCII art string (same format as [parseAsciiMap]).
