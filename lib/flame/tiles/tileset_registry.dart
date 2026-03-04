@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flame/cache.dart';
 import 'package:flame/components.dart';
 import 'package:flame/sprite.dart';
@@ -39,11 +41,46 @@ class TilesetRegistry {
     );
   }
 
+  /// Register a [Tileset] from a pre-decoded [image].
+  ///
+  /// Bypasses `images.load()` (which reads from the asset bundle) and
+  /// injects the image directly into Flame's cache via `images.add()`.
+  /// Use this for dynamically loaded tilesets (e.g. from a zip import or
+  /// Firebase Storage download).
+  ///
+  /// Does nothing if the tileset is already loaded.
+  void loadFromImage(Tileset tileset, ui.Image image) {
+    if (_loaded.containsKey(tileset.id)) return;
+
+    // Inject into Flame's image cache so other systems can find it.
+    images.add(tileset.imagePath, image);
+
+    final sheet = SpriteSheet(
+      image: image,
+      srcSize: Vector2.all(tileset.tileSize.toDouble()),
+    );
+
+    _loaded[tileset.id] = LoadedTileset(
+      tileset: tileset,
+      spriteSheet: sheet,
+    );
+  }
+
   /// Load multiple tilesets at once.
   Future<void> loadAll(List<Tileset> tilesets) async {
     for (final tileset in tilesets) {
       await load(tileset);
     }
+  }
+
+  /// Unload a tileset by ID, removing it from the registry and image cache.
+  ///
+  /// Returns `true` if the tileset was found and removed.
+  bool unload(String id) {
+    final loaded = _loaded.remove(id);
+    if (loaded == null) return false;
+    images.clear(loaded.tileset.imagePath);
+    return true;
   }
 
   /// Look up a loaded tileset by ID. Returns null if not loaded.
