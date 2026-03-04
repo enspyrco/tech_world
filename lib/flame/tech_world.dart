@@ -28,6 +28,7 @@ import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
@@ -816,6 +817,25 @@ class TechWorld extends World with TapCallbacks {
     if (game != null && map.usesTilesets) {
       final registry = game.tilesetRegistry;
 
+      // Download and register custom tilesets not already loaded.
+      for (final tileset in map.customTilesets) {
+        if (registry.isLoaded(tileset.id)) continue;
+        try {
+          final storageService = TilesetStorageService();
+          final bytes =
+              await storageService.downloadTilesetImage(tileset.id);
+          if (bytes != null) {
+            final codec = await ui.instantiateImageCodec(bytes);
+            final frame = await codec.getNextFrame();
+            registry.loadFromImage(tileset, frame.image);
+          }
+        } catch (e) {
+          debugPrint(
+            'Failed to download custom tileset ${tileset.id}: $e',
+          );
+        }
+      }
+
       if (map.floorLayer != null) {
         _tileFloor = TileFloorComponent(
           layerData: map.floorLayer!,
@@ -854,6 +874,14 @@ class TechWorld extends World with TapCallbacks {
     if (_wallOcclusion != null) {
       _wallOcclusion!.removeFromParent();
       _wallOcclusion = null;
+    }
+
+    // Unload custom tilesets from previous map.
+    final game = findGame() as TechWorldGame?;
+    if (game != null) {
+      for (final tileset in currentMap.value.customTilesets) {
+        game.tilesetRegistry.unload(tileset.id);
+      }
     }
 
     // Tile layers

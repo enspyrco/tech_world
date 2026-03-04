@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -30,6 +31,8 @@ import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/room_browser.dart';
+import 'package:tech_world/flame/maps/tmx_importer.dart';
+import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
@@ -389,6 +392,21 @@ class _MyAppState extends State<MyApp> {
     final userId = _currentUserId;
     if (userId == null || _roomService == null) return;
 
+    // Upload custom tileset images to Firebase Storage (idempotent).
+    final customBytes = _mapEditorState.customTilesetBytes;
+    if (customBytes.isNotEmpty) {
+      final storageService = TilesetStorageService();
+      for (final tileset in _mapEditorState.customTilesets) {
+        final bytes = customBytes[tileset.imagePath];
+        if (bytes != null) {
+          await storageService.uploadTilesetImage(
+            tilesetId: tileset.id,
+            imageBytes: bytes,
+          );
+        }
+      }
+    }
+
     final gameMap = _mapEditorState.toGameMap();
     final existingRoomId = _mapEditorState.roomId;
     final isOwnedRoom = existingRoomId != null &&
@@ -429,6 +447,28 @@ class _MyAppState extends State<MyApp> {
     _myRooms = null;
 
     setState(() {});
+  }
+
+  /// Decode custom tileset images and register them with the game's
+  /// [TilesetRegistry] so they render immediately in the editor preview.
+  Future<void> _registerCustomTilesets(
+    TmxImportResultWithCustomTilesets result,
+  ) async {
+    final game = Locator.maybeLocate<TechWorldGame>();
+    if (game == null) return;
+
+    final registry = game.tilesetRegistry;
+
+    for (final tileset in result.customTilesets) {
+      if (registry.isLoaded(tileset.id)) continue;
+
+      final bytes = result.customImageBytes[tileset.imagePath];
+      if (bytes == null) continue;
+
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      registry.loadFromImage(tileset, frame.image);
+    }
   }
 
   /// Load a saved room's map into the editor.
@@ -640,6 +680,8 @@ class _MyAppState extends State<MyApp> {
                                       : null,
                                   canEdit: canEdit,
                                   savedRooms: _myRooms,
+                                  onRegisterCustomTilesets:
+                                      _registerCustomTilesets,
                                 ),
                               );
                             }

@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +42,13 @@ class TilePalette extends StatelessWidget {
                   for (final tileset in allTilesets)
                     if (tileset.availableLayers.contains(state.activeLayer))
                       _TilesetSection(tileset: tileset, state: state),
+                  for (final tileset in state.customTilesets)
+                    _TilesetSection(
+                      tileset: tileset,
+                      state: state,
+                      customImageBytes:
+                          state.customTilesetBytes[tileset.imagePath],
+                    ),
                 ],
               ),
             ),
@@ -84,10 +92,18 @@ class TilePalette extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _TilesetSection extends StatefulWidget {
-  const _TilesetSection({required this.tileset, required this.state});
+  const _TilesetSection({
+    required this.tileset,
+    required this.state,
+    this.customImageBytes,
+  });
 
   final Tileset tileset;
   final MapEditorState state;
+
+  /// Raw PNG bytes for custom tilesets. When non-null, renders via
+  /// [MemoryImage] instead of [Image.asset].
+  final Uint8List? customImageBytes;
 
   @override
   State<_TilesetSection> createState() => _TilesetSectionState();
@@ -221,13 +237,24 @@ class _TilesetSectionState extends State<_TilesetSection> {
     double fullSheetHeight,
   ) {
     final tds = _tileDisplaySize;
-    final sheetImage = Image.asset(
-      'assets/images/${_tileset.imagePath}',
-      width: availableWidth,
-      height: fullSheetHeight,
-      fit: BoxFit.fill,
-      filterQuality: FilterQuality.none,
-    );
+    final Widget sheetImage;
+    if (widget.customImageBytes != null) {
+      sheetImage = Image(
+        image: MemoryImage(widget.customImageBytes!),
+        width: availableWidth,
+        height: fullSheetHeight,
+        fit: BoxFit.fill,
+        filterQuality: FilterQuality.none,
+      );
+    } else {
+      sheetImage = Image.asset(
+        'assets/images/${_tileset.imagePath}',
+        width: availableWidth,
+        height: fullSheetHeight,
+        fit: BoxFit.fill,
+        filterQuality: FilterQuality.none,
+      );
+    }
     final strips = <Widget>[];
     for (final (startRow, endRow) in ranges) {
       final stripHeight = (endRow - startRow) * tds;
