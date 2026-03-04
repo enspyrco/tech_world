@@ -296,17 +296,19 @@ class _TilesetEntry {
 }
 
 /// Build a sorted list of tileset mappings from TMX tilesets to predefined
-/// tilesets, matched by image filename.
+/// tilesets, matched by image filename with a name-based fallback.
 List<_TilesetEntry> _buildTilesetMapping(
   List<tiled.Tileset> tmxTilesets,
   List<TmxImportWarning> warnings,
 ) {
-  // Build a lookup: image basename → predefined tileset.
-  final lookup = <String, Tileset>{};
+  // Build lookups: image basename → tileset, tileset ID → tileset.
+  final imageLookup = <String, Tileset>{};
+  final idLookup = <String, Tileset>{};
   for (final ts in allTilesets) {
     // imagePath is like 'tilesets/ext_terrains.png' — extract filename.
     final basename = ts.imagePath.split('/').last;
-    lookup[basename] = ts;
+    imageLookup[basename] = ts;
+    idLookup[ts.id] = ts;
   }
 
   final entries = <_TilesetEntry>[];
@@ -315,21 +317,27 @@ List<_TilesetEntry> _buildTilesetMapping(
     if (firstGid == null) continue;
 
     final imageSource = tmxTs.image?.source;
-    if (imageSource == null) {
-      warnings.add(TmxImportWarning(
-        kind: TmxWarningKind.unmatchedTileset,
-        message: 'TMX tileset "${tmxTs.name}" has no image (collection '
-            'tilesets are not supported). Its tiles will be dropped.',
-      ));
-      continue;
+
+    // Try 1: Match by image filename.
+    Tileset? matched;
+    if (imageSource != null) {
+      final basename = imageSource.split('/').last;
+      matched = imageLookup[basename];
     }
 
-    final basename = imageSource.split('/').last;
-    final matched = lookup[basename];
+    // Try 2: Match by tileset name → predefined tileset ID (case-insensitive).
     if (matched == null) {
+      final name = tmxTs.name?.toLowerCase();
+      if (name != null) {
+        matched = idLookup[name];
+      }
+    }
+
+    if (matched == null) {
+      final label = imageSource?.split('/').last ?? tmxTs.name ?? '(unnamed)';
       warnings.add(TmxImportWarning(
         kind: TmxWarningKind.unmatchedTileset,
-        message: 'TMX tileset "$basename" does not match any predefined '
+        message: 'TMX tileset "$label" does not match any predefined '
             'tileset. Its tiles will be dropped.',
       ));
       continue;

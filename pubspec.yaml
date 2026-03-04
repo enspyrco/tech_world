@@ -21,6 +21,7 @@ dependencies:
   crypto: ^3.0.6
   google_sign_in: ^7.2.0
   firebase_storage: ^13.0.5
+  file_picker: ^8.0.0
   image_picker: ^1.1.2
   cloud_functions: ^6.0.2
   collection: ^1.19.1
