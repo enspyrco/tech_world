@@ -325,9 +325,9 @@ List<_TilesetEntry> _buildTilesetMapping(
       matched = imageLookup[basename];
     }
 
-    // Try 2: Match by tileset name → predefined tileset ID.
+    // Try 2: Match by tileset name → predefined tileset ID (case-insensitive).
     if (matched == null) {
-      final name = tmxTs.name;
+      final name = tmxTs.name?.toLowerCase();
       if (name != null) {
         matched = idLookup[name];
       }

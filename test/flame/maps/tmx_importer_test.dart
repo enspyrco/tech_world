@@ -256,6 +256,34 @@ void main() {
         );
       });
 
+      test('name fallback is case-insensitive', () {
+        // Tileset name uses different casing than predefined ID.
+        final tmx = buildTmx(
+          width: 1,
+          height: 1,
+          tilesets: [
+            (
+              name: 'Ext_Terrains',
+              firstGid: 1,
+              image: 'non_matching.png',
+              columns: 32,
+              tileCount: 2368,
+            ),
+          ],
+          layers: [
+            (name: 'Ground', csv: '1'),
+          ],
+        );
+
+        final result = TmxImporter.import(tmx);
+        final c = (gridSize - 1) ~/ 2;
+
+        expect(
+          result.gameMap.floorLayer!.tileAt(c, c)!.tilesetId,
+          'ext_terrains',
+        );
+      });
+
       test('warns on unmatched tileset and drops those tiles', () {
         // Include one known tileset so the import succeeds (doesn't throw),
         // plus one unknown tileset whose tiles get dropped.

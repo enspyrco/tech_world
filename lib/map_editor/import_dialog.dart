@@ -234,7 +234,19 @@ class _ImportDialogState extends State<ImportDialog>
     final file = result.files.first;
     if (file.bytes == null) return;
 
-    final content = utf8.decode(file.bytes!);
+    final String content;
+    try {
+      content = utf8.decode(file.bytes!);
+    } on FormatException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('File is not valid UTF-8 text.'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+      return;
+    }
     setState(() {
       _tmxController.text = content;
       _pickedFileName = file.name;
