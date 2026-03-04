@@ -31,8 +31,15 @@ class TilesetStorageService {
   /// Download a tileset image from Firebase Storage.
   ///
   /// Returns the raw PNG bytes, or `null` if the file doesn't exist.
+  /// Catches `object-not-found` errors from Firebase Storage rather than
+  /// propagating them — callers treat a missing tileset as blank tiles.
   Future<Uint8List?> downloadTilesetImage(String tilesetId) async {
-    final ref = _storage.ref('tilesets/$tilesetId.png');
-    return ref.getData();
+    try {
+      final ref = _storage.ref('tilesets/$tilesetId.png');
+      return await ref.getData();
+    } on FirebaseException catch (e) {
+      if (e.code == 'object-not-found') return null;
+      rethrow;
+    }
   }
 }

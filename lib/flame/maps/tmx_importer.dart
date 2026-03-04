@@ -594,8 +594,10 @@ String _nameToId(String name) {
 
 /// Generate a deterministic ID from image bytes using SHA-256.
 ///
-/// Returns `custom_` followed by the first 16 hex characters of the hash.
-/// Same content always produces the same ID (deduplication).
+/// Returns `custom_` followed by the first 16 hex characters of the hash
+/// (64 bits of entropy). This is more than sufficient for deduplication
+/// at the scale of a game with dozens of custom tilesets — a collision
+/// would require ~2^32 distinct images.
 String _contentHashId(Uint8List bytes) {
   final hash = sha256.convert(bytes).toString();
   return 'custom_${hash.substring(0, 16)}';
