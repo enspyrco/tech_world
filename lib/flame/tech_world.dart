@@ -618,10 +618,10 @@ class TechWorld extends World with TapCallbacks {
     });
 
     // Check if already connected, otherwise wait for connection
+    // Note: camera/mic are enabled by the caller (_setupLiveKit in main.dart)
+    // to keep media device management out of the game world layer.
     if (_liveKitService!.isConnected) {
       debugPrint('LiveKit already connected');
-      await _liveKitService!.setCameraEnabled(true);
-      await _liveKitService!.setMicrophoneEnabled(true);
       _refreshLocalPlayerBubble();
 
       // Re-publish avatar so late joiners see our character

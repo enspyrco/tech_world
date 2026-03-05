@@ -73,7 +73,9 @@ GameMap generateMap({
   required MapAlgorithm algorithm,
   GeneratorConfig config = const GeneratorConfig(),
 }) {
-  final seed = config.seed ?? Random().nextInt(1 << 32);
+  // Use a literal instead of `1 << 32` — on web, bitwise `<<` wraps at 32
+  // bits, making `1 << 32` evaluate to `1` instead of `4294967296`.
+  final seed = config.seed ?? Random().nextInt(0x100000000);
 
   switch (algorithm) {
     case MapAlgorithm.dungeon:
