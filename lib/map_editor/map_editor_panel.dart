@@ -399,15 +399,26 @@ class MapEditorPanel extends StatelessWidget {
     }
   }
 
-  void _exportToClipboard(BuildContext context) {
+  Future<void> _exportToClipboard(BuildContext context) async {
     final ascii = state.toAsciiString();
-    Clipboard.setData(ClipboardData(text: ascii));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('ASCII map copied to clipboard'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    try {
+      await Clipboard.setData(ClipboardData(text: ascii));
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ASCII map copied to clipboard'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to copy to clipboard'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }
 
@@ -930,23 +941,34 @@ class _GenerateSectionState extends State<_GenerateSection> {
   MapAlgorithm _selected = MapAlgorithm.dungeon;
   int? _lastSeed;
 
-  void _generate() {
-    final seed = Random().nextInt(1 << 32);
-    final map = generateMap(
-      algorithm: _selected,
-      config: GeneratorConfig(seed: seed),
-    );
-    widget.state.loadFromGameMap(map);
-    setState(() => _lastSeed = seed);
-  }
+  // Use a literal instead of `1 << 32` — on web (dart2js), bitwise `<<`
+  // compiles to JavaScript's `<<` which wraps at 32 bits, making `1 << 32`
+  // evaluate to `1` instead of `4294967296`.
+  static const _maxSeed = 0x100000000; // 2^32
 
-  void _regenerateWithSeed(int seed) {
-    final map = generateMap(
-      algorithm: _selected,
-      config: GeneratorConfig(seed: seed),
-    );
-    widget.state.loadFromGameMap(map);
-    setState(() => _lastSeed = seed);
+  void _generate() => _runGeneration(Random().nextInt(_maxSeed));
+
+  void _regenerateWithSeed(int seed) => _runGeneration(seed);
+
+  void _runGeneration(int seed) {
+    try {
+      final map = generateMap(
+        algorithm: _selected,
+        config: GeneratorConfig(seed: seed),
+      );
+      widget.state.loadFromGameMap(map);
+      setState(() => _lastSeed = seed);
+    } catch (e, stack) {
+      debugPrint('Map generation failed: $e\n$stack');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Generation failed: $e'),
+            backgroundColor: Colors.red.shade700,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -1002,9 +1024,20 @@ class _GenerateSectionState extends State<_GenerateSection> {
                 ),
                 const SizedBox(width: 4),
                 InkWell(
-                  onTap: () {
-                    Clipboard.setData(
-                        ClipboardData(text: _lastSeed.toString()));
+                  onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await Clipboard.setData(
+                          ClipboardData(text: _lastSeed.toString()));
+                    } catch (_) {
+                      if (!mounted) return;
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Failed to copy seed'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
                   },
                   child: Icon(Icons.copy, size: 12, color: Colors.grey.shade500),
                 ),
