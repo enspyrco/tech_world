@@ -946,9 +946,12 @@ class _GenerateSectionState extends State<_GenerateSection> {
   // evaluate to `1` instead of `4294967296`.
   static const _maxSeed = 0x100000000; // 2^32
 
-  void _generate() {
+  void _generate() => _runGeneration(Random().nextInt(_maxSeed));
+
+  void _regenerateWithSeed(int seed) => _runGeneration(seed);
+
+  void _runGeneration(int seed) {
     try {
-      final seed = Random().nextInt(_maxSeed);
       final map = generateMap(
         algorithm: _selected,
         config: GeneratorConfig(seed: seed),
@@ -961,27 +964,6 @@ class _GenerateSectionState extends State<_GenerateSection> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Generation failed: $e'),
-            backgroundColor: Colors.red.shade700,
-          ),
-        );
-      }
-    }
-  }
-
-  void _regenerateWithSeed(int seed) {
-    try {
-      final map = generateMap(
-        algorithm: _selected,
-        config: GeneratorConfig(seed: seed),
-      );
-      widget.state.loadFromGameMap(map);
-      setState(() => _lastSeed = seed);
-    } catch (e, stack) {
-      debugPrint('Map regeneration failed: $e\n$stack');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Regeneration failed: $e'),
             backgroundColor: Colors.red.shade700,
           ),
         );
@@ -1043,10 +1025,19 @@ class _GenerateSectionState extends State<_GenerateSection> {
                 const SizedBox(width: 4),
                 InkWell(
                   onTap: () async {
+                    final messenger = ScaffoldMessenger.of(context);
                     try {
                       await Clipboard.setData(
                           ClipboardData(text: _lastSeed.toString()));
-                    } catch (_) {}
+                    } catch (_) {
+                      if (!mounted) return;
+                      messenger.showSnackBar(
+                        const SnackBar(
+                          content: Text('Failed to copy seed'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
                   },
                   child: Icon(Icons.copy, size: 12, color: Colors.grey.shade500),
                 ),
