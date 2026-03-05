@@ -47,6 +47,8 @@ class ChatService {
   /// exceeded, the oldest half is removed. Uses [LinkedHashSet] to preserve
   /// insertion order for trimming.
   final LinkedHashSet<String> _seenMessageIds = LinkedHashSet<String>();
+  /// 500 accommodates ~250 round-trip messages (each user message + bot
+  /// response gets an ID). Increase if sessions routinely exceed this.
   static const _maxSeenIds = 500;
   final Map<String, Completer<String?>> _pendingHelpRequests = {};
   StreamSubscription<DataChannelMessage>? _chatSubscription;

@@ -263,11 +263,19 @@ class LiveKitService {
     } catch (e) {
       debugPrint('LiveKitService: Connection failed: $e');
       // Clean up dangling _room and _listener created before the failure.
-      // Await disconnect so the room is fully torn down before the caller
-      // can retry, preventing state collisions on rapid retries.
-      await _listener?.dispose();
+      // Each cleanup is wrapped individually so one failure doesn't prevent
+      // the other from running.
+      try {
+        await _listener?.dispose();
+      } catch (cleanupError) {
+        debugPrint('LiveKitService: Listener cleanup failed: $cleanupError');
+      }
       _listener = null;
-      await _room?.disconnect();
+      try {
+        await _room?.disconnect();
+      } catch (cleanupError) {
+        debugPrint('LiveKitService: Room cleanup failed: $cleanupError');
+      }
       _room = null;
       _isConnecting = false;
       return ConnectionResult.roomFailed;
@@ -552,8 +560,9 @@ class LiveKitService {
       }
       return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
     } catch (e) {
+      // Generic catch handles timeouts, network errors, and other transient
+      // failures not covered by FirebaseFunctionsException above.
       debugPrint('LiveKitService: Token retrieval failed: $e');
-      // Timeout or network errors are generally retryable.
       return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
     }
   }
@@ -597,7 +606,13 @@ class LiveKitService {
         debugPrint('LiveKitService: Room disconnected: ${event.reason}');
         _isConnected = false;
         // Clean up resources left dangling by the unexpected disconnect.
-        _listener?.dispose();
+        // Note: _listener.dispose() is intentionally not awaited here — this
+        // is a synchronous event callback and the dispose is fire-and-forget.
+        try {
+          _listener?.dispose();
+        } catch (e) {
+          debugPrint('LiveKitService: Listener cleanup failed: $e');
+        }
         _listener = null;
         _room = null;
         // Notify consumers so they can show a banner / attempt reconnect.
