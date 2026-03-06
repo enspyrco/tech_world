@@ -2,8 +2,8 @@
 
 **Project title:** Tech World
 **Studio:** Enspyrco Pty Ltd
-**Strategic Outcomes prepared by:** [Your name]
-**Strategic Outcomes date:** [DD/MM/2026]
+**Strategic Outcomes prepared by:** Nicholas Meinhold
+**Strategic Outcomes date:** 04/03/2026
 
 ---
 
@@ -49,28 +49,28 @@ These weaknesses are all **game loop and polish** problems — they are well-und
 
 ### Who is on the team? What appropriate experience do they have to execute your plans?
 
-[Name, Role — Lead Developer & Creative Director]
-[Brief bio: relevant experience in software development, game development, Flutter/Dart expertise, etc. Highlight shipped products, professional experience, years of experience.]
+**Nicholas Meinhold — Solo Developer, Designer & Creative Director**
 
-[Name, Role — if applicable]
-[Brief bio]
+[TODO — Nick, write 3-4 sentences here: your years of software experience, Flutter/Dart expertise, any shipped products, relevant background (CS degree with honours in computer graphics), and what makes you capable of delivering this solo. E.g. "X years of professional software development experience, specialising in..." The Trends Report says solo devs are fine at this budget level — own it confidently.]
 
-[Note: Keep this section factual and concise. The Trends Report notes that team size should match budget and SmartyGrants form. If the team is 1–2 people, that's fine for this funding level — own it and demonstrate that the remaining work is within capacity.]
+Specialist contractors will be engaged for sound design and accessibility auditing — these are specific deliverables within the budget, not ongoing team members.
 
 ### Why do you, as a gamemaker, want to make this game? Why is this project important to you? How will it expand, deepen, or diversify your creative practice?
 
-[This section should be deeply personal and authentic. Do NOT use AI-generated language here — assessors can tell. Write this yourself. Some angles to consider:]
+[TODO — Nick, write ~200 words here in YOUR voice. Assessors can spot AI-generated text. Some angles to weave together:
 
-[The gap you see: coding is one of the most creative and empowering skills a person can learn, but most people's first experience of it is lonely — a tutorial, a blank screen, silence. Tech World is built on the conviction that coding should feel social, playful, and human.]
+1. The gap you see: coding is creative and empowering, but most people's first experience is lonely — a tutorial, a blank screen, silence. Tech World is built on the conviction that coding should feel social, playful, and human.
 
-[Your creative practice: this project pushes your practice into new territory — game design, real-time multiplayer systems, AI integration, and the intersection of education and entertainment. It represents a deliberate move from [previous work] into interactive entertainment.]
+2. Your creative practice: this project pushes you into new territory — game design, real-time multiplayer, AI integration, the intersection of education and entertainment. A deliberate move from your previous work into interactive entertainment.
 
-[The transition: Enspyrco started as a vehicle for community-driven development. This grant represents the transition to a focused studio with a commercial product. The creative ambition has outgrown the community context, and Tech World deserves dedicated resources to reach its potential.]
+3. The transition: Enspyrco started as a vehicle for the "Adventures In" meetup community. This grant represents the transition to a focused studio with a commercial product. The creative ambition has outgrown the community context.
+
+Keep it honest and specific — mention concrete moments or motivations that are uniquely yours.]
 
 ### Diversity, equity, and inclusion plan
 
 **Current state of the team:**
-[Describe the team's composition honestly. Note any relevant diversity dimensions — gender, cultural background, disability, age, geographic location, etc. If the team is not diverse, acknowledge this directly rather than leaving it unaddressed.]
+[TODO — Nick, 2-3 sentences describing yourself honestly. E.g. background, location (Melbourne), any relevant diversity dimensions. If the team (you) is not diverse in certain ways, acknowledge it directly — assessors respect honesty over hedging.]
 
 **Current state of the project:**
 Tech World is designed to make coding accessible to people who might not see themselves as "coders." The game wraps coding in a social, game-like experience that removes the intimidation of a blank IDE. Key accessibility features already built:
@@ -191,7 +191,7 @@ Tech World has ongoing server costs (multiplayer infrastructure, AI tutor API) t
 | Cost | Approach | Estimated monthly cost |
 |---|---|---|
 | **Multiplayer infrastructure (LiveKit)** | Self-hosted on Oracle Cloud Infrastructure (OCI) Always-Free tier: 4 ARM OCPUs, 24GB RAM — sufficient for ~50 concurrent players. LiveKit is open-source with no licensing fees. | **$0** |
-| **AI tutor (Claude API)** | Uses Claude 3.5 Haiku (~$0.002 per interaction). Shared chat model means one AI response serves all players in a room, so costs scale per-message not per-player. | **$20–200** (scales with usage) |
+| **AI tutor (Claude API)** | Uses Claude Haiku 4.5 (~$0.002 per interaction). Shared chat model means one AI response serves all players in a room, so costs scale per-message not per-player. | **$20–200** (scales with usage) |
 | **Hosting & auth (Firebase)** | Web app on Firebase Hosting free tier. Firebase Auth free tier covers thousands of users. Cloud Functions free tier for token generation. | **$0–20** |
 | **Total running costs** | | **~$20–220/month** at 100–500 daily active users |
 
@@ -310,17 +310,19 @@ These are exploratory goals, not confirmed partnerships. We would approach insti
 
 ### Why is this project timely and relevant to your creative practice?
 
-[This section should be written personally — see notes in section 1. Some angles:]
+[TODO — Nick, write ~150 words here in YOUR voice. Suggested angles:
 
-[The convergence of three technologies — real-time multiplayer (LiveKit/WebRTC), large language models (Claude), and cross-platform game engines (Flutter/Flame) — makes Tech World possible now in a way it wasn't two years ago. The AI tutor isn't a gimmick; it's a genuine creative partner that responds intelligently to player-written code. This is a new creative frontier for game design.]
+1. The convergence of three technologies — real-time multiplayer (LiveKit/WebRTC), large language models (Claude), and cross-platform game engines (Flutter/Flame) — makes Tech World possible NOW in a way it wasn't two years ago.
 
-[As a developer, this project represents a deliberate creative expansion from software engineering into game design, interactive storytelling, and player experience design. It's a bridge between two practices.]
+2. As a developer, this represents a deliberate creative expansion from software engineering into game design and player experience design. It's a bridge between two practices.
+
+Keep it personal and specific to your journey.]
 
 ### Why is it timely and relevant for your team to be making this project now?
 
 The timing is driven by three converging factors:
 
-**1. Technology readiness.** The tools required to build Tech World — real-time multiplayer via WebRTC (LiveKit), AI-powered game characters via large language models (Claude API), and cross-platform game development via Flutter/Flame — have all matured to production quality within the last 18 months. Two years ago, building an AI tutor that gives meaningful code feedback in real time was not economically feasible. Today, models like Claude 3.5 Haiku deliver high-quality responses at ~$0.002 per interaction. The cost curve has made AI-native game design viable for indie studios.
+**1. Technology readiness.** The tools required to build Tech World — real-time multiplayer via WebRTC (LiveKit), AI-powered game characters via large language models (Claude API), and cross-platform game development via Flutter/Flame — have all matured to production quality within the last 18 months. Two years ago, building an AI tutor that gives meaningful code feedback in real time was not economically feasible. Today, models like Claude Haiku 4.5 deliver high-quality responses at ~$0.002 per interaction. The cost curve has made AI-native game design viable for indie studios.
 
 **2. Cultural moment for coding.** Public interest in coding literacy is at an all-time high, driven by the visibility of AI tools (ChatGPT, Copilot, Claude) and the growing recognition that understanding code is a form of creative and economic empowerment. Yet the dominant entry points — tutorials, bootcamps, MOOCs — remain isolating and drop-off rates are high. There is a clear gap for a social, game-based approach that makes coding feel playful rather than academic.
 
