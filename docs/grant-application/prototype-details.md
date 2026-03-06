@@ -1,8 +1,8 @@
 # Prototype Details — Tech World
 
 **Project:** Tech World
-**Studio:** Enspyrco Pty Ltd
-**Date:** February 2026
+**Studio:** Enspyr Pty Ltd
+**Date:** March 2026
 
 ---
 
@@ -12,11 +12,22 @@
 |---|---|
 | **Platform** | Web (browser-based, no download required) |
 | **URL** | https://adventures-in-tech.world |
-| **Recommended browsers** | Google Chrome or Microsoft Edge (latest version) |
-| **Also works on** | Safari, Firefox (Chrome/Edge recommended for best experience) |
-| **Hardware required** | Any modern computer with a webcam and microphone |
-| **Internet connection** | Required (multiplayer, AI tutor, and authentication all require connectivity) |
+| **Recommended browsers** | Google Chrome 100+ or Microsoft Edge 100+ |
+| **Also works on** | Safari 16+, Firefox 110+ (Chrome/Edge recommended for voice features) |
 | **Cost to play** | Free — no account creation fees, no in-app purchases |
+
+### Minimum Hardware Requirements
+
+| Component | Minimum | Recommended |
+|---|---|---|
+| **Operating system** | Windows 10, macOS 12 Monterey, or ChromeOS 100+ | Any current OS with Chrome installed |
+| **Processor** | Dual-core 1.5 GHz (Intel, AMD, or Apple Silicon) | Any processor from 2018 or later |
+| **RAM** | 4 GB | 8 GB |
+| **Internet connection** | 5 Mbps broadband (required — the game is online-only) | 10+ Mbps for smooth video chat |
+| **Display** | 1280×720 minimum | 1920×1080 or higher |
+| **Webcam & microphone** | Required for video chat; game is fully playable without them | Built-in or USB webcam |
+| **GPU** | No dedicated GPU required — runs on integrated graphics | — |
+| **Storage** | No installation — runs entirely in the browser | — |
 
 > **Note for assessors:** The prototype is a live multiplayer web application. It will remain accessible at the URL above throughout the assessment period. No installation, download, or special hardware is required — open the link in Chrome and you're playing.
 
@@ -107,9 +118,15 @@ Click the **grid icon** in the toolbar to open the map editor. Paint barriers, s
 
 ---
 
-## What to Experience
+## Intended Experience
 
-For the best sense of what Tech World offers, we recommend this walkthrough (approximately 5–10 minutes):
+Tech World is designed to make learning to code feel like a social adventure rather than a solitary chore. When you enter the game, you're stepping into a shared world where other learners are present, visible, and approachable. The experience is intentionally low-pressure: you explore a pixel-art environment at your own pace, discover coding challenges at terminal stations, and have a friendly AI tutor (Clawd) available whenever you need help — by text or voice.
+
+The core loop is **explore → discover → attempt → get feedback → discuss**. Walk around a themed map, find a terminal, try a coding challenge, submit your solution for AI review, and chat about what you learned. When another player is nearby, proximity-based video chat activates automatically — creating spontaneous moments of collaboration and peer learning, just like sitting next to someone at a meetup.
+
+The prototype demonstrates all of these systems working together in a live, multiplayer environment. It is not a mockup or a recording — assessors are encouraged to play it.
+
+### Recommended Walkthrough (5–10 minutes)
 
 1. **Sign in** using Google or guest login
 2. **Walk around The L-Room** — notice the animated character, the wall art, and the walls your character walks behind (wall occlusion)
@@ -130,7 +147,7 @@ If two assessors can test simultaneously (or use two browser windows), also try:
 |---|---|
 | **Game engine** | Flutter + Flame (Dart) |
 | **Multiplayer** | LiveKit (WebRTC data channels for positions/chat, media tracks for video) |
-| **AI tutor** | Claude API (Claude 3.5 Haiku) via Node.js bot on GCP Compute Engine |
+| **AI tutor** | Claude API (Claude Haiku 4.5) via Node.js bot on GCP Compute Engine |
 | **Authentication** | Firebase Auth |
 | **Hosting** | Firebase Hosting (auto-deployed from GitHub on merge to main) |
 | **Voice I/O** | Web Speech API (browser-native, Chrome) |
@@ -168,6 +185,6 @@ These are acknowledged gaps that the funded development phase will address:
 
 For technical issues accessing the prototype during assessment:
 
-**Studio:** Enspyrco Pty Ltd
-**Email:** [your email]
-**Web:** [your website if applicable]
+**Studio:** Enspyr Pty Ltd
+**Email:** nick@enspyr.co
+**Web:** https://adventures-in-tech.world
