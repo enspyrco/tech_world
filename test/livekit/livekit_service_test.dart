@@ -109,25 +109,25 @@ void main() {
     });
 
     group('dispose', () {
-      test('can be called safely', () {
+      test('can be called safely', () async {
         final service = LiveKitService(
           userId: 'test-user',
           displayName: 'Test',
         );
 
         // Should not throw
-        expect(() => service.dispose(), returnsNormally);
+        await service.dispose();
       });
 
-      test('can be called multiple times', () {
+      test('can be called multiple times', () async {
         final service = LiveKitService(
           userId: 'test-user',
           displayName: 'Test',
         );
 
-        service.dispose();
+        await service.dispose();
         // Second call should not throw
-        expect(() => service.dispose(), returnsNormally);
+        await service.dispose();
       });
     });
 
@@ -206,17 +206,17 @@ void main() {
 
         // Second connect should return immediately (guard hit).
         final secondResult = await service.connect();
-        expect(secondResult, isFalse);
+        expect(secondResult, equals(ConnectionResult.alreadyConnected));
 
         // Finish the first connect (null token → connection fails).
         tokenCompleter.complete(null);
         final firstResult = await firstConnect;
-        expect(firstResult, isFalse);
+        expect(firstResult, equals(ConnectionResult.tokenUnknownError));
 
-        service.dispose();
+        await service.dispose();
       });
 
-      test('connect returns true status when already connected', () async {
+      test('connect returns failure when token is null', () async {
         // Simulate a service that retrieved a token but will fail at
         // room.connect — we only need to verify the guard checks
         // _isConnected.
@@ -228,10 +228,10 @@ void main() {
 
         // First connect fails (null token).
         final result = await service.connect();
-        expect(result, isFalse);
+        expect(result, equals(ConnectionResult.tokenUnknownError));
         expect(service.isConnected, isFalse);
 
-        service.dispose();
+        await service.dispose();
       });
     });
   });

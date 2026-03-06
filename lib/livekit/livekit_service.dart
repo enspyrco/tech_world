@@ -11,6 +11,27 @@ import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 
+/// Result of a [LiveKitService.connect] attempt.
+enum ConnectionResult {
+  /// Successfully connected to the LiveKit room.
+  connected,
+
+  /// Already connected or connecting — no action taken.
+  alreadyConnected,
+
+  /// Token retrieval failed due to a network error (retryable).
+  tokenNetworkError,
+
+  /// Token retrieval failed due to an authentication error (re-sign-in needed).
+  tokenAuthError,
+
+  /// Token retrieval failed for an unknown reason.
+  tokenUnknownError,
+
+  /// Room connection failed after token was obtained.
+  roomFailed,
+}
+
 /// Service that manages LiveKit room connection and participant tracking.
 ///
 /// This service:
@@ -54,6 +75,7 @@ class LiveKitService {
       StreamController<(Participant, VideoTrack)>.broadcast();
   final _dataReceivedController =
       StreamController<DataChannelMessage>.broadcast();
+  final _connectionLostController = StreamController<String?>.broadcast();
 
   /// Stream of participants that joined the room
   Stream<RemoteParticipant> get participantJoined =>
@@ -81,6 +103,12 @@ class LiveKitService {
 
   /// Stream of data channel messages received from other participants
   Stream<DataChannelMessage> get dataReceived => _dataReceivedController.stream;
+
+  /// Emits the disconnect reason when the room connection is lost unexpectedly.
+  ///
+  /// Consumers (e.g. `main.dart`) can listen to show a reconnection banner or
+  /// trigger cleanup. This does NOT fire on intentional [disconnect] calls.
+  Stream<String?> get connectionLost => _connectionLostController.stream;
 
   /// Stream of player position updates received from other participants.
   ///
@@ -169,11 +197,14 @@ class LiveKitService {
   Map<String, RemoteParticipant> get remoteParticipants =>
       _room?.remoteParticipants ?? {};
 
-  /// Connect to the LiveKit room
-  Future<bool> connect() async {
+  /// Connect to the LiveKit room.
+  ///
+  /// Returns a [ConnectionResult] indicating success or the specific failure
+  /// reason, so the UI can show actionable messages.
+  Future<ConnectionResult> connect() async {
     if (_isConnecting || _isConnected) {
       debugPrint('LiveKitService: Already connecting or connected');
-      return _isConnected;
+      return ConnectionResult.alreadyConnected;
     }
 
     _isConnecting = true;
@@ -181,11 +212,11 @@ class LiveKitService {
 
     try {
       // Get token from Firebase Function
-      final token = await _retrieveToken();
-      if (token == null) {
+      final tokenResult = await _retrieveToken();
+      if (tokenResult.token == null) {
         debugPrint('LiveKitService: Failed to retrieve token');
         _isConnecting = false;
-        return false;
+        return tokenResult.connectionResult;
       }
 
       // Create room with options
@@ -212,7 +243,7 @@ class LiveKitService {
       // Connect to room
       await _room!.connect(
         _serverUrl,
-        token,
+        tokenResult.token!,
         fastConnectOptions: FastConnectOptions(
           microphone: const TrackOption(enabled: false),
           camera: const TrackOption(enabled: false),
@@ -228,11 +259,26 @@ class LiveKitService {
         _participantJoinedController.add(participant);
       }
 
-      return true;
+      return ConnectionResult.connected;
     } catch (e) {
       debugPrint('LiveKitService: Connection failed: $e');
+      // Clean up dangling _room and _listener created before the failure.
+      // Each cleanup is wrapped individually so one failure doesn't prevent
+      // the other from running.
+      try {
+        await _listener?.dispose();
+      } catch (cleanupError) {
+        debugPrint('LiveKitService: Listener cleanup failed: $cleanupError');
+      }
+      _listener = null;
+      try {
+        await _room?.disconnect();
+      } catch (cleanupError) {
+        debugPrint('LiveKitService: Room cleanup failed: $cleanupError');
+      }
+      _room = null;
       _isConnecting = false;
-      return false;
+      return ConnectionResult.roomFailed;
     }
   }
 
@@ -491,17 +537,33 @@ class LiveKitService {
     }
   }
 
-  Future<String?> _retrieveToken() async {
-    if (_tokenRetriever != null) return _tokenRetriever();
+  Future<_TokenResult> _retrieveToken() async {
+    if (_tokenRetriever != null) {
+      final token = await _tokenRetriever();
+      return token != null
+          ? _TokenResult.success(token)
+          : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
+    }
     try {
       debugPrint('LiveKitService: Retrieving token for room "$roomName"');
       final result = await FirebaseFunctions.instance
           .httpsCallable('retrieveLiveKitToken')
           .call({'roomName': roomName});
-      return result.data as String?;
-    } catch (e) {
+      final token = result.data as String?;
+      return token != null
+          ? _TokenResult.success(token)
+          : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
+    } on FirebaseFunctionsException catch (e) {
       debugPrint('LiveKitService: Token retrieval failed: $e');
-      return null;
+      if (e.code == 'unauthenticated' || e.code == 'permission-denied') {
+        return const _TokenResult.failure(ConnectionResult.tokenAuthError);
+      }
+      return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
+    } catch (e) {
+      // Generic catch handles timeouts, network errors, and other transient
+      // failures not covered by FirebaseFunctionsException above.
+      debugPrint('LiveKitService: Token retrieval failed: $e');
+      return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
     }
   }
 
@@ -543,6 +605,18 @@ class LiveKitService {
       ..on<RoomDisconnectedEvent>((event) {
         debugPrint('LiveKitService: Room disconnected: ${event.reason}');
         _isConnected = false;
+        // Clean up resources left dangling by the unexpected disconnect.
+        // Note: _listener.dispose() is intentionally not awaited here — this
+        // is a synchronous event callback and the dispose is fire-and-forget.
+        try {
+          _listener?.dispose();
+        } catch (e) {
+          debugPrint('LiveKitService: Listener cleanup failed: $e');
+        }
+        _listener = null;
+        _room = null;
+        // Notify consumers so they can show a banner / attempt reconnect.
+        _connectionLostController.add(event.reason?.name);
       })
       ..on<LocalTrackPublishedEvent>((event) {
         debugPrint(
@@ -560,9 +634,12 @@ class LiveKitService {
       });
   }
 
-  /// Dispose of resources
-  void dispose() {
-    disconnect();
+  /// Dispose of resources.
+  ///
+  /// Awaits [disconnect] to ensure the room is fully torn down before closing
+  /// stream controllers.
+  Future<void> dispose() async {
+    await disconnect();
     _participantJoinedController.close();
     _participantLeftController.close();
     _speakingChangedController.close();
@@ -570,7 +647,21 @@ class LiveKitService {
     _trackUnsubscribedController.close();
     _localTrackPublishedController.close();
     _dataReceivedController.close();
+    _connectionLostController.close();
   }
+}
+
+/// Internal result from [LiveKitService._retrieveToken].
+class _TokenResult {
+  const _TokenResult.success(String this.token)
+      : connectionResult = ConnectionResult.connected;
+  const _TokenResult.failure(this.connectionResult) : token = null;
+
+  final String? token;
+
+  /// The [ConnectionResult] describing the outcome — [ConnectionResult.connected]
+  /// on success, or a specific failure reason otherwise.
+  final ConnectionResult connectionResult;
 }
 
 /// A message received via LiveKit data channel.

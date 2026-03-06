@@ -342,22 +342,16 @@ ARM64 compatible — can run on OCI free tier (4 OCPU / 24 GB Ampere).
 
 ## Current Work
 
-### Recently completed: Animated tile rendering (#150, #153)
+### Recently completed
 
-Built native animated tile rendering instead of adopting `flame_tiled`. Water tiles in `ext_terrains` now animate via shared `AnimationTicker`s while static tiles stay in a cached `Picture`. PR #153 merged; follow-up review feedback (O(1) lookup index, double-lookup elimination, extracted `AnimationTicker` with tests) is on `fix/animated-tile-review-feedback`.
+**Animated tile rendering (#150, #153)** — Native animated tile rendering using shared `AnimationTicker`s. Water tiles in `ext_terrains` animate while static tiles stay in a cached `Picture`.
 
-### Next up: Auto-terrain brush (#151)
+**Auto-terrain brush (#151)** — Wang blob tileset brush for the map editor. Paint "water" and the brush auto-selects the correct edge/corner/transition tile using 8-bit bitmask neighbor lookup (Moore neighborhood → simplify corners → 47-tile blob pattern). Implemented with `TerrainDef`, `TerrainGrid` (parallel semantic grid for editor round-trips), and `terrain_bitmask.dart` utilities. Water terrain in `ext_terrains` rows 60–67 fully mapped.
 
-**What:** A terrain brush for the map editor that automatically selects the correct edge/corner/transition tile based on neighboring tiles. Paint "water" and the brush picks the right water-to-grass edge tile for each cell.
+**Automapping rules engine (#152, #163)** — Declarative, priority-ordered rules that auto-place decorative tiles (shadows, transitions) based on structural neighbors, re-evaluated on every paint stroke.
 
-**Why this before #152 (automapping rules):** Auto-terrain handles tile *selection* (which sprite variant for this position), automapping handles tile *generation* (place shadows below walls, trim where floor meets wall). #152 explicitly depends on #151. Also, the bitmask neighbor-lookup algorithm is more satisfying to implement — it's the core of what makes `flame_tiled`/Tiled's Wangset system powerful, and building it natively means it integrates cleanly with our in-game editor.
-
-**Why native instead of flame_tiled:** The in-game editor is tightly coupled to our custom tile system (`TileLayerData`, `TileRef`, `TilesetRegistry`, `MapEditorState`). Adopting `flame_tiled` would mean either replacing the editor or maintaining two systems. Building auto-terrain natively keeps one unified system and is more educational for the meetup group.
-
-**Algorithm (Wang blob tileset, 8-bit bitmask):**
-1. For each cell, read 8 neighbors (Moore neighborhood)
-2. Encode as 8-bit bitmask (1 = same terrain, 0 = different/empty)
-3. Look up the bitmask in a `TerrainDef.bitmaskToTileIndex` map → get tile index
-4. On any paint/erase, re-evaluate the cell + all 8 neighbors
-
-**Claude's preference:** Start with the water terrain in `ext_terrains.png` — we already know those tiles from #153. Audit the tileset at full resolution to identify which tiles correspond to which bitmask positions (center, edges, outer corners, inner corners). The LimeZu tilesets likely follow the 47-tile blob pattern.
+**Key files (auto-terrain):**
+- `lib/flame/tiles/terrain_bitmask.dart` — `computeBitmask()`, `simplifyBitmask()`, `Bitmask` constants
+- `lib/flame/tiles/terrain_def.dart` — `TerrainDef` with `bitmaskToTileIndex` map (47 entries)
+- `lib/flame/tiles/predefined_terrains.dart` — `waterTerrain` definition, `lookupTerrain()`
+- `lib/map_editor/terrain_grid.dart` — Parallel 50×50 grid storing terrain IDs per cell (sparse JSON serialization)
