@@ -14,9 +14,11 @@ import 'package:tech_world/map_editor/available_backgrounds.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/map_editor/import_dialog.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
+import 'package:tech_world/map_editor/map_sync_service.dart';
 import 'package:tech_world/map_editor/predefined_rules.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
 import 'package:tech_world/map_editor/tile_palette.dart';
+import 'package:tech_world/utils/locator.dart';
 
 /// Sidebar panel for the visual map editor.
 ///
@@ -72,13 +74,14 @@ class MapEditorPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: _panelBg,
-      child: Column(
-        children: [
-          _buildHeader(),
-          _LayerTabs(state: state),
-          _MapToolbar(state: state),
+    return _UndoRedoShortcuts(
+      child: Container(
+        color: _panelBg,
+        child: Column(
+          children: [
+            _buildHeader(),
+            _LayerTabs(state: state),
+            _MapToolbar(state: state),
           // Only the grid area needs to rebuild on every state change.
           // The header, layer tabs, toolbar, and footer manage their own
           // listeners or are static.
@@ -94,6 +97,7 @@ class MapEditorPanel extends StatelessWidget {
           ),
           _buildFooter(context),
         ],
+        ),
       ),
     );
   }
@@ -253,18 +257,38 @@ class MapEditorPanel extends StatelessWidget {
     final x = (position.dx / cellSize).floor();
     final y = (position.dy / cellSize).floor();
 
+    // Route through MapSyncService if available (collaborative editing),
+    // otherwise fall back to direct state manipulation (offline editing).
+    final syncService = Locator.maybeLocate<MapSyncService>();
+
     if (state.activeLayer == ActiveLayer.structure) {
-      state.paintTile(x, y);
+      if (syncService != null) {
+        syncService.paintTile(x, y);
+      } else {
+        state.paintTile(x, y);
+      }
     } else if (state.activeLayer == ActiveLayer.floor &&
         state.activeTerrainBrush != null) {
       // Auto-terrain brush mode: paint or erase terrain.
       if (state.currentBrush == null) {
-        state.eraseTerrainAt(x, y);
+        if (syncService != null) {
+          syncService.eraseTerrainAt(x, y);
+        } else {
+          state.eraseTerrainAt(x, y);
+        }
       } else {
-        state.paintTerrain(x, y);
+        if (syncService != null) {
+          syncService.paintTerrain(x, y);
+        } else {
+          state.paintTerrain(x, y);
+        }
       }
     } else {
-      state.paintTileRef(x, y);
+      if (syncService != null) {
+        syncService.paintTileRef(x, y);
+      } else {
+        state.paintTileRef(x, y);
+      }
     }
   }
 
@@ -515,20 +539,29 @@ class _MapToolbarState extends State<_MapToolbar> {
   static const _headerBg = Color(0xFF2D2D2D);
   static const _border = Color(0xFF3D3D3D);
 
+  MapSyncService? _syncService;
+
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.state.mapName);
     _idController = TextEditingController(text: widget.state.mapId);
     widget.state.addListener(_onStateChanged);
+    _syncService = Locator.maybeLocate<MapSyncService>();
+    _syncService?.undoRedoChanged.addListener(_onUndoRedoChanged);
   }
 
   @override
   void dispose() {
+    _syncService?.undoRedoChanged.removeListener(_onUndoRedoChanged);
     widget.state.removeListener(_onStateChanged);
     _nameController.dispose();
     _idController.dispose();
     super.dispose();
+  }
+
+  void _onUndoRedoChanged() {
+    setState(() {});
   }
 
   void _onStateChanged() {
@@ -572,6 +605,7 @@ class _MapToolbarState extends State<_MapToolbar> {
                 _toolButton(EditorTool.eraser, Icons.cleaning_services,
                     'Eraser', Colors.grey),
                 const Spacer(),
+                _buildUndoRedoButtons(),
                 IconButton(
                   onPressed: () {
                     widget.state.applyAutomapRules(allAutomapRules);
@@ -599,9 +633,14 @@ class _MapToolbarState extends State<_MapToolbar> {
           // Terrain brush selector — shown for floor layer
           if (widget.state.activeLayer == ActiveLayer.floor)
             _buildTerrainBrushRow(),
-          // Tile brush info — shown for tile layers
+          // Tile brush info + undo/redo — shown for tile layers
           if (!isStructureLayer)
-            _buildTileBrushInfo(),
+            Row(
+              children: [
+                Expanded(child: _buildTileBrushInfo()),
+                _buildUndoRedoButtons(),
+              ],
+            ),
           const SizedBox(height: 8),
           // Map name / id
           Row(
@@ -789,6 +828,36 @@ class _MapToolbarState extends State<_MapToolbar> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildUndoRedoButtons() {
+    final sync = _syncService;
+    if (sync == null) return const SizedBox.shrink();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          onPressed: sync.canUndo ? sync.undo : null,
+          icon: const Icon(Icons.undo, size: 18),
+          color: Colors.grey.shade300,
+          disabledColor: Colors.grey.shade700,
+          tooltip: 'Undo',
+          iconSize: 18,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          padding: EdgeInsets.zero,
+        ),
+        IconButton(
+          onPressed: sync.canRedo ? sync.redo : null,
+          icon: const Icon(Icons.redo, size: 18),
+          color: Colors.grey.shade300,
+          disabledColor: Colors.grey.shade700,
+          tooltip: 'Redo',
+          iconSize: 18,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          padding: EdgeInsets.zero,
+        ),
+      ],
     );
   }
 
@@ -1195,4 +1264,65 @@ class _GridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GridPainter oldDelegate) => true;
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard shortcuts for undo/redo (Cmd+Z / Cmd+Shift+Z)
+// ---------------------------------------------------------------------------
+
+class _UndoRedoShortcuts extends StatelessWidget {
+  const _UndoRedoShortcuts({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Shortcuts(
+      shortcuts: {
+        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyZ):
+            const _UndoIntent(),
+        LogicalKeySet(
+          LogicalKeyboardKey.meta,
+          LogicalKeyboardKey.shift,
+          LogicalKeyboardKey.keyZ,
+        ): const _RedoIntent(),
+        // Windows/Linux
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ):
+            const _UndoIntent(),
+        LogicalKeySet(
+          LogicalKeyboardKey.control,
+          LogicalKeyboardKey.shift,
+          LogicalKeyboardKey.keyZ,
+        ): const _RedoIntent(),
+      },
+      child: Actions(
+        actions: {
+          _UndoIntent: CallbackAction<_UndoIntent>(
+            onInvoke: (_) {
+              Locator.maybeLocate<MapSyncService>()?.undo();
+              return null;
+            },
+          ),
+          _RedoIntent: CallbackAction<_RedoIntent>(
+            onInvoke: (_) {
+              Locator.maybeLocate<MapSyncService>()?.redo();
+              return null;
+            },
+          ),
+        },
+        child: Focus(
+          autofocus: true,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _UndoIntent extends Intent {
+  const _UndoIntent();
+}
+
+class _RedoIntent extends Intent {
+  const _RedoIntent();
 }

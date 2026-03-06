@@ -30,6 +30,7 @@ import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
+import 'package:tech_world/map_editor/map_sync_service.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
@@ -128,6 +129,16 @@ class TechWorld extends World with TapCallbacks {
 
     mapEditorActive.value = true;
 
+    // Create collaborative sync service if LiveKit is connected.
+    if (_liveKitService != null) {
+      _mapSyncService = MapSyncService(
+        liveKitService: _liveKitService!,
+        editorState: editorState,
+        localPlayerId: _userPlayerComponent.id,
+      );
+      Locator.add<MapSyncService>(_mapSyncService!);
+    }
+
     // Hide wall occlusion overlays and tile objects during editing.
     _wallOcclusion?.hide();
     _tileObjectLayer?.hide();
@@ -172,6 +183,13 @@ class TechWorld extends World with TapCallbacks {
     _editorState?.removeListener(_onEditorStateChanged);
     _editorState = null;
 
+    // Dispose collaborative sync service.
+    if (_mapSyncService != null) {
+      _mapSyncService!.dispose();
+      Locator.remove<MapSyncService>();
+      _mapSyncService = null;
+    }
+
     // Rebuild pathfinding grid from default barriers.
     _pathComponent?.invalidateGrid();
 
@@ -188,6 +206,7 @@ class TechWorld extends World with TapCallbacks {
   }
 
   MapEditorState? _editorState;
+  MapSyncService? _mapSyncService;
 
   /// Called when the editor state changes — rebuild pathfinding grid.
   void _onEditorStateChanged() {
