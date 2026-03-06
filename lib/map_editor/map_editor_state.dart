@@ -729,6 +729,27 @@ class MapEditorState extends ChangeNotifier {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Remote edit support (called by MapSyncService)
+  // -------------------------------------------------------------------------
+
+  /// Directly set a structure grid tile without side effects.
+  ///
+  /// Used by [MapSyncService] to apply remote edits. Does not call
+  /// [notifyListeners], [_markDirty], or enforce the single-spawn constraint.
+  void setStructureTile(int x, int y, TileType type) {
+    if (!_inBounds(x, y)) return;
+    _grid[y][x] = type;
+  }
+
+  /// Notify listeners that remote changes have been applied.
+  ///
+  /// Called by [MapSyncService] after applying a batch of remote edits.
+  void notifyRemoteChange() {
+    _markDirty();
+    notifyListeners();
+  }
+
   bool _inBounds(int x, int y) =>
       x >= 0 && x < gridSize && y >= 0 && y < gridSize;
 
