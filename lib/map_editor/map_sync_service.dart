@@ -53,6 +53,7 @@ class MapSyncService {
   // -------------------------------------------------------------------------
 
   bool _isSyncing = false;
+  Completer<void>? _syncCompleter;
   final List<MapEditBatch> _syncBuffer = [];
 
   // -------------------------------------------------------------------------
@@ -107,9 +108,10 @@ class MapSyncService {
     if (brush == null) {
       // Eraser — single cell.
       final oldRef = layerData.tileAt(x, y);
+      final oldStructure = _structureToValue(_editorState.tileAt(x, y));
       _editorState.paintTileRef(x, y);
       final newRef = layerData.tileAt(x, y);
-      if (tileRefToOpValue(oldRef) != tileRefToOpValue(newRef)) {
+      if (!opValueEquals(tileRefToOpValue(oldRef), tileRefToOpValue(newRef))) {
         ops.add(MapEditOp(
           playerId: _localPlayerId,
           counter: counter,
@@ -120,15 +122,31 @@ class MapSyncService {
           newValue: tileRefToOpValue(newRef),
         ));
       }
+      // Capture auto-barrier removal on the structure grid.
+      final newStructure = _structureToValue(_editorState.tileAt(x, y));
+      if (oldStructure != newStructure) {
+        ops.add(MapEditOp(
+          playerId: _localPlayerId,
+          counter: counter,
+          x: x,
+          y: y,
+          layer: OpLayer.structure,
+          oldValue: oldStructure,
+          newValue: newStructure,
+        ));
+      }
     } else {
       // Multi-tile brush — capture all cells in footprint.
       final oldRefs = <(int, int), TileRef?>{};
+      final oldStructures = <(int, int), String?>{};
       for (var dy = 0; dy < brush.height; dy++) {
         for (var dx = 0; dx < brush.width; dx++) {
           final tx = x + dx;
           final ty = y + dy;
           if (_inBounds(tx, ty)) {
             oldRefs[(tx, ty)] = layerData.tileAt(tx, ty);
+            oldStructures[(tx, ty)] =
+                _structureToValue(_editorState.tileAt(tx, ty));
           }
         }
       }
@@ -141,7 +159,7 @@ class MapSyncService {
         final newRef = layerData.tileAt(tx, ty);
         final oldVal = tileRefToOpValue(oldRef);
         final newVal = tileRefToOpValue(newRef);
-        if (!_deepEquals(oldVal, newVal)) {
+        if (!opValueEquals(oldVal, newVal)) {
           ops.add(MapEditOp(
             playerId: _localPlayerId,
             counter: counter,
@@ -152,13 +170,22 @@ class MapSyncService {
             newValue: newVal,
           ));
         }
+        // Capture auto-barrier side-effects on the structure grid.
+        final newStructure =
+            _structureToValue(_editorState.tileAt(tx, ty));
+        if (oldStructures[(tx, ty)] != newStructure) {
+          ops.add(MapEditOp(
+            playerId: _localPlayerId,
+            counter: counter,
+            x: tx,
+            y: ty,
+            layer: OpLayer.structure,
+            oldValue: oldStructures[(tx, ty)],
+            newValue: newStructure,
+          ));
+        }
       }
     }
-
-    // Also capture any auto-barrier changes on the structure grid.
-    // (Auto-barriers are created when painting barrier-tagged tiles.)
-    // We skip this for simplicity — auto-barriers are deterministic
-    // from the tile layer state and will be recomputed on remote apply.
 
     if (ops.isEmpty) return;
 
@@ -212,7 +239,7 @@ class MapSyncService {
       final newFloor = _editorState.floorLayerData.tileAt(cx, cy);
       final oldFloorVal = tileRefToOpValue(oldFloor[(cx, cy)]);
       final newFloorVal = tileRefToOpValue(newFloor);
-      if (!_deepEquals(oldFloorVal, newFloorVal)) {
+      if (!opValueEquals(oldFloorVal, newFloorVal)) {
         ops.add(MapEditOp(
           playerId: _localPlayerId,
           counter: counter,
@@ -269,7 +296,7 @@ class MapSyncService {
       final newFloor = _editorState.floorLayerData.tileAt(cx, cy);
       final oldFloorVal = tileRefToOpValue(oldFloor[(cx, cy)]);
       final newFloorVal = tileRefToOpValue(newFloor);
-      if (!_deepEquals(oldFloorVal, newFloorVal)) {
+      if (!opValueEquals(oldFloorVal, newFloorVal)) {
         ops.add(MapEditOp(
           playerId: _localPlayerId,
           counter: counter,
@@ -318,10 +345,13 @@ class MapSyncService {
 
   /// Request a full state sync from other editors in the room.
   ///
-  /// Buffers incoming edits during sync to avoid races.
+  /// Buffers incoming edits during sync to avoid races. Completes when
+  /// a sync response arrives or after a 5-second timeout (e.g., no other
+  /// editors are present).
   Future<void> requestSync() async {
     _isSyncing = true;
     _syncBuffer.clear();
+    _syncCompleter = Completer<void>();
 
     await _liveKitService.publishJson(
       {'type': 'sync-request', 'playerId': _localPlayerId},
@@ -329,10 +359,10 @@ class MapSyncService {
       reliable: true,
     );
 
-    // The sync response will arrive via _onDataReceived.
-    // If no response comes within 5 seconds, stop waiting.
-    await Future.delayed(const Duration(seconds: 5));
-    _flushSyncBuffer();
+    // Complete on sync-response (via _handleSyncResponse) or timeout.
+    await _syncCompleter!.future
+        .timeout(const Duration(seconds: 5), onTimeout: () {})
+        .whenComplete(() => _flushSyncBuffer());
   }
 
   // -------------------------------------------------------------------------
@@ -502,7 +532,11 @@ class MapSyncService {
     _undoManager.advanceClock(remoteClock);
 
     _editorState.notifyRemoteChange();
-    _flushSyncBuffer();
+
+    // Complete the sync request future early (before timeout).
+    if (_syncCompleter != null && !_syncCompleter!.isCompleted) {
+      _syncCompleter!.complete();
+    }
   }
 
   void _flushSyncBuffer() {
@@ -602,13 +636,3 @@ class MapSyncService {
   }
 }
 
-bool _deepEquals(dynamic a, dynamic b) {
-  if (a is Map && b is Map) {
-    if (a.length != b.length) return false;
-    for (final key in a.keys) {
-      if (!b.containsKey(key) || a[key] != b[key]) return false;
-    }
-    return true;
-  }
-  return a == b;
-}

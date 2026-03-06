@@ -89,8 +89,8 @@ class MapEditOp {
           x == other.x &&
           y == other.y &&
           layer == other.layer &&
-          _deepEquals(oldValue, other.oldValue) &&
-          _deepEquals(newValue, other.newValue);
+          opValueEquals(oldValue, other.oldValue) &&
+          opValueEquals(newValue, other.newValue);
 
   @override
   int get hashCode => Object.hash(playerId, counter, x, y, layer);
@@ -160,8 +160,12 @@ class MapEditBatch {
       'MapEditBatch($playerId, c=$counter, ${ops.length} ops)';
 }
 
-/// Deep equality for op values (handles Map comparison).
-bool _deepEquals(dynamic a, dynamic b) {
+/// Shallow-deep equality for op values.
+///
+/// Compares Maps by key-value pairs (one level deep) and everything else
+/// with `==`. Sufficient for the JSON-serializable values used in ops
+/// (String, int, null, and flat `Map<String, dynamic>` from TileRef).
+bool opValueEquals(dynamic a, dynamic b) {
   if (a is Map && b is Map) {
     if (a.length != b.length) return false;
     for (final key in a.keys) {

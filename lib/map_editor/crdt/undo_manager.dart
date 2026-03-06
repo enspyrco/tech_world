@@ -9,9 +9,13 @@ import 'package:tech_world/map_editor/crdt/map_edit_op.dart';
 /// edited the same cell since, the undo's higher counter wins — which is
 /// correct because explicit undo intent should override.
 class UndoManager {
-  UndoManager({required this.playerId});
+  UndoManager({required this.playerId, this.maxUndoDepth = 500});
 
   final String playerId;
+
+  /// Maximum number of batches kept in the undo stack.
+  final int maxUndoDepth;
+
   int _counter = 0;
 
   final List<MapEditBatch> _undoStack = [];
@@ -36,6 +40,9 @@ class UndoManager {
   /// Clears the redo stack since the edit timeline has diverged.
   void push(MapEditBatch batch) {
     _undoStack.add(batch);
+    if (_undoStack.length > maxUndoDepth) {
+      _undoStack.removeAt(0);
+    }
     _redoStack.clear();
   }
 
