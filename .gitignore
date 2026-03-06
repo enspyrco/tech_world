@@ -103,3 +103,6 @@ coverage/
 
 # MCP config (contains credentials)
 .mcp.json
+
+# Playwright MCP artifacts (screenshots, logs)
+.playwright-mcp/
