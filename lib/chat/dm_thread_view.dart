@@ -147,6 +147,10 @@ class _DmThreadViewState extends State<DmThreadView> {
                 ? widget.chatService
                     .dmMessages(widget.conversation.peerId!)
                 : const Stream.empty(),
+            initialData: widget.conversation.peerId != null
+                ? widget.chatService
+                    .dmMessagesSnapshot(widget.conversation.peerId!)
+                : null,
             builder: (context, snapshot) {
               final messages = snapshot.data ?? [];
 
