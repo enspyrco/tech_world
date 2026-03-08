@@ -94,6 +94,14 @@ class ChatService {
     return _dmStreamControllers[convId]!.stream;
   }
 
+  /// Returns the current message list for a DM conversation, for use as
+  /// [StreamBuilder.initialData] so the thread view renders immediately.
+  List<ChatMessage> dmMessagesSnapshot(String peerId) {
+    final convId =
+        Conversation.conversationIdFor(_liveKitService.userId, peerId);
+    return List.from(_dmMessagesByConversation[convId] ?? []);
+  }
+
   /// The local user's ID, exposed for computing DM conversation IDs.
   String get localUserId => _liveKitService.userId;
 

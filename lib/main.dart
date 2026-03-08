@@ -925,11 +925,13 @@ class _MyAppState extends State<MyApp> {
                               onLoadRoom: _loadSavedRoom,
                               onDeleteRoom: _deleteSavedRoom,
                             ),
-                            const SizedBox(width: 8),
-                            _MapEditorButton(
-                              mapEditorState: _mapEditorState,
-                              techWorld: locate<TechWorld>(),
-                            ),
+                            if (_currentRoom!.canEdit(_currentUserId!)) ...[
+                              const SizedBox(width: 8),
+                              _MapEditorButton(
+                                mapEditorState: _mapEditorState,
+                                techWorld: locate<TechWorld>(),
+                              ),
+                            ],
                             if (kIsWeb || lkPlatformIsDesktop()) ...[
                               const SizedBox(width: 8),
                               _ScreenShareButton(
