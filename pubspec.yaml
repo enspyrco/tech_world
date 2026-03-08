@@ -34,7 +34,7 @@ dependencies:
   re_highlight: ^0.0.3
   tiled: ^0.11.1 # TMX/TSX parser only — no rendering
   xml: ^6.6.1
-  archive: ^4.0.9
+
 
 dev_dependencies:
   flutter_test:
