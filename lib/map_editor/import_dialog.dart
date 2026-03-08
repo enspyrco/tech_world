@@ -347,7 +347,7 @@ class _ImportDialogState extends State<ImportDialog>
       widget.state.loadFromAscii(_asciiController.text);
       Navigator.pop(context);
     } else {
-      // TMX import — zip bundle or single file/paste.
+      // TMX import — multi-file bundle or single file/paste.
       if (_bundleTmxXml != null) {
         _importTmxFromBundle();
       } else {

@@ -415,7 +415,8 @@ List<_TilesetEntry> _buildTilesetMapping(
 
     // Try 3: Create a custom tileset if image bytes are provided.
     if (matched == null && imageSource != null) {
-      final bytes = customImages[imageSource];
+      final bytes = customImages[imageSource] ??
+          customImages[imageSource.split('/').last];
       if (bytes != null) {
         final tileSize = tmxTs.tileWidth ?? gridSquareSize;
         final columns = tmxTs.columns ?? 1;
