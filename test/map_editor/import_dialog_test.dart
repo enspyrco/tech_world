@@ -1,23 +1,19 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/map_editor/import_dialog.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 
-/// Build a zip archive containing the given files, as raw bytes.
-Uint8List buildTestZip(Map<String, List<int>> files) {
-  final archive = Archive();
-  for (final entry in files.entries) {
-    archive.addFile(ArchiveFile(
-      entry.key,
-      entry.value.length,
-      entry.value,
-    ));
-  }
-  return Uint8List.fromList(ZipEncoder().encode(archive));
+/// Create a [PlatformFile] with the given name and byte content.
+PlatformFile platformFile(String name, List<int> bytes) {
+  return PlatformFile(
+    name: name,
+    size: bytes.length,
+    bytes: Uint8List.fromList(bytes),
+  );
 }
 
 /// Minimal valid TMX XML with a predefined tileset.
@@ -58,7 +54,8 @@ void main() {
       );
     }
 
-    testWidgets('TMX tab shows file pick and zip buttons', (tester) async {
+    testWidgets('TMX tab shows file pick and multi-file buttons',
+        (tester) async {
       await tester.pumpWidget(buildDialog());
 
       // Open the dialog.
@@ -71,9 +68,9 @@ void main() {
 
       // Verify both buttons are visible.
       expect(find.text('.tmx File'), findsOneWidget);
-      expect(find.text('.zip Bundle'), findsOneWidget);
+      expect(find.text('Multiple Files'), findsOneWidget);
       expect(find.byIcon(Icons.file_open), findsOneWidget);
-      expect(find.byIcon(Icons.folder_zip), findsOneWidget);
+      expect(find.byIcon(Icons.upload_file), findsOneWidget);
     });
 
     testWidgets('TMX tab shows updated hint text', (tester) async {
@@ -124,93 +121,112 @@ void main() {
     });
   });
 
-  group('_extractZipBundle', () {
-    test('extracts TMX from a zip archive', () {
-      final zip = buildTestZip({
-        'my_map.tmx': utf8.encode(_validTmx),
-      });
+  group('classifyFiles', () {
+    test('extracts TMX from file list', () {
+      final files = [
+        platformFile('my_map.tmx', utf8.encode(_validTmx)),
+      ];
 
-      final result = extractZipBundle(zip);
+      final result = classifyFiles(files);
 
       expect(result.tmxXml, _validTmx);
       expect(result.tsxProviders, isEmpty);
       expect(result.imageBytes, isEmpty);
     });
 
-    test('extracts TSX providers from zip', () {
+    test('extracts TSX providers from file list', () {
       const tsxXml = '<?xml version="1.0" encoding="UTF-8"?>'
           '<tileset version="1.10" name="Desert" tilewidth="32" tileheight="32" '
           'tilecount="64" columns="8">'
           '<image source="desert.png" width="256" height="256"/>'
           '</tileset>';
 
-      final zip = buildTestZip({
-        'maps/my_map.tmx': utf8.encode(_validTmx),
-        'tilesets/desert.tsx': utf8.encode(tsxXml),
-      });
+      final files = [
+        platformFile('my_map.tmx', utf8.encode(_validTmx)),
+        platformFile('desert.tsx', utf8.encode(tsxXml)),
+      ];
 
-      final result = extractZipBundle(zip);
+      final result = classifyFiles(files);
 
       expect(result.tmxXml, _validTmx);
       expect(result.tsxProviders, hasLength(1));
       expect(result.tsxProviders.first.filename, 'desert.tsx');
     });
 
-    test('extracts PNG image bytes from zip', () {
+    test('extracts PNG image bytes from file list', () {
       final pngBytes = Uint8List.fromList(List.filled(32, 0xAB));
 
-      final zip = buildTestZip({
-        'my_map.tmx': utf8.encode(_validTmx),
-        'images/desert.png': pngBytes,
-      });
+      final files = [
+        platformFile('my_map.tmx', utf8.encode(_validTmx)),
+        platformFile('desert.png', pngBytes),
+      ];
 
-      final result = extractZipBundle(zip);
+      final result = classifyFiles(files);
 
-      // Should be stored under both full path and filename.
-      expect(result.imageBytes['images/desert.png'], pngBytes);
       expect(result.imageBytes['desert.png'], pngBytes);
     });
 
-    test('throws FormatException when no TMX found in zip', () {
-      final zip = buildTestZip({
-        'readme.txt': utf8.encode('Hello'),
-        'tileset.png': [0xFF, 0x00],
-      });
+    test('returns null tmxXml when no TMX found', () {
+      final files = [
+        platformFile('tileset.png', [0xFF, 0x00]),
+      ];
 
-      expect(
-        () => extractZipBundle(zip),
-        throwsA(isA<FormatException>().having(
-          (e) => e.message,
-          'message',
-          contains('No .tmx file found'),
-        )),
-      );
+      final result = classifyFiles(files);
+
+      expect(result.tmxXml, isNull);
     });
 
-    test('handles nested directory structure in zip', () {
+    test('handles multiple TSX and image files', () {
       final pngBytes = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]);
 
-      final zip = buildTestZip({
-        'project/maps/world.tmx': utf8.encode(_validTmx),
-        'project/tilesets/terrain.tsx': utf8.encode(
-          '<?xml version="1.0"?>'
-          '<tileset name="T" tilewidth="32" tileheight="32" '
-          'tilecount="4" columns="2">'
-          '<image source="terrain.png" width="64" height="64"/>'
-          '</tileset>',
+      final files = [
+        platformFile('world.tmx', utf8.encode(_validTmx)),
+        platformFile(
+          'terrain.tsx',
+          utf8.encode(
+            '<?xml version="1.0"?>'
+            '<tileset name="T" tilewidth="32" tileheight="32" '
+            'tilecount="4" columns="2">'
+            '<image source="terrain.png" width="64" height="64"/>'
+            '</tileset>',
+          ),
         ),
-        'project/tilesets/terrain.png': pngBytes,
-      });
+        platformFile('terrain.png', pngBytes),
+      ];
 
-      final result = extractZipBundle(zip);
+      final result = classifyFiles(files);
 
       expect(result.tmxXml, _validTmx);
       expect(result.tsxProviders, hasLength(1));
       expect(result.tsxProviders.first.filename, 'terrain.tsx');
-      // Full path and filename both present.
-      expect(result.imageBytes.containsKey('project/tilesets/terrain.png'),
-          isTrue);
       expect(result.imageBytes.containsKey('terrain.png'), isTrue);
+    });
+
+    test('supports JPG and JPEG image files', () {
+      final jpgBytes = Uint8List.fromList([0xFF, 0xD8, 0xFF]);
+
+      final files = [
+        platformFile('map.tmx', utf8.encode(_validTmx)),
+        platformFile('photo.jpg', jpgBytes),
+        platformFile('background.jpeg', jpgBytes),
+      ];
+
+      final result = classifyFiles(files);
+
+      expect(result.imageBytes, hasLength(2));
+      expect(result.imageBytes.containsKey('photo.jpg'), isTrue);
+      expect(result.imageBytes.containsKey('background.jpeg'), isTrue);
+    });
+
+    test('skips files with null bytes', () {
+      final files = [
+        PlatformFile(name: 'no_data.tmx', size: 100, bytes: null),
+        platformFile('real.tmx', utf8.encode(_validTmx)),
+      ];
+
+      final result = classifyFiles(files);
+
+      expect(result.tmxXml, _validTmx);
     });
   });
 }

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
@@ -32,11 +31,11 @@ class _ImportDialogState extends State<ImportDialog>
   final _idController = TextEditingController();
   String? _pickedFileName;
 
-  // Zip bundle state.
-  String? _zipTmxXml;
-  List<InMemoryTsxProvider>? _zipTsxProviders;
-  Map<String, Uint8List>? _zipImageBytes;
-  String? _zipFileName;
+  // Multi-file bundle state.
+  String? _bundleTmxXml;
+  List<InMemoryTsxProvider>? _bundleTsxProviders;
+  Map<String, Uint8List>? _bundleImageBytes;
+  String? _bundleFileNames;
 
   @override
   void initState() {
@@ -192,9 +191,9 @@ class _ImportDialogState extends State<ImportDialog>
             ),
             const SizedBox(width: 8),
             ElevatedButton.icon(
-              onPressed: _pickZipBundle,
-              icon: const Icon(Icons.folder_zip, size: 16),
-              label: const Text('.zip Bundle'),
+              onPressed: _pickMultipleFiles,
+              icon: const Icon(Icons.upload_file, size: 16),
+              label: const Text('Multiple Files'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF81C784),
                 foregroundColor: Colors.black87,
@@ -203,11 +202,11 @@ class _ImportDialogState extends State<ImportDialog>
                 textStyle: const TextStyle(fontSize: 12),
               ),
             ),
-            if (_pickedFileName != null || _zipFileName != null) ...[
+            if (_pickedFileName != null || _bundleFileNames != null) ...[
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _zipFileName ?? _pickedFileName!,
+                  _bundleFileNames ?? _pickedFileName!,
                   style: TextStyle(
                     color: Colors.grey.shade400,
                     fontSize: 11,
@@ -287,49 +286,58 @@ class _ImportDialogState extends State<ImportDialog>
     }
   }
 
-  Future<void> _pickZipBundle() async {
+  Future<void> _pickMultipleFiles() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['zip'],
+      allowedExtensions: ['tmx', 'tsx', 'png', 'jpg', 'jpeg'],
+      allowMultiple: true,
       withData: true,
     );
 
     if (result == null || result.files.isEmpty) return;
-    final file = result.files.first;
-    if (file.bytes == null) return;
 
-    try {
-      final extracted = extractZipBundle(file.bytes!);
-      setState(() {
-        _zipTmxXml = extracted.tmxXml;
-        _zipTsxProviders = extracted.tsxProviders;
-        _zipImageBytes = extracted.imageBytes;
-        _zipFileName = file.name;
-        // Show TMX XML in the text field for visibility.
-        _tmxController.text = extracted.tmxXml;
-        _pickedFileName = null; // Clear single-file pick.
-      });
+    final extracted = classifyFiles(result.files);
 
-      // Auto-populate map name from zip filename if empty.
-      if (_nameController.text.trim().isEmpty) {
-        final baseName =
-            file.name.replaceAll(RegExp(r'\.zip$', caseSensitive: false), '');
-        final titleCase = baseName
-            .replaceAll(RegExp(r'[_-]'), ' ')
-            .split(' ')
-            .where((w) => w.isNotEmpty)
-            .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
-            .join(' ');
-        _nameController.text = titleCase;
-      }
-    } on FormatException catch (e) {
+    if (extracted.tmxXml == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.message),
+          content: const Text(
+            'No .tmx file found. Please include a .tmx map file.',
+          ),
           backgroundColor: Colors.red.shade700,
         ),
       );
+      return;
+    }
+
+    setState(() {
+      _bundleTmxXml = extracted.tmxXml;
+      _bundleTsxProviders = extracted.tsxProviders;
+      _bundleImageBytes = extracted.imageBytes;
+      _bundleFileNames =
+          result.files.map((f) => f.name).join(', ');
+      // Show TMX XML in the text field for visibility.
+      _tmxController.text = extracted.tmxXml!;
+      _pickedFileName = null; // Clear single-file pick.
+    });
+
+    // Auto-populate map name from TMX filename if empty.
+    if (_nameController.text.trim().isEmpty) {
+      final tmxFile = result.files.firstWhere(
+        (f) => f.name.toLowerCase().endsWith('.tmx'),
+      );
+      final baseName = tmxFile.name.replaceAll(
+        RegExp(r'\.tmx$', caseSensitive: false),
+        '',
+      );
+      final titleCase = baseName
+          .replaceAll(RegExp(r'[_-]'), ' ')
+          .split(' ')
+          .where((w) => w.isNotEmpty)
+          .map((w) => w[0].toUpperCase() + w.substring(1).toLowerCase())
+          .join(' ');
+      _nameController.text = titleCase;
     }
   }
 
@@ -339,9 +347,9 @@ class _ImportDialogState extends State<ImportDialog>
       widget.state.loadFromAscii(_asciiController.text);
       Navigator.pop(context);
     } else {
-      // TMX import — zip bundle or single file/paste.
-      if (_zipTmxXml != null) {
-        _importTmxFromZip();
+      // TMX import — multi-file bundle or single file/paste.
+      if (_bundleTmxXml != null) {
+        _importTmxFromBundle();
       } else {
         _importTmx();
       }
@@ -375,8 +383,8 @@ class _ImportDialogState extends State<ImportDialog>
     }
   }
 
-  void _importTmxFromZip() {
-    final tmxXml = _zipTmxXml!;
+  void _importTmxFromBundle() {
+    final tmxXml = _bundleTmxXml!;
     final mapName =
         _nameController.text.trim().isEmpty ? null : _nameController.text.trim();
     final mapId =
@@ -385,8 +393,8 @@ class _ImportDialogState extends State<ImportDialog>
     try {
       final result = widget.state.loadFromTmxWithCustomTilesets(
         tmxXml,
-        customImages: _zipImageBytes ?? {},
-        tsxProviders: _zipTsxProviders,
+        customImages: _bundleImageBytes ?? {},
+        tsxProviders: _bundleTsxProviders,
         mapName: mapName,
         mapId: mapId,
       );
@@ -419,74 +427,52 @@ class _ImportDialogState extends State<ImportDialog>
 }
 
 // ---------------------------------------------------------------------------
-// Zip extraction
+// Multi-file classification
 // ---------------------------------------------------------------------------
 
-/// Extracted contents from a zip bundle for TMX import.
-class ZipBundleContents {
-  const ZipBundleContents({
+/// Classified contents from individually picked files for TMX import.
+class ClassifiedFiles {
+  const ClassifiedFiles({
     required this.tmxXml,
     required this.tsxProviders,
     required this.imageBytes,
   });
 
-  final String tmxXml;
+  /// The TMX XML string, or `null` if no `.tmx` file was picked.
+  final String? tmxXml;
   final List<InMemoryTsxProvider> tsxProviders;
   final Map<String, Uint8List> imageBytes;
 }
 
-/// Extract TMX, TSX, and PNG files from a zip archive.
+/// Classify picked files into TMX, TSX, and image categories.
 ///
-/// Throws [FormatException] if no `.tmx` file is found or the zip is invalid.
+/// Returns a [ClassifiedFiles] with `tmxXml` set to `null` if no `.tmx` file
+/// is present — callers should check and show an appropriate error.
 @visibleForTesting
-ZipBundleContents extractZipBundle(Uint8List zipBytes) {
-  final Archive archive;
-  try {
-    archive = ZipDecoder().decodeBytes(zipBytes);
-  } catch (e) {
-    throw FormatException('Failed to read zip file: $e');
-  }
-
+ClassifiedFiles classifyFiles(List<PlatformFile> files) {
   String? tmxXml;
   final tsxProviders = <InMemoryTsxProvider>[];
   final imageBytes = <String, Uint8List>{};
 
-  for (final file in archive) {
-    if (file.isFile) {
-      final name = file.name;
-      final lowerName = name.toLowerCase();
+  for (final file in files) {
+    if (file.bytes == null) continue;
 
-      if (lowerName.endsWith('.tmx')) {
-        tmxXml = utf8.decode(file.content as List<int>);
-      } else if (lowerName.endsWith('.tsx')) {
-        final xml = utf8.decode(file.content as List<int>);
-        // Use just the filename (not the full path) as the TSX key,
-        // since TMX files reference TSX by filename.
-        final tsxFilename = name.split('/').last;
-        tsxProviders.add(InMemoryTsxProvider(tsxFilename, xml));
-      } else if (lowerName.endsWith('.png') ||
-          lowerName.endsWith('.jpg') ||
-          lowerName.endsWith('.jpeg')) {
-        // Store by both the full relative path and the filename,
-        // since TMX files may reference images either way.
-        final filename = name.split('/').last;
-        final bytes = Uint8List.fromList(file.content as List<int>);
-        imageBytes[name] = bytes;
-        if (name != filename) {
-          imageBytes[filename] = bytes;
-        }
-      }
+    final name = file.name;
+    final lowerName = name.toLowerCase();
+
+    if (lowerName.endsWith('.tmx')) {
+      tmxXml = utf8.decode(file.bytes!);
+    } else if (lowerName.endsWith('.tsx')) {
+      final xml = utf8.decode(file.bytes!);
+      tsxProviders.add(InMemoryTsxProvider(name, xml));
+    } else if (lowerName.endsWith('.png') ||
+        lowerName.endsWith('.jpg') ||
+        lowerName.endsWith('.jpeg')) {
+      imageBytes[name] = file.bytes!;
     }
   }
 
-  if (tmxXml == null) {
-    throw const FormatException(
-      'No .tmx file found in the zip bundle. '
-      'The zip must contain at least one .tmx file.',
-    );
-  }
-
-  return ZipBundleContents(
+  return ClassifiedFiles(
     tmxXml: tmxXml,
     tsxProviders: tsxProviders,
     imageBytes: imageBytes,
