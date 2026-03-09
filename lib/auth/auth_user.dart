@@ -5,11 +5,19 @@ abstract class User {
 }
 
 class AuthUser implements User {
-  AuthUser({required this.id, required this.displayName});
+  AuthUser({
+    required this.id,
+    required this.displayName,
+    this.isAnonymous = false,
+  });
+
   @override
   final String id;
   @override
   final String displayName;
+
+  /// Whether this user signed in anonymously (guest mode).
+  final bool isAnonymous;
 
   @override
   bool operator ==(Object other) => other is User && other.id == id;

@@ -80,6 +80,7 @@ class _MyAppState extends State<MyApp> {
   Avatar? _selectedAvatar;
   bool _avatarLoaded = false;
   String? _currentUserId;
+  bool _isAnonymous = false;
   String _currentDisplayName = '';
   String? _currentProfilePictureUrl;
   RoomService? _roomService;
@@ -175,6 +176,7 @@ class _MyAppState extends State<MyApp> {
       _selectedAvatar = null;
       _avatarLoaded = false;
       _currentUserId = null;
+      _isAnonymous = false;
       _currentDisplayName = '';
       _currentProfilePictureUrl = null;
       _currentRoom = null;
@@ -184,6 +186,7 @@ class _MyAppState extends State<MyApp> {
       // User signed in — set up profile & services, show lobby.
       debugPrint('User signed in: ${user.id} (${user.displayName})');
       _currentUserId = user.id;
+      _isAnonymous = user.isAnonymous;
       _currentDisplayName = user.displayName;
 
       // Load saved avatar and profile picture from Firestore
@@ -677,6 +680,7 @@ class _MyAppState extends State<MyApp> {
                               return RoomBrowser(
                                 roomService: _roomService!,
                                 userId: _currentUserId!,
+                                canCreateRoom: !_isAnonymous,
                                 onJoinRoom: _joinRoom,
                                 onCreateRoom: _onCreateRoom,
                                 joiningRoomId: _joiningRoomId,

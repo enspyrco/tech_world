@@ -12,6 +12,7 @@ class RoomBrowser extends StatefulWidget {
     required this.userId,
     required this.onJoinRoom,
     required this.onCreateRoom,
+    this.canCreateRoom = true,
     this.joiningRoomId,
     this.joinProgress,
     this.joinMessage,
@@ -20,6 +21,9 @@ class RoomBrowser extends StatefulWidget {
 
   final RoomService roomService;
   final String userId;
+
+  /// Whether the current user can create rooms (false for anonymous guests).
+  final bool canCreateRoom;
 
   /// Called when the user selects a room to join.
   final void Function(RoomData room) onJoinRoom;
@@ -111,11 +115,11 @@ class _RoomBrowserState extends State<RoomBrowser>
         children: [
           const Icon(Icons.meeting_room, color: Color(0xFF4FC3F7), size: 28),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Tech World Rooms',
                   style: TextStyle(
                     color: Colors.white,
@@ -123,25 +127,36 @@ class _RoomBrowserState extends State<RoomBrowser>
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
-                  'Join a room or create your own',
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                  widget.canCreateRoom
+                      ? 'Join a room or create your own'
+                      : 'Join a room to start exploring',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
                 ),
               ],
             ),
           ),
-          ElevatedButton.icon(
-            onPressed: widget.onCreateRoom,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Create Room'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
-              foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          if (widget.canCreateRoom)
+            ElevatedButton.icon(
+              onPressed: widget.onCreateRoom,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Create Room'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+            )
+          else
+            Tooltip(
+              message: 'Sign in to create rooms',
+              child: Text(
+                'Sign in to create rooms',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -225,11 +240,20 @@ class _RoomBrowserState extends State<RoomBrowser>
               ),
             ),
             const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: widget.onCreateRoom,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Create one'),
-            ),
+            if (widget.canCreateRoom)
+              TextButton.icon(
+                onPressed: widget.onCreateRoom,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Create one'),
+              )
+            else
+              Text(
+                'Sign in to create rooms',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontSize: 13,
+                ),
+              ),
           ],
         ),
       );
