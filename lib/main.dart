@@ -692,6 +692,13 @@ class _MyAppState extends State<MyApp> {
                                     : null,
                               );
                             }
+                            // Services still loading (e.g. after browser
+                            // refresh) — show loading instead of the game.
+                            if (_currentRoom == null) {
+                              return const LoadingScreen(
+                                message: 'Loading...',
+                              );
+                            }
                             return Stack(
                               children: [
                                 GameWidget(
