@@ -115,11 +115,11 @@ class _RoomBrowserState extends State<RoomBrowser>
         children: [
           const Icon(Icons.meeting_room, color: Color(0xFF4FC3F7), size: 28),
           const SizedBox(width: 12),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Tech World Rooms',
                   style: TextStyle(
                     color: Colors.white,
@@ -127,10 +127,12 @@ class _RoomBrowserState extends State<RoomBrowser>
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                SizedBox(height: 2),
+                const SizedBox(height: 2),
                 Text(
-                  'Join a room or create your own',
-                  style: TextStyle(color: Colors.white54, fontSize: 13),
+                  widget.canCreateRoom
+                      ? 'Join a room or create your own'
+                      : 'Join a room to start exploring',
+                  style: const TextStyle(color: Colors.white54, fontSize: 13),
                 ),
               ],
             ),
@@ -145,6 +147,14 @@ class _RoomBrowserState extends State<RoomBrowser>
                 foregroundColor: Colors.white,
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+            )
+          else
+            Tooltip(
+              message: 'Sign in to create rooms',
+              child: Text(
+                'Sign in to create rooms',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
               ),
             ),
         ],
@@ -229,14 +239,21 @@ class _RoomBrowserState extends State<RoomBrowser>
                 fontSize: 16,
               ),
             ),
-            if (widget.canCreateRoom) ...[
-              const SizedBox(height: 8),
+            const SizedBox(height: 8),
+            if (widget.canCreateRoom)
               TextButton.icon(
                 onPressed: widget.onCreateRoom,
                 icon: const Icon(Icons.add, size: 16),
                 label: const Text('Create one'),
+              )
+            else
+              Text(
+                'Sign in to create rooms',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontSize: 13,
+                ),
               ),
-            ],
           ],
         ),
       );
