@@ -12,6 +12,7 @@ class RoomBrowser extends StatefulWidget {
     required this.userId,
     required this.onJoinRoom,
     required this.onCreateRoom,
+    this.canCreateRoom = true,
     this.joiningRoomId,
     this.joinProgress,
     this.joinMessage,
@@ -20,6 +21,9 @@ class RoomBrowser extends StatefulWidget {
 
   final RoomService roomService;
   final String userId;
+
+  /// Whether the current user can create rooms (false for anonymous guests).
+  final bool canCreateRoom;
 
   /// Called when the user selects a room to join.
   final void Function(RoomData room) onJoinRoom;
@@ -131,17 +135,18 @@ class _RoomBrowserState extends State<RoomBrowser>
               ],
             ),
           ),
-          ElevatedButton.icon(
-            onPressed: widget.onCreateRoom,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Create Room'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
-              foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          if (widget.canCreateRoom)
+            ElevatedButton.icon(
+              onPressed: widget.onCreateRoom,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Create Room'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -224,12 +229,14 @@ class _RoomBrowserState extends State<RoomBrowser>
                 fontSize: 16,
               ),
             ),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: widget.onCreateRoom,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Create one'),
-            ),
+            if (widget.canCreateRoom) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: widget.onCreateRoom,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('Create one'),
+              ),
+            ],
           ],
         ),
       );

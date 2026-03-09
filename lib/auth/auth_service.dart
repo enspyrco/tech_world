@@ -30,7 +30,11 @@ class AuthService {
           displayName =
               await _userProfileService.getDisplayName(firebaseUser.uid);
         }
-        _user = AuthUser(id: firebaseUser.uid, displayName: displayName);
+        _user = AuthUser(
+          id: firebaseUser.uid,
+          displayName: displayName,
+          isAnonymous: firebaseUser.isAnonymous,
+        );
       }
       yield _user;
     }
@@ -52,6 +56,7 @@ class AuthService {
       _user = AuthUser(
         id: credential.user!.uid,
         displayName: displayName,
+        isAnonymous: true,
       );
     }
   }
