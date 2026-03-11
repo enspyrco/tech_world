@@ -102,20 +102,40 @@ class _ManageEditorsDialogState extends State<ManageEditorsDialog> {
   }
 
   Future<void> _addEditor(UserProfile user) async {
-    await widget.roomService.addEditor(widget.room.id, user.uid);
-    setState(() {
-      _editorIds.add(user.uid);
-      _editors.add(user);
-      _searchResults.removeWhere((p) => p.uid == user.uid);
-    });
+    try {
+      await widget.roomService.addEditor(widget.room.id, user.uid);
+      if (!mounted) return;
+      setState(() {
+        _editorIds.add(user.uid);
+        _editors.add(user);
+        _searchResults.removeWhere((p) => p.uid == user.uid);
+      });
+    } catch (e) {
+      debugPrint('Failed to add editor: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to add editor.')),
+        );
+      }
+    }
   }
 
   Future<void> _removeEditor(UserProfile user) async {
-    await widget.roomService.removeEditor(widget.room.id, user.uid);
-    setState(() {
-      _editorIds.remove(user.uid);
-      _editors.removeWhere((p) => p.uid == user.uid);
-    });
+    try {
+      await widget.roomService.removeEditor(widget.room.id, user.uid);
+      if (!mounted) return;
+      setState(() {
+        _editorIds.remove(user.uid);
+        _editors.removeWhere((p) => p.uid == user.uid);
+      });
+    } catch (e) {
+      debugPrint('Failed to remove editor: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to remove editor.')),
+        );
+      }
+    }
   }
 
   @override
