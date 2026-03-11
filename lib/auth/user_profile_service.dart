@@ -23,6 +23,7 @@ class UserProfileService {
 
     if (displayName != null && displayName.isNotEmpty) {
       data['displayName'] = displayName;
+      data['displayNameLower'] = displayName.toLowerCase();
     }
     if (email != null && email.isNotEmpty) {
       data['email'] = email;
@@ -82,6 +83,56 @@ class UserProfileService {
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
+    );
+  }
+  /// Search users by display name prefix (case-insensitive).
+  ///
+  /// Uses the `displayNameLower` field for matching. Returns up to [limit]
+  /// results. Users without a `displayNameLower` field won't appear in results
+  /// until their profile is next saved.
+  Future<List<UserProfile>> searchUsers(
+    String query, {
+    int limit = 20,
+  }) async {
+    if (query.isEmpty) return [];
+    final lower = query.toLowerCase();
+    final snapshot = await _collection
+        .orderBy('displayNameLower')
+        .startAt([lower])
+        .endAt(['$lower\uf8ff'])
+        .limit(limit)
+        .get();
+    return snapshot.docs.map(_profileFromDoc).toList();
+  }
+
+  /// Fetch profiles for a list of UIDs.
+  ///
+  /// Firestore `whereIn` supports max 30 values per query, so this method
+  /// chunks the list automatically for larger sets.
+  Future<List<UserProfile>> getUserProfiles(List<String> uids) async {
+    if (uids.isEmpty) return [];
+    final results = <UserProfile>[];
+    // Firestore whereIn limit is 30.
+    for (var i = 0; i < uids.length; i += 30) {
+      final chunk = uids.sublist(i, i + 30 > uids.length ? uids.length : i + 30);
+      final snapshot = await _collection
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      results.addAll(snapshot.docs.map(_profileFromDoc));
+    }
+    return results;
+  }
+
+  UserProfile _profileFromDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    return UserProfile(
+      uid: doc.id,
+      displayName: data['displayName'] as String?,
+      email: data['email'] as String?,
+      avatarId: data['avatarId'] as String?,
+      profilePictureUrl: data['profilePictureUrl'] as String?,
     );
   }
 }

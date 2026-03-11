@@ -211,6 +211,120 @@ void main() {
         expect(profile?.profilePictureUrl, isNull);
       });
     });
+
+    group('searchUsers', () {
+      test('returns profiles matching display name prefix', () async {
+        await fakeFirestore.collection('users').doc('user-1').set({
+          'displayName': 'Alice Smith',
+          'displayNameLower': 'alice smith',
+        });
+        await fakeFirestore.collection('users').doc('user-2').set({
+          'displayName': 'Alice Jones',
+          'displayNameLower': 'alice jones',
+        });
+        await fakeFirestore.collection('users').doc('user-3').set({
+          'displayName': 'Bob Brown',
+          'displayNameLower': 'bob brown',
+        });
+
+        final results = await service.searchUsers('alice');
+
+        expect(results, hasLength(2));
+        expect(results.map((p) => p.displayName),
+            containsAll(['Alice Smith', 'Alice Jones']));
+      });
+
+      test('is case-insensitive', () async {
+        await fakeFirestore.collection('users').doc('user-1').set({
+          'displayName': 'Charlie',
+          'displayNameLower': 'charlie',
+        });
+
+        final results = await service.searchUsers('CHARLIE');
+
+        expect(results, hasLength(1));
+        expect(results.first.displayName, 'Charlie');
+      });
+
+      test('returns empty list for empty query', () async {
+        final results = await service.searchUsers('');
+
+        expect(results, isEmpty);
+      });
+
+      test('respects limit parameter', () async {
+        for (var i = 0; i < 5; i++) {
+          await fakeFirestore.collection('users').doc('user-$i').set({
+            'displayName': 'Test User $i',
+            'displayNameLower': 'test user $i',
+          });
+        }
+
+        final results = await service.searchUsers('test', limit: 3);
+
+        expect(results, hasLength(3));
+      });
+    });
+
+    group('getUserProfiles', () {
+      test('returns profiles for given UIDs', () async {
+        await fakeFirestore.collection('users').doc('uid-1').set({
+          'displayName': 'Alice',
+        });
+        await fakeFirestore.collection('users').doc('uid-2').set({
+          'displayName': 'Bob',
+        });
+
+        final profiles = await service.getUserProfiles(['uid-1', 'uid-2']);
+
+        expect(profiles, hasLength(2));
+        expect(profiles.map((p) => p.displayName), containsAll(['Alice', 'Bob']));
+      });
+
+      test('returns empty list for empty UIDs', () async {
+        final profiles = await service.getUserProfiles([]);
+
+        expect(profiles, isEmpty);
+      });
+
+      test('handles UIDs that do not exist', () async {
+        await fakeFirestore.collection('users').doc('exists').set({
+          'displayName': 'Real User',
+        });
+
+        final profiles =
+            await service.getUserProfiles(['exists', 'does-not-exist']);
+
+        expect(profiles, hasLength(1));
+        expect(profiles.first.displayName, 'Real User');
+      });
+    });
+
+    group('saveUserProfile stores displayNameLower', () {
+      test('saves lowercase version of displayName', () async {
+        await service.saveUserProfile(
+          uid: 'user-lower',
+          displayName: 'Alice Smith',
+        );
+
+        final doc =
+            await fakeFirestore.collection('users').doc('user-lower').get();
+        expect(doc.data()?['displayNameLower'], equals('alice smith'));
+      });
+
+      test('does not save displayNameLower when displayName is empty',
+          () async {
+        await service.saveUserProfile(
+          uid: 'user-empty',
+          displayName: '',
+          email: 'test@example.com',
+        );
+
+        final doc =
+            await fakeFirestore.collection('users').doc('user-empty').get();
+        expect(doc.data()?.containsKey('displayNameLower'), isFalse);
+      });
+    });
   });
 
   group('UserProfile', () {

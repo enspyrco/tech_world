@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:tech_world/auth/user_profile_service.dart';
+import 'package:tech_world/rooms/manage_editors_dialog.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
 
@@ -278,6 +280,9 @@ class _RoomBrowserState extends State<RoomBrowser>
             onDelete: room.isOwner(widget.userId)
                 ? () => _deleteRoom(room)
                 : null,
+            onManageEditors: room.isOwner(widget.userId)
+                ? () => _showManageEditors(room)
+                : null,
             joinProgress: isJoining ? widget.joinProgress : null,
             joinMessage: isJoining ? widget.joinMessage : null,
             disabled: isOtherJoining,
@@ -285,6 +290,19 @@ class _RoomBrowserState extends State<RoomBrowser>
         },
       ),
     );
+  }
+
+  Future<void> _showManageEditors(RoomData room) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => ManageEditorsDialog(
+        room: room,
+        roomService: widget.roomService,
+        userProfileService: UserProfileService(),
+      ),
+    );
+    // Refresh rooms to pick up editor changes.
+    _loadRooms();
   }
 
   Future<void> _deleteRoom(RoomData room) async {
@@ -329,6 +347,7 @@ class _RoomCard extends StatelessWidget {
     required this.isOwner,
     required this.onTap,
     this.onDelete,
+    this.onManageEditors,
     this.joinProgress,
     this.joinMessage,
     this.disabled = false,
@@ -338,6 +357,7 @@ class _RoomCard extends StatelessWidget {
   final bool isOwner;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onManageEditors;
 
   /// 0.0–1.0 join progress, or null when not joining this room.
   final double? joinProgress;
@@ -479,6 +499,14 @@ class _RoomCard extends StatelessWidget {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
+                      ),
+                    // Manage editors button (hidden while joining)
+                    if (!isJoining && onManageEditors != null)
+                      IconButton(
+                        onPressed: onManageEditors,
+                        icon: const Icon(Icons.people_outline, size: 18),
+                        color: const Color(0xFF4FC3F7),
+                        tooltip: 'Manage editors',
                       ),
                     // Delete button (hidden while joining)
                     if (!isJoining && onDelete != null)
