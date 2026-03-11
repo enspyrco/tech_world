@@ -669,14 +669,21 @@ class _MyAppState extends State<MyApp> {
                             );
                           }
                           if (snapshot.data! is! SignedOutUser) {
+                            // Still loading profile — show loading screen
+                            // instead of flashing the game world.
+                            if (!_avatarLoaded || _roomService == null) {
+                              return const LoadingScreen(
+                                message: 'Loading profile...',
+                              );
+                            }
                             // Show avatar selection if signed in but no avatar chosen yet
-                            if (_avatarLoaded && _selectedAvatar == null) {
+                            if (_selectedAvatar == null) {
                               return AvatarSelectionScreen(
                                 onAvatarSelected: _onAvatarSelected,
                               );
                             }
                             // Show room browser (lobby) if not in a room
-                            if (_currentRoom == null && _roomService != null) {
+                            if (_currentRoom == null) {
                               return RoomBrowser(
                                 roomService: _roomService!,
                                 userId: _currentUserId!,
