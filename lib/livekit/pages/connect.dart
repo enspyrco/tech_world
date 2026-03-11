@@ -1,10 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tech_world/livekit/exts.dart';
 import 'package:tech_world/livekit/pages/prejoin.dart';
 import 'package:tech_world/livekit/widgets/text_field.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+
+final _log = Logger('ConnectPage');
 
 class ConnectPage extends StatefulWidget {
   //
@@ -63,18 +66,18 @@ class _ConnectPageState extends State<ConnectPage> {
   Future<void> _callRetrieveToken() async {
     final functions = FirebaseFunctions.instance;
     try {
-      debugPrint('Retrieving token for room: "${_roomNameCtrl.text}"');
+      _log.info('Retrieving token for room: "${_roomNameCtrl.text}"');
       final result = await functions.httpsCallable('retrieveLiveKitToken').call(
         {'roomName': _roomNameCtrl.text},
       );
-      debugPrint('Token retrieved for room: "${_roomNameCtrl.text}"');
+      _log.info('Token retrieved for room: "${_roomNameCtrl.text}"');
       setState(() {
         _token = result.data;
         _busy = false;
         _tokenCtrl.text = 'Fresh token retrieved';
       });
     } on FirebaseFunctionsException catch (e) {
-      debugPrint('Error: ${e.message}');
+      _log.warning('Error: ${e.message}', e);
     }
   }
 
@@ -113,7 +116,7 @@ class _ConnectPageState extends State<ConnectPage> {
       // Save preferences for LiveKit connection for convenience
       await _writePrefs();
 
-      debugPrint('Connecting with url: ${_uriCtrl.text}, '
+      _log.info('Connecting with url: ${_uriCtrl.text}, '
           'token: ${_tokenCtrl.text}...');
 
       var url = _uriCtrl.text;
@@ -139,7 +142,7 @@ class _ConnectPageState extends State<ConnectPage> {
                 )),
       );
     } catch (error) {
-      debugPrint('Could not connect $error');
+      _log.warning('Could not connect $error');
       if (!mounted) return;
       await context.showErrorDialog(error);
     } finally {

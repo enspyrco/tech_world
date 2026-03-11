@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
+
+final _log = Logger('ProgressService');
 
 /// Tracks which coding challenges a player has completed.
 ///
@@ -38,7 +40,7 @@ class ProgressService {
         _completed.addAll(List<String>.from(data['completedChallenges']));
       }
     } on FirebaseException catch (e) {
-      debugPrint('ProgressService: Failed to load progress: $e');
+      _log.warning('ProgressService: Failed to load progress', e);
       rethrow;
     }
   }
@@ -66,7 +68,7 @@ class ProgressService {
       // Rollback the optimistic update.
       _completed.remove(challengeId);
       _controller.add(Set.unmodifiable(_completed));
-      debugPrint('ProgressService: Failed to persist completion: $e');
+      _log.warning('ProgressService: Failed to persist completion', e);
       rethrow;
     }
   }

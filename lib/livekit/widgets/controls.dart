@@ -1,13 +1,16 @@
 import 'dart:async';
 
 import 'package:collection/collection.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:logging/logging.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../exts.dart';
+
+final _log = Logger('Controls');
 
 class ControlsWidget extends StatefulWidget {
   //
@@ -117,7 +120,7 @@ class _ControlsWidgetState extends State<ControlsWidget> {
         position = newPosition;
       });
     } catch (error) {
-      debugPrint('could not restart track: $error');
+      _log.warning('could not restart track: $error');
       return;
     }
   }
@@ -130,10 +133,10 @@ class _ControlsWidgetState extends State<ControlsWidget> {
           builder: (context) => ScreenSelectDialog(),
         );
         if (source == null) {
-          debugPrint('cancelled screenshare');
+          _log.fine('cancelled screenshare');
           return;
         }
-        debugPrint('DesktopCapturerSource: ${source.id}');
+        _log.fine('DesktopCapturerSource: ${source.id}');
         var track = await LocalVideoTrack.createScreenShareTrack(
           ScreenShareCaptureOptions(
             sourceId: source.id,
@@ -142,7 +145,7 @@ class _ControlsWidgetState extends State<ControlsWidget> {
         );
         await participant.publishVideoTrack(track);
       } catch (e) {
-        debugPrint('could not publish video: $e');
+        _log.warning('could not publish video', e);
       }
       return;
     }
@@ -157,7 +160,7 @@ class _ControlsWidgetState extends State<ControlsWidget> {
       try {
         //   await FlutterBackground.disableBackgroundExecution();
       } catch (error) {
-        debugPrint('error disabling screen share: $error');
+        _log.warning('error disabling screen share: $error');
       }
     }
   }

@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Colors, FontWeight, TextStyle;
+import 'package:logging/logging.dart';
 
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
@@ -39,6 +40,8 @@ import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/utils/locator.dart';
+
+final _log = Logger('TechWorld');
 
 /// We create a [TechWorld] component by extending flame's [World] class and
 /// the world world compent adds all other components that make up the game world.
@@ -478,7 +481,7 @@ class TechWorld extends World with TapCallbacks {
 
   /// Handle a participant joining the room
   void _handleParticipantJoined(RemoteParticipant participant) {
-    debugPrint('LiveKit participant joined: ${participant.identity}');
+    _log.info('LiveKit participant joined: ${participant.identity}');
     _refreshBubbleForPlayer(participant.identity);
 
     // Create component based on participant type
@@ -534,23 +537,23 @@ class TechWorld extends World with TapCallbacks {
   /// since TechWorld's own auth listener may fire before the service exists.
   Future<void> connectToLiveKit(String userId, String displayName) async {
     if (_liveKitService != null) {
-      debugPrint('LiveKit already initialized');
+      _log.fine('LiveKit already initialized');
       return;
     }
 
     // Get LiveKitService from Locator (created in main.dart when user signs in)
     _liveKitService = Locator.maybeLocate<LiveKitService>();
     if (_liveKitService == null) {
-      debugPrint('LiveKitService not available yet');
+      _log.info('LiveKitService not available yet');
       return;
     }
 
-    debugPrint('TechWorld: Using LiveKitService from Locator');
+    _log.info('TechWorld: Using LiveKitService from Locator');
 
     // Subscribe to position updates from other players via LiveKit
     _liveKitPositionSubscription =
         _liveKitService!.positionReceived.listen((PlayerPath path) {
-      debugPrint('LiveKit position received for ${path.playerId}');
+      _log.fine('LiveKit position received for ${path.playerId}');
       // Don't process our own position
       if (path.playerId == userId) return;
 
@@ -560,7 +563,7 @@ class TechWorld extends World with TapCallbacks {
       } else {
         // If player component doesn't exist, create it
         if (!_otherPlayerComponentsMap.containsKey(path.playerId)) {
-          debugPrint('Creating player component for ${path.playerId} from position data');
+          _log.fine('Creating player component for ${path.playerId} from position data');
           final playerComponent = PlayerComponent(
             position: path.largeGridPoints.isNotEmpty
                 ? path.largeGridPoints.first
@@ -586,13 +589,13 @@ class TechWorld extends World with TapCallbacks {
 
     // Check for existing participants that joined before we subscribed
     for (final participant in _liveKitService!.remoteParticipants.values) {
-      debugPrint('TechWorld: Found existing participant: ${participant.identity}');
+      _log.fine('TechWorld: Found existing participant: ${participant.identity}');
       _handleParticipantJoined(participant);
     }
 
     _participantLeftSubscription =
         _liveKitService!.participantLeft.listen((participant) {
-      debugPrint('LiveKit participant left: ${participant.identity}');
+      _log.info('LiveKit participant left: ${participant.identity}');
 
       // Remove component based on participant type
       if (participant.identity == _botUserId) {
@@ -623,7 +626,7 @@ class TechWorld extends World with TapCallbacks {
         _liveKitService!.trackSubscribed.listen((event) {
       final (participant, track) = event;
       if (track.kind == TrackType.VIDEO) {
-        debugPrint('TechWorld: Video track subscribed for ${participant.identity}, refreshing bubble');
+        _log.fine('TechWorld: Video track subscribed for ${participant.identity}, refreshing bubble');
         // This will upgrade PlayerBubbleComponent to VideoBubbleComponent
         _refreshBubbleForPlayer(participant.identity);
       }
@@ -634,7 +637,7 @@ class TechWorld extends World with TapCallbacks {
     _localTrackPublishedSubscription =
         _liveKitService!.localTrackPublished.listen((publication) {
       if (publication.kind == TrackType.VIDEO) {
-        debugPrint('TechWorld: Local video track published, refreshing bubble');
+        _log.fine('TechWorld: Local video track published, refreshing bubble');
         _refreshLocalPlayerBubble();
       }
     });
@@ -643,7 +646,7 @@ class TechWorld extends World with TapCallbacks {
     // Note: camera/mic are enabled by the caller (_setupLiveKit in main.dart)
     // to keep media device management out of the game world layer.
     if (_liveKitService!.isConnected) {
-      debugPrint('LiveKit already connected');
+      _log.fine('LiveKit already connected');
       _refreshLocalPlayerBubble();
 
       // Re-publish avatar so late joiners see our character
@@ -651,7 +654,7 @@ class TechWorld extends World with TapCallbacks {
         _liveKitService!.publishAvatar(_localAvatar!);
       }
     } else {
-      debugPrint('Waiting for LiveKit connection...');
+      _log.fine('Waiting for LiveKit connection...');
     }
   }
 
@@ -685,7 +688,7 @@ class TechWorld extends World with TapCallbacks {
     // If it's already a video bubble, no need to refresh
     if (existingBubble is VideoBubbleComponent) return;
 
-    debugPrint('Refreshing local player bubble after camera enabled');
+    _log.fine('Refreshing local player bubble after camera enabled');
 
     // Remove old bubble
     existingBubble.removeFromParent();
@@ -709,7 +712,7 @@ class TechWorld extends World with TapCallbacks {
   void _notifyBubbleTrackReady(String participantId) {
     final bubble = _playerBubbles[participantId];
     if (bubble is VideoBubbleComponent) {
-      debugPrint('TechWorld: Notifying bubble track ready for $participantId');
+      _log.fine('TechWorld: Notifying bubble track ready for $participantId');
       bubble.notifyTrackReady();
     }
   }
@@ -719,7 +722,7 @@ class TechWorld extends World with TapCallbacks {
     final localParticipant = _liveKitService?.localParticipant;
 
     if (localParticipant != null && _hasVideoTrack(localParticipant)) {
-      debugPrint('Creating local VideoBubbleComponent');
+      _log.fine('Creating local VideoBubbleComponent');
       final videoBubble = VideoBubbleComponent(
         participant: localParticipant,
         displayName: _userPlayerComponent.displayName,
@@ -855,8 +858,8 @@ class TechWorld extends World with TapCallbacks {
               registry.loadFromImage(tileset, frame.image);
             }
           } catch (e) {
-            debugPrint(
-              'Failed to download custom tileset ${tileset.id}: $e',
+            _log.warning(
+              'Failed to download custom tileset ${tileset.id}', e,
             );
           }
         }));
@@ -929,7 +932,7 @@ class TechWorld extends World with TapCallbacks {
   Future<void> loadMap(GameMap map) async {
     if (map.id == currentMap.value.id) return; // Already on this map.
     if (_isLoadingMap) {
-      debugPrint('TechWorld: loadMap ignored — another load is in progress');
+      _log.info('TechWorld: loadMap ignored — another load is in progress');
       return;
     }
 
@@ -1041,7 +1044,7 @@ class TechWorld extends World with TapCallbacks {
   /// subscriptions are cancelled while the underlying service is still alive.
   /// Also called internally when the user signs out.
   void disconnectFromLiveKit() {
-    debugPrint('TechWorld: Disconnecting from LiveKit');
+    _log.info('TechWorld: Disconnecting from LiveKit');
 
     // Cancel all LiveKit-related subscriptions
     _trackSubscribedSubscription?.cancel();

@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
+
+final _log = Logger('ManageEditorsDialog');
 
 /// Dialog for room owners to view, add, and remove editors.
 ///
@@ -64,7 +67,7 @@ class _ManageEditorsDialogState extends State<ManageEditorsDialog> {
         });
       }
     } catch (e) {
-      debugPrint('Failed to load editor profiles: $e');
+      _log.warning('Failed to load editor profiles', e);
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -95,7 +98,7 @@ class _ManageEditorsDialogState extends State<ManageEditorsDialog> {
           _searching = false;
         });
       } catch (e) {
-        debugPrint('Search failed: $e');
+        _log.warning('Search failed', e);
         if (mounted) setState(() => _searching = false);
       }
     });
@@ -111,7 +114,7 @@ class _ManageEditorsDialogState extends State<ManageEditorsDialog> {
         _searchResults.removeWhere((p) => p.uid == user.uid);
       });
     } catch (e) {
-      debugPrint('Failed to add editor: $e');
+      _log.warning('Failed to add editor', e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to add editor.')),
@@ -129,7 +132,7 @@ class _ManageEditorsDialogState extends State<ManageEditorsDialog> {
         _editors.removeWhere((p) => p.uid == user.uid);
       });
     } catch (e) {
-      debugPrint('Failed to remove editor: $e');
+      _log.warning('Failed to remove editor', e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Failed to remove editor.')),
