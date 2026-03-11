@@ -3,12 +3,15 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
+import 'package:logging/logging.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/services/tts_service.dart';
+
+final _log = Logger('ChatService');
 
 /// Service that manages shared chat with Claude bot via LiveKit data channels,
 /// plus private player-to-player DMs.
@@ -200,8 +203,8 @@ class ChatService {
       return;
     }
 
-    debugPrint(
-        'ChatService: Received ${message.topic} from ${message.senderId}: '
+    _log.fine(
+        'Received ${message.topic} from ${message.senderId}: '
         '"${text.substring(0, text.length.clamp(0, 50))}..."');
 
     if (isDm) {
@@ -310,7 +313,7 @@ class ChatService {
     if (text.trim().isEmpty) return null;
 
     if (!_liveKitService.isConnected) {
-      debugPrint('ChatService: Not connected to LiveKit, cannot send message');
+      _log.warning('Not connected to LiveKit, cannot send message');
       _messages.add(ChatMessage(
         text: "I can't reach Clawd right now. Please check your connection.",
         senderName: 'System',
@@ -321,7 +324,7 @@ class ChatService {
     }
 
     if (botStatusNotifier.value == BotStatus.absent) {
-      debugPrint('ChatService: Bot is not in the room');
+      _log.warning('Bot is not in the room');
       _messages.add(ChatMessage(
         text: "Clawd isn't in the room right now. Try again in a moment!",
         senderName: 'System',
@@ -373,7 +376,7 @@ class ChatService {
       // No destinationIdentities = broadcast to all
     );
 
-    debugPrint('ChatService: Sent message: "$text"');
+    _log.info('Sent message: "$text"');
 
     // Persist to Firestore.
     _persistMessage(userMessage);
@@ -383,7 +386,7 @@ class ChatService {
       return await completer.future.timeout(
         const Duration(seconds: 30),
         onTimeout: () {
-          debugPrint('ChatService: Response timeout');
+          _log.warning('Response timeout');
           // Only reset to idle if bot is still present; if it left during
           // the wait the participantLeft handler already set absent.
           if (botStatusNotifier.value != BotStatus.absent) {
@@ -400,7 +403,7 @@ class ChatService {
         },
       );
     } catch (e) {
-      debugPrint('ChatService: Error waiting for response: $e');
+      _log.severe('Error waiting for response', e);
       _pendingMessages.remove(messageId);
       // Reset bot status so the UI doesn't stay in "thinking" state.
       if (botStatusNotifier.value == BotStatus.thinking) {
@@ -421,7 +424,7 @@ class ChatService {
     if (text.trim().isEmpty) return;
 
     if (!_liveKitService.isConnected) {
-      debugPrint('ChatService: Not connected, cannot send DM');
+      _log.warning('Not connected, cannot send DM');
       return;
     }
 
@@ -482,7 +485,7 @@ class ChatService {
       destinationIdentities: [peerId],
     );
 
-    debugPrint('ChatService: Sent DM to $peerId: "$text"');
+    _log.info('Sent DM to $peerId: "$text"');
 
     // Persist to Firestore.
     _persistMessage(chatMessage);
@@ -512,7 +515,7 @@ class ChatService {
     try {
       await _fetchAndCacheHistory(roomId, repository).timeout(_historyTimeout);
     } catch (e) {
-      debugPrint('ChatService: Failed to load history: $e');
+      _log.warning('Failed to load history', e);
       // Don't rethrow — allow the room to load without history.
     } finally {
       _emitConversations();
@@ -587,7 +590,7 @@ class ChatService {
     final hint = json['hint'] as String?;
     if (requestId == null || hint == null) return;
 
-    debugPrint('ChatService: Received help-response for $requestId');
+    _log.fine('Received help-response for $requestId');
 
     // Speak the hint aloud so Clawd "says" it when arriving (web only)
     _ttsService.speak(hint);
@@ -609,12 +612,12 @@ class ChatService {
     required int terminalY,
   }) async {
     if (!_liveKitService.isConnected) {
-      debugPrint('ChatService: Not connected, cannot request help');
+      _log.warning('Not connected, cannot request help');
       return null;
     }
 
     if (botStatusNotifier.value == BotStatus.absent) {
-      debugPrint('ChatService: Bot is absent, cannot request help');
+      _log.warning('Bot is absent, cannot request help');
       return null;
     }
 
@@ -641,19 +644,19 @@ class ChatService {
       destinationIdentities: const [_botIdentity],
     );
 
-    debugPrint('ChatService: Sent help-request $requestId');
+    _log.info('Sent help-request $requestId');
 
     try {
       return await completer.future.timeout(
         const Duration(seconds: 60),
         onTimeout: () {
-          debugPrint('ChatService: Help request timeout');
+          _log.warning('Help request timeout');
           _pendingHelpRequests.remove(requestId);
           return null;
         },
       );
     } catch (e) {
-      debugPrint('ChatService: Error waiting for help response: $e');
+      _log.severe('Error waiting for help response', e);
       _pendingHelpRequests.remove(requestId);
       return null;
     }
@@ -684,7 +687,7 @@ class ChatService {
 
     // Fire-and-forget — don't block on Firestore writes.
     repository.saveMessage(roomId, message).catchError((Object e) {
-      debugPrint('ChatService: Failed to persist message: $e');
+      _log.warning('Failed to persist message', e);
     });
 
     // Upsert conversation metadata for DMs.
@@ -700,7 +703,7 @@ class ChatService {
         lastMessageText: message.text,
       )
           .catchError((Object e) {
-        debugPrint('ChatService: Failed to persist conversation: $e');
+        _log.warning('Failed to persist conversation', e);
       });
     }
   }

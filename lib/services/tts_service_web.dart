@@ -5,8 +5,10 @@
 import 'dart:async';
 import 'dart:js_interop';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
+
+final _log = Logger('TtsService');
 
 /// Text-to-speech service using browser's speechSynthesis API.
 class TtsService {
@@ -42,7 +44,7 @@ class TtsService {
   /// Select the best voice for Clawd.
   void _selectBestVoice(JSArray<web.SpeechSynthesisVoice> voices) {
     final voiceList = voices.toDart;
-    debugPrint('TtsService: ${voiceList.length} voices available');
+    _log.info('TtsService: ${voiceList.length} voices available');
 
     // Preference order for a friendly tutor voice:
     // 1. Google UK English (clear, friendly)
@@ -53,7 +55,7 @@ class TtsService {
     // 6. Default
 
     for (final voice in voiceList) {
-      debugPrint('TtsService: Voice: ${voice.name} (${voice.lang})');
+      _log.fine('TtsService: Voice: ${voice.name} (${voice.lang})');
     }
 
     // Try to find a good English voice
@@ -72,7 +74,7 @@ class TtsService {
         );
 
     if (_selectedVoice != null) {
-      debugPrint('TtsService: Selected voice: ${_selectedVoice!.name}');
+      _log.info('TtsService: Selected voice: ${_selectedVoice!.name}');
     }
   }
 
@@ -99,7 +101,7 @@ class TtsService {
     }.toJS;
 
     utterance.onerror = (web.Event event) {
-      debugPrint('TtsService: Speech error');
+      _log.warning('TtsService: Speech error');
       if (!completer.isCompleted) completer.complete();
     }.toJS;
 

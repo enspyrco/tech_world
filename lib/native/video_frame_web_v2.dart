@@ -15,8 +15,10 @@ import 'dart:js_interop';
 import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
+
+final _log = Logger('VideoFrameWebV2');
 
 /// JS interop for MediaStreamTrackProcessor (not yet in package:web)
 @JS('MediaStreamTrackProcessor')
@@ -89,7 +91,7 @@ class DirectTrackCapture {
       final muted = (track as dynamic).muted as bool?;
       return muted ?? false;
     } catch (e) {
-      debugPrint('DirectTrackCapture: Could not check muted state: $e');
+      _log.warning('DirectTrackCapture: Could not check muted state: $e', e);
       return false;
     }
   }
@@ -103,7 +105,7 @@ class DirectTrackCapture {
   ) async {
     // First check if already unmuted (race condition handling)
     if (!_isTrackMuted(track)) {
-      debugPrint('DirectTrackCapture: Track already unmuted');
+      _log.fine('DirectTrackCapture: Track already unmuted');
       return true;
     }
 
@@ -113,7 +115,7 @@ class DirectTrackCapture {
     // Set up timeout
     final timer = Timer(timeout, () {
       if (!completer.isCompleted) {
-        debugPrint('DirectTrackCapture: Timeout waiting for unmute');
+        _log.warning('DirectTrackCapture: Timeout waiting for unmute');
         completer.complete(false);
       }
     });
@@ -121,7 +123,7 @@ class DirectTrackCapture {
     // Listen for 'unmute' event using JS interop
     void onUnmute(web.Event event) {
       if (!completer.isCompleted) {
-        debugPrint('DirectTrackCapture: Track unmuted!');
+        _log.info('DirectTrackCapture: Track unmuted!');
         completer.complete(true);
       }
     }
@@ -137,7 +139,7 @@ class DirectTrackCapture {
         return;
       }
       if (!_isTrackMuted(track)) {
-        debugPrint('DirectTrackCapture: Track unmuted (detected via polling)');
+        _log.info('DirectTrackCapture: Track unmuted (detected via polling)');
         if (!completer.isCompleted) {
           completer.complete(true);
         }
@@ -160,7 +162,7 @@ class DirectTrackCapture {
   /// Call this if the component is disposed while waiting for unmute.
   static void cancelPendingUnmute() {
     if (_pendingUnmute != null && !_pendingUnmute!.isCompleted) {
-      debugPrint('DirectTrackCapture: Cancelling pending unmute wait');
+      _log.fine('DirectTrackCapture: Cancelling pending unmute wait');
       _pendingUnmute!.complete(false);
     }
   }
@@ -173,7 +175,7 @@ class DirectTrackCapture {
   /// Returns null if MediaStreamTrackProcessor is not supported.
   static DirectTrackCapture? create(web.MediaStreamTrack track) {
     if (!isMediaStreamTrackProcessorSupported) {
-      debugPrint('DirectTrackCapture: MediaStreamTrackProcessor not supported');
+      _log.warning('DirectTrackCapture: MediaStreamTrackProcessor not supported');
       return null;
     }
 
@@ -181,10 +183,10 @@ class DirectTrackCapture {
       final processor = MediaStreamTrackProcessor(
         MediaStreamTrackProcessorInit(track: track),
       );
-      debugPrint('DirectTrackCapture: Created processor for track ${track.id}');
+      _log.info('DirectTrackCapture: Created processor for track ${track.id}');
       return DirectTrackCapture._(processor);
     } catch (e) {
-      debugPrint('DirectTrackCapture: Failed to create processor: $e');
+      _log.severe('DirectTrackCapture: Failed to create processor: $e', e);
       return null;
     }
   }
@@ -203,23 +205,23 @@ class DirectTrackCapture {
     Duration initialDelay = const Duration(milliseconds: 500),
   }) async {
     if (!isMediaStreamTrackProcessorSupported) {
-      debugPrint('DirectTrackCapture: MediaStreamTrackProcessor not supported');
+      _log.warning('DirectTrackCapture: MediaStreamTrackProcessor not supported');
       return null;
     }
 
     // Check if track is muted (common for remote tracks)
     if (_isTrackMuted(track)) {
-      debugPrint('DirectTrackCapture: Track muted, waiting for unmute...');
+      _log.info('DirectTrackCapture: Track muted, waiting for unmute...');
       final unmuted = await _waitForUnmute(track, timeout);
       if (!unmuted) {
-        debugPrint('DirectTrackCapture: Failed to unmute within timeout');
+        _log.warning('DirectTrackCapture: Failed to unmute within timeout');
         return null;
       }
-      debugPrint('DirectTrackCapture: Track unmuted, proceeding with capture');
+      _log.info('DirectTrackCapture: Track unmuted, proceeding with capture');
     } else {
       // Even if not muted, remote tracks may need time for decoder to produce frames
       // Add a small delay to let the video decoder start producing frames
-      debugPrint('DirectTrackCapture: Track not muted, waiting ${initialDelay.inMilliseconds}ms for decoder...');
+      _log.fine('DirectTrackCapture: Track not muted, waiting ${initialDelay.inMilliseconds}ms for decoder...');
       await Future.delayed(initialDelay);
     }
 
@@ -260,7 +262,7 @@ class DirectTrackCapture {
       (_) => _captureFrame(),
     );
 
-    debugPrint('DirectTrackCapture: Started capture');
+    _log.info('DirectTrackCapture: Started capture');
   }
 
   /// Stop capturing frames.
@@ -273,11 +275,11 @@ class DirectTrackCapture {
     try {
       _reader?.cancel().toDart.ignore();
     } catch (e) {
-      debugPrint('DirectTrackCapture: Error in stopCapture: $e');
+      _log.warning('DirectTrackCapture: Error in stopCapture: $e', e);
     }
     _reader = null;
 
-    debugPrint('DirectTrackCapture: Stopped capture');
+    _log.info('DirectTrackCapture: Stopped capture');
   }
 
   /// Capture the next available video frame.
@@ -292,7 +294,7 @@ class DirectTrackCapture {
       final result = await _reader!.read().toDart;
 
       if (result.done) {
-        debugPrint('DirectTrackCapture: Stream ended');
+        _log.info('DirectTrackCapture: Stream ended');
         _isCapturing = false;
         _frameInFlight = false;
         return;
@@ -338,14 +340,13 @@ class DirectTrackCapture {
       _frameNumber++;
 
       if (_frameNumber == 1) {
-        debugPrint(
+        _log.info(
             'DirectTrackCapture: First frame captured! ${_width}x$_height');
       }
 
       oldFrame?.dispose();
     } catch (e, stackTrace) {
-      debugPrint('DirectTrackCapture: Frame capture error: $e');
-      debugPrint('DirectTrackCapture: Stack: $stackTrace');
+      _log.warning('DirectTrackCapture: Frame capture error: $e', e, stackTrace);
     } finally {
       _frameInFlight = false;
     }
@@ -373,7 +374,7 @@ class DirectTrackCapture {
     stopCapture();
     _currentFrame?.dispose();
     _currentFrame = null;
-    debugPrint('DirectTrackCapture: Disposed');
+    _log.info('DirectTrackCapture: Disposed');
   }
 }
 
@@ -412,9 +413,9 @@ class VideoElementCapture {
       if (jsStream != null) {
         try {
           stream = jsStream as web.MediaStream;
-          debugPrint('VideoElementCapture: Using provided MediaStream');
+          _log.fine('VideoElementCapture: Using provided MediaStream');
         } catch (e) {
-          debugPrint('VideoElementCapture: jsStream cast failed: $e');
+          _log.warning('VideoElementCapture: jsStream cast failed: $e', e);
         }
       }
 
@@ -423,20 +424,20 @@ class VideoElementCapture {
         final track = jsTrack as web.MediaStreamTrack;
         stream = web.MediaStream();
         stream.addTrack(track);
-        debugPrint('VideoElementCapture: Created MediaStream from track (readyState=${track.readyState})');
+        _log.fine('VideoElementCapture: Created MediaStream from track (readyState=${track.readyState})');
       }
 
       if (stream == null) {
-        debugPrint('VideoElementCapture: No stream or track available');
+        _log.warning('VideoElementCapture: No stream or track available');
         return null;
       }
 
       // Log stream info
       final videoTracks = stream.getVideoTracks();
-      debugPrint('VideoElementCapture: Stream has ${videoTracks.length} video tracks');
+      _log.fine('VideoElementCapture: Stream has ${videoTracks.length} video tracks');
       if (videoTracks.length > 0) {
         final t = videoTracks.toDart[0];
-        debugPrint('VideoElementCapture: Track readyState=${t.readyState}, enabled=${t.enabled}');
+        _log.fine('VideoElementCapture: Track readyState=${t.readyState}, enabled=${t.enabled}');
       }
 
       // Create video element
@@ -459,9 +460,9 @@ class VideoElementCapture {
       // Start playback and wait for video to be ready
       try {
         await video.play().toDart;
-        debugPrint('VideoElementCapture: play() succeeded');
+        _log.fine('VideoElementCapture: play() succeeded');
       } catch (e) {
-        debugPrint('VideoElementCapture: play() failed: $e');
+        _log.warning('VideoElementCapture: play() failed: $e', e);
       }
 
       // Wait for video dimensions to be available
@@ -472,14 +473,14 @@ class VideoElementCapture {
       }
 
       if (video.videoWidth > 0) {
-        debugPrint('VideoElementCapture: Video ready ${video.videoWidth}x${video.videoHeight} after $attempts attempts');
+        _log.info('VideoElementCapture: Video ready ${video.videoWidth}x${video.videoHeight} after $attempts attempts');
       } else {
-        debugPrint('VideoElementCapture: Video dimensions not available after $attempts attempts');
+        _log.warning('VideoElementCapture: Video dimensions not available after $attempts attempts');
       }
 
       return VideoElementCapture._(video, stream, ownsElement: true);
     } catch (e) {
-      debugPrint('VideoElementCapture: createFromStream failed: $e');
+      _log.severe('VideoElementCapture: createFromStream failed: $e', e);
       return null;
     }
   }
@@ -493,14 +494,14 @@ class VideoElementCapture {
       // First, try to find an existing video element with this track
       final existingVideo = _findExistingVideoElement(track.id);
       if (existingVideo != null) {
-        debugPrint('VideoElementCapture: Found existing video element for track ${track.id}');
+        _log.fine('VideoElementCapture: Found existing video element for track ${track.id}');
         // Create a dummy stream (we don't own the element)
         final stream = web.MediaStream();
         return VideoElementCapture._(existingVideo, stream, ownsElement: false);
       }
 
       // No existing element found - create our own
-      debugPrint('VideoElementCapture: Creating new video element for track ${track.id}');
+      _log.fine('VideoElementCapture: Creating new video element for track ${track.id}');
 
       // Create a MediaStream with just this track
       final stream = web.MediaStream();
@@ -517,7 +518,7 @@ class VideoElementCapture {
 
       return VideoElementCapture._(video, stream, ownsElement: true);
     } catch (e) {
-      debugPrint('VideoElementCapture: Failed to create: $e');
+      _log.severe('VideoElementCapture: Failed to create: $e', e);
       return null;
     }
   }
@@ -525,7 +526,7 @@ class VideoElementCapture {
   /// Find an existing video element that has a track with the given ID.
   static web.HTMLVideoElement? _findExistingVideoElement(String trackId) {
     final videos = web.document.querySelectorAll('video');
-    debugPrint('VideoElementCapture: Searching ${videos.length} video elements for track $trackId');
+    _log.finer('VideoElementCapture: Searching ${videos.length} video elements for track $trackId');
 
     for (var i = 0; i < videos.length; i++) {
       final node = videos.item(i);
@@ -544,14 +545,14 @@ class VideoElementCapture {
           final t = tracks.toDart[j];
           // Match by ID or by label (LiveKit puts its track ID in the label)
           if (t.id == trackId || t.label == trackId) {
-            debugPrint('VideoElementCapture: Found match in video[$i] - ${video.videoWidth}x${video.videoHeight}');
+            _log.fine('VideoElementCapture: Found match in video[$i] - ${video.videoWidth}x${video.videoHeight}');
             return video;
           }
         }
       }
     }
 
-    debugPrint('VideoElementCapture: No existing video element found for track $trackId');
+    _log.finer('VideoElementCapture: No existing video element found for track $trackId');
     return null;
   }
 
@@ -564,7 +565,7 @@ class VideoElementCapture {
       final width = video.videoWidth;
       final height = video.videoHeight;
 
-      debugPrint('VideoElementCapture: createFromVideoElement ${width}x$height, readyState=${video.readyState}');
+      _log.fine('VideoElementCapture: createFromVideoElement ${width}x$height, readyState=${video.readyState}');
 
       // Get the stream from the video element
       final srcObject = video.srcObject;
@@ -575,12 +576,12 @@ class VideoElementCapture {
       } else {
         // Create a dummy stream if no srcObject
         stream = web.MediaStream();
-        debugPrint('VideoElementCapture: No srcObject on video, using empty stream');
+        _log.fine('VideoElementCapture: No srcObject on video, using empty stream');
       }
 
       return VideoElementCapture._(video, stream, ownsElement: false);
     } catch (e) {
-      debugPrint('VideoElementCapture: createFromVideoElement failed: $e');
+      _log.severe('VideoElementCapture: createFromVideoElement failed: $e', e);
       return null;
     }
   }
@@ -590,7 +591,7 @@ class VideoElementCapture {
   /// This is used after RTCVideoRenderer creates a video element.
   static VideoElementCapture? findAndCapture() {
     final videos = web.document.querySelectorAll('video');
-    debugPrint('VideoElementCapture: Searching ${videos.length} video elements for live track');
+    _log.finer('VideoElementCapture: Searching ${videos.length} video elements for live track');
 
     for (var i = 0; i < videos.length; i++) {
       final node = videos.item(i);
@@ -600,7 +601,7 @@ class VideoElementCapture {
       final width = video.videoWidth;
       final height = video.videoHeight;
 
-      debugPrint('VideoElementCapture: Video[$i] size=${width}x$height, readyState=${video.readyState}');
+      _log.finer('VideoElementCapture: Video[$i] size=${width}x$height, readyState=${video.readyState}');
 
       // Skip videos with no real dimensions
       if (width < 10 || height < 10) continue;
@@ -612,22 +613,22 @@ class VideoElementCapture {
         final stream = srcObject as web.MediaStream;
         final tracks = stream.getVideoTracks();
 
-        debugPrint('VideoElementCapture: Video[$i] has ${tracks.length} video tracks');
+        _log.finer('VideoElementCapture: Video[$i] has ${tracks.length} video tracks');
 
         for (var j = 0; j < tracks.length; j++) {
           final t = tracks.toDart[j];
-          debugPrint('VideoElementCapture: Track[$j] readyState=${t.readyState}, enabled=${t.enabled}');
+          _log.finer('VideoElementCapture: Track[$j] readyState=${t.readyState}, enabled=${t.enabled}');
 
           // Look for a live track
           if (t.readyState == 'live' && t.enabled) {
-            debugPrint('VideoElementCapture: Found live track in video[$i]!');
+            _log.fine('VideoElementCapture: Found live track in video[$i]!');
             return VideoElementCapture._(video, stream, ownsElement: false);
           }
         }
       }
     }
 
-    debugPrint('VideoElementCapture: No video element with live track found');
+    _log.fine('VideoElementCapture: No video element with live track found');
     return null;
   }
 
@@ -658,14 +659,14 @@ class VideoElementCapture {
     void onLoadedMetadata(web.Event e) {
       final w = _videoElement.videoWidth;
       final h = _videoElement.videoHeight;
-      debugPrint('VideoElementCapture: Metadata loaded ${w}x$h');
+      _log.fine('VideoElementCapture: Metadata loaded ${w}x$h');
     }
     _videoElement.addEventListener('loadedmetadata', onLoadedMetadata.toJS);
 
     // Start playback only if we own the element (existing elements are already playing)
     if (ownsElement) {
       _videoElement.play().toDart.catchError((e) {
-        debugPrint('VideoElementCapture: Play failed: $e');
+        _log.warning('VideoElementCapture: Play failed: $e');
         return null;
       });
     }
@@ -676,7 +677,7 @@ class VideoElementCapture {
       (_) => _captureFrame(),
     );
 
-    debugPrint('VideoElementCapture: Started capture (ownsElement=$ownsElement)');
+    _log.info('VideoElementCapture: Started capture (ownsElement=$ownsElement)');
   }
 
   /// Stop capturing frames.
@@ -686,7 +687,7 @@ class VideoElementCapture {
     _captureTimer = null;
     // Don't pause the video - it causes AbortError if play() is still in progress
     // The video element will be cleaned up in dispose() anyway
-    debugPrint('VideoElementCapture: Stopped capture');
+    _log.info('VideoElementCapture: Stopped capture');
   }
 
   /// Capture a frame from the video element.
@@ -705,13 +706,13 @@ class VideoElementCapture {
 
     if (!_videoReady) {
       _videoReady = true;
-      debugPrint('VideoElementCapture: Video ready ${videoWidth}x$videoHeight');
+      _log.info('VideoElementCapture: Video ready ${videoWidth}x$videoHeight');
       // Log track state for debugging
       final tracks = _stream.getVideoTracks();
-      debugPrint('VideoElementCapture: Stream has ${tracks.length} video tracks');
+      _log.fine('VideoElementCapture: Stream has ${tracks.length} video tracks');
       if (tracks.length > 0) {
         final track = tracks.toDart[0];
-        debugPrint('VideoElementCapture: Track enabled=${track.enabled}, readyState=${track.readyState}, muted=${(track as dynamic).muted}');
+        _log.fine('VideoElementCapture: Track enabled=${track.enabled}, readyState=${track.readyState}, muted=${(track as dynamic).muted}');
       }
     }
 
@@ -741,13 +742,13 @@ class VideoElementCapture {
       _frameNumber++;
 
       if (_frameNumber == 1) {
-        debugPrint(
+        _log.info(
             'VideoElementCapture: First frame captured! ${_width}x$_height');
       }
 
       oldFrame?.dispose();
     } catch (e) {
-      debugPrint('VideoElementCapture: Frame capture error: $e');
+      _log.warning('VideoElementCapture: Frame capture error: $e', e);
     } finally {
       _frameInFlight = false;
     }
@@ -781,10 +782,10 @@ class VideoElementCapture {
         // DON'T call track.stop() - the track is owned by LiveKit
         // Stopping it would permanently end the track for everyone
       } catch (e) {
-        debugPrint('VideoElementCapture: Error disposing: $e');
+        _log.warning('VideoElementCapture: Error disposing: $e', e);
       }
     }
 
-    debugPrint('VideoElementCapture: Disposed (ownsElement=$ownsElement)');
+    _log.info('VideoElementCapture: Disposed (ownsElement=$ownsElement)');
   }
 }
