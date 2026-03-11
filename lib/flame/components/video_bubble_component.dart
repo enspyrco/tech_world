@@ -185,21 +185,21 @@ class VideoBubbleComponent extends PositionComponent {
   void _initializeWebCapture() {
     final track = _getVideoTrack();
     if (track == null) {
-      _log.fine('WebCapture: No video track found for $displayName');
+      _log.fine('No video track found for $displayName');
       return;
     }
 
     // Get the underlying MediaStreamTrack
     final mediaStreamTrack = track.mediaStreamTrack;
     final isRemote = participant is! LocalParticipant;
-    _log.fine('WebCapture: Initializing for $displayName (isRemote=$isRemote)');
+    _log.fine('Initializing for $displayName (isRemote=$isRemote)');
 
     // Get the JS MediaStreamTrack
     dynamic jsTrack;
     try {
       jsTrack = (mediaStreamTrack as dynamic).jsTrack;
     } catch (e) {
-      _log.warning('WebCapture: Could not get jsTrack', e);
+      _log.warning('Could not get jsTrack', e);
       return;
     }
 
@@ -219,7 +219,7 @@ class VideoBubbleComponent extends PositionComponent {
   /// MediaStreamTrackProcessor approach without any waiting.
   void _initializeLocalWebCapture(dynamic jsTrack, VideoTrack track) {
     if (!direct_capture.isMediaStreamTrackProcessorSupported) {
-      _log.fine('WebCapture: MediaStreamTrackProcessor not supported, using VideoElement for local');
+      _log.fine('MediaStreamTrackProcessor not supported, using VideoElement for local');
       // Fall back to VideoElementCapture even for local
       _initializeRemoteWebCapture(jsTrack, track);
       return;
@@ -227,12 +227,12 @@ class VideoBubbleComponent extends PositionComponent {
 
     final capture = direct_capture.DirectTrackCapture.create(jsTrack);
     if (capture == null) {
-      _log.warning('WebCapture: Failed to create DirectTrackCapture for $displayName');
+      _log.warning('Failed to create DirectTrackCapture for $displayName');
       _captureInitializing = false;
       return;
     }
 
-    _log.fine('WebCapture: DirectTrackCapture created for local track $displayName');
+    _log.fine('DirectTrackCapture created for local track $displayName');
     _webCapture = capture;
     _videoTrack = track;
     capture.startCapture();
@@ -254,13 +254,13 @@ class VideoBubbleComponent extends PositionComponent {
 
       // Use the mediaStreamTrack directly (not mediaStream which may be stale)
       // jsTrack is already the JS MediaStreamTrack
-      _log.fine('WebCapture: Creating VideoElementCapture from jsTrack for $displayName');
+      _log.fine('Creating VideoElementCapture from jsTrack for $displayName');
 
       // Try VideoElementCapture with just the track (it will create a fresh MediaStream)
       // This now waits for the video to be ready before returning
       final capture = await direct_capture.VideoElementCapture.createFromStream(null, jsTrack);
       if (capture != null) {
-        _log.fine('WebCapture: VideoElementCapture created for remote track $displayName');
+        _log.fine('VideoElementCapture created for remote track $displayName');
         _remoteWebCapture = capture;
         capture.startCapture();
         _captureInitialized = true;
@@ -268,11 +268,11 @@ class VideoBubbleComponent extends PositionComponent {
         return;
       }
 
-      _log.warning('WebCapture: Failed to create VideoElementCapture for $displayName');
+      _log.warning('Failed to create VideoElementCapture for $displayName');
       _captureInitialized = true;
       _captureInitializing = false;
     } catch (e, stack) {
-      _log.warning('WebCapture: Error initializing remote capture: $e\nStack: $stack');
+      _log.warning('Error initializing remote capture: $e\nStack: $stack');
       _captureInitializing = false;
     }
   }

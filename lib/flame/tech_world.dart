@@ -548,7 +548,7 @@ class TechWorld extends World with TapCallbacks {
       return;
     }
 
-    _log.info('TechWorld: Using LiveKitService from Locator');
+    _log.info('Using LiveKitService from Locator');
 
     // Subscribe to position updates from other players via LiveKit
     _liveKitPositionSubscription =
@@ -589,7 +589,7 @@ class TechWorld extends World with TapCallbacks {
 
     // Check for existing participants that joined before we subscribed
     for (final participant in _liveKitService!.remoteParticipants.values) {
-      _log.fine('TechWorld: Found existing participant: ${participant.identity}');
+      _log.fine('Found existing participant: ${participant.identity}');
       _handleParticipantJoined(participant);
     }
 
@@ -626,7 +626,7 @@ class TechWorld extends World with TapCallbacks {
         _liveKitService!.trackSubscribed.listen((event) {
       final (participant, track) = event;
       if (track.kind == TrackType.VIDEO) {
-        _log.fine('TechWorld: Video track subscribed for ${participant.identity}, refreshing bubble');
+        _log.fine('Video track subscribed for ${participant.identity}, refreshing bubble');
         // This will upgrade PlayerBubbleComponent to VideoBubbleComponent
         _refreshBubbleForPlayer(participant.identity);
       }
@@ -637,7 +637,7 @@ class TechWorld extends World with TapCallbacks {
     _localTrackPublishedSubscription =
         _liveKitService!.localTrackPublished.listen((publication) {
       if (publication.kind == TrackType.VIDEO) {
-        _log.fine('TechWorld: Local video track published, refreshing bubble');
+        _log.fine('Local video track published, refreshing bubble');
         _refreshLocalPlayerBubble();
       }
     });
@@ -712,7 +712,7 @@ class TechWorld extends World with TapCallbacks {
   void _notifyBubbleTrackReady(String participantId) {
     final bubble = _playerBubbles[participantId];
     if (bubble is VideoBubbleComponent) {
-      _log.fine('TechWorld: Notifying bubble track ready for $participantId');
+      _log.fine('Notifying bubble track ready for $participantId');
       bubble.notifyTrackReady();
     }
   }
@@ -932,7 +932,7 @@ class TechWorld extends World with TapCallbacks {
   Future<void> loadMap(GameMap map) async {
     if (map.id == currentMap.value.id) return; // Already on this map.
     if (_isLoadingMap) {
-      _log.info('TechWorld: loadMap ignored — another load is in progress');
+      _log.info('loadMap ignored — another load is in progress');
       return;
     }
 
@@ -1044,7 +1044,7 @@ class TechWorld extends World with TapCallbacks {
   /// subscriptions are cancelled while the underlying service is still alive.
   /// Also called internally when the user signs out.
   void disconnectFromLiveKit() {
-    _log.info('TechWorld: Disconnecting from LiveKit');
+    _log.info('Disconnecting from LiveKit');
 
     // Cancel all LiveKit-related subscriptions
     _trackSubscribedSubscription?.cancel();

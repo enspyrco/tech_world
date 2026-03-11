@@ -54,7 +54,7 @@ void main() {
 /// Configure the root logger to route all log records to [developer.log],
 /// which shows up in DevTools and the debug console.
 void _initLogging() {
-  Logger.root.level = Level.ALL;
+  Logger.root.level = Level.INFO;
   Logger.root.onRecord.listen((record) {
     developer.log(
       record.message,
