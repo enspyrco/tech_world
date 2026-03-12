@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:ui' as ui;
 
 import 'package:flame/game.dart';
@@ -7,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart'
     show LocalTrackPublication, lkPlatformIsDesktop;
+import 'package:logging/logging.dart';
 import 'package:tech_world/auth/auth_gate.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -45,8 +47,27 @@ import 'package:tech_world/utils/locator.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  _initLogging();
   runApp(const MyApp());
 }
+
+/// Configure the root logger to route all log records to [developer.log],
+/// which shows up in DevTools and the debug console.
+void _initLogging() {
+  Logger.root.level = Level.INFO;
+  Logger.root.onRecord.listen((record) {
+    developer.log(
+      record.message,
+      time: record.time,
+      level: record.level.value,
+      name: record.loggerName,
+      error: record.error,
+      stackTrace: record.stackTrace,
+    );
+  });
+}
+
+final _log = Logger('Main');
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
@@ -180,11 +201,11 @@ class _MyAppState extends State<MyApp> {
       _currentDisplayName = '';
       _currentProfilePictureUrl = null;
       _currentRoom = null;
-      debugPrint('User signed out - cleaned up');
+      _log.info('User signed out - cleaned up');
       setState(() {});
     } else {
       // User signed in — set up profile & services, show lobby.
-      debugPrint('User signed in: ${user.id} (${user.displayName})');
+      _log.info('User signed in: ${user.id} (${user.displayName})');
       _currentUserId = user.id;
       _isAnonymous = user.isAnonymous;
       _currentDisplayName = user.displayName;
@@ -198,7 +219,7 @@ class _MyAppState extends State<MyApp> {
         }
         _currentProfilePictureUrl = profile?.profilePictureUrl;
       } catch (e) {
-        debugPrint('Failed to load profile: $e');
+        _log.warning('Failed to load profile: $e', e);
       }
       _avatarLoaded = true;
 
@@ -207,7 +228,7 @@ class _MyAppState extends State<MyApp> {
       try {
         await _progressService!.loadProgress();
       } catch (e) {
-        debugPrint('Failed to load progress: $e');
+        _log.warning('Failed to load progress: $e', e);
       }
       Locator.add<ProgressService>(_progressService!);
       locate<TechWorld>().refreshTerminalStates();
@@ -315,7 +336,7 @@ class _MyAppState extends State<MyApp> {
     Locator.add<ProximityService>(_proximityService!);
 
     final result = await _liveKitService!.connect();
-    debugPrint('LiveKit connection result for room $roomId: $result');
+    _log.info('LiveKit connection result for room $roomId: $result');
 
     if (result == ConnectionResult.connected) {
       onProgress?.call(0.55, 'Setting up game world\u2026');
@@ -587,7 +608,7 @@ class _MyAppState extends State<MyApp> {
       _myRooms = await _roomService!.listMyRooms(_currentUserId!);
       setState(() {});
     } catch (e) {
-      debugPrint('Failed to refresh saved rooms: $e');
+      _log.warning('Failed to refresh saved rooms: $e', e);
     }
   }
 
@@ -630,7 +651,7 @@ class _MyAppState extends State<MyApp> {
         final profileService = UserProfileService();
         await profileService.saveAvatarId(_currentUserId!, avatar.id);
       } catch (e) {
-        debugPrint('Failed to save avatar: $e');
+        _log.warning('Failed to save avatar: $e', e);
       }
     }
 
@@ -1032,7 +1053,7 @@ class _MyAppState extends State<MyApp> {
                                 await Locator.maybeLocate<ProgressService>()
                                     ?.markChallengeCompleted(challenge.id);
                               } catch (e) {
-                                debugPrint('Failed to persist completion: $e');
+                                _log.warning('Failed to persist completion: $e', e);
                                 // Rollback already handled by ProgressService.
                               }
                               techWorld.refreshTerminalStates();
@@ -1188,7 +1209,7 @@ class _ScreenShareButtonState extends State<_ScreenShareButton> {
     try {
       await service.setScreenShareEnabled(!_sharing);
     } catch (e) {
-      debugPrint('Screen share toggle failed: $e');
+      _log.warning('Screen share toggle failed: $e', e);
     }
     // Rebuild to pick up the new isScreenShareEnabled state.
     if (mounted) setState(() {});

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/auth/profile_picture_service.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
 
@@ -16,6 +17,8 @@ class EditProfileResult {
   final String displayName;
   final String? profilePictureUrl;
 }
+
+final _log = Logger('EditProfileDialog');
 
 /// Dialog for editing the user's display name and profile picture.
 ///
@@ -135,7 +138,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         ));
       }
     } catch (e) {
-      debugPrint('Profile save error: $e');
+      _log.warning('Profile save error', e);
       if (mounted) {
         setState(() => _error = 'Failed to save profile: $e');
       }

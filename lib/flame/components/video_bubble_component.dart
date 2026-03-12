@@ -5,13 +5,16 @@ import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
 import '../../native/video_frame_capture.dart' as ffi;
 import '../../native/direct_track_capture.dart' as direct_capture;
+
+final _log = Logger('VideoBubbleComponent');
 
 /// A Flame component that renders a circular video bubble with a player's video feed.
 ///
@@ -182,21 +185,21 @@ class VideoBubbleComponent extends PositionComponent {
   void _initializeWebCapture() {
     final track = _getVideoTrack();
     if (track == null) {
-      debugPrint('WebCapture: No video track found for $displayName');
+      _log.fine('No video track found for $displayName');
       return;
     }
 
     // Get the underlying MediaStreamTrack
     final mediaStreamTrack = track.mediaStreamTrack;
     final isRemote = participant is! LocalParticipant;
-    debugPrint('WebCapture: Initializing for $displayName (isRemote=$isRemote)');
+    _log.fine('Initializing for $displayName (isRemote=$isRemote)');
 
     // Get the JS MediaStreamTrack
     dynamic jsTrack;
     try {
       jsTrack = (mediaStreamTrack as dynamic).jsTrack;
     } catch (e) {
-      debugPrint('WebCapture: Could not get jsTrack: $e');
+      _log.warning('Could not get jsTrack', e);
       return;
     }
 
@@ -216,7 +219,7 @@ class VideoBubbleComponent extends PositionComponent {
   /// MediaStreamTrackProcessor approach without any waiting.
   void _initializeLocalWebCapture(dynamic jsTrack, VideoTrack track) {
     if (!direct_capture.isMediaStreamTrackProcessorSupported) {
-      debugPrint('WebCapture: MediaStreamTrackProcessor not supported, using VideoElement for local');
+      _log.fine('MediaStreamTrackProcessor not supported, using VideoElement for local');
       // Fall back to VideoElementCapture even for local
       _initializeRemoteWebCapture(jsTrack, track);
       return;
@@ -224,12 +227,12 @@ class VideoBubbleComponent extends PositionComponent {
 
     final capture = direct_capture.DirectTrackCapture.create(jsTrack);
     if (capture == null) {
-      debugPrint('WebCapture: Failed to create DirectTrackCapture for $displayName');
+      _log.warning('Failed to create DirectTrackCapture for $displayName');
       _captureInitializing = false;
       return;
     }
 
-    debugPrint('WebCapture: DirectTrackCapture created for local track $displayName');
+    _log.fine('DirectTrackCapture created for local track $displayName');
     _webCapture = capture;
     _videoTrack = track;
     capture.startCapture();
@@ -251,13 +254,13 @@ class VideoBubbleComponent extends PositionComponent {
 
       // Use the mediaStreamTrack directly (not mediaStream which may be stale)
       // jsTrack is already the JS MediaStreamTrack
-      debugPrint('WebCapture: Creating VideoElementCapture from jsTrack for $displayName');
+      _log.fine('Creating VideoElementCapture from jsTrack for $displayName');
 
       // Try VideoElementCapture with just the track (it will create a fresh MediaStream)
       // This now waits for the video to be ready before returning
       final capture = await direct_capture.VideoElementCapture.createFromStream(null, jsTrack);
       if (capture != null) {
-        debugPrint('WebCapture: VideoElementCapture created for remote track $displayName');
+        _log.fine('VideoElementCapture created for remote track $displayName');
         _remoteWebCapture = capture;
         capture.startCapture();
         _captureInitialized = true;
@@ -265,12 +268,11 @@ class VideoBubbleComponent extends PositionComponent {
         return;
       }
 
-      debugPrint('WebCapture: Failed to create VideoElementCapture for $displayName');
+      _log.warning('Failed to create VideoElementCapture for $displayName');
       _captureInitialized = true;
       _captureInitializing = false;
     } catch (e, stack) {
-      debugPrint('WebCapture: Error initializing remote capture: $e');
-      debugPrint('WebCapture: Stack: $stack');
+      _log.warning('Error initializing remote capture: $e\nStack: $stack');
       _captureInitializing = false;
     }
   }

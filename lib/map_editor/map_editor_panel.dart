@@ -1,8 +1,9 @@
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/generators/map_generator.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
@@ -19,6 +20,8 @@ import 'package:tech_world/map_editor/predefined_rules.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
 import 'package:tech_world/map_editor/tile_palette.dart';
 import 'package:tech_world/utils/locator.dart';
+
+final _log = Logger('MapEditorPanel');
 
 /// Sidebar panel for the visual map editor.
 ///
@@ -1031,7 +1034,7 @@ class _GenerateSectionState extends State<_GenerateSection> {
       widget.state.loadFromGameMap(map);
       setState(() => _lastSeed = seed);
     } catch (e, stack) {
-      debugPrint('Map generation failed: $e\n$stack');
+      _log.warning('Map generation failed: $e\n$stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

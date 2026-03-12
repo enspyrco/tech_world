@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
@@ -31,6 +32,8 @@ enum ConnectionResult {
   /// Room connection failed after token was obtained.
   roomFailed,
 }
+
+final _log = Logger('LiveKitService');
 
 /// Service that manages LiveKit room connection and participant tracking.
 ///
@@ -179,7 +182,7 @@ class LiveKitService {
         directions: directions,
       );
     } catch (e) {
-      debugPrint('LiveKitService: Failed to parse player path: $e');
+      _log.warning('Failed to parse player path', e);
       return null;
     }
   }
@@ -203,18 +206,18 @@ class LiveKitService {
   /// reason, so the UI can show actionable messages.
   Future<ConnectionResult> connect() async {
     if (_isConnecting || _isConnected) {
-      debugPrint('LiveKitService: Already connecting or connected');
+      _log.info('Already connecting or connected');
       return ConnectionResult.alreadyConnected;
     }
 
     _isConnecting = true;
-    debugPrint('LiveKitService: Connecting to LiveKit...');
+    _log.info('Connecting to LiveKit...');
 
     try {
       // Get token from Firebase Function
       final tokenResult = await _retrieveToken();
       if (tokenResult.token == null) {
-        debugPrint('LiveKitService: Failed to retrieve token');
+        _log.warning('Failed to retrieve token');
         _isConnecting = false;
         return tokenResult.connectionResult;
       }
@@ -252,7 +255,7 @@ class LiveKitService {
 
       _isConnected = true;
       _isConnecting = false;
-      debugPrint('LiveKitService: Connected to LiveKit room "$roomName"');
+      _log.info('Connected to LiveKit room "$roomName"');
 
       // Notify about existing participants
       for (final participant in _room!.remoteParticipants.values) {
@@ -261,20 +264,20 @@ class LiveKitService {
 
       return ConnectionResult.connected;
     } catch (e) {
-      debugPrint('LiveKitService: Connection failed: $e');
+      _log.severe('Connection failed', e);
       // Clean up dangling _room and _listener created before the failure.
       // Each cleanup is wrapped individually so one failure doesn't prevent
       // the other from running.
       try {
         await _listener?.dispose();
       } catch (cleanupError) {
-        debugPrint('LiveKitService: Listener cleanup failed: $cleanupError');
+        _log.warning('Listener cleanup failed', cleanupError);
       }
       _listener = null;
       try {
         await _room?.disconnect();
       } catch (cleanupError) {
-        debugPrint('LiveKitService: Room cleanup failed: $cleanupError');
+        _log.warning('Room cleanup failed', cleanupError);
       }
       _room = null;
       _isConnecting = false;
@@ -286,7 +289,7 @@ class LiveKitService {
   Future<void> disconnect() async {
     if (!_isConnected || _room == null) return;
 
-    debugPrint('LiveKitService: Disconnecting from LiveKit...');
+    _log.info('Disconnecting from LiveKit...');
 
     await _room!.disconnect();
     await _listener?.dispose();
@@ -294,7 +297,7 @@ class LiveKitService {
     _room = null;
     _isConnected = false;
 
-    debugPrint('LiveKitService: Disconnected');
+    _log.info('Disconnected');
   }
 
   /// Enable/disable local camera
@@ -302,9 +305,9 @@ class LiveKitService {
     if (_room?.localParticipant == null) return;
     try {
       await _room!.localParticipant!.setCameraEnabled(enabled);
-      debugPrint('LiveKitService: Camera ${enabled ? 'enabled' : 'disabled'}');
+      _log.info('Camera ${enabled ? 'enabled' : 'disabled'}');
     } catch (e) {
-      debugPrint('LiveKitService: Failed to set camera: $e');
+      _log.warning('Failed to set camera', e);
     }
   }
 
@@ -313,10 +316,9 @@ class LiveKitService {
     if (_room?.localParticipant == null) return;
     try {
       await _room!.localParticipant!.setMicrophoneEnabled(enabled);
-      debugPrint(
-          'LiveKitService: Microphone ${enabled ? 'enabled' : 'disabled'}');
+      _log.info('Microphone ${enabled ? 'enabled' : 'disabled'}');
     } catch (e) {
-      debugPrint('LiveKitService: Failed to set microphone: $e');
+      _log.warning('Failed to set microphone', e);
     }
   }
 
@@ -334,10 +336,9 @@ class LiveKitService {
         enabled,
         screenShareCaptureOptions: options,
       );
-      debugPrint(
-          'LiveKitService: Screen share ${enabled ? 'enabled' : 'disabled'}');
+      _log.info('Screen share ${enabled ? 'enabled' : 'disabled'}');
     } catch (e) {
-      debugPrint('LiveKitService: Failed to set screen share: $e');
+      _log.warning('Failed to set screen share', e);
       rethrow;
     }
   }
@@ -388,7 +389,7 @@ class LiveKitService {
     String? topic,
   }) async {
     if (_room?.localParticipant == null) {
-      debugPrint('LiveKitService: Cannot publish data - not connected');
+      _log.warning('Cannot publish data - not connected');
       return;
     }
 
@@ -398,7 +399,7 @@ class LiveKitService {
       destinationIdentities: destinationIdentities,
       topic: topic,
     );
-    debugPrint('LiveKitService: Published data, topic: $topic');
+    _log.fine('Published data, topic: $topic');
   }
 
   /// Publish a JSON message to the room via data channel.
@@ -525,14 +526,14 @@ class LiveKitService {
       topic: 'ping',
       destinationIdentities: ['bot-claude'],
     );
-    debugPrint('LiveKitService: Sent ping with id: $pingId');
+    _log.fine('Sent ping with id: $pingId');
 
     try {
       final pong = await pongFuture;
-      debugPrint('LiveKitService: Received pong from ${pong.senderId}');
+      _log.fine('Received pong from ${pong.senderId}');
       return pong;
     } on TimeoutException {
-      debugPrint('LiveKitService: Ping timed out');
+      _log.info('Ping timed out');
       return null;
     }
   }
@@ -545,7 +546,7 @@ class LiveKitService {
           : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
     }
     try {
-      debugPrint('LiveKitService: Retrieving token for room "$roomName"');
+      _log.info('Retrieving token for room "$roomName"');
       final result = await FirebaseFunctions.instance
           .httpsCallable('retrieveLiveKitToken')
           .call({'roomName': roomName});
@@ -554,7 +555,7 @@ class LiveKitService {
           ? _TokenResult.success(token)
           : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
     } on FirebaseFunctionsException catch (e) {
-      debugPrint('LiveKitService: Token retrieval failed: $e');
+      _log.warning('Token retrieval failed', e);
       if (e.code == 'unauthenticated' || e.code == 'permission-denied') {
         return const _TokenResult.failure(ConnectionResult.tokenAuthError);
       }
@@ -562,7 +563,7 @@ class LiveKitService {
     } catch (e) {
       // Generic catch handles timeouts, network errors, and other transient
       // failures not covered by FirebaseFunctionsException above.
-      debugPrint('LiveKitService: Token retrieval failed: $e');
+      _log.warning('Token retrieval failed', e);
       return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
     }
   }
@@ -570,18 +571,16 @@ class LiveKitService {
   void _setupListeners() {
     _listener
       ?..on<ParticipantConnectedEvent>((event) {
-        debugPrint(
-            'LiveKitService: Participant joined: ${event.participant.identity}');
+        _log.info('Participant joined: ${event.participant.identity}');
         _participantJoinedController.add(event.participant);
       })
       ..on<ParticipantDisconnectedEvent>((event) {
-        debugPrint(
-            'LiveKitService: Participant left: ${event.participant.identity}');
+        _log.info('Participant left: ${event.participant.identity}');
         _participantLeftController.add(event.participant);
       })
       ..on<TrackSubscribedEvent>((event) {
-        debugPrint(
-            'LiveKitService: Track subscribed: ${event.participant.identity} - ${event.track.kind}');
+        _log.fine(
+            'Track subscribed: ${event.participant.identity} - ${event.track.kind}');
         // Emit video track subscription events
         if (event.track is VideoTrack) {
           _trackSubscribedController
@@ -589,8 +588,8 @@ class LiveKitService {
         }
       })
       ..on<TrackUnsubscribedEvent>((event) {
-        debugPrint(
-            'LiveKitService: Track unsubscribed: ${event.participant.identity}');
+        _log.fine(
+            'Track unsubscribed: ${event.participant.identity}');
         if (event.track is VideoTrack) {
           _trackUnsubscribedController
               .add((event.participant, event.track as VideoTrack));
@@ -603,7 +602,7 @@ class LiveKitService {
         }
       })
       ..on<RoomDisconnectedEvent>((event) {
-        debugPrint('LiveKitService: Room disconnected: ${event.reason}');
+        _log.warning('Room disconnected: ${event.reason}');
         _isConnected = false;
         // Clean up resources left dangling by the unexpected disconnect.
         // Note: _listener.dispose() is intentionally not awaited here — this
@@ -611,7 +610,7 @@ class LiveKitService {
         try {
           _listener?.dispose();
         } catch (e) {
-          debugPrint('LiveKitService: Listener cleanup failed: $e');
+          _log.warning('Listener cleanup failed', e);
         }
         _listener = null;
         _room = null;
@@ -619,13 +618,13 @@ class LiveKitService {
         _connectionLostController.add(event.reason?.name);
       })
       ..on<LocalTrackPublishedEvent>((event) {
-        debugPrint(
-            'LiveKitService: Local track published: ${event.publication.kind}');
+        _log.fine(
+            'Local track published: ${event.publication.kind}');
         _localTrackPublishedController.add(event.publication);
       })
       ..on<DataReceivedEvent>((event) {
-        debugPrint(
-            'LiveKitService: Data received from: ${event.participant?.identity}, topic: ${event.topic}');
+        _log.fine(
+            'Data received from: ${event.participant?.identity}, topic: ${event.topic}');
         _dataReceivedController.add(DataChannelMessage(
           senderId: event.participant?.identity,
           topic: event.topic,

@@ -6,14 +6,17 @@ import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
-import 'package:flutter/foundation.dart' show debugPrint, ValueNotifier;
+import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:logging/logging.dart';
+
+final _log = Logger('SttService');
 
 /// Speech-to-text service using browser's SpeechRecognition API.
 class SttService {
   SttService() {
     _isSupported = globalContext.has('webkitSpeechRecognition') ||
         globalContext.has('SpeechRecognition');
-    debugPrint('SttService: supported=$_isSupported');
+    _log.info('SttService: supported=$_isSupported');
   }
 
   bool _isSupported = false;
@@ -32,7 +35,7 @@ class SttService {
   /// Returns null if cancelled, unsupported, or error.
   Future<String?> listen() async {
     if (!_isSupported) {
-      debugPrint('SttService: Not supported');
+      _log.info('SttService: Not supported');
       return null;
     }
 
@@ -63,12 +66,12 @@ class SttService {
           final firstResult = results['0'] as JSObject;
           final firstAlt = firstResult['0'] as JSObject;
           final transcript = (firstAlt['transcript'] as JSString).toDart;
-          debugPrint('SttService: Recognized: "$transcript"');
+          _log.fine('SttService: Recognized: "$transcript"');
           if (!_resultCompleter!.isCompleted) {
             _resultCompleter!.complete(transcript);
           }
         } catch (e) {
-          debugPrint('SttService: Result parse error: $e');
+          _log.warning('SttService: Result parse error', e);
           if (!_resultCompleter!.isCompleted) {
             _resultCompleter!.complete(null);
           }
@@ -79,7 +82,7 @@ class SttService {
       // Handle error
       _recognition!['onerror'] = (JSObject event) {
         final error = (event['error'] as JSString?)?.toDart;
-        debugPrint('SttService: Error: $error');
+        _log.warning('SttService: Error: $error');
         if (!_resultCompleter!.isCompleted) {
           _resultCompleter!.complete(null);
         }
@@ -88,7 +91,7 @@ class SttService {
 
       // Handle end (no result)
       _recognition!['onend'] = (JSObject event) {
-        debugPrint('SttService: Ended');
+        _log.fine('SttService: Ended');
         if (!_resultCompleter!.isCompleted) {
           _resultCompleter!.complete(null);
         }
@@ -98,11 +101,11 @@ class SttService {
       // Start listening
       _recognition!.callMethod('start'.toJS);
       _setListening(true);
-      debugPrint('SttService: Listening...');
+      _log.info('SttService: Listening...');
 
       return await _resultCompleter!.future;
     } catch (e) {
-      debugPrint('SttService: Exception: $e');
+      _log.warning('SttService: Exception', e);
       _setListening(false);
       if (_resultCompleter != null && !_resultCompleter!.isCompleted) {
         _resultCompleter!.complete(null);
@@ -117,7 +120,7 @@ class SttService {
       try {
         _recognition!.callMethod('stop'.toJS);
       } catch (e) {
-        debugPrint('SttService: Stop error: $e');
+        _log.warning('SttService: Stop error', e);
       }
     }
     _setListening(false);

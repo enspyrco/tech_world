@@ -10,8 +10,10 @@ import 'dart:js_interop';
 import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
+
+final _log = Logger('VideoFrameWeb');
 
 /// Web-based video frame capture using createImageBitmap.
 ///
@@ -57,7 +59,7 @@ class WebVideoFrameCapture {
     try {
       await video.play().toDart;
     } catch (e) {
-      debugPrint('WebVideoFrameCapture: play() failed: $e');
+      _log.warning('WebVideoFrameCapture: play() failed: $e', e);
     }
 
     // Wait for video dimensions to be available
@@ -68,12 +70,12 @@ class WebVideoFrameCapture {
     }
 
     if (video.videoWidth == 0) {
-      debugPrint('WebVideoFrameCapture: Video dimensions not available');
+      _log.warning('WebVideoFrameCapture: Video dimensions not available');
       video.remove();
       return null;
     }
 
-    debugPrint(
+    _log.info(
         'WebVideoFrameCapture: Created video element ${video.videoWidth}x${video.videoHeight}');
     return WebVideoFrameCapture._(video, ownsElement: true);
   }
@@ -100,7 +102,7 @@ class WebVideoFrameCapture {
       try {
         await video.play().toDart;
       } catch (e) {
-        debugPrint('WebVideoFrameCapture: play() failed: $e');
+        _log.warning('WebVideoFrameCapture: play() failed: $e', e);
       }
     }
 
@@ -113,12 +115,12 @@ class WebVideoFrameCapture {
 
     // Don't use video elements that haven't loaded yet
     if (video.videoWidth == 0 || video.videoHeight == 0) {
-      debugPrint(
+      _log.warning(
           'WebVideoFrameCapture: Existing video has no dimensions yet, skipping');
       return null;
     }
 
-    debugPrint(
+    _log.info(
         'WebVideoFrameCapture: Using existing video ${video.videoWidth}x${video.videoHeight}');
     return WebVideoFrameCapture._(video, ownsElement: false);
   }
@@ -126,7 +128,7 @@ class WebVideoFrameCapture {
   /// Find a video element by matching its MediaStream track ID or label.
   static web.HTMLVideoElement? findVideoElementByTrackId(String trackId) {
     final videos = web.document.querySelectorAll('video');
-    debugPrint('WebVideoFrameCapture: Found ${videos.length} video elements');
+    _log.fine('WebVideoFrameCapture: Found ${videos.length} video elements');
 
     for (var i = 0; i < videos.length; i++) {
       final node = videos.item(i);
@@ -134,7 +136,7 @@ class WebVideoFrameCapture {
 
       final video = node as web.HTMLVideoElement;
       final srcObject = video.srcObject;
-      debugPrint(
+      _log.finer(
           'WebVideoFrameCapture: Video[$i] srcObject=${srcObject != null}');
 
       if (srcObject == null) continue;
@@ -143,15 +145,15 @@ class WebVideoFrameCapture {
       if (srcObject.isA<web.MediaStream>()) {
         final stream = srcObject as web.MediaStream;
         final tracks = stream.getVideoTracks();
-        debugPrint(
+        _log.finer(
             'WebVideoFrameCapture: Video[$i] has ${tracks.length} video tracks');
 
         for (var j = 0; j < tracks.length; j++) {
           final track = tracks.toDart[j];
-          debugPrint('WebVideoFrameCapture: Track[$j] id=${track.id}, label=${track.label}');
+          _log.finer('WebVideoFrameCapture: Track[$j] id=${track.id}, label=${track.label}');
           // Match by ID or by label (LiveKit puts its track ID in the label)
           if (track.id == trackId || track.label == trackId) {
-            debugPrint('WebVideoFrameCapture: MATCH FOUND!');
+            _log.fine('WebVideoFrameCapture: MATCH FOUND!');
             return video;
           }
         }
@@ -163,7 +165,7 @@ class WebVideoFrameCapture {
   /// Debug: List all video elements and their track IDs.
   static void debugListVideoElements() {
     final videos = web.document.querySelectorAll('video');
-    debugPrint(
+    _log.fine(
         'WebVideoFrameCapture DEBUG: Found ${videos.length} video elements');
 
     for (var i = 0; i < videos.length; i++) {
@@ -171,12 +173,12 @@ class WebVideoFrameCapture {
       if (node == null) continue;
 
       final video = node as web.HTMLVideoElement;
-      debugPrint('  Video[$i]: id=${video.id}, readyState=${video.readyState}, '
+      _log.fine('  Video[$i]: id=${video.id}, readyState=${video.readyState}, '
           'size=${video.videoWidth}x${video.videoHeight}');
 
       final srcObject = video.srcObject;
       if (srcObject == null) {
-        debugPrint('    srcObject: null');
+        _log.fine('    srcObject: null');
         continue;
       }
 
@@ -184,12 +186,12 @@ class WebVideoFrameCapture {
         final stream = srcObject as web.MediaStream;
         final videoTracks = stream.getVideoTracks();
         final audioTracks = stream.getAudioTracks();
-        debugPrint(
+        _log.fine(
             '    MediaStream: ${videoTracks.length} video, ${audioTracks.length} audio tracks');
 
         for (var j = 0; j < videoTracks.length; j++) {
           final track = videoTracks.toDart[j];
-          debugPrint(
+          _log.fine(
               '      VideoTrack[$j]: id=${track.id}, label=${track.label}, enabled=${track.enabled}');
         }
       }
@@ -267,14 +269,13 @@ class WebVideoFrameCapture {
 
       // Log first successful frame
       if (_frameNumber == 1) {
-        debugPrint(
+        _log.info(
             'WebVideoFrameCapture: First frame captured! ${videoWidth}x$videoHeight');
       }
 
       oldFrame?.dispose();
     } catch (e, stackTrace) {
-      debugPrint('WebVideoFrameCapture: Frame capture error: $e');
-      debugPrint('WebVideoFrameCapture: Stack trace: $stackTrace');
+      _log.warning('WebVideoFrameCapture: Frame capture error: $e', e, stackTrace);
     }
   }
 

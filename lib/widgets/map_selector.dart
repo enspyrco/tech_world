@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/generators/map_generator.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
+
+final _log = Logger('MapSelector');
 
 /// Dropdown for switching the active game map at runtime.
 ///
@@ -69,7 +72,7 @@ class _MapSelectorState extends State<MapSelector> {
       }
     } catch (e) {
       if (mounted) setState(() => _loading = false);
-      debugPrint('Failed to load saved rooms: $e');
+      _log.warning('Failed to load saved rooms', e);
     }
   }
 

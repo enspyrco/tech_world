@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/livekit/exts.dart';
 import 'package:tech_world/livekit/pages/final_page.dart';
 
@@ -28,6 +29,8 @@ class JoinArgs {
   final String preferredCodec;
   final bool enableBackupVideoCodec;
 }
+
+final _log = Logger('PrejoinPage');
 
 class PreJoinPage extends StatefulWidget {
   const PreJoinPage({
@@ -218,7 +221,7 @@ class _PreJoinPageState extends State<PreJoinPage> {
             builder: (_) => FinalPage(room: room, listener: listener)),
       );
     } catch (error) {
-      debugPrint('Could not connect $error');
+      _log.warning('Could not connect $error');
       if (!mounted) return;
       await this.context.showErrorDialog(error);
     } finally {
