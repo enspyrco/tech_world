@@ -19,7 +19,6 @@ import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/tile_floor_component.dart';
 import 'package:tech_world/flame/components/tile_object_layer_component.dart';
-import 'package:tech_world/flame/components/wall_occlusion_component.dart';
 // Grid lines hidden for now — uncomment to restore:
 // import 'package:tech_world/flame/components/grid_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
@@ -72,7 +71,6 @@ class TechWorld extends World with TapCallbacks {
   /// The currently loaded map.
   final ValueNotifier<GameMap> currentMap = ValueNotifier(defaultMap);
 
-  SpriteComponent? _backgroundSprite;
   final List<TerminalComponent> _terminalComponents = [];
 
   // Bubble components - shown when player is near other players
@@ -107,7 +105,6 @@ class TechWorld extends World with TapCallbacks {
   final ValueNotifier<bool> mapEditorActive = ValueNotifier(false);
 
   MapPreviewComponent? _mapPreviewComponent;
-  WallOcclusionComponent? _wallOcclusion;
   TileFloorComponent? _tileFloor;
   TileObjectLayerComponent? _tileObjectLayer;
   bool _isLoadingMap = false;
@@ -142,8 +139,7 @@ class TechWorld extends World with TapCallbacks {
       Locator.add<MapSyncService>(_mapSyncService!);
     }
 
-    // Hide wall occlusion overlays and tile objects during editing.
-    _wallOcclusion?.hide();
+    // Hide tile objects during editing.
     _tileObjectLayer?.hide();
 
     // Hide normal barriers and add the preview component.
@@ -166,19 +162,17 @@ class TechWorld extends World with TapCallbacks {
 
     if (applyChanges && _editorState != null) {
       // Apply the full edited map to the game world so barriers, terminals,
-      // background, and wall occlusion all reflect whatever was changed.
+      // and tile layers all reflect whatever was changed.
       final editedMap = _editorState!.toGameMap();
       if (editedMap != currentMap.value) {
         _removeMapComponents();
         await _loadMapComponents(editedMap);
         currentMap.value = editedMap;
       } else {
-        _wallOcclusion?.show();
         _tileObjectLayer?.show();
       }
     } else {
-      // Discard — just re-show the original wall occlusion and tile objects.
-      _wallOcclusion?.show();
+      // Discard — just re-show the original tile objects.
       _tileObjectLayer?.show();
     }
 
@@ -200,12 +194,10 @@ class TechWorld extends World with TapCallbacks {
       _mapPreviewComponent!.removeFromParent();
       _mapPreviewComponent = null;
     }
-    // Show debug barriers only for maps without visual layers. Maps with a
-    // background image or tilesets render walls visually, so the blue debug
-    // rectangles would be distracting.
-    final map = currentMap.value;
-    _barriersComponent.renderBarriers =
-        !map.usesTilesets && map.backgroundImage == null;
+    // Show debug barriers only for maps without visual layers. Maps with
+    // tilesets render walls visually, so the blue debug rectangles would be
+    // distracting.
+    _barriersComponent.renderBarriers = !currentMap.value.usesTilesets;
   }
 
   MapEditorState? _editorState;
@@ -782,8 +774,7 @@ class TechWorld extends World with TapCallbacks {
     });
   }
 
-  /// Load map-specific components: barriers, terminals, background, and wall
-  /// occlusion overlays.
+  /// Load map-specific components: barriers, terminals, and tile layers.
   Future<void> _loadMapComponents(GameMap map) async {
     // Barriers
     _barriersComponent = BarriersComponent(barriers: map.barriers);
@@ -807,38 +798,8 @@ class TechWorld extends World with TapCallbacks {
       await add(terminal);
     }
 
-    // Background image + wall occlusion (can coexist with tile layers).
+    // Tile layers.
     final game = findGame() as TechWorldGame?;
-    if (game != null && map.backgroundImage != null) {
-      // Use load() instead of fromCache() because the GameWidget may not have
-      // mounted yet (e.g. first room join), so onLoad images aren't cached.
-      final bgImage = await game.images.load(map.backgroundImage!);
-      _backgroundSprite =
-          SpriteComponent(sprite: Sprite(bgImage), priority: -2);
-      add(_backgroundSprite!);
-
-      // Only create occlusion for north-facing barrier edges — barriers
-      // where the cell above is open. Interior barriers can't have a player
-      // above them, so their overlays just make the background hide the player.
-      final barrierSet = map.barriers.toSet();
-      final wallBarriers = map.barriers.where((b) {
-        // Skip barriers with object-layer tiles (they render own sprites).
-        if (map.objectLayer != null &&
-            map.objectLayer!.tileAt(b.x, b.y) != null) {
-          return false;
-        }
-        // Only keep north-facing edges (open cell above).
-        return !barrierSet.contains(Point(b.x, b.y - 1));
-      }).toList();
-
-      _wallOcclusion = WallOcclusionComponent(
-        backgroundImage: bgImage,
-        barriers: wallBarriers,
-      );
-      await add(_wallOcclusion!);
-    }
-
-    // Tile layers (can coexist with background image).
     if (game != null && map.usesTilesets) {
       final registry = game.tilesetRegistry;
 
@@ -894,16 +855,6 @@ class TechWorld extends World with TapCallbacks {
       terminal.removeFromParent();
     }
     _terminalComponents.clear();
-
-    // Background
-    _backgroundSprite?.removeFromParent();
-    _backgroundSprite = null;
-
-    // Wall occlusion
-    if (_wallOcclusion != null) {
-      _wallOcclusion!.removeFromParent();
-      _wallOcclusion = null;
-    }
 
     // Unload custom tilesets from previous map.
     final game = findGame() as TechWorldGame?;

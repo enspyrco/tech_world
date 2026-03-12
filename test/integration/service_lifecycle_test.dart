@@ -148,11 +148,6 @@ void main() {
         expect(state.isDirty, isTrue);
       });
 
-      test('setBackgroundImage marks dirty', () {
-        state.setBackgroundImage('bg.png');
-        expect(state.isDirty, isTrue);
-      });
-
       test('loadFromAscii resets dirty', () {
         state.paintTile(5, 5);
         expect(state.isDirty, isTrue);

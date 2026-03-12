@@ -203,8 +203,8 @@ void main() {
       expect(theLibrary.name, equals('The Library'));
     });
 
-    test('has barriers', () {
-      expect(theLibrary.barriers, isNotEmpty);
+    test('has no predefined barriers', () {
+      expect(theLibrary.barriers, isEmpty);
     });
 
     test('has terminals', () {
@@ -212,66 +212,8 @@ void main() {
       expect(theLibrary.terminals.length, equals(4));
     });
 
-    test('has spawn point inside the building', () {
-      expect(theLibrary.spawnPoint.x, greaterThan(2));
-      expect(theLibrary.spawnPoint.y, greaterThan(2));
-    });
-
-    test('spawn point is not on a barrier', () {
-      expect(theLibrary.barriers.contains(theLibrary.spawnPoint), isFalse);
-    });
-
-    test('all barriers are within grid bounds', () {
-      for (final barrier in theLibrary.barriers) {
-        expect(barrier.x, greaterThanOrEqualTo(0), reason: 'barrier x >= 0');
-        expect(barrier.y, greaterThanOrEqualTo(0), reason: 'barrier y >= 0');
-        expect(barrier.x, lessThan(gridSize), reason: 'barrier x < gridSize');
-        expect(barrier.y, lessThan(gridSize), reason: 'barrier y < gridSize');
-      }
-    });
-
-    test('no duplicate barriers', () {
-      final uniqueBarriers = theLibrary.barriers.toSet();
-      expect(uniqueBarriers.length, equals(theLibrary.barriers.length));
-    });
-
-    test('has bookshelf rows (barriers forming aisles)', () {
-      // The library has rows of bookshelves - check for barrier patterns
-      // Row 4 of the building (y=4 in the grid) should have bookshelf barriers
-      final shelfBarriers =
-          theLibrary.barriers.where((p) => p.y == 4 || p.y == 6);
-      expect(shelfBarriers, isNotEmpty,
-          reason: 'Library should have bookshelf barriers');
-    });
-
-    test('spawn point is reachable from at least one open neighbor', () {
-      final barrierSet = theLibrary.barriers.toSet();
-      final spawn = theLibrary.spawnPoint;
-      final neighbors = [
-        Point(spawn.x - 1, spawn.y),
-        Point(spawn.x + 1, spawn.y),
-        Point(spawn.x, spawn.y - 1),
-        Point(spawn.x, spawn.y + 1),
-      ];
-      final hasOpenNeighbor = neighbors.any((p) => !barrierSet.contains(p));
-      expect(hasOpenNeighbor, isTrue,
-          reason: 'Spawn point should have at least one open neighbor');
-    });
-
-    test('terminals are reachable (not surrounded by barriers)', () {
-      final barrierSet = theLibrary.barriers.toSet();
-      for (final terminal in theLibrary.terminals) {
-        final neighbors = [
-          Point(terminal.x - 1, terminal.y),
-          Point(terminal.x + 1, terminal.y),
-          Point(terminal.x, terminal.y - 1),
-          Point(terminal.x, terminal.y + 1),
-        ];
-        final hasOpenNeighbor = neighbors.any((p) => !barrierSet.contains(p));
-        expect(hasOpenNeighbor, isTrue,
-            reason:
-                'Terminal at (${terminal.x}, ${terminal.y}) should be reachable');
-      }
+    test('has spawn point', () {
+      expect(theLibrary.spawnPoint, isNotNull);
     });
   });
 
@@ -284,8 +226,8 @@ void main() {
       expect(theWorkshop.name, equals('The Workshop'));
     });
 
-    test('has barriers', () {
-      expect(theWorkshop.barriers, isNotEmpty);
+    test('has no predefined barriers', () {
+      expect(theWorkshop.barriers, isEmpty);
     });
 
     test('has terminals', () {
@@ -293,65 +235,8 @@ void main() {
       expect(theWorkshop.terminals.length, equals(2));
     });
 
-    test('has spawn point inside the building', () {
-      expect(theWorkshop.spawnPoint.x, greaterThan(2));
-      expect(theWorkshop.spawnPoint.y, greaterThan(2));
-    });
-
-    test('spawn point is not on a barrier', () {
-      expect(theWorkshop.barriers.contains(theWorkshop.spawnPoint), isFalse);
-    });
-
-    test('all barriers are within grid bounds', () {
-      for (final barrier in theWorkshop.barriers) {
-        expect(barrier.x, greaterThanOrEqualTo(0), reason: 'barrier x >= 0');
-        expect(barrier.y, greaterThanOrEqualTo(0), reason: 'barrier y >= 0');
-        expect(barrier.x, lessThan(gridSize), reason: 'barrier x < gridSize');
-        expect(barrier.y, lessThan(gridSize), reason: 'barrier y < gridSize');
-      }
-    });
-
-    test('no duplicate barriers', () {
-      final uniqueBarriers = theWorkshop.barriers.toSet();
-      expect(uniqueBarriers.length, equals(theWorkshop.barriers.length));
-    });
-
-    test('has workbench enclosures (rectangular barrier patterns)', () {
-      // Workshop has rectangular workbench enclosures
-      final enclosureBarriers =
-          theWorkshop.barriers.where((p) => p.y >= 10 && p.y <= 14);
-      expect(enclosureBarriers, isNotEmpty,
-          reason: 'Workshop should have workbench enclosures');
-    });
-
-    test('spawn point is reachable from at least one open neighbor', () {
-      final barrierSet = theWorkshop.barriers.toSet();
-      final spawn = theWorkshop.spawnPoint;
-      final neighbors = [
-        Point(spawn.x - 1, spawn.y),
-        Point(spawn.x + 1, spawn.y),
-        Point(spawn.x, spawn.y - 1),
-        Point(spawn.x, spawn.y + 1),
-      ];
-      final hasOpenNeighbor = neighbors.any((p) => !barrierSet.contains(p));
-      expect(hasOpenNeighbor, isTrue,
-          reason: 'Spawn point should have at least one open neighbor');
-    });
-
-    test('terminals are reachable (not surrounded by barriers)', () {
-      final barrierSet = theWorkshop.barriers.toSet();
-      for (final terminal in theWorkshop.terminals) {
-        final neighbors = [
-          Point(terminal.x - 1, terminal.y),
-          Point(terminal.x + 1, terminal.y),
-          Point(terminal.x, terminal.y - 1),
-          Point(terminal.x, terminal.y + 1),
-        ];
-        final hasOpenNeighbor = neighbors.any((p) => !barrierSet.contains(p));
-        expect(hasOpenNeighbor, isTrue,
-            reason:
-                'Terminal at (${terminal.x}, ${terminal.y}) should be reachable');
-      }
+    test('has spawn point', () {
+      expect(theWorkshop.spawnPoint, isNotNull);
     });
   });
 

@@ -18,28 +18,6 @@ class TestGameWithMockImages extends TechWorldGame {
     images.add('NPC11.png', await generateImage(384, 256));
     images.add('NPC12.png', await generateImage(384, 256));
     images.add('NPC13.png', await generateImage(384, 256));
-    images.add('single_room.png', await generateImage(800, 600));
-    images.add('claude_bot.png', await generateImage(48, 48));
-
-    camera.viewfinder.anchor = Anchor.center;
-  }
-}
-
-/// A test game that does NOT pre-cache background images.
-///
-/// Used to verify that [TechWorld._loadMapComponents] loads background images
-/// on demand via [Images.load] instead of requiring them to already be in the
-/// cache via [Images.fromCache].
-class TestGameWithoutBgCache extends TechWorldGame {
-  TestGameWithoutBgCache({required World world}) : super(world: world);
-
-  @override
-  Future<void> onLoad() async {
-    // Only cache character sprites — deliberately skip single_room.png
-    // so the background image must be loaded on demand by _loadMapComponents.
-    images.add('NPC11.png', await generateImage(384, 256));
-    images.add('NPC12.png', await generateImage(384, 256));
-    images.add('NPC13.png', await generateImage(384, 256));
     images.add('claude_bot.png', await generateImage(48, 48));
 
     camera.viewfinder.anchor = Anchor.center;
@@ -281,30 +259,5 @@ void main() {
       },
     );
 
-    // Regression test: background image loaded on demand, not from cache.
-    //
-    // The default map (lRoom) has a backgroundImage. When TechWorldGame.onLoad
-    // hasn't pre-cached it (e.g. GameWidget hasn't mounted yet), the old code
-    // used Images.fromCache() which throws. The fix uses Images.load() which
-    // loads on demand from the asset bundle.
-    testWithGame<TestGameWithoutBgCache>(
-      'loadMap loads background image on demand when not pre-cached',
-      () {
-        final world = TechWorld(authStateChanges: authController.stream);
-        return TestGameWithoutBgCache(world: world);
-      },
-      (game) async {
-        // game.ready() triggers TechWorld.onLoad → _loadMapComponents(lRoom).
-        // lRoom has backgroundImage: 'single_room.png' which is NOT in the
-        // image cache (TestGameWithoutBgCache skips it). With the fix
-        // (Images.load), this loads the image from the asset bundle. With the
-        // old code (Images.fromCache), this would throw an assertion error.
-        await game.ready();
-
-        final world = game.world as TechWorld;
-        expect(world.isMounted, isTrue);
-        expect(world.currentMap.value.backgroundImage, equals('single_room.png'));
-      },
-    );
   });
 }

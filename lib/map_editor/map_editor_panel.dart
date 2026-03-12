@@ -11,7 +11,6 @@ import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/rooms/room_data.dart';
-import 'package:tech_world/map_editor/available_backgrounds.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/map_editor/import_dialog.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
@@ -167,35 +166,7 @@ class MapEditorPanel extends StatelessWidget {
   // ---------------------------------------------------------------------------
 
   Widget _buildGridArea() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cellSize = constraints.maxWidth / gridSize;
-        final imageScale = cellSize / gridSquareSizeDouble;
-        return Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            _buildGrid(),
-            if (state.backgroundImage != null)
-              Positioned(
-                top: 0,
-                left: 0,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 0.5,
-                    child: Transform.scale(
-                      scale: imageScale,
-                      alignment: Alignment.topLeft,
-                      child: Image.asset(
-                        'assets/images/${state.backgroundImage}',
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
+    return _buildGrid();
   }
 
   // ---------------------------------------------------------------------------
@@ -665,49 +636,8 @@ class _MapToolbarState extends State<_MapToolbar> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          // Background image selector
-          _buildBackgroundDropdown(),
         ],
       ),
-    );
-  }
-
-  Widget _buildBackgroundDropdown() {
-    return Row(
-      children: [
-        Text(
-          'BG',
-          style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: widget.state.backgroundImage,
-              dropdownColor: _headerBg,
-              iconEnabledColor: Colors.grey,
-              iconSize: 16,
-              isDense: true,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              items: [
-                const DropdownMenuItem<String>(
-                  child:
-                      Text('None', style: TextStyle(color: Colors.grey)),
-                ),
-                for (final bg in availableBackgrounds)
-                  DropdownMenuItem<String>(
-                    value: bg.filename,
-                    child: Text(bg.label),
-                  ),
-              ],
-              onChanged: (value) =>
-                  widget.state.setBackgroundImage(value),
-            ),
-          ),
-        ),
-      ],
     );
   }
 

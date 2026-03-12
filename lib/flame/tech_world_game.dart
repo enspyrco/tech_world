@@ -2,7 +2,6 @@ import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
 import 'package:tech_world/flame/tiles/tileset_registry.dart';
-import 'package:tech_world/map_editor/available_backgrounds.dart';
 
 class SnapshotComponent extends PositionComponent with Snapshot {}
 
@@ -23,7 +22,6 @@ class TechWorldGame extends FlameGame {
       'NPC12.png',
       'NPC13.png',
       'claude_bot.png',
-      ...availableBackgrounds.map((bg) => bg.filename),
     ]);
 
     // Initialize tileset registry and load all predefined tilesets.

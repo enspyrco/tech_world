@@ -1159,3 +1159,11 @@ bool isTileRefBarrier(TileRef ref) {
   final tileset = _tilesetLookup[ref.tilesetId];
   return tileset != null && tileset.isTileBarrier(ref.tileIndex);
 }
+
+/// Whether [ref] points to a tile explicitly marked as non-blocking.
+///
+/// Returns `false` for unknown tilesets or tiles without non-barrier metadata.
+bool isTileRefNonBarrier(TileRef ref) {
+  final tileset = _tilesetLookup[ref.tilesetId];
+  return tileset != null && tileset.isNonBarrierTile(ref.tileIndex);
+}
