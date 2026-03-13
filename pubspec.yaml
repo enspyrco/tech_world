@@ -49,6 +49,7 @@ dev_dependencies:
   fake_cloud_firestore: ^4.0.1
   flutter_native_splash: ^2.4.7
   mocktail: ^1.0.4
+  image: ^4.5.2 # Used by tool/slice_tileset.dart only
 
 flutter_launcher_icons:
   image_path: "assets/icon/app_icon.png"

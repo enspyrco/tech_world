@@ -7,6 +7,8 @@ import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
+import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
+import 'package:tech_world/flame/tiles/tileset_registry.dart';
 
 /// A test version of TechWorldGame that uses mock images.
 class TestGameWithMockImages extends TechWorldGame {
@@ -14,11 +16,21 @@ class TestGameWithMockImages extends TechWorldGame {
 
   @override
   Future<void> onLoad() async {
-    // Generate and add mock images instead of loading from assets
+    // Generate and add mock images instead of loading from assets.
     images.add('NPC11.png', await generateImage(384, 256));
     images.add('NPC12.png', await generateImage(384, 256));
     images.add('NPC13.png', await generateImage(384, 256));
     images.add('claude_bot.png', await generateImage(48, 48));
+
+    // Pre-populate tileset images so loadAll() finds them in cache.
+    for (final tileset in allTilesets) {
+      final w = tileset.columns * tileset.tileSize;
+      final h = tileset.rows * tileset.tileSize;
+      images.add(tileset.imagePath, await generateImage(w, h));
+    }
+
+    tilesetRegistry = TilesetRegistry(images: images);
+    await tilesetRegistry.loadAll(allTilesets);
 
     camera.viewfinder.anchor = Anchor.center;
   }

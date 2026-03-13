@@ -173,8 +173,8 @@ void main() {
       expect(state.mapName, 'The L-Room');
       expect(state.mapId, 'l_room');
 
-      // lRoom now has no predefined barriers (barriers come from tiles).
-      expect(state.tileAt(4, 7), TileType.open);
+      // lRoom has L-wall barriers for offline fallback.
+      expect(state.tileAt(4, 7), TileType.barrier);
       // Check spawn
       expect(state.tileAt(10, 15), TileType.spawn);
       // Check terminals

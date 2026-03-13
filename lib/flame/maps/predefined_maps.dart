@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'game_map.dart';
+import 'l_room_tile_data.dart';
 import 'map_parser.dart';
 
 /// Open Arena - no barriers, free movement everywhere.
@@ -11,13 +12,30 @@ const openArena = GameMap(
   spawnPoint: Point(25, 25),
 );
 
-/// The L-Room - original map (barriers now come from painted tiles).
-const lRoom = GameMap(
+/// The L-Room - original map with tile-based offline fallback.
+///
+/// Visual content comes from the `single_room` tileset (sliced from the
+/// original `single_room.png` background image). Barriers restore the
+/// original L-shaped wall layout for offline play.
+final lRoom = GameMap(
   id: 'l_room',
   name: 'The L-Room',
-  barriers: [],
-  spawnPoint: Point(10, 15),
-  terminals: [Point(8, 12), Point(14, 12)],
+  barriers: const [
+    // Vertical wall at x=4 (gap at y=17 for door)
+    Point(4, 7), Point(4, 8), Point(4, 9), Point(4, 10), Point(4, 11),
+    Point(4, 12), Point(4, 13), Point(4, 14), Point(4, 15), Point(4, 16),
+    Point(4, 18), Point(4, 19), Point(4, 20), Point(4, 21), Point(4, 22),
+    Point(4, 23), Point(4, 24), Point(4, 25), Point(4, 26), Point(4, 27),
+    Point(4, 28), Point(4, 29),
+    // Horizontal wall at y=7
+    Point(5, 7), Point(6, 7), Point(7, 7), Point(8, 7), Point(9, 7),
+    Point(10, 7), Point(11, 7), Point(12, 7), Point(13, 7), Point(14, 7),
+    Point(15, 7), Point(16, 7), Point(17, 7),
+  ],
+  spawnPoint: const Point(10, 15),
+  terminals: const [Point(8, 12), Point(14, 12)],
+  floorLayer: buildLRoomFloorLayer(),
+  tilesetIds: const ['single_room'],
 );
 
 /// Four Corners - open map, barriers come from painted tiles.
@@ -70,7 +88,7 @@ final allMaps = [
 ];
 
 /// Default map to use when none is specified.
-const defaultMap = lRoom;
+final defaultMap = lRoom;
 
 // ---------------------------------------------------------------------------
 // ASCII art map data — barriers removed, only spawn (S) and terminals (T).

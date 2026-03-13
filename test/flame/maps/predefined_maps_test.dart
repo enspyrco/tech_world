@@ -33,8 +33,10 @@ void main() {
         expect(lRoom.name, equals('The L-Room'));
       });
 
-      test('has no predefined barriers', () {
-        expect(lRoom.barriers, isEmpty);
+      test('has L-shaped wall barriers', () {
+        expect(lRoom.barriers, isNotEmpty);
+        // Vertical wall at x=4 (22 cells) + horizontal wall at y=7 (13 cells)
+        expect(lRoom.barriers.length, equals(35));
       });
 
       test('has spawn point at (10, 15)', () {
@@ -43,6 +45,23 @@ void main() {
 
       test('has 2 terminals', () {
         expect(lRoom.terminals.length, equals(2));
+      });
+
+      test('uses tilesets for rendering', () {
+        expect(lRoom.usesTilesets, isTrue);
+        expect(lRoom.tilesetIds, contains('single_room'));
+      });
+
+      test('has non-empty floor layer', () {
+        expect(lRoom.floorLayer, isNotNull);
+        expect(lRoom.floorLayer!.isEmpty, isFalse);
+      });
+
+      test('floor layer references single_room tileset', () {
+        expect(
+          lRoom.floorLayer!.referencedTilesetIds,
+          equals({'single_room'}),
+        );
       });
     });
 
@@ -150,10 +169,15 @@ void main() {
         expect(names.length, equals(allMaps.length));
       });
 
-      test('all maps have no predefined barriers', () {
+      test('only lRoom has predefined barriers (offline fallback)', () {
         for (final map in allMaps) {
-          expect(map.barriers, isEmpty,
-              reason: '${map.name} should have no predefined barriers');
+          if (map.id == 'l_room') {
+            expect(map.barriers, isNotEmpty,
+                reason: 'lRoom should have L-wall barriers for offline play');
+          } else {
+            expect(map.barriers, isEmpty,
+                reason: '${map.name} should have no predefined barriers');
+          }
         }
       });
     });
@@ -163,8 +187,8 @@ void main() {
         expect(defaultMap, equals(lRoom));
       });
 
-      test('has no predefined barriers', () {
-        expect(defaultMap.barriers, isEmpty);
+      test('has L-wall barriers for offline play', () {
+        expect(defaultMap.barriers, isNotEmpty);
       });
 
       test('is in allMaps', () {
