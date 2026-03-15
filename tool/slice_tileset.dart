@@ -12,6 +12,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:image/image.dart' as img;
 
 /// Grid and tile constants matching the game.
@@ -21,17 +22,6 @@ const cropPixels = gridSize * tileSize; // 1600
 
 /// Maximum sprite sheet width in tiles (keep sheets reasonably wide).
 const sheetColumns = 32;
-
-/// Old L-Room barrier positions (from before PR #200).
-const oldBarriers = <(int, int)>{
-  // Vertical wall at x=4
-  (4, 7), (4, 8), (4, 9), (4, 10), (4, 11), (4, 12), (4, 13), (4, 14),
-  (4, 15), (4, 16), (4, 18), (4, 19), (4, 20), (4, 21), (4, 22), (4, 23),
-  (4, 24), (4, 25), (4, 26), (4, 27), (4, 28), (4, 29),
-  // Horizontal wall at y=7
-  (5, 7), (6, 7), (7, 7), (8, 7), (9, 7), (10, 7), (11, 7), (12, 7),
-  (13, 7), (14, 7), (15, 7), (16, 7), (17, 7),
-};
 
 void main() {
   final projectRoot = Directory.current.path;
@@ -119,19 +109,9 @@ void main() {
   print('Sprite sheet: ${sheet.width}x${sheet.height} '
       '($sheetCols x $sheetRows tiles) -> $outputSheetPath');
 
-  // Identify barrier tile indices from old barrier positions.
-  final barrierTileIndices = <int>{};
-  for (final (bx, by) in oldBarriers) {
-    if (bx < gridSize && by < gridSize) {
-      barrierTileIndices.add(gridMapping[by][bx]);
-    }
-  }
-  print('Barrier tile indices: ${barrierTileIndices.length}');
-
   // Generate Dart source file.
   final dartCode = _generateDart(
     gridMapping: gridMapping,
-    barrierTileIndices: barrierTileIndices,
     sheetCols: sheetCols,
     sheetRows: sheetRows,
     uniqueCount: uniqueTiles.length,
@@ -142,20 +122,10 @@ void main() {
   print('Dart source -> $outputDartPath');
 }
 
-/// Generates a fingerprint string for a tile image (hex of RGBA bytes).
+/// SHA-256 fingerprint of a tile's RGBA pixel data for deduplication.
 String _tileFingerprint(img.Image tile) {
-  final buf = StringBuffer();
-  for (var y = 0; y < tile.height; y++) {
-    for (var x = 0; x < tile.width; x++) {
-      final p = tile.getPixel(x, y);
-      buf
-        ..write(p.r.toInt().toRadixString(16).padLeft(2, '0'))
-        ..write(p.g.toInt().toRadixString(16).padLeft(2, '0'))
-        ..write(p.b.toInt().toRadixString(16).padLeft(2, '0'))
-        ..write(p.a.toInt().toRadixString(16).padLeft(2, '0'));
-    }
-  }
-  return buf.toString();
+  final rgba = _tileToRgba(tile);
+  return sha256.convert(rgba).toString();
 }
 
 /// Extracts raw RGBA bytes from a tile image.
@@ -177,7 +147,6 @@ Uint8List _tileToRgba(img.Image tile) {
 /// Generates the Dart source code for l_room_tile_data.dart.
 String _generateDart({
   required List<List<int>> gridMapping,
-  required Set<int> barrierTileIndices,
   required int sheetCols,
   required int sheetRows,
   required int uniqueCount,
@@ -201,15 +170,6 @@ String _generateDart({
   buf.writeln('const lRoomUniqueTileCount = $uniqueCount;');
   buf.writeln();
 
-  // Barrier tile indices.
-  final sortedBarriers = barrierTileIndices.toList()..sort();
-  buf.writeln('/// Tile indices that are barriers (walls) in the single_room '
-      'tileset.');
-  buf.writeln('const lRoomBarrierTileIndices = <int>{');
-  buf.writeln('  ${sortedBarriers.join(', ')},');
-  buf.writeln('};');
-  buf.writeln();
-
   // Grid mapping as a compact list of tile indices per row.
   buf.writeln('/// Tile index for each grid cell, row-major (50x50).');
   buf.writeln('///');
@@ -223,9 +183,18 @@ String _generateDart({
   buf.writeln('];');
   buf.writeln();
 
-  // Builder function for the floor layer.
-  buf.writeln('/// Builds the floor [TileLayerData] for the L-Room.');
+  // Cached builder function for the floor layer.
+  buf.writeln('/// Cached floor layer — built once on first access.');
+  buf.writeln('TileLayerData? _cachedFloorLayer;');
+  buf.writeln();
+  buf.writeln('/// Builds (or returns cached) floor [TileLayerData] for the '
+      'L-Room.');
+  buf.writeln('///');
+  buf.writeln('/// Creates 2,500 [TileRef] objects on first call; subsequent '
+      'calls return the');
+  buf.writeln('/// same instance.');
   buf.writeln('TileLayerData buildLRoomFloorLayer() {');
+  buf.writeln('  if (_cachedFloorLayer != null) return _cachedFloorLayer!;');
   buf.writeln('  final layer = TileLayerData();');
   buf.writeln('  for (var y = 0; y < _tileIndices.length; y++) {');
   buf.writeln('    final row = _tileIndices[y];');
@@ -235,6 +204,7 @@ String _generateDart({
       'tileIndex: row[x]));');
   buf.writeln('    }');
   buf.writeln('  }');
+  buf.writeln('  _cachedFloorLayer = layer;');
   buf.writeln('  return layer;');
   buf.writeln('}');
 

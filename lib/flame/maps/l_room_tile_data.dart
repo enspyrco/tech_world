@@ -67,8 +67,15 @@ const _tileIndices = <List<int>>[
   [4, 5, 16, 170, 21, 21, 21, 21, 21, 21, 21, 21, 21, 21, 150, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 117, 149, 21, 21, 21],
 ];
 
-/// Builds the floor [TileLayerData] for the L-Room.
+/// Cached floor layer — built once on first access.
+TileLayerData? _cachedFloorLayer;
+
+/// Builds (or returns cached) floor [TileLayerData] for the L-Room.
+///
+/// Creates 2,500 [TileRef] objects on first call; subsequent calls return the
+/// same instance.
 TileLayerData buildLRoomFloorLayer() {
+  if (_cachedFloorLayer != null) return _cachedFloorLayer!;
   final layer = TileLayerData();
   for (var y = 0; y < _tileIndices.length; y++) {
     final row = _tileIndices[y];
@@ -76,5 +83,6 @@ TileLayerData buildLRoomFloorLayer() {
       layer.setTile(x, y, TileRef(tilesetId: 'single_room', tileIndex: row[x]));
     }
   }
+  _cachedFloorLayer = layer;
   return layer;
 }
