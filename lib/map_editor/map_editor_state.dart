@@ -12,7 +12,7 @@ import 'package:tech_world/flame/tiles/terrain_bitmask.dart';
 import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/terrain_def.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart'
-    show isTileRefBarrier;
+    show isTileRefBarrier, isTileRefNonBarrier;
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
@@ -253,21 +253,6 @@ class MapEditorState extends ChangeNotifier {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Background image
-  // -------------------------------------------------------------------------
-
-  /// Optional background image filename (relative to `assets/images/`).
-  String? _backgroundImage;
-  String? get backgroundImage => _backgroundImage;
-
-  /// Set the background image filename, or `null` for no background.
-  void setBackgroundImage(String? filename) {
-    _backgroundImage = filename;
-    _markDirty();
-    notifyListeners();
-  }
-
   /// Switch the active editing layer.
   ///
   /// Clears the current brush if its tileset is not available on the new layer
@@ -479,7 +464,6 @@ class MapEditorState extends ChangeNotifier {
   /// Reset all layers including tile data.
   void clearAll() {
     clearGrid(); // Already calls _markDirty().
-    _backgroundImage = null;
     _roomId = null;
     _activeTerrainBrush = null;
     _automappedCells.clear();
@@ -501,7 +485,6 @@ class MapEditorState extends ChangeNotifier {
     _automappedCells.clear();
     _mapName = map.name;
     _mapId = map.id;
-    _backgroundImage = map.backgroundImage;
 
     for (final barrier in map.barriers) {
       if (_inBounds(barrier.x, barrier.y)) {
@@ -674,7 +657,6 @@ class MapEditorState extends ChangeNotifier {
       barriers: barriers,
       spawnPoint: spawnPoint ?? const Point(25, 25),
       terminals: terminals,
-      backgroundImage: _backgroundImage,
       floorLayer: floorLayerData.isEmpty ? null : floorLayerData.copy(),
       objectLayer: objectLayerData.isEmpty ? null : objectLayerData.copy(),
       tilesetIds: tilesetIds,
@@ -689,11 +671,12 @@ class MapEditorState extends ChangeNotifier {
 
   /// Create an auto-barrier for a painted tile.
   ///
-  /// On the object layer, ANY tile creates a barrier (objects are always
-  /// impassable). On the floor layer, only tiles tagged as barriers in
-  /// their tileset create barriers.
+  /// On the object layer, tiles create barriers unless explicitly marked as
+  /// non-blocking (e.g. decorative tops of tall objects). On the floor layer,
+  /// only tiles tagged as barriers in their tileset create barriers.
   void _maybeCreateAutoBarrier(int x, int y, TileRef ref,
       {required bool isObjectLayer}) {
+    if (isObjectLayer && isTileRefNonBarrier(ref)) return;
     if (!isObjectLayer && !isTileRefBarrier(ref)) return;
     if (_grid[y][x] != TileType.open) return;
     _grid[y][x] = TileType.barrier;
@@ -703,13 +686,14 @@ class MapEditorState extends ChangeNotifier {
   /// If the cell at ([x], [y]) was auto-barriered and no visual layer
   /// still justifies the barrier, revert it to open.
   ///
-  /// Justification: any object-layer tile keeps the barrier; for the
-  /// floor layer, only barrier-tagged tiles keep the barrier.
+  /// Justification: object-layer tiles keep the barrier unless explicitly
+  /// non-blocking; for the floor layer, only barrier-tagged tiles keep it.
   void _maybeRemoveAutoBarrier(int x, int y) {
     if (!_autoBarrierCells.contains((x, y))) return;
 
-    // Object layer: any tile justifies the barrier.
-    if (objectLayerData.tileAt(x, y) != null) return;
+    // Object layer: any tile justifies the barrier, unless non-blocking.
+    final objectTile = objectLayerData.tileAt(x, y);
+    if (objectTile != null && !isTileRefNonBarrier(objectTile)) return;
 
     // Floor layer: only barrier-tagged tiles justify the barrier.
     final floorTile = floorLayerData.tileAt(x, y);

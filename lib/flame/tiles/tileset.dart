@@ -14,6 +14,7 @@ class Tileset {
     required this.columns,
     required this.rows,
     this.barrierTileIndices = const {},
+    this.nonBarrierTileIndices = const {},
     this.availableLayers = const {ActiveLayer.floor, ActiveLayer.objects},
     this.layerRowRanges = const {},
     this.isCustom = false,
@@ -44,6 +45,14 @@ class Tileset {
   /// Defaults to empty (no tiles tagged).
   final Set<int> barrierTileIndices;
 
+  /// Tile indices that are explicitly non-blocking on the object layer.
+  ///
+  /// Object-layer tiles normally always create auto-barriers. Tiles in this
+  /// set are excluded — useful for decorative tops of multi-cell-tall objects,
+  /// ceiling fixtures, floor overlays, etc. Not serialized (predefined
+  /// metadata only, same as [barrierTileIndices]).
+  final Set<int> nonBarrierTileIndices;
+
   /// Which editor layers this tileset should appear in.
   ///
   /// Defaults to both [ActiveLayer.floor] and [ActiveLayer.objects].
@@ -66,6 +75,10 @@ class Tileset {
 
   /// Whether [tileIndex] represents a solid, impassable tile.
   bool isTileBarrier(int tileIndex) => barrierTileIndices.contains(tileIndex);
+
+  /// Whether [tileIndex] is explicitly non-blocking on the object layer.
+  bool isNonBarrierTile(int tileIndex) =>
+      nonBarrierTileIndices.contains(tileIndex);
 
   /// Total number of tiles in the sheet.
   int get tileCount => columns * rows;

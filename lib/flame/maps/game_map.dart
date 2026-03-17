@@ -11,8 +11,7 @@ import 'package:tech_world/map_editor/terrain_grid.dart';
 /// Barriers are specified in mini-grid coordinates (0 to gridSize-1).
 ///
 /// Maps can optionally include tileset-based rendering via [floorLayer] and
-/// [objectLayer]. Tile layers can coexist with a [backgroundImage] (e.g.
-/// a legacy map with automap-generated decoration tiles on top).
+/// [objectLayer].
 class GameMap {
   const GameMap({
     required this.id,
@@ -20,7 +19,6 @@ class GameMap {
     required this.barriers,
     this.spawnPoint = const Point(25, 25),
     this.terminals = const [],
-    this.backgroundImage,
     this.floorLayer,
     this.objectLayer,
     this.tilesetIds = const [],
@@ -43,10 +41,6 @@ class GameMap {
 
   /// Positions of coding terminal stations in mini-grid coordinates.
   final List<Point<int>> terminals;
-
-  /// Optional background image filename (in assets/images/).
-  /// When set, the image is rendered behind barriers with wall occlusion.
-  final String? backgroundImage;
 
   /// Optional floor tile layer — rendered below everything as a cached Picture.
   final TileLayerData? floorLayer;
@@ -87,7 +81,6 @@ class GameMap {
           id == other.id &&
           name == other.name &&
           spawnPoint == other.spawnPoint &&
-          backgroundImage == other.backgroundImage &&
           _listEquality.equals(barriers, other.barriers) &&
           _listEquality.equals(terminals, other.terminals) &&
           _stringListEquality.equals(tilesetIds, other.tilesetIds) &&
@@ -101,7 +94,6 @@ class GameMap {
         id,
         name,
         spawnPoint,
-        backgroundImage,
         _listEquality.hash(barriers),
         _listEquality.hash(terminals),
         _stringListEquality.hash(tilesetIds),

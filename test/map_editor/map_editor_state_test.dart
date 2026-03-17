@@ -173,7 +173,7 @@ void main() {
       expect(state.mapName, 'The L-Room');
       expect(state.mapId, 'l_room');
 
-      // Check a known barrier
+      // lRoom has L-wall barriers for offline fallback.
       expect(state.tileAt(4, 7), TileType.barrier);
       // Check spawn
       expect(state.tileAt(10, 15), TileType.spawn);
@@ -256,51 +256,6 @@ void main() {
       state.addListener(() => notified = true);
       state.setTool(EditorTool.terminal);
       expect(notified, isTrue);
-    });
-  });
-
-  group('Background image', () {
-    test('starts null', () {
-      expect(state.backgroundImage, isNull);
-    });
-
-    test('setBackgroundImage updates value and notifies', () {
-      var notified = false;
-      state.addListener(() => notified = true);
-
-      state.setBackgroundImage('single_room.png');
-
-      expect(state.backgroundImage, 'single_room.png');
-      expect(notified, isTrue);
-    });
-
-    test('loadFromGameMap restores backgroundImage from l_room', () {
-      state.loadFromGameMap(lRoom);
-      expect(state.backgroundImage, 'single_room.png');
-    });
-
-    test('loadFromGameMap sets null for maps without background', () {
-      // First set a background so we can verify it gets cleared.
-      state.setBackgroundImage('single_room.png');
-      state.loadFromGameMap(openArena);
-      expect(state.backgroundImage, isNull);
-    });
-
-    test('toGameMap includes backgroundImage', () {
-      state.setBackgroundImage('single_room.png');
-      final map = state.toGameMap();
-      expect(map.backgroundImage, 'single_room.png');
-    });
-
-    test('toGameMap has null backgroundImage when not set', () {
-      final map = state.toGameMap();
-      expect(map.backgroundImage, isNull);
-    });
-
-    test('clearAll resets backgroundImage to null', () {
-      state.setBackgroundImage('single_room.png');
-      state.clearAll();
-      expect(state.backgroundImage, isNull);
     });
   });
 

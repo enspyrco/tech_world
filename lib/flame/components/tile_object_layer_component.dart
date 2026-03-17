@@ -10,10 +10,9 @@ import 'package:tech_world/flame/tiles/tileset_registry.dart';
 ///
 /// Sprites are **not** added as children of this component. Instead, [onLoad]
 /// adds them directly to the parent [World] so that they participate in the
-/// World's y-priority sorting alongside player characters and
-/// [WallOcclusionComponent] overlays. If they were children of *this*
-/// component they would be depth-sorted only among themselves, breaking
-/// occlusion with other world-level components.
+/// World's y-priority sorting alongside player characters. If they were
+/// children of *this* component they would be depth-sorted only among
+/// themselves, breaking occlusion with other world-level components.
 ///
 /// **Ownership caveat:** This component tracks every sprite in [_sprites] but
 /// the sprites' `parent` is the World. [hide], [show], and [onRemove]

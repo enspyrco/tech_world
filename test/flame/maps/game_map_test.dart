@@ -54,22 +54,21 @@ void main() {
       expect(openArena.barriers, isEmpty);
     });
 
-    test('lRoom has L-shaped barriers', () {
+    test('lRoom has L-wall barriers for offline fallback', () {
       expect(lRoom.id, equals('l_room'));
       expect(lRoom.name, equals('The L-Room'));
       expect(lRoom.barriers, isNotEmpty);
-      // Verify it contains expected barrier positions (vertical wall at x=4)
-      expect(lRoom.barriers.contains(const Point(4, 10)), isTrue);
+      expect(lRoom.barriers.length, equals(35));
     });
 
-    test('fourCorners has barriers in corners', () {
+    test('fourCorners has no predefined barriers', () {
       expect(fourCorners.id, equals('four_corners'));
-      expect(fourCorners.barriers, isNotEmpty);
+      expect(fourCorners.barriers, isEmpty);
     });
 
-    test('simpleMaze has maze pattern', () {
+    test('simpleMaze has no predefined barriers', () {
       expect(simpleMaze.id, equals('simple_maze'));
-      expect(simpleMaze.barriers, isNotEmpty);
+      expect(simpleMaze.barriers, isEmpty);
     });
 
     test('defaultMap is lRoom', () {
