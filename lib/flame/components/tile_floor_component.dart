@@ -1,11 +1,14 @@
 import 'dart:ui';
 
 import 'package:flame/components.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/animation_ticker.dart';
 import 'package:tech_world/flame/tiles/tile_animation.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tileset_registry.dart';
+
+final _log = Logger('TileFloorComponent');
 
 /// Renders the floor tile layer using a cached [Picture] for static tiles and
 /// per-frame sprite rendering for animated tiles.
@@ -15,8 +18,7 @@ import 'package:tech_world/flame/tiles/tileset_registry.dart';
 /// rendered via shared [AnimationTicker]s so all instances of the same
 /// animation play in sync (standard for pixel-art water, lava, etc.).
 ///
-/// Priority is -1, placing it above the background image layer (-2) but below
-/// all game objects (priority >= 0).
+/// Priority is -1, placing it below all game objects (priority >= 0).
 class TileFloorComponent extends Component {
   TileFloorComponent({
     required this.layerData,
@@ -94,16 +96,29 @@ class TileFloorComponent extends Component {
     final recorder = PictureRecorder();
     final canvas = Canvas(recorder);
 
+    var totalRefs = 0;
+    var resolvedSprites = 0;
+    var nullSprites = 0;
+    final missingTilesets = <String>{};
+
     for (var y = 0; y < gridSize; y++) {
       for (var x = 0; x < gridSize; x++) {
         final ref = layerData.tileAt(x, y);
         if (ref == null) continue;
+        totalRefs++;
 
         // Skip animated tiles — they're rendered per-frame in render().
         if (_animatedPositions.contains((x, y))) continue;
 
         final sprite = registry.getSpriteForTile(ref.tilesetId, ref.tileIndex);
-        if (sprite == null) continue;
+        if (sprite == null) {
+          nullSprites++;
+          if (!registry.isLoaded(ref.tilesetId)) {
+            missingTilesets.add(ref.tilesetId);
+          }
+          continue;
+        }
+        resolvedSprites++;
 
         sprite.render(
           canvas,
@@ -115,6 +130,12 @@ class TileFloorComponent extends Component {
         );
       }
     }
+
+    _log.info(
+      'rebuildCache: $totalRefs refs, $resolvedSprites resolved, '
+      '$nullSprites null, ${_animatedTiles.length} animated'
+      '${missingTilesets.isNotEmpty ? ', MISSING tilesets: $missingTilesets' : ''}',
+    );
 
     _cachedPicture = recorder.endRecording();
   }

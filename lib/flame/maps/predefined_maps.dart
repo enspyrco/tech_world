@@ -1,8 +1,12 @@
 import 'dart:math';
 
+import 'package:logging/logging.dart';
+
 import 'game_map.dart';
 import 'l_room_tile_data.dart';
 import 'map_parser.dart';
+
+final _log = Logger('PredefinedMaps');
 
 /// Open Arena - no barriers, free movement everywhere.
 const openArena = GameMap(
@@ -14,9 +18,8 @@ const openArena = GameMap(
 
 /// The L-Room - original map with tile-based offline fallback.
 ///
-/// Visual content comes from the `single_room` tileset (sliced from the
-/// original `single_room.png` background image). Barriers restore the
-/// original L-shaped wall layout for offline play.
+/// Visual content comes from the `single_room` tileset. Barriers define the
+/// L-shaped wall layout for offline play.
 final lRoom = GameMap(
   id: 'l_room',
   name: 'The L-Room',
@@ -89,6 +92,99 @@ final allMaps = [
 
 /// Default map to use when none is specified.
 final defaultMap = lRoom;
+
+/// O(1) lookup of predefined maps by ID.
+final Map<String, GameMap> _predefinedMapLookup = {
+  for (final m in allMaps) m.id: m,
+};
+
+/// Fill in missing visual layers from a predefined map, if one exists.
+///
+/// When a [GameMap] is loaded from Firestore, it may predate the addition
+/// of tileset-based rendering. This finds the matching predefined map and
+/// merges in its visual layers (floor, object, tilesetIds) without overriding
+/// any structural data (barriers, spawn, terminals) or any visual data the
+/// Firestore version already has.
+///
+/// Matching works two ways:
+/// 1. By map ID (for predefined maps used directly).
+/// 2. By structural fingerprint — Firestore rooms get the document ID as
+///    their map ID, so the original predefined ID is lost. We match by
+///    comparing the barrier set, which is a unique structural signature.
+///
+/// Returns [map] unchanged if there is no predefined match or nothing to fill.
+GameMap applyPredefinedVisualFallback(GameMap map) {
+  // Already has visual layers — nothing to fill.
+  if (map.floorLayer != null || map.objectLayer != null) {
+    _log.fine('Visual fallback skipped: "${map.name}" already has visual layers');
+    return map;
+  }
+
+  _log.info('Visual fallback: "${map.name}" (id=${map.id}) has no visual '
+      'layers, searching for predefined match...');
+
+  final predefined = _findPredefinedMatch(map);
+  if (predefined == null) return map;
+
+  final needsFloor = predefined.floorLayer != null;
+  final needsObjects = predefined.objectLayer != null;
+  final needsTilesetIds =
+      map.tilesetIds.isEmpty && predefined.tilesetIds.isNotEmpty;
+
+  if (!needsFloor && !needsObjects && !needsTilesetIds) return map;
+
+  return GameMap(
+    id: map.id,
+    name: map.name,
+    barriers: map.barriers,
+    spawnPoint: map.spawnPoint,
+    terminals: map.terminals,
+    floorLayer: predefined.floorLayer,
+    objectLayer: predefined.objectLayer,
+    tilesetIds: map.tilesetIds.isEmpty ? predefined.tilesetIds : map.tilesetIds,
+    terrainGrid: map.terrainGrid ?? predefined.terrainGrid,
+    customTilesets: map.customTilesets,
+  );
+}
+
+/// Find a predefined map matching [map], by ID, name, or barrier structure.
+GameMap? _findPredefinedMatch(GameMap map) {
+  // Fast path: direct ID match (for predefined maps used without Firestore).
+  final byId = _predefinedMapLookup[map.id];
+  if (byId != null) {
+    _log.info('Visual fallback: matched by ID "${map.id}"');
+    return byId;
+  }
+
+  // Only consider predefined maps with visual layers worth merging.
+  final candidates =
+      allMaps.where((m) => m.floorLayer != null || m.objectLayer != null);
+
+  // Match by name — Firestore rooms preserve the map name at the room level.
+  for (final predefined in candidates) {
+    if (predefined.name == map.name) {
+      _log.info('Visual fallback: matched by name "${map.name}"');
+      return predefined;
+    }
+  }
+
+  // Match by barrier fingerprint — structural comparison.
+  if (map.barriers.isNotEmpty) {
+    final mapBarrierSet = Set<Point<int>>.from(map.barriers);
+    for (final predefined in candidates) {
+      if (predefined.barriers.length != mapBarrierSet.length) continue;
+      if (Set<Point<int>>.from(predefined.barriers)
+          .containsAll(mapBarrierSet)) {
+        _log.info(
+            'Visual fallback: matched by barriers → "${predefined.name}"');
+        return predefined;
+      }
+    }
+  }
+
+  _log.fine('Visual fallback: no match for "${map.id}" / "${map.name}"');
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // ASCII art map data — barriers removed, only spawn (S) and terminals (T).

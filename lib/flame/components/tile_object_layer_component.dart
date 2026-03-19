@@ -12,7 +12,8 @@ import 'package:tech_world/flame/tiles/tileset_registry.dart';
 /// adds them directly to the parent [World] so that they participate in the
 /// World's y-priority sorting alongside player characters. If they were
 /// children of *this* component they would be depth-sorted only among
-/// themselves, breaking occlusion with other world-level components.
+/// themselves, breaking y-based depth sorting with other world-level
+/// components (players, other sprites).
 ///
 /// **Ownership caveat:** This component tracks every sprite in [_sprites] but
 /// the sprites' `parent` is the World. [hide], [show], and [onRemove]

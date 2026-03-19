@@ -13,6 +13,7 @@ import 'package:tech_world/flame/tiles/predefined_terrains.dart';
 import 'package:tech_world/flame/tiles/terrain_def.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart'
     show isTileRefBarrier, isTileRefNonBarrier;
+import 'package:tech_world/flame/tiles/tileset_registry.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
@@ -55,6 +56,19 @@ class MapEditorState extends ChangeNotifier {
         );
 
   final List<List<TileType>> _grid;
+
+  /// Optional tileset registry for computed barrier analysis.
+  ///
+  /// When set, the auto-barrier logic uses pixel-based analysis from the
+  /// registry as a fallback for tilesets without hand-curated barrier data
+  /// (e.g. custom imported tilesets).
+  TilesetRegistry? _tilesetRegistry;
+
+  /// Set the tileset registry for computed barrier analysis.
+  // ignore: use_setters_to_change_properties
+  void setTilesetRegistry(TilesetRegistry? registry) {
+    _tilesetRegistry = registry;
+  }
 
   /// Whether the editor has unsaved changes since the last load/save.
   bool _isDirty = false;
@@ -674,10 +688,19 @@ class MapEditorState extends ChangeNotifier {
   /// On the object layer, tiles create barriers unless explicitly marked as
   /// non-blocking (e.g. decorative tops of tall objects). On the floor layer,
   /// only tiles tagged as barriers in their tileset create barriers.
+  ///
+  /// When a [TilesetRegistry] is set, computed pixel analysis is used as a
+  /// fallback for tilesets without hand-curated barrier metadata.
   void _maybeCreateAutoBarrier(int x, int y, TileRef ref,
       {required bool isObjectLayer}) {
-    if (isObjectLayer && isTileRefNonBarrier(ref)) return;
-    if (!isObjectLayer && !isTileRefBarrier(ref)) return;
+    if (isObjectLayer &&
+        isTileRefNonBarrier(ref, registry: _tilesetRegistry)) {
+      return;
+    }
+    if (!isObjectLayer &&
+        !isTileRefBarrier(ref, registry: _tilesetRegistry)) {
+      return;
+    }
     if (_grid[y][x] != TileType.open) return;
     _grid[y][x] = TileType.barrier;
     _autoBarrierCells.add((x, y));
@@ -693,11 +716,17 @@ class MapEditorState extends ChangeNotifier {
 
     // Object layer: any tile justifies the barrier, unless non-blocking.
     final objectTile = objectLayerData.tileAt(x, y);
-    if (objectTile != null && !isTileRefNonBarrier(objectTile)) return;
+    if (objectTile != null &&
+        !isTileRefNonBarrier(objectTile, registry: _tilesetRegistry)) {
+      return;
+    }
 
     // Floor layer: only barrier-tagged tiles justify the barrier.
     final floorTile = floorLayerData.tileAt(x, y);
-    if (floorTile != null && isTileRefBarrier(floorTile)) return;
+    if (floorTile != null &&
+        isTileRefBarrier(floorTile, registry: _tilesetRegistry)) {
+      return;
+    }
 
     _grid[y][x] = TileType.open;
     _autoBarrierCells.remove((x, y));
