@@ -6,6 +6,7 @@ import 'package:flame/sprite.dart';
 import 'package:tech_world/flame/tiles/tile_animation.dart';
 import 'package:tech_world/flame/tiles/tile_animations.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
+import 'package:tech_world/flame/tiles/tileset_analyzer.dart';
 
 /// Loads and caches tileset sprite sheets for tile rendering.
 ///
@@ -22,6 +23,9 @@ class TilesetRegistry {
   final Images images;
 
   final Map<String, LoadedTileset> _loaded = {};
+
+  /// Computed barrier analysis results, keyed by tileset ID.
+  final Map<String, TilesetAnalysisResult> _analyzedBarriers = {};
 
   /// Load a [Tileset] definition, creating a [SpriteSheet] from its image.
   ///
@@ -116,5 +120,51 @@ class TilesetRegistry {
   /// triggers the animation.
   TileAnimation? getAnimationForTile(String tilesetId, int tileIndex) {
     return lookupAnimationForTile(tilesetId, tileIndex);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Computed barrier analysis
+  // ---------------------------------------------------------------------------
+
+  /// Analyze a loaded tileset's image to classify tiles as barriers or
+  /// non-barriers based on vertical runs of non-transparent pixels.
+  ///
+  /// Stores the result for later queries via [isAnalyzedBarrier] and
+  /// [isAnalyzedNonBarrier]. Does nothing if the tileset is not loaded.
+  Future<void> analyzeBarriers(String tilesetId) async {
+    final loaded = _loaded[tilesetId];
+    if (loaded == null) return;
+
+    final tileset = loaded.tileset;
+    final image = loaded.spriteSheet.image;
+
+    final result = await analyzeTilesetImage(
+      image,
+      tileSize: tileset.tileSize,
+      columns: tileset.columns,
+      rows: tileset.rows,
+    );
+
+    _analyzedBarriers[tilesetId] = result;
+  }
+
+  /// Store a pre-computed analysis result directly (useful for testing).
+  void setAnalysisResult(String tilesetId, TilesetAnalysisResult result) {
+    _analyzedBarriers[tilesetId] = result;
+  }
+
+  /// Whether [tileIndex] was computed as a barrier (base tile) for [tilesetId].
+  bool isAnalyzedBarrier(String tilesetId, int tileIndex) {
+    return _analyzedBarriers[tilesetId]?.barrierIndices.contains(tileIndex) ??
+        false;
+  }
+
+  /// Whether [tileIndex] was computed as a non-barrier (upper tile) for
+  /// [tilesetId].
+  bool isAnalyzedNonBarrier(String tilesetId, int tileIndex) {
+    return _analyzedBarriers[tilesetId]
+            ?.nonBarrierIndices
+            .contains(tileIndex) ??
+        false;
   }
 }

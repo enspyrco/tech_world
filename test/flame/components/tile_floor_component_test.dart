@@ -23,7 +23,7 @@ void main() {
       expect(component.registry, same(registry));
     });
 
-    test('has priority -1 (above background image at -2)', () {
+    test('has priority -1 (below game objects at >= 0)', () {
       final component = TileFloorComponent(
         layerData: TileLayerData(),
         registry: registry,

@@ -499,6 +499,9 @@ class _MyAppState extends State<MyApp> {
 
   /// Decode custom tileset images and register them with the game's
   /// [TilesetRegistry] so they render immediately in the editor preview.
+  ///
+  /// Also runs pixel-based barrier analysis on each custom tileset so the
+  /// auto-barrier system can classify tiles without hand-curated metadata.
   Future<void> _registerCustomTilesets(
     TmxImportResultWithCustomTilesets result,
   ) async {
@@ -516,7 +519,11 @@ class _MyAppState extends State<MyApp> {
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       registry.loadFromImage(tileset, frame.image);
+      await registry.analyzeBarriers(tileset.id);
     }
+
+    // Ensure the editor state can use computed barrier analysis.
+    _mapEditorState.setTilesetRegistry(registry);
   }
 
   /// Show a confirmation dialog when discarding unsaved editor changes.

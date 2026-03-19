@@ -749,8 +749,18 @@ class TechWorld extends World with TapCallbacks {
     await add(_pathComponent!);
     await add(_userPlayerComponent);
 
-    // Load initial map components.
-    await _loadMapComponents(currentMap.value);
+    // Load map components. If loadMap() was called before mount (e.g. from
+    // the room lobby), currentMap already holds the desired map.
+    final map = currentMap.value;
+    await _loadMapComponents(map);
+
+    // Position player at the map's spawn point (covers both the default map
+    // and maps set by a pre-mount loadMap call).
+    _userPlayerComponent.position = Vector2(
+      map.spawnPoint.x * gridSquareSizeDouble,
+      map.spawnPoint.y * gridSquareSizeDouble,
+    );
+    playerGridPosition.value = map.spawnPoint;
 
     final game = findGame() as TechWorldGame?;
     game?.camera.follow(_userPlayerComponent);
@@ -776,6 +786,14 @@ class TechWorld extends World with TapCallbacks {
 
   /// Load map-specific components: barriers, terminals, and tile layers.
   Future<void> _loadMapComponents(GameMap map) async {
+    _log.info(
+      'loadMapComponents: "${map.name}" (id=${map.id}), '
+      'usesTilesets=${map.usesTilesets}, '
+      'floorLayer=${map.floorLayer != null ? "present (empty=${map.floorLayer!.isEmpty})" : "null"}, '
+      'objectLayer=${map.objectLayer != null ? "present" : "null"}, '
+      'tilesetIds=${map.tilesetIds}',
+    );
+
     // Barriers
     _barriersComponent = BarriersComponent(barriers: map.barriers);
     await add(_barriersComponent);
@@ -800,8 +818,10 @@ class TechWorld extends World with TapCallbacks {
 
     // Tile layers.
     final game = findGame() as TechWorldGame?;
+    _log.info('loadMapComponents: game=${game != null}, usesTilesets=${map.usesTilesets}');
     if (game != null && map.usesTilesets) {
       final registry = game.tilesetRegistry;
+      _log.info('loadMapComponents: registry loaded tilesets: ${registry.loadedIds.toList()}');
 
       // Download and register custom tilesets not already loaded.
       // Downloads run in parallel for faster map loading.
@@ -817,6 +837,7 @@ class TechWorld extends World with TapCallbacks {
               final codec = await ui.instantiateImageCodec(bytes);
               final frame = await codec.getNextFrame();
               registry.loadFromImage(tileset, frame.image);
+              await registry.analyzeBarriers(tileset.id);
             }
           } catch (e) {
             _log.warning(
@@ -827,11 +848,15 @@ class TechWorld extends World with TapCallbacks {
       }
 
       if (map.floorLayer != null) {
+        _log.info('loadMapComponents: creating TileFloorComponent');
         _tileFloor = TileFloorComponent(
           layerData: map.floorLayer!,
           registry: registry,
         );
         await add(_tileFloor!);
+        _log.info('loadMapComponents: TileFloorComponent added');
+      } else {
+        _log.warning('loadMapComponents: NO floorLayer — floor will be black');
       }
 
       if (map.objectLayer != null) {
@@ -841,6 +866,8 @@ class TechWorld extends World with TapCallbacks {
         );
         await add(_tileObjectLayer!);
       }
+    } else {
+      _log.info('loadMapComponents: skipped tile layers (game=${game != null}, usesTilesets=${map.usesTilesets})');
     }
   }
 
@@ -881,7 +908,26 @@ class TechWorld extends World with TapCallbacks {
   /// the second call returns immediately to prevent double removal of
   /// components.
   Future<void> loadMap(GameMap map) async {
-    if (map.id == currentMap.value.id) return; // Already on this map.
+    // Fill in missing visual layers from predefined maps (e.g. Firestore
+    // rooms created before tileset rendering was added).
+    _log.info('loadMap: input "${map.name}" (id=${map.id}), '
+        'floorLayer=${map.floorLayer != null}, tilesetIds=${map.tilesetIds}');
+    final resolvedMap = applyPredefinedVisualFallback(map);
+    _log.info('loadMap: resolved "${resolvedMap.name}" (id=${resolvedMap.id}), '
+        'floorLayer=${resolvedMap.floorLayer != null}, tilesetIds=${resolvedMap.tilesetIds}');
+
+    if (resolvedMap.id == currentMap.value.id) return; // Already on this map.
+
+    // If the game engine hasn't started yet (GameWidget not mounted), just
+    // update currentMap so that onLoad() picks up the correct map when it
+    // runs. Loading components now would fail because tilesetRegistry isn't
+    // initialized until TechWorldGame.onLoad() completes.
+    if (!isMounted) {
+      _log.info('loadMap: not mounted yet — deferring to onLoad');
+      currentMap.value = resolvedMap;
+      return;
+    }
+
     if (_isLoadingMap) {
       _log.info('loadMap ignored — another load is in progress');
       return;
@@ -896,19 +942,19 @@ class TechWorld extends World with TapCallbacks {
       closeEditor();
 
       _removeMapComponents();
-      await _loadMapComponents(map);
+      await _loadMapComponents(resolvedMap);
 
       // Reposition player to new map's spawn point.
       _userPlayerComponent.position = Vector2(
-        map.spawnPoint.x * gridSquareSizeDouble,
-        map.spawnPoint.y * gridSquareSizeDouble,
+        resolvedMap.spawnPoint.x * gridSquareSizeDouble,
+        resolvedMap.spawnPoint.y * gridSquareSizeDouble,
       );
-      playerGridPosition.value = map.spawnPoint;
+      playerGridPosition.value = resolvedMap.spawnPoint;
 
-      currentMap.value = map;
+      currentMap.value = resolvedMap;
 
       // Notify the bot about the new map layout
-      _liveKitService?.publishMapInfo(map);
+      _liveKitService?.publishMapInfo(resolvedMap);
     } finally {
       _isLoadingMap = false;
     }

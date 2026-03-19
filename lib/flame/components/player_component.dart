@@ -177,7 +177,16 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     if (_directions.isEmpty || _pathSegmentNum == _directions.length) {
       return;
     }
-    current = _directions[_pathSegmentNum];
+    final direction = _directions[_pathSegmentNum];
+    // Skip Direction.none — it has no animation and zero offset.
+    if (direction == Direction.none) {
+      _pathSegmentNum++;
+      _addNextMoveEffect();
+      return;
+    }
+    // Guard against move() being called before onLoad sets up animations.
+    if (animations == null) return;
+    current = direction;
     playing = true;
     add(_moveEffects[_pathSegmentNum]);
     _pathSegmentNum++;

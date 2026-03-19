@@ -3,6 +3,8 @@ import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
 import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
+import 'package:tech_world/flame/tiles/tileset_analyzer.dart';
+import 'package:tech_world/flame/tiles/tileset_registry.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/predefined_rules.dart';
 
@@ -416,8 +418,8 @@ void main() {
 
   group('Per-tileset barrier spot checks', () {
     test('modern_office: top tile of partition (row 0) is NOT barrier', () {
-      // Index 0 is the top of a multi-cell partition — excluded because the
-      // player walks behind it (y-occlusion handles rendering).
+      // Index 0 is the top of a multi-cell partition — excluded so the
+      // player walks behind it via y-based depth sorting.
       expect(modernOffice.isTileBarrier(0), isFalse);
     });
 
@@ -614,6 +616,122 @@ void main() {
       );
       final json = tileset.toJson();
       expect(json.containsKey('nonBarrierTileIndices'), isFalse);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Computed barrier analysis via TilesetRegistry (#201)
+  // -------------------------------------------------------------------------
+
+  group('Computed barrier analysis (registry fallback)', () {
+    late MapEditorState registryState;
+    late TilesetRegistry registry;
+
+    // Custom tileset with no hand-curated barrier metadata.
+    const customTileset = Tileset(
+      id: 'custom_test',
+      name: 'Custom Test',
+      imagePath: 'custom_test.png',
+      tileSize: 32,
+      columns: 4,
+      rows: 4,
+      isCustom: true,
+    );
+
+    // Simulated analysis result: tile 5 is a barrier (base), tile 1 is
+    // non-barrier (upper part of a vertical run).
+    const analysisResult = TilesetAnalysisResult(
+      barrierIndices: {5},
+      nonBarrierIndices: {1},
+    );
+
+    setUp(() {
+      registryState = MapEditorState();
+      registry = TilesetRegistry.forTesting();
+      registry.setAnalysisResult('custom_test', analysisResult);
+      registryState.setTilesetRegistry(registry);
+    });
+
+    /// Helper: paint a custom tileset tile on the object layer.
+    void paintCustomObjectTile(
+        MapEditorState s, int tileIndex, int x, int y) {
+      s.setActiveLayer(ActiveLayer.objects);
+      s.setBrush(TileBrush(
+        tilesetId: 'custom_test',
+        startCol: tileIndex % customTileset.columns,
+        startRow: tileIndex ~/ customTileset.columns,
+        columns: customTileset.columns,
+      ));
+      s.paintTileRef(x, y);
+    }
+
+    test('computed non-barrier tile on object layer does NOT create barrier',
+        () {
+      // Tile index 1 is a computed non-barrier (upper part of tall object).
+      paintCustomObjectTile(registryState, 1, 10, 10);
+
+      expect(registryState.tileAt(10, 10), TileType.open);
+    });
+
+    test('computed barrier tile on object layer creates barrier', () {
+      // Tile index 5 is a computed barrier (base tile).
+      paintCustomObjectTile(registryState, 5, 10, 10);
+
+      expect(registryState.tileAt(10, 10), TileType.barrier);
+    });
+
+    test('tile with no analysis on object layer creates barrier (default)',
+        () {
+      // Tile index 8 is not in the analysis result at all.
+      // On the object layer, default behavior is to create a barrier.
+      paintCustomObjectTile(registryState, 8, 10, 10);
+
+      expect(registryState.tileAt(10, 10), TileType.barrier);
+    });
+
+    test('erasing computed non-barrier tile has no barrier to remove', () {
+      paintCustomObjectTile(registryState, 1, 10, 10);
+      expect(registryState.tileAt(10, 10), TileType.open);
+
+      // Erase — should still be open (no barrier was created).
+      registryState.setActiveLayer(ActiveLayer.objects);
+      registryState.setBrush(null);
+      registryState.paintTileRef(10, 10);
+
+      expect(registryState.tileAt(10, 10), TileType.open);
+    });
+
+    test('erasing computed barrier tile removes auto-barrier', () {
+      paintCustomObjectTile(registryState, 5, 10, 10);
+      expect(registryState.tileAt(10, 10), TileType.barrier);
+
+      registryState.setActiveLayer(ActiveLayer.objects);
+      registryState.setBrush(null);
+      registryState.paintTileRef(10, 10);
+
+      expect(registryState.tileAt(10, 10), TileType.open);
+    });
+
+    test('without registry, custom tile on object layer always creates '
+        'barrier (backward compat)', () {
+      // State without registry — original behavior.
+      final plainState = MapEditorState();
+      paintCustomObjectTile(plainState, 1, 10, 10);
+
+      // Without registry, tile 1 has no metadata → default: barrier.
+      expect(plainState.tileAt(10, 10), TileType.barrier);
+    });
+
+    test('predefined tileset with hand-curated data takes priority over '
+        'computed analysis', () {
+      // isTileRefBarrier for modern_office index 33 should use hand-curated
+      // data even if a registry is provided.
+      const ref = TileRef(tilesetId: 'modern_office', tileIndex: 33);
+      expect(isTileRefBarrier(ref, registry: registry), isTrue);
+
+      // modern_office index 0 is NOT a barrier in hand-curated data.
+      const nonRef = TileRef(tilesetId: 'modern_office', tileIndex: 0);
+      expect(isTileRefBarrier(nonRef, registry: registry), isFalse);
     });
   });
 }

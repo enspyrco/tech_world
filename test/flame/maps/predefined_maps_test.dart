@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 
@@ -179,6 +180,108 @@ void main() {
                 reason: '${map.name} should have no predefined barriers');
           }
         }
+      });
+    });
+
+    group('applyPredefinedVisualFallback', () {
+      test('fills in missing floorLayer by structural match (Firestore ID)',
+          () {
+        // Simulate a Firestore room saved before tile floor was added.
+        // ID is a Firestore document ID, not the predefined map ID.
+        // Barriers match the L-Room's structure exactly.
+        final firestoreMap = GameMap(
+          id: 'abc123firestore',
+          name: "Nick's Room",
+          barriers: lRoom.barriers,
+          spawnPoint: lRoom.spawnPoint,
+        );
+
+        final merged = applyPredefinedVisualFallback(firestoreMap);
+
+        // Visual layers filled from predefined L-Room.
+        expect(merged.floorLayer, isNotNull);
+        expect(merged.floorLayer!.isEmpty, isFalse);
+        expect(merged.tilesetIds, contains('single_room'));
+
+        // Structural data preserved from Firestore.
+        expect(merged.id, 'abc123firestore');
+        expect(merged.name, "Nick's Room");
+        expect(merged.spawnPoint, lRoom.spawnPoint);
+      });
+
+      test('fills in missing floorLayer by direct ID match', () {
+        // Direct ID match (e.g. predefined map used without Firestore).
+        const firestoreMap = GameMap(
+          id: 'l_room',
+          name: 'The L-Room',
+          barriers: [Point(4, 7)], // different barriers
+          spawnPoint: Point(12, 18),
+        );
+
+        final merged = applyPredefinedVisualFallback(firestoreMap);
+
+        expect(merged.floorLayer, isNotNull);
+        expect(merged.barriers.length, 1); // Firestore barriers preserved
+        expect(merged.spawnPoint, const Point(12, 18));
+      });
+
+      test('does not override existing floorLayer', () {
+        // If the Firestore room already has a floor layer, keep it.
+        final existingFloor = lRoom.floorLayer!;
+        final firestoreMap = GameMap(
+          id: 'abc123',
+          name: 'My Room',
+          barriers: lRoom.barriers,
+          floorLayer: existingFloor,
+          tilesetIds: const ['single_room'],
+        );
+
+        final merged = applyPredefinedVisualFallback(firestoreMap);
+
+        // Should be identical — already has visual layers.
+        expect(identical(merged, firestoreMap), isTrue);
+      });
+
+      test('returns map unchanged if no predefined match', () {
+        const customMap = GameMap(
+          id: 'user_custom_map',
+          name: 'My Cool Map',
+          barriers: [Point(1, 1), Point(2, 2)], // unique barriers
+        );
+
+        final result = applyPredefinedVisualFallback(customMap);
+
+        expect(identical(result, customMap), isTrue);
+      });
+
+      test('returns map unchanged for empty barriers (no structural match)',
+          () {
+        // Rooms with no barriers can't match predefined maps structurally.
+        const firestoreMap = GameMap(
+          id: 'xyz789',
+          name: 'Open Room',
+          barriers: [],
+        );
+
+        final result = applyPredefinedVisualFallback(firestoreMap);
+
+        expect(identical(result, firestoreMap), isTrue);
+      });
+
+      test('preserves terminals and custom tilesets from Firestore', () {
+        final firestoreMap = GameMap(
+          id: 'abc123',
+          name: 'My L-Room',
+          barriers: lRoom.barriers,
+          terminals: const [Point(5, 5), Point(10, 10)],
+        );
+
+        final merged = applyPredefinedVisualFallback(firestoreMap);
+
+        expect(merged.terminals.length, 2);
+        expect(merged.terminals[0], const Point(5, 5));
+        // Visual layers added
+        expect(merged.floorLayer, isNotNull);
       });
     });
 
