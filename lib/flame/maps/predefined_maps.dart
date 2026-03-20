@@ -38,6 +38,8 @@ final lRoom = GameMap(
   spawnPoint: const Point(10, 15),
   terminals: const [Point(8, 12), Point(14, 12)],
   floorLayer: buildLRoomFloorLayer(),
+  objectLayer: buildLRoomObjectLayer(),
+  objectLayerPriorityOverrides: buildLRoomPriorityOverrides(),
   tilesetIds: const ['single_room'],
 );
 
@@ -141,6 +143,7 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
     terminals: map.terminals,
     floorLayer: predefined.floorLayer,
     objectLayer: predefined.objectLayer,
+    objectLayerPriorityOverrides: predefined.objectLayerPriorityOverrides,
     tilesetIds: map.tilesetIds.isEmpty ? predefined.tilesetIds : map.tilesetIds,
     terrainGrid: map.terrainGrid ?? predefined.terrainGrid,
     customTilesets: map.customTilesets,

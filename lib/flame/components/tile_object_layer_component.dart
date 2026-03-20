@@ -25,10 +25,16 @@ class TileObjectLayerComponent extends Component {
   TileObjectLayerComponent({
     required this.layerData,
     required this.registry,
+    this.priorityOverrides,
   });
 
   final TileLayerData layerData;
   final TilesetRegistry registry;
+
+  /// Sparse map of `(x, y)` → priority for tiles that need a non-default
+  /// priority. Used for wall caps that should sort with the barrier row below
+  /// them rather than their natural y position.
+  final Map<(int, int), int>? priorityOverrides;
 
   final List<SpriteComponent> _sprites = [];
 
@@ -42,6 +48,7 @@ class TileObjectLayerComponent extends Component {
         final sprite = registry.getSpriteForTile(ref.tilesetId, ref.tileIndex);
         if (sprite == null) continue;
 
+        final effectivePriority = priorityOverrides?[(x, y)] ?? y;
         final component = SpriteComponent(
           sprite: sprite,
           position: Vector2(
@@ -49,9 +56,8 @@ class TileObjectLayerComponent extends Component {
             y * gridSquareSizeDouble,
           ),
           size: Vector2.all(gridSquareSizeDouble),
-          priority: y,
+          priority: effectivePriority,
         );
-
         _sprites.add(component);
       }
     }

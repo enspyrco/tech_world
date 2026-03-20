@@ -863,6 +863,7 @@ class TechWorld extends World with TapCallbacks {
         _tileObjectLayer = TileObjectLayerComponent(
           layerData: map.objectLayer!,
           registry: registry,
+          priorityOverrides: map.objectLayerPriorityOverrides,
         );
         await add(_tileObjectLayer!);
       }
