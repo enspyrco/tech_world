@@ -1,4 +1,7 @@
+import 'dart:ui' show Color;
+
 import 'package:flame/components.dart';
+import 'package:flutter/painting.dart' show TextStyle;
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tileset_registry.dart';
@@ -26,6 +29,8 @@ class TileObjectLayerComponent extends Component {
     required this.layerData,
     required this.registry,
     this.priorityOverrides,
+    this.lintelOverlayPositions,
+    this.debugPriorities = false,
   });
 
   final TileLayerData layerData;
@@ -36,7 +41,17 @@ class TileObjectLayerComponent extends Component {
   /// them rather than their natural y position.
   final Map<(int, int), int>? priorityOverrides;
 
-  final List<SpriteComponent> _sprites = [];
+  /// Positions that need half-height (bottom-only) rendering — the "alpha
+  /// punch" for lintel overlays. These tiles contain both floor art (top half)
+  /// and wall overhang art (bottom half). Only the bottom half renders in the
+  /// object layer; the floor layer shows the full tile behind the player.
+  final Set<(int, int)>? lintelOverlayPositions;
+
+  /// When true, renders priority labels on each object tile for debugging.
+  final bool debugPriorities;
+
+  final List<Component> _sprites = [];
+  final List<TextComponent> _debugLabels = [];
 
   @override
   Future<void> onLoad() async {
@@ -49,16 +64,75 @@ class TileObjectLayerComponent extends Component {
         if (sprite == null) continue;
 
         final effectivePriority = priorityOverrides?[(x, y)] ?? y;
-        final component = SpriteComponent(
-          sprite: sprite,
-          position: Vector2(
-            x * gridSquareSizeDouble,
-            y * gridSquareSizeDouble,
-          ),
-          size: Vector2.all(gridSquareSizeDouble),
-          priority: effectivePriority,
-        );
+        final isLintelOverlay =
+            lintelOverlayPositions?.contains((x, y)) ?? false;
+
+        final Component component;
+
+        if (isLintelOverlay) {
+          // Partial-height sprite: render only the top portion of the tile
+          // (the dark wall overhang), clipping the bottom portion (floor
+          // coloured pixels). The floor layer shows the full tile behind
+          // the player; this overlay renders the overhang in front.
+          //
+          // The overhang art occupies roughly the top 20-24px of 32px tiles.
+          // We clip the bottom 8px (the floor portion).
+          const clipBottom = 8.0;
+          final visibleHeight = gridSquareSizeDouble - clipBottom;
+          final overhangSprite = Sprite(
+            sprite.image,
+            srcPosition: sprite.srcPosition,
+            srcSize: Vector2(sprite.srcSize.x, visibleHeight),
+          );
+          component = SpriteComponent(
+            sprite: overhangSprite,
+            position: Vector2(
+              x * gridSquareSizeDouble,
+              y * gridSquareSizeDouble,
+            ),
+            size: Vector2(gridSquareSizeDouble, visibleHeight),
+            priority: effectivePriority,
+          );
+        } else {
+          component = SpriteComponent(
+            sprite: sprite,
+            position: Vector2(
+              x * gridSquareSizeDouble,
+              y * gridSquareSizeDouble,
+            ),
+            size: Vector2.all(gridSquareSizeDouble),
+            priority: effectivePriority,
+          );
+        }
         _sprites.add(component);
+
+        // Debug: add priority label on each object tile.
+        if (debugPriorities) {
+          final isOverridden = priorityOverrides?.containsKey((x, y)) ?? false;
+          final label = TextComponent(
+            text: isLintelOverlay
+                ? 'p$effectivePriority½'
+                : 'p$effectivePriority',
+            position: Vector2(
+              x * gridSquareSizeDouble + 2,
+              y * gridSquareSizeDouble + 2,
+            ),
+            priority: 9999, // always on top
+            textRenderer: TextPaint(
+              style: TextStyle(
+                fontSize: 8,
+                color: isLintelOverlay
+                    ? const Color(0xFFFF00FF) // magenta for lintel overlay
+                    : isOverridden
+                        ? const Color(0xFFFF0000) // red for overridden
+                        : const Color(0xFF00FF00), // green for default
+              ),
+            ),
+          );
+          // TextComponent is a PositionComponent, not SpriteComponent.
+          // Track separately for debug cleanup.
+          _debugLabels.add(label);
+        }
       }
     }
 
@@ -69,6 +143,9 @@ class TileObjectLayerComponent extends Component {
       for (final sprite in _sprites) {
         parentComponent.add(sprite);
       }
+      for (final label in _debugLabels) {
+        parentComponent.add(label);
+      }
     }
   }
 
@@ -76,6 +153,9 @@ class TileObjectLayerComponent extends Component {
   void hide() {
     for (final sprite in _sprites) {
       sprite.removeFromParent();
+    }
+    for (final label in _debugLabels) {
+      label.removeFromParent();
     }
   }
 
@@ -85,6 +165,9 @@ class TileObjectLayerComponent extends Component {
     if (parentComponent != null) {
       for (final sprite in _sprites) {
         parentComponent.add(sprite);
+      }
+      for (final label in _debugLabels) {
+        parentComponent.add(label);
       }
     }
   }
