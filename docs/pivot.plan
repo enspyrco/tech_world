@@ -1,0 +1,138 @@
+# Tech World Pivot: From "Write Code" to "Think With AI"
+
+## Context
+
+Syntax knowledge is being commoditized by AI. The durable skill is collaborating effectively with AI — decomposing problems, writing effective prompts, evaluating output, and iterating. Tech World already has the infrastructure for this pivot: an AI tutor (Clawd) in the room, multiplayer group chat where everyone sees submissions and feedback, and a terminal-based challenge system. The pivot adds new challenge types alongside existing code challenges — it extends, it doesn't replace.
+
+The multiplayer aspect is the secret weapon: students learn vicariously by watching each other's prompts and Clawd's responses in group chat. This is a *social learning environment for AI collaboration*, which barely exists anywhere else.
+
+## Challenge Types (Pedagogical Framework)
+
+Five types forming a progression: **decompose → prompt → evaluate → iterate → compose**.
+
+| Type | Skill | How It Works |
+|------|-------|-------------|
+| **DECOMPOSE** | Breaking problems into AI-solvable pieces | Student receives complex task, writes numbered sub-task list. Clawd evaluates completeness, ordering, granularity. |
+| **PROMPT_CRAFT** | Writing effective prompts | Student writes a prompt to achieve a goal. Clawd evaluates the *prompt itself* (clarity, specificity, edge cases) — never runs it. |
+| **EVALUATE** | Critically assessing AI output | Student sees a pre-generated prompt + response (with deliberate errors). Must identify what's correct, wrong, missing. |
+| **ITERATE** | Full prompt-evaluate-refine loop | Live multi-round conversation with Clawd. Fixed round limit. Clawd evaluates *how the student navigated the conversation*. |
+| **COMPOSE** | Orchestrating multiple AI interactions | Multi-step task where each step builds on previous AI output. Student manages the overall strategy. |
+
+### What's interesting
+
+- **Mirror challenges**: Same problem as both code + prompt-craft (e.g., `hello_dart` ↔ "The Perfect Greeting"). Students feel the difference between *knowing the answer* and *knowing how to get the answer*.
+- **Self-referential evaluation**: In PROMPT_CRAFT, Clawd evaluates prompts *about itself*. It can genuinely assess "would this produce good output from me?"
+- **ITERATE is novel**: A structured, round-limited conversation with evaluation of navigation quality, not just final output. The social layer (group chat) adds productive pressure.
+
+## Implementation
+
+### Phase 1: Foundation (ships 3 challenge types: DECOMPOSE, PROMPT_CRAFT, EVALUATE)
+
+#### 1. Extend Challenge data model
+**File:** `lib/editor/challenge.dart`
+
+```dart
+enum ChallengeType { code, decompose, promptCraft, evaluate, iterate, compose }
+
+class Challenge {
+  // Existing fields unchanged (backward compat)
+  final String id, title, description, starterCode;
+  final Difficulty difficulty;
+  // New fields
+  final ChallengeType type;           // defaults to .code
+  final List<String>? rubric;         // evaluation criteria
+  final String? preGeneratedPrompt;   // for EVALUATE type
+  final String? preGeneratedOutput;   // for EVALUATE type
+  final int? maxRounds;               // for ITERATE type
+  final String? starterText;          // initial text for non-code types
+}
+```
+
+#### 2. Create ChallengePanel dispatcher
+**New file:** `lib/editor/challenge_panel.dart`
+
+Inspects `challenge.type`, delegates to:
+- `.code` → existing `CodeEditorPanel`
+- `.decompose` / `.promptCraft` → `TextChallengePanel` (new)
+- `.evaluate` → `EvaluateChallengePanel` (new)
+
+#### 3. Create TextChallengePanel
+**New file:** `lib/editor/text_challenge_panel.dart`
+
+- Header with challenge title + type badge
+- Description area
+- Rubric display (checklist of evaluation criteria)
+- Large multiline TextField (no syntax highlighting, no LSP)
+- "Help, I'm stuck" + "Submit to Clawd" buttons (reuse existing callbacks)
+
+#### 4. Create EvaluateChallengePanel
+**New file:** `lib/editor/evaluate_challenge_panel.dart`
+
+- Two read-only panels: "The Prompt" + "AI Response" (with syntax-highlighted code blocks)
+- Rubric display
+- Multiline TextField for student's evaluation
+- Submit button
+
+#### 5. Wire ChallengePanel into main.dart
+**File:** `lib/main.dart` (lines 1008–1069)
+
+Replace `_CodeEditorModal` with `ChallengePanel` in the `ValueListenableBuilder`. The `onSubmit` callback changes: for non-code types, send submission text with `challengeType` in metadata instead of code.
+
+#### 6. Add rubric evaluation prompt to bot
+**New file:** `../tech_world_bot/src/prompts/rubric-eval.ts`
+
+Template that takes challenge type, description, rubric items, and student submission. Scores each rubric criterion 0–2. Returns structured `<!-- CHALLENGE_RESULT: {"result":"pass","scores":[...]} -->` tag.
+
+#### 7. Extend bot handleChatMessage
+**File:** `../tech_world_bot/src/index.ts` (line 115)
+
+- Accept `challengeType` alongside `challengeId` from message metadata
+- When `challengeType` is present and not `code`, use rubric evaluation prompt
+- Pass rubric from metadata into prompt template
+- `parseChallengeResult` already handles JSON in the tag — extend to include `scores`
+
+#### 8. Add first challenges
+**File:** `lib/editor/predefined_challenges.dart`
+
+6 new challenges:
+- DECOMPOSE: "Plan a Weather App", "Design a Quiz Game"
+- PROMPT_CRAFT: "The Perfect Greeting" (mirrors `hello_dart`), "List Filter Expert"
+- EVALUATE: "Spot the Bug" (palindrome with off-by-one), "Missing Edge Cases" (FizzBuzz)
+
+### Phase 2: Iterate Type (most complex, most interesting)
+
+#### 1. New data channel topics
+- `iterate-prompt` (client → bot): mid-conversation prompt, Clawd responds conversationally
+- `iterate-response` (bot → client): conversational response (not evaluated)
+- Final "Submit for Evaluation" uses existing `chat` topic with rubric metadata
+
+#### 2. Create IterateChallengePanel
+**New file:** `lib/editor/iterate_challenge_panel.dart`
+
+- Round counter ("Round 2 of 3")
+- Inline conversation view (alternating prompts/responses)
+- Text input at bottom
+- Panel stays **open** between rounds (unlike code challenges)
+- "Submit for Evaluation" appears after rounds exhausted or student chooses to end
+
+#### 3. Extend ChatService
+**File:** `lib/chat/chat_service.dart`
+
+Add `sendIteratePrompt()` and listener for `iterate-response` topic.
+
+### Phase 3: Compose Type + Polish
+
+- `ComposeChallengePanel` with step-based multi-prompt flow
+- Challenge type indicators on terminal rendering (color-coded borders)
+- 2 COMPOSE challenges
+
+## Verification
+
+1. **Existing code challenges still work**: Run existing challenges, verify pass/fail flow unchanged
+2. **TextChallengePanel**: Tap a DECOMPOSE terminal, verify rubric displays, submit text, verify Clawd evaluates with rubric
+3. **EvaluateChallengePanel**: Verify pre-generated prompt/response display correctly, student evaluation gets scored
+4. **Bot evaluation**: Check bot logs for rubric scoring output, verify `challengeResult` tag parsing
+5. **Progress persistence**: Verify Firestore stores completions for new challenge types, terminals turn gold
+6. **Multiplayer**: Both students see submissions and Clawd's feedback in group chat
+7. `flutter analyze --fatal-infos` passes
+8. `flutter test` passes (add tests for new Challenge fields and ChallengePanel dispatch)

@@ -342,6 +342,10 @@ ARM64 compatible — can run on OCI free tier (4 OCPU / 24 GB Ampere).
 
 ## Current Work
 
+### Planned: "Think With AI" Pivot
+
+Pivoting challenge system from teaching Dart syntax to teaching AI collaboration skills (decompose, prompt, evaluate, iterate, compose). Adds new challenge types alongside existing code challenges. Full plan: [`docs/pivot.plan`](docs/pivot.plan).
+
 ### Recently completed
 
 **Animated tile rendering (#150, #153)** — Native animated tile rendering using shared `AnimationTicker`s. Water tiles in `ext_terrains` animate while static tiles stay in a cached `Picture`.
