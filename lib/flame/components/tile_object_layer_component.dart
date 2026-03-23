@@ -75,9 +75,9 @@ class TileObjectLayerComponent extends Component {
           // coloured pixels). The floor layer shows the full tile behind
           // the player; this overlay renders the overhang in front.
           //
-          // The overhang art occupies roughly the top 20-24px of 32px tiles.
-          // We clip the bottom 8px (the floor portion).
-          const clipBottom = 8.0;
+          // The overhang art occupies roughly the top 21px of 32px tiles.
+          // We clip the bottom 11px (the floor portion).
+          const clipBottom = 11.0;
           final visibleHeight = gridSquareSizeDouble - clipBottom;
           final overhangSprite = Sprite(
             sprite.image,
