@@ -141,6 +141,7 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
     terminals: map.terminals,
     floorLayer: predefined.floorLayer,
     objectLayer: predefined.objectLayer,
+    objectLayerPriorityOverrides: predefined.objectLayerPriorityOverrides,
     tilesetIds: map.tilesetIds.isEmpty ? predefined.tilesetIds : map.tilesetIds,
     terrainGrid: map.terrainGrid ?? predefined.terrainGrid,
     customTilesets: map.customTilesets,

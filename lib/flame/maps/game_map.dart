@@ -21,6 +21,7 @@ class GameMap {
     this.terminals = const [],
     this.floorLayer,
     this.objectLayer,
+    this.objectLayerPriorityOverrides,
     this.tilesetIds = const [],
     this.terrainGrid,
     this.customTilesets = const [],
@@ -47,6 +48,14 @@ class GameMap {
 
   /// Optional object tile layer — rendered with y-sorted priority for depth.
   final TileLayerData? objectLayer;
+
+  /// Priority overrides for specific object layer tiles.
+  ///
+  /// Maps `(x, y)` grid positions to a priority value that replaces the
+  /// default `y` priority. Used for wall cap tiles that should sort with the
+  /// barrier row below them (e.g. a cap at y=6 gets priority 7 to match
+  /// the wall face). Only relevant for predefined maps with known geometry.
+  final Map<(int, int), int>? objectLayerPriorityOverrides;
 
   /// IDs of tilesets used by this map. Ensures they're loaded before rendering.
   final List<String> tilesetIds;

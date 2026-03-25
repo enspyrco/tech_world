@@ -86,3 +86,6 @@ TileLayerData buildLRoomFloorLayer() {
   _cachedFloorLayer = layer;
   return layer;
 }
+
+// Object layer and priority overrides are now computed dynamically from
+// barriers at map load time. See barrier_occlusion.dart.

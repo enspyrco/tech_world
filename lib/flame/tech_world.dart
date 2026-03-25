@@ -13,13 +13,14 @@ import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
+import 'package:tech_world/flame/maps/barrier_occlusion.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/tile_floor_component.dart';
 import 'package:tech_world/flame/components/tile_object_layer_component.dart';
-// Grid lines hidden for now — uncomment to restore:
+// Grid lines — uncomment for visual debugging:
 // import 'package:tech_world/flame/components/grid_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
@@ -62,7 +63,6 @@ class TechWorld extends World with TapCallbacks {
 
   final Map<String, PlayerComponent> _otherPlayerComponentsMap = {};
   BotCharacterComponent? _botCharacterComponent;
-  // Grid lines hidden for now — uncomment to restore:
   // final GridComponent _gridComponent = GridComponent();
   BarriersComponent _barriersComponent =
       BarriersComponent(barriers: defaultMap.barriers);
@@ -859,10 +859,55 @@ class TechWorld extends World with TapCallbacks {
         _log.warning('loadMapComponents: NO floorLayer — floor will be black');
       }
 
-      if (map.objectLayer != null) {
+      // Build or reuse the object layer for depth-sorted wall occlusion.
+      // Priority overrides are always computed dynamically from barriers so
+      // that doorway lintels work for any map (predefined, editor, Firestore).
+      final barrierSet = {for (final b in map.barriers) (b.x, b.y)};
+      _log.info('loadMapComponents: barriers=${barrierSet.length}, '
+          'objectLayer=${map.objectLayer != null}, '
+          'floorLayer=${map.floorLayer != null}');
+
+
+      var objectLayer = map.objectLayer;
+      if (objectLayer == null &&
+          map.floorLayer != null &&
+          barrierSet.isNotEmpty) {
+        objectLayer = buildObjectLayerFromBarriers(
+          floorLayer: map.floorLayer!,
+          barriers: barrierSet,
+        );
+        _log.info('loadMapComponents: auto-generated object layer from barriers');
+      }
+
+      final overrides = barrierSet.isNotEmpty
+          ? computePriorityOverrides(barrierSet)
+          : map.objectLayerPriorityOverrides;
+
+      if (overrides != null) {
+        // Log lintel-related overrides for debugging.
+        final lintels = overrides.entries
+            .where((e) => e.value > e.key.$2 + 1)
+            .toList();
+        _log.info('loadMapComponents: ${overrides.length} priority overrides, '
+            '${lintels.length} lintel overrides: $lintels');
+      }
+
+      if (objectLayer != null) {
+        // Compute which tiles need half-height "alpha punch" rendering.
+        final lintelOverlays = barrierSet.isNotEmpty
+            ? computeLintelOverlayPositions(barrierSet)
+            : <(int, int)>{};
+
+        if (lintelOverlays.isNotEmpty) {
+          _log.info('loadMapComponents: ${lintelOverlays.length} lintel overlay positions: $lintelOverlays');
+        }
+
         _tileObjectLayer = TileObjectLayerComponent(
-          layerData: map.objectLayer!,
+          layerData: objectLayer,
           registry: registry,
+          priorityOverrides: overrides,
+          lintelOverlayPositions: lintelOverlays,
+          debugPriorities: false,
         );
         await add(_tileObjectLayer!);
       }
