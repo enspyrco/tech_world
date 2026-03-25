@@ -130,6 +130,12 @@ All world-level components use the grid row (y index) as their Flame `priority`,
 
 **`WallOcclusionComponent`** — Creates sprite overlays from the background PNG for walls. Each overlay extends 1 cell above a barrier. Only active for maps with a `backgroundImage`. Hidden during editor mode.
 
+**`barrier_occlusion.dart`** — Pure functions computing priority overrides and object layer positions from barrier geometry:
+- **Wall caps**: Tile above a north-facing vertical wall edge gets bumped to wall priority. Only created for barriers with a vertical neighbor (`y+1`) — horizontal-only walls don't need caps because the wall face already handles depth sorting.
+- **Vertical doorway lintels**: barrier → gap → barrier pattern (y direction). Bumped to `y+2`.
+- **Horizontal doorway lintels**: barrier → gap → barrier pattern (x direction). Tiles above gap rendered half-height ("alpha punch") via `lintelOverlayPositions`.
+- **Debug**: Set `debugPriorities: true` on `TileObjectLayerComponent` to see priority labels (green=default, red=overridden, magenta=lintel overlay).
+
 **Edge case:** Multi-cell-tall objects would need height metadata, but the LimeZu tilesets avoid this by composing tall objects from multiple single-cell tiles, each with its own correct y-priority.
 
 ### Proximity Detection

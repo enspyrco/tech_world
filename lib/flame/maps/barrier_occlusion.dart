@@ -14,8 +14,9 @@ import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 ///
 /// **Horizontal doorway lintels** — detected by scanning for horizontal
 /// sequences of non-barrier tiles (gaps) flanked by barriers on both sides
-/// at the same y. The gap tiles and the tiles above them are bumped to y+1
-/// so they render on top of a player walking through.
+/// at the same y. The gap tiles above are bumped to y+1 and rendered
+/// half-height so they occlude a player walking through without fully
+/// covering a player walking above the wall.
 ///
 /// This is a pure function: barriers in, overrides out. No tile data needed.
 Map<(int, int), int> computePriorityOverrides(Set<(int, int)> barriers) {
@@ -30,7 +31,9 @@ Map<(int, int), int> computePriorityOverrides(Set<(int, int)> barriers) {
     final isVerticalDoorwayLintel =
         !barriers.contains((x, y + 1)) && barriers.contains((x, y + 2));
 
-    // Wall cap: tile above north-facing edge gets priority of the wall face.
+    // Wall cap: tile above a north-facing edge gets priority bumped to the
+    // barrier's y so it sorts with the wall face. This occludes the player's
+    // head when walking above any wall (horizontal or vertical).
     if (isNorthFacing && y - 1 >= 0) {
       overrides.putIfAbsent((x, y - 1), () => y);
     }
@@ -71,13 +74,12 @@ Map<(int, int), int> computePriorityOverrides(Set<(int, int)> barriers) {
             }
           }
 
-          // Also bump the flanking barrier tiles and tiles above them.
+          // Bump the flanking barrier tiles (door frame columns) at y.
+          // Do NOT bump flanking tiles ABOVE (y-1) — those are full-height
+          // floor tiles that would fully occlude players walking above the
+          // wall.
           _setMax(overrides, (x, y), lintelPriority);
           _setMax(overrides, (gapEnd, y), lintelPriority);
-          if (y - 1 >= 0) {
-            _setMax(overrides, (x, y - 1), lintelPriority);
-            _setMax(overrides, (gapEnd, y - 1), lintelPriority);
-          }
         }
       }
     }
@@ -160,7 +162,7 @@ TileLayerData buildObjectLayerFromBarriers({
     final isVerticalDoorwayLintel =
         !barriers.contains((x, y + 1)) && barriers.contains((x, y + 2));
 
-    // Wall cap: 1 row above north-facing edge.
+    // Wall cap: 1 row above any north-facing edge.
     if (isNorthFacing && y - 1 >= 0) {
       positions.add((x, y - 1));
     }
@@ -186,11 +188,8 @@ TileLayerData buildObjectLayerFromBarriers({
               positions.add((gx, y - 1));
             }
           }
-          // Flanking barrier tiles above.
-          if (y - 1 >= 0) {
-            positions.add((x, y - 1));
-            positions.add((gapEnd, y - 1));
-          }
+          // Do NOT add flanking tiles above (y-1) — those are full-height
+          // floor tiles that would fully occlude players walking above.
         }
       }
     }
