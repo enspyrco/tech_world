@@ -95,9 +95,9 @@ void main() {
 
       // Gap tile at y should NOT be bumped — it's floor.
       expect(overrides.containsKey((7, 23)), isFalse);
-      // Flanking barriers at y bumped to y+1.
-      expect(overrides[(6, 23)], equals(24));
-      expect(overrides[(8, 23)], equals(24));
+      // Flanking barriers keep natural priority — no bump.
+      expect(overrides.containsKey((6, 23)), isFalse);
+      expect(overrides.containsKey((8, 23)), isFalse);
       // Gap tile ABOVE bumped (lintel overhang).
       expect(overrides[(7, 22)], equals(24));
       // Flanking tiles ABOVE get wall cap priority (y=23), NOT lintel
@@ -119,8 +119,9 @@ void main() {
 
       expect(overrides.containsKey((7, 23)), isFalse);
       expect(overrides.containsKey((8, 23)), isFalse);
-      expect(overrides[(6, 23)], equals(24));
-      expect(overrides[(9, 23)], equals(24));
+      // Flanking barriers keep natural priority — no bump.
+      expect(overrides.containsKey((6, 23)), isFalse);
+      expect(overrides.containsKey((9, 23)), isFalse);
       // Gap tiles above bumped to lintel priority.
       expect(overrides[(7, 22)], equals(24));
       expect(overrides[(8, 22)], equals(24));

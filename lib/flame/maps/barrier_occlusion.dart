@@ -74,12 +74,9 @@ Map<(int, int), int> computePriorityOverrides(Set<(int, int)> barriers) {
             }
           }
 
-          // Bump the flanking barrier tiles (door frame columns) at y.
-          // Do NOT bump flanking tiles ABOVE (y-1) — those are full-height
-          // floor tiles that would fully occlude players walking above the
-          // wall.
-          _setMax(overrides, (x, y), lintelPriority);
-          _setMax(overrides, (gapEnd, y), lintelPriority);
+          // Door frame columns keep natural priority (y). Bumping them
+          // to y+1 would match the priority of a player at y+1 (just below
+          // the door), causing their head to clip against the frame.
         }
       }
     }
