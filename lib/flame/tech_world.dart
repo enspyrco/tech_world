@@ -866,7 +866,7 @@ class TechWorld extends World with TapCallbacks {
       _log.info('loadMapComponents: barriers=${barrierSet.length}, '
           'objectLayer=${map.objectLayer != null}, '
           'floorLayer=${map.floorLayer != null}');
-      _log.info('loadMapComponents: ALL barriers=$barrierSet');
+
 
       var objectLayer = map.objectLayer;
       if (objectLayer == null &&
