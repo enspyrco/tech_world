@@ -164,7 +164,7 @@ void main() {
       expect(objectLayer.tileAt(4, 8)?.tileIndex, equals(43));
     });
 
-    test('copies wall cap tiles above north-facing vertical wall edges', () {
+    test('does not copy wall cap tiles above north-facing barriers', () {
       final floor = TileLayerData();
       floor.setTile(5, 6, const TileRef(tilesetId: 'test', tileIndex: 10));
       floor.setTile(5, 7, const TileRef(tilesetId: 'test', tileIndex: 20));
@@ -176,29 +176,11 @@ void main() {
         barriers: barriers,
       );
 
-      expect(objectLayer.tileAt(5, 6)?.tileIndex, equals(10));
+      // Barrier tiles are in the object layer.
       expect(objectLayer.tileAt(5, 7)?.tileIndex, equals(20));
-    });
-
-    test('all north-facing barriers get wall caps in object layer', () {
-      final floor = TileLayerData();
-      floor.setTile(5, 6, const TileRef(tilesetId: 'test', tileIndex: 10));
-      floor.setTile(5, 7, const TileRef(tilesetId: 'test', tileIndex: 20));
-      floor.setTile(6, 6, const TileRef(tilesetId: 'test', tileIndex: 11));
-      floor.setTile(6, 7, const TileRef(tilesetId: 'test', tileIndex: 21));
-
-      final barriers = {(5, 7), (6, 7)};
-      final objectLayer = buildObjectLayerFromBarriers(
-        floorLayer: floor,
-        barriers: barriers,
-      );
-
-      // Barrier tiles in the object layer.
-      expect(objectLayer.tileAt(5, 7)?.tileIndex, equals(20));
-      expect(objectLayer.tileAt(6, 7)?.tileIndex, equals(21));
-      // Wall caps at y=6 — all north-facing barriers get them.
-      expect(objectLayer.tileAt(5, 6)?.tileIndex, equals(10));
-      expect(objectLayer.tileAt(6, 6)?.tileIndex, equals(11));
+      expect(objectLayer.tileAt(5, 8)?.tileIndex, equals(30));
+      // Wall cap at y=6 is NOT — floor tiles there would occlude the player.
+      expect(objectLayer.tileAt(5, 6), isNull);
     });
 
     test('horizontal doorway: gap lintel tiles at y-1, no flanking at y-1',
@@ -217,10 +199,10 @@ void main() {
 
       // Gap tile above (7,22) IS in the object layer (lintel overhang).
       expect(objectLayer.tileAt(7, 22)?.tileIndex, equals(70));
-      // Flanking tiles above (6,22) and (8,22) are wall caps (all
-      // north-facing barriers get wall caps).
-      expect(objectLayer.tileAt(6, 22)?.tileIndex, equals(60));
-      expect(objectLayer.tileAt(8, 22)?.tileIndex, equals(80));
+      // Flanking tiles above (6,22) and (8,22) are NOT in the object layer —
+      // they are wall cap positions (floor tiles that would occlude the player).
+      expect(objectLayer.tileAt(6, 22), isNull);
+      expect(objectLayer.tileAt(8, 22), isNull);
     });
 
     test('copies extended occlusion tiles above doorway lintels', () {
@@ -305,4 +287,5 @@ void main() {
       expect(overlays, isEmpty);
     });
   });
+
 }

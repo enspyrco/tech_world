@@ -153,16 +153,9 @@ TileLayerData buildObjectLayerFromBarriers({
     // The barrier tile itself.
     positions.add((x, y));
 
-    final isNorthFacing = !barriers.contains((x, y - 1));
-
     // Vertical wall, horizontal gap.
     final isVerticalDoorwayLintel =
         !barriers.contains((x, y + 1)) && barriers.contains((x, y + 2));
-
-    // Wall cap: 1 row above any north-facing edge.
-    if (isNorthFacing && y - 1 >= 0) {
-      positions.add((x, y - 1));
-    }
 
     // Vertical doorway: extended occlusion above lintel.
     if (isVerticalDoorwayLintel && y - 1 >= 0) {
