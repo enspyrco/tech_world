@@ -1,7 +1,7 @@
 # Based on Firebase CLI auto-generated workflow
 # Added: test execution and coverage reporting
 
-name: Test on PR
+name: Test and Preview on PR
 on: pull_request
 permissions:
   checks: write
@@ -72,3 +72,24 @@ jobs:
           minimum-coverage: 50
           github-token: ${{ secrets.GITHUB_TOKEN }}
           update-comment: true
+
+  build_and_preview:
+    needs: [changes, test]
+    if: needs.changes.outputs.docs_only != 'true' && needs.test.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Install dependencies
+        run: flutter pub get
+      - run: flutter build web --wasm
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ADVENTURES_IN_TECH_WORLD_0 }}
+          projectId: adventures-in-tech-world-0
+        env:
+          FIREBASE_CLI_EXPERIMENTS: webframeworks
