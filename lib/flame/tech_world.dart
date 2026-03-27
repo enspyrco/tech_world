@@ -29,6 +29,7 @@ import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/predefined_walls.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/map_sync_service.dart';
@@ -868,6 +869,14 @@ class TechWorld extends World with TapCallbacks {
           'floorLayer=${map.floorLayer != null}');
 
 
+      // Look up wall construction definition if the map specifies one.
+      final wallDef =
+          map.wallDefId != null ? lookupWallDef(map.wallDefId!) : null;
+      if (wallDef != null) {
+        _log.info('loadMapComponents: using WallDef "${wallDef.id}" '
+            'from tileset "${wallDef.tilesetId}"');
+      }
+
       var objectLayer = map.objectLayer;
       if (objectLayer == null &&
           map.floorLayer != null &&
@@ -875,8 +884,10 @@ class TechWorld extends World with TapCallbacks {
         objectLayer = buildObjectLayerFromBarriers(
           floorLayer: map.floorLayer!,
           barriers: barrierSet,
+          wallDef: wallDef,
         );
-        _log.info('loadMapComponents: auto-generated object layer from barriers');
+        _log.info('loadMapComponents: auto-generated object layer from barriers'
+            '${wallDef != null ? ' (with WallDef)' : ''}');
       }
 
       final overrides = barrierSet.isNotEmpty

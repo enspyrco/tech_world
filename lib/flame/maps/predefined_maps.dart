@@ -38,7 +38,8 @@ final lRoom = GameMap(
   spawnPoint: const Point(10, 15),
   terminals: const [Point(8, 12), Point(14, 12)],
   floorLayer: buildLRoomFloorLayer(),
-  tilesetIds: const ['single_room'],
+  tilesetIds: const ['single_room', 'room_builder_office'],
+  wallDefId: 'gray_brick',
 );
 
 /// Four Corners - open map, barriers come from painted tiles.

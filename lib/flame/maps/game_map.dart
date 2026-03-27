@@ -25,6 +25,7 @@ class GameMap {
     this.tilesetIds = const [],
     this.terrainGrid,
     this.customTilesets = const [],
+    this.wallDefId,
   });
 
   /// Unique identifier for this map.
@@ -73,6 +74,13 @@ class GameMap {
   /// tilesets to fetch.
   final List<Tileset> customTilesets;
 
+  /// Optional wall definition ID for auto-generating wall tiles.
+  ///
+  /// When set, [buildObjectLayerFromBarriers] uses construction tileset tiles
+  /// (both wall faces and wall caps) instead of copying from the floor layer.
+  /// The ID maps to a [WallDef] via [lookupWallDef].
+  final String? wallDefId;
+
   /// Whether this map uses tileset-based rendering.
   bool get usesTilesets =>
       tilesetIds.isNotEmpty ||
@@ -96,7 +104,8 @@ class GameMap {
           floorLayer == other.floorLayer &&
           objectLayer == other.objectLayer &&
           terrainGrid == other.terrainGrid &&
-          _tilesetListEquality.equals(customTilesets, other.customTilesets);
+          _tilesetListEquality.equals(customTilesets, other.customTilesets) &&
+          wallDefId == other.wallDefId;
 
   @override
   int get hashCode => Object.hash(
@@ -110,5 +119,6 @@ class GameMap {
         objectLayer,
         terrainGrid,
         _tilesetListEquality.hash(customTilesets),
+        wallDefId,
       );
 }
