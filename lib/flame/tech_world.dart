@@ -877,7 +877,10 @@ class TechWorld extends World with TapCallbacks {
             'from tileset "${wallDef.tilesetId}"');
       }
 
-      var objectLayer = map.objectLayer;
+      // When a WallDef is present, always regenerate the object layer so
+      // construction tiles are used — even if the map has a saved objectLayer
+      // (which would contain old floor-copied tiles without wall caps).
+      var objectLayer = wallDef != null ? null : map.objectLayer;
       if (objectLayer == null &&
           map.floorLayer != null &&
           barrierSet.isNotEmpty) {
