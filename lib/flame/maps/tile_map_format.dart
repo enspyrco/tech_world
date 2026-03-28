@@ -53,6 +53,7 @@ class TileMapFormat {
         'customTilesets': [
           for (final ts in map.customTilesets) ts.toJson(),
         ],
+      if (map.wallDefId != null) 'wallDefId': map.wallDefId,
     };
   }
 
@@ -104,6 +105,7 @@ class TileMapFormat {
                   Tileset.fromJson(ts as Map<String, dynamic>))
               .toList() ??
           const [],
+      wallDefId: json['wallDefId'] as String?,
     );
   }
 }

@@ -146,6 +146,7 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
     tilesetIds: map.tilesetIds.isEmpty ? predefined.tilesetIds : map.tilesetIds,
     terrainGrid: map.terrainGrid ?? predefined.terrainGrid,
     customTilesets: map.customTilesets,
+    wallDefId: map.wallDefId ?? predefined.wallDefId,
   );
 }
 
