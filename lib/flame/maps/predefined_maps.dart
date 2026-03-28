@@ -115,17 +115,53 @@ final Map<String, GameMap> _predefinedMapLookup = {
 ///
 /// Returns [map] unchanged if there is no predefined match or nothing to fill.
 GameMap applyPredefinedVisualFallback(GameMap map) {
-  // Already has visual layers — nothing to fill.
-  if (map.floorLayer != null || map.objectLayer != null) {
-    _log.fine('Visual fallback skipped: "${map.name}" already has visual layers');
+  final hasVisualLayers = map.floorLayer != null || map.objectLayer != null;
+
+  // Even when visual layers exist, we may need to fill in metadata like
+  // wallDefId from the predefined match (e.g. Firestore rooms saved before
+  // wallDefId was added).
+  if (hasVisualLayers && map.wallDefId != null) {
+    _log.fine('Visual fallback skipped: "${map.name}" already has visual '
+        'layers and wallDefId');
+    return map;
+  }
+
+  final predefined = _findPredefinedMatch(map);
+  if (predefined == null) {
+    if (!hasVisualLayers) {
+      _log.info('Visual fallback: "${map.name}" has no visual layers and '
+          'no predefined match');
+    }
+    return map;
+  }
+
+  // Fill in wallDefId from predefined even when visual layers already exist.
+  if (hasVisualLayers) {
+    if (predefined.wallDefId != null && map.wallDefId == null) {
+      _log.info('Visual fallback: "${map.name}" — filling wallDefId '
+          '"${predefined.wallDefId}" from predefined match');
+      return GameMap(
+        id: map.id,
+        name: map.name,
+        barriers: map.barriers,
+        spawnPoint: map.spawnPoint,
+        terminals: map.terminals,
+        floorLayer: map.floorLayer,
+        objectLayer: map.objectLayer,
+        objectLayerPriorityOverrides: map.objectLayerPriorityOverrides,
+        tilesetIds: map.tilesetIds.isEmpty
+            ? predefined.tilesetIds
+            : map.tilesetIds,
+        terrainGrid: map.terrainGrid,
+        customTilesets: map.customTilesets,
+        wallDefId: predefined.wallDefId,
+      );
+    }
     return map;
   }
 
   _log.info('Visual fallback: "${map.name}" (id=${map.id}) has no visual '
-      'layers, searching for predefined match...');
-
-  final predefined = _findPredefinedMatch(map);
-  if (predefined == null) return map;
+      'layers, applying predefined match...');
 
   final needsFloor = predefined.floorLayer != null;
   final needsObjects = predefined.objectLayer != null;
