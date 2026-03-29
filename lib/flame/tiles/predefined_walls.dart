@@ -1,67 +1,62 @@
 import 'package:tech_world/flame/tiles/wall_def.dart';
 
-/// Gray brick wall style from the `room_builder_office` tileset.
+/// Gray stone wall style from the `room_builder_office` tileset.
 ///
 /// Tileset layout (16 columns × 14 rows, 32px tiles):
 /// - Rows 0–2 (indices 0–47): Wall outline/edge pieces (caps)
 /// - Rows 3–4 (indices 48–79): Wall face textures (purple, gray, brown)
 /// - Rows 5–13 (indices 80–223): Floor tiles
 ///
-/// **Tile index mapping needs visual verification.** The bitmask structure
-/// is correct but specific indices may need adjustment after seeing the
-/// result in-game. Use `debugWallTiles: true` on `TileObjectLayerComponent`
-/// to display tile indices.
-///
 /// Bitmask bits: N=1, E=2, S=4, W=8.
-// TODO(nick): verify tile indices visually in Chrome.
+///
+/// Face tiles use gray stone from row 4 (indices 64–67):
+/// - 66: gray stone fill (no border) — wall middle
+/// - 64: gray stone with left edge + white band — left end / isolated
+/// - 65: gray stone with right edge + white band — right end
+///
+/// Cap tiles use outline pieces from rows 0–2 that have a horizontal
+/// line at the bottom (representing the wall top edge).
+// TODO(nick): refine cap tile indices after visual verification.
 final grayBrickWall = WallDef(
   id: 'gray_brick',
-  name: 'Gray Brick',
+  name: 'Gray Stone',
   tilesetId: 'room_builder_office',
-  // Wall face tiles — rendered at barrier positions.
-  // Gray brick faces appear to be in the right portion of rows 3–4.
-  // Using row 4 (indices 64–79) for gray variants.
   faceBitmaskToTileIndex: {
     // Isolated wall (no cardinal neighbors).
     0: 64,
     // Single neighbor — end caps.
-    WallBitmask.n: 64, // wall continues above only
-    WallBitmask.e: 64, // wall continues right only
-    WallBitmask.s: 64, // wall continues below only
-    WallBitmask.w: 64, // wall continues left only
+    WallBitmask.n: 66, // wall continues above only
+    WallBitmask.e: 64, // wall continues right → left end
+    WallBitmask.s: 66, // wall continues below only
+    WallBitmask.w: 65, // wall continues left → right end
     // Two neighbors — straight walls and corners.
-    WallBitmask.n | WallBitmask.s: 64, // vertical middle
-    WallBitmask.e | WallBitmask.w: 64, // horizontal middle
-    WallBitmask.n | WallBitmask.e: 64, // corner: wall above + right
-    WallBitmask.n | WallBitmask.w: 64, // corner: wall above + left
-    WallBitmask.s | WallBitmask.e: 64, // corner: wall below + right
-    WallBitmask.s | WallBitmask.w: 64, // corner: wall below + left
+    WallBitmask.n | WallBitmask.s: 66, // vertical middle
+    WallBitmask.e | WallBitmask.w: 66, // horizontal middle
+    WallBitmask.n | WallBitmask.e: 64, // corner: N+E
+    WallBitmask.n | WallBitmask.w: 65, // corner: N+W
+    WallBitmask.s | WallBitmask.e: 64, // corner: S+E
+    WallBitmask.s | WallBitmask.w: 65, // corner: S+W
     // Three neighbors — T-junctions.
-    WallBitmask.n | WallBitmask.e | WallBitmask.w: 64, // T facing south
-    WallBitmask.s | WallBitmask.e | WallBitmask.w: 64, // T facing north
-    WallBitmask.n | WallBitmask.s | WallBitmask.e: 64, // T facing west
-    WallBitmask.n | WallBitmask.s | WallBitmask.w: 64, // T facing east
+    WallBitmask.n | WallBitmask.e | WallBitmask.w: 66, // T south
+    WallBitmask.s | WallBitmask.e | WallBitmask.w: 66, // T north
+    WallBitmask.n | WallBitmask.s | WallBitmask.e: 64, // T west
+    WallBitmask.n | WallBitmask.s | WallBitmask.w: 65, // T east
     // All four neighbors — cross.
-    WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 64,
+    WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 66,
   },
-  // Wall cap tiles — rendered at y-1 above north-facing barriers.
-  // S bit is always set (barrier below). Outline pieces from rows 0–2.
+  // Cap tiles — outline pieces at y-1 above north-facing barriers.
+  // Using row 0 outline tiles. S bit always set.
+  // Index 2 appears to have a bottom line (wall top edge).
+  // Index 0 has a corner-like bottom-right outline.
   capBitmaskToTileIndex: {
-    // Cap with wall below only (isolated top).
-    WallBitmask.s: 0,
-    // Cap with wall below + right (left end of wall top).
-    WallBitmask.s | WallBitmask.e: 0,
-    // Cap with wall below + left (right end of wall top).
-    WallBitmask.s | WallBitmask.w: 0,
-    // Cap with wall below + left + right (middle of wall top).
-    WallBitmask.s | WallBitmask.e | WallBitmask.w: 0,
-    // Cap with wall below + above (vertical wall, not north-facing — rare).
-    WallBitmask.s | WallBitmask.n: 0,
-    // Cap with wall in three directions.
+    WallBitmask.s: 2, // isolated cap
+    WallBitmask.s | WallBitmask.e: 0, // left end of cap row
+    WallBitmask.s | WallBitmask.w: 1, // right end of cap row
+    WallBitmask.s | WallBitmask.e | WallBitmask.w: 2, // cap middle
+    WallBitmask.s | WallBitmask.n: 2, // vertical (rare)
     WallBitmask.s | WallBitmask.n | WallBitmask.e: 0,
-    WallBitmask.s | WallBitmask.n | WallBitmask.w: 0,
-    // Cap surrounded.
-    WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 0,
+    WallBitmask.s | WallBitmask.n | WallBitmask.w: 1,
+    WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 2,
   },
 );
 
