@@ -872,10 +872,14 @@ class TechWorld extends World with TapCallbacks {
       // Look up wall construction definition if the map specifies one.
       final wallDef =
           map.wallDefId != null ? lookupWallDef(map.wallDefId!) : null;
-      if (wallDef != null) {
-        _log.info('loadMapComponents: using WallDef "${wallDef.id}" '
-            'from tileset "${wallDef.tilesetId}"');
-      }
+
+      // ignore: avoid_print
+      print('WALL_DIAG: wallDefId=${map.wallDefId}, '
+          'wallDef=${wallDef?.id}, '
+          'tilesetIds=${map.tilesetIds}, '
+          'hasObjectLayer=${map.objectLayer != null}, '
+          'hasFloorLayer=${map.floorLayer != null}, '
+          'barriers=${barrierSet.length}');
 
       // When a WallDef is present, always regenerate the object layer so
       // construction tiles are used — even if the map has a saved objectLayer
@@ -889,8 +893,12 @@ class TechWorld extends World with TapCallbacks {
           barriers: barrierSet,
           wallDef: wallDef,
         );
-        _log.info('loadMapComponents: auto-generated object layer from barriers'
-            '${wallDef != null ? ' (with WallDef)' : ''}');
+        // ignore: avoid_print
+        print('WALL_DIAG: generated object layer '
+            '${wallDef != null ? 'WITH WallDef "${wallDef.id}"' : 'without WallDef (floor copy)'}');
+      } else {
+        // ignore: avoid_print
+        print('WALL_DIAG: using existing object layer (not regenerated)');
       }
 
       final overrides = barrierSet.isNotEmpty

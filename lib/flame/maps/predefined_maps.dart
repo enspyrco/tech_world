@@ -117,12 +117,16 @@ final Map<String, GameMap> _predefinedMapLookup = {
 GameMap applyPredefinedVisualFallback(GameMap map) {
   final hasVisualLayers = map.floorLayer != null || map.objectLayer != null;
 
+  // ignore: avoid_print
+  print('FALLBACK_DIAG: "${map.name}" hasVisualLayers=$hasVisualLayers, '
+      'wallDefId=${map.wallDefId}, tilesetIds=${map.tilesetIds}');
+
   // Even when visual layers exist, we may need to fill in metadata like
   // wallDefId from the predefined match (e.g. Firestore rooms saved before
   // wallDefId was added).
   if (hasVisualLayers && map.wallDefId != null) {
-    _log.fine('Visual fallback skipped: "${map.name}" already has visual '
-        'layers and wallDefId');
+    // ignore: avoid_print
+    print('FALLBACK_DIAG: skipped — already has visual layers and wallDefId');
     return map;
   }
 
@@ -136,10 +140,14 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
   }
 
   // Fill in wallDefId from predefined even when visual layers already exist.
+  // ignore: avoid_print
+  print('FALLBACK_DIAG: predefined match found: "${predefined.name}", '
+      'predefined.wallDefId=${predefined.wallDefId}');
   if (hasVisualLayers) {
     if (predefined.wallDefId != null && map.wallDefId == null) {
-      _log.info('Visual fallback: "${map.name}" — filling wallDefId '
-          '"${predefined.wallDefId}" from predefined match');
+      // ignore: avoid_print
+      print('FALLBACK_DIAG: filling wallDefId="${predefined.wallDefId}" '
+          'and merging tilesetIds=${[...map.tilesetIds, ...predefined.tilesetIds]}');
       return GameMap(
         id: map.id,
         name: map.name,
