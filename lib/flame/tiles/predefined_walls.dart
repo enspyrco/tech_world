@@ -14,9 +14,10 @@ import 'package:tech_world/flame/tiles/wall_def.dart';
 /// - 64: gray stone with left edge + white band — left end / isolated
 /// - 65: gray stone with right edge + white band — right end
 ///
-/// Cap tiles use outline pieces from rows 0–2 that have a horizontal
-/// line at the bottom (representing the wall top edge).
-// TODO(nick): refine cap tile indices after visual verification.
+/// Cap tiles use row 3 gray stone (indices 56–57) — the top halves of
+/// 2-tile-tall wall segments. The bitmask is computed at the BARRIER
+/// position (not the cap position), so all 16 bitmask values need entries.
+// TODO(nick): refine tile indices after visual verification.
 final grayBrickWall = WallDef(
   id: 'gray_brick',
   name: 'Gray Stone',
@@ -44,18 +45,31 @@ final grayBrickWall = WallDef(
     // All four neighbors — cross.
     WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 66,
   },
-  // Cap tiles — top halves of wall segments at y-1 above barriers.
-  // Row 3 contains the top halves; row 4 the bottom halves.
-  // Gray stone family appears at cols 8-9 (indices 56-57 in row 3).
-  // Trying 56 (left edge), 57 (right edge), 56 (fill) for now.
+  // Cap tiles at y-1 above north-facing barriers. The bitmask is computed
+  // for the BARRIER position, so any of the 16 bitmask values can occur.
+  // Horizontal wall barriers have E+W without S; vertical wall tops have
+  // S without E/W. All must be covered.
   capBitmaskToTileIndex: {
-    WallBitmask.s: 56, // isolated cap
-    WallBitmask.s | WallBitmask.e: 56, // left end of cap row
-    WallBitmask.s | WallBitmask.w: 57, // right end of cap row
-    WallBitmask.s | WallBitmask.e | WallBitmask.w: 56, // cap middle
-    WallBitmask.s | WallBitmask.n: 56, // vertical (rare)
-    WallBitmask.s | WallBitmask.n | WallBitmask.e: 56,
-    WallBitmask.s | WallBitmask.n | WallBitmask.w: 57,
+    // No neighbors (isolated barrier).
+    0: 56,
+    // Single neighbor.
+    WallBitmask.n: 56,
+    WallBitmask.e: 56, // wall to right → cap continues right
+    WallBitmask.s: 56, // wall below
+    WallBitmask.w: 57, // wall to left → cap continues left
+    // Two neighbors.
+    WallBitmask.n | WallBitmask.s: 56, // vertical middle
+    WallBitmask.e | WallBitmask.w: 56, // horizontal middle ← was MISSING
+    WallBitmask.n | WallBitmask.e: 56,
+    WallBitmask.n | WallBitmask.w: 57,
+    WallBitmask.s | WallBitmask.e: 56,
+    WallBitmask.s | WallBitmask.w: 57,
+    // Three neighbors.
+    WallBitmask.n | WallBitmask.e | WallBitmask.w: 56,
+    WallBitmask.s | WallBitmask.e | WallBitmask.w: 56,
+    WallBitmask.n | WallBitmask.s | WallBitmask.e: 56,
+    WallBitmask.n | WallBitmask.s | WallBitmask.w: 57,
+    // All four neighbors.
     WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 56,
   },
 );
