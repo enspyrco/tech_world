@@ -44,19 +44,19 @@ final grayBrickWall = WallDef(
     // All four neighbors — cross.
     WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 66,
   },
-  // Cap tiles — outline pieces at y-1 above north-facing barriers.
-  // Using row 0 outline tiles. S bit always set.
-  // Index 2 appears to have a bottom line (wall top edge).
-  // Index 0 has a corner-like bottom-right outline.
+  // Cap tiles — top halves of wall segments at y-1 above barriers.
+  // Row 3 contains the top halves; row 4 the bottom halves.
+  // Gray stone family appears at cols 8-9 (indices 56-57 in row 3).
+  // Trying 56 (left edge), 57 (right edge), 56 (fill) for now.
   capBitmaskToTileIndex: {
-    WallBitmask.s: 2, // isolated cap
-    WallBitmask.s | WallBitmask.e: 0, // left end of cap row
-    WallBitmask.s | WallBitmask.w: 1, // right end of cap row
-    WallBitmask.s | WallBitmask.e | WallBitmask.w: 2, // cap middle
-    WallBitmask.s | WallBitmask.n: 2, // vertical (rare)
-    WallBitmask.s | WallBitmask.n | WallBitmask.e: 0,
-    WallBitmask.s | WallBitmask.n | WallBitmask.w: 1,
-    WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 2,
+    WallBitmask.s: 56, // isolated cap
+    WallBitmask.s | WallBitmask.e: 56, // left end of cap row
+    WallBitmask.s | WallBitmask.w: 57, // right end of cap row
+    WallBitmask.s | WallBitmask.e | WallBitmask.w: 56, // cap middle
+    WallBitmask.s | WallBitmask.n: 56, // vertical (rare)
+    WallBitmask.s | WallBitmask.n | WallBitmask.e: 56,
+    WallBitmask.s | WallBitmask.n | WallBitmask.w: 57,
+    WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 56,
   },
 );
 
