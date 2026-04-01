@@ -225,12 +225,13 @@ void main() {
         expect(merged.spawnPoint, const Point(12, 18));
       });
 
-      test('does not override existing floorLayer', () {
+      test('preserves existing floorLayer and merges wallGrid', () {
         // If the Firestore room already has a floor layer, keep it.
+        // WallGrid from predefined match gets merged in.
         final existingFloor = lRoom.floorLayer!;
         final firestoreMap = GameMap(
           id: 'abc123',
-          name: 'My Room',
+          name: 'The L-Room',
           barriers: lRoom.barriers,
           floorLayer: existingFloor,
           tilesetIds: const ['single_room'],
@@ -238,8 +239,11 @@ void main() {
 
         final merged = applyPredefinedVisualFallback(firestoreMap);
 
-        // Should be identical — already has visual layers.
-        expect(identical(merged, firestoreMap), isTrue);
+        // Floor layer preserved from Firestore.
+        expect(identical(merged.floorLayer, existingFloor), isTrue);
+        // WallGrid filled in from predefined match.
+        expect(merged.wallGrid, isNotNull);
+        expect(merged.tilesetIds, contains('single_room'));
       });
 
       test('returns map unchanged if no predefined match', () {

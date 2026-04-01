@@ -18,15 +18,18 @@ import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
+import 'package:tech_world/flame/tiles/predefined_walls.dart';
+import 'package:tech_world/flame/tiles/wall_def.dart';
 import 'package:tech_world/map_editor/automap_engine.dart';
 import 'package:tech_world/map_editor/automap_rule.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
+import 'package:tech_world/map_editor/wall_grid.dart';
 
 /// Tile types that can be painted on the map grid.
 enum TileType { open, barrier, spawn, terminal }
 
 /// Tools available in the map editor.
-enum EditorTool { barrier, spawn, terminal, eraser }
+enum EditorTool { barrier, spawn, terminal, eraser, wall }
 
 /// Which layer is active for editing.
 enum ActiveLayer {
@@ -192,6 +195,32 @@ class MapEditorState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // -------------------------------------------------------------------------
+  // Wall brush state
+  // -------------------------------------------------------------------------
+
+  /// Parallel grid tracking which wall definition each cell belongs to.
+  ///
+  /// Used during editing to determine bitmask values for face + cap tiles.
+  /// At runtime, the [TileLayerData] is self-sufficient — this is only
+  /// needed for editor round-trips.
+  final WallGrid wallGrid = WallGrid();
+
+  /// The currently active wall brush, or `null` when not in wall-paint mode.
+  WallDef? _activeWallBrush;
+  WallDef? get activeWallBrush => _activeWallBrush;
+
+  /// Set the active wall brush for painting construction walls.
+  ///
+  /// Pass `null` to return to manual tool mode.
+  void setWallBrush(WallDef? wallDef) {
+    _activeWallBrush = wallDef;
+    if (wallDef != null) {
+      _currentTool = EditorTool.wall;
+    }
+    notifyListeners();
+  }
+
   /// Paint auto-terrain at ([x], [y]) using the active terrain brush.
   ///
   /// Sets the terrain in the [terrainGrid], then re-evaluates this cell and
@@ -264,6 +293,124 @@ class MapEditorState extends ChangeNotifier {
         y,
         TileRef(tilesetId: terrain.tilesetId, tileIndex: tileIndex),
       );
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Wall brush painting
+  // -------------------------------------------------------------------------
+
+  /// Paint a construction wall at ([x], [y]) using the active wall brush.
+  ///
+  /// Records the wall in [wallGrid], creates a barrier on the structure grid,
+  /// and re-evaluates face + cap tiles for this cell and its 4 cardinal
+  /// neighbors. Notifies listeners once.
+  void paintWall(int x, int y) {
+    if (!_inBounds(x, y)) return;
+    final wallDef = _activeWallBrush;
+    if (wallDef == null) return;
+
+    wallGrid.setWall(x, y, wallDef.id);
+    _grid[y][x] = TileType.barrier;
+
+    // Re-evaluate this cell + all 4 cardinal neighbors.
+    _reevaluateWallCell(x, y, wallDef);
+    for (final (dx, dy) in WallBitmask.offsets) {
+      final nx = x + dx;
+      final ny = y + dy;
+      if (_inBounds(nx, ny) && wallGrid.isWallOfTypeAt(nx, ny, wallDef.id)) {
+        _reevaluateWallCell(nx, ny, wallDef);
+      }
+    }
+
+    _markDirty();
+    notifyListeners();
+  }
+
+  /// Erase a construction wall at ([x], [y]).
+  ///
+  /// Removes the wall from [wallGrid], clears the barrier, removes face and
+  /// cap tiles from the object layer, and re-evaluates cardinal neighbors.
+  void eraseWall(int x, int y) {
+    if (!_inBounds(x, y)) return;
+
+    final wallDefId = wallGrid.wallAt(x, y);
+    if (wallDefId == null) return;
+
+    final wallDef = lookupWallDef(wallDefId);
+
+    wallGrid.setWall(x, y, null);
+    _grid[y][x] = TileType.open;
+
+    // Remove face tile at (x, y).
+    objectLayerData.setTile(x, y, null);
+
+    // Remove cap tile at (x, y-1) if this wall owned it.
+    // Only clear if there's no wall at (x, y-1) that owns this position.
+    if (!wallGrid.isWallAt(x, y - 1)) {
+      objectLayerData.setTile(x, y - 1, null);
+    }
+
+    // Re-evaluate cardinal neighbors.
+    if (wallDef != null) {
+      for (final (dx, dy) in WallBitmask.offsets) {
+        final nx = x + dx;
+        final ny = y + dy;
+        if (_inBounds(nx, ny) &&
+            wallGrid.isWallOfTypeAt(nx, ny, wallDefId)) {
+          _reevaluateWallCell(nx, ny, wallDef);
+        }
+      }
+    }
+
+    _markDirty();
+    notifyListeners();
+  }
+
+  /// Re-evaluate face + cap tiles for a single wall cell.
+  ///
+  /// Computes the 4-bit cardinal bitmask from [wallGrid] neighbors, then:
+  /// 1. Places the face tile at (x, y) on the object layer.
+  /// 2. If north-facing (no wall above): places cap tile at (x, y-1).
+  /// 3. If NOT north-facing: clears any stale cap at (x, y-1).
+  void _reevaluateWallCell(int x, int y, WallDef wallDef) {
+    // Build a set of wall positions for bitmask computation.
+    final wallPositions = <(int, int)>{};
+    for (final (dx, dy) in WallBitmask.offsets) {
+      final nx = x + dx;
+      final ny = y + dy;
+      if (wallGrid.isWallOfTypeAt(nx, ny, wallDef.id)) {
+        wallPositions.add((nx, ny));
+      }
+    }
+
+    final bitmask = computeWallBitmask(x, y, wallPositions);
+
+    // Place face tile.
+    final faceIndex = wallDef.faceForBitmask(bitmask);
+    if (faceIndex != null) {
+      objectLayerData.setTile(
+        x,
+        y,
+        TileRef(tilesetId: wallDef.tilesetId, tileIndex: faceIndex),
+      );
+    }
+
+    // Cap logic: only north-facing walls get caps.
+    final hasWallAbove = wallGrid.isWallOfTypeAt(x, y - 1, wallDef.id);
+    if (!hasWallAbove) {
+      // Place cap at y-1.
+      final capIndex = wallDef.capForBitmask(bitmask);
+      if (capIndex != null) {
+        objectLayerData.setTile(
+          x,
+          y - 1,
+          TileRef(tilesetId: wallDef.tilesetId, tileIndex: capIndex),
+        );
+      }
+    } else {
+      // Wall above owns (x, y-1) — don't place a cap here.
+      // The wall above's own _reevaluateWallCell handles its face at (x, y-1).
     }
   }
 
@@ -421,8 +568,16 @@ class MapEditorState extends ChangeNotifier {
   }
 
   /// Set the current painting tool.
+  ///
+  /// Selecting [EditorTool.wall] auto-activates the default wall brush
+  /// (gray brick). Selecting any other tool clears the wall brush.
   void setTool(EditorTool tool) {
     _currentTool = tool;
+    if (tool == EditorTool.wall) {
+      _activeWallBrush ??= grayBrickWall;
+    } else {
+      _activeWallBrush = null;
+    }
     notifyListeners();
   }
 
@@ -457,7 +612,17 @@ class MapEditorState extends ChangeNotifier {
       case EditorTool.terminal:
         _grid[y][x] = TileType.terminal;
       case EditorTool.eraser:
+        // If erasing a wall cell, delegate to eraseWall for full cleanup.
+        if (wallGrid.isWallAt(x, y)) {
+          eraseWall(x, y);
+          return; // eraseWall already calls _markDirty + notifyListeners.
+        }
         _grid[y][x] = TileType.open;
+      case EditorTool.wall:
+        // Wall painting is handled by paintWall(), not paintTile().
+        // If we get here, delegate to the wall brush.
+        paintWall(x, y);
+        return; // paintWall already calls _markDirty + notifyListeners.
     }
     _markDirty();
     notifyListeners();
@@ -480,9 +645,11 @@ class MapEditorState extends ChangeNotifier {
     clearGrid(); // Already calls _markDirty().
     _roomId = null;
     _activeTerrainBrush = null;
+    _activeWallBrush = null;
     _automappedCells.clear();
     _autoBarrierCells.clear();
     terrainGrid.clear();
+    wallGrid.clear();
     _clearTileLayer(floorLayerData);
     _clearTileLayer(objectLayerData);
     _customTilesets = [];
@@ -531,6 +698,12 @@ class MapEditorState extends ChangeNotifier {
     terrainGrid.clear();
     if (map.terrainGrid != null) {
       _copyTerrainGrid(map.terrainGrid!, terrainGrid);
+    }
+
+    // Load wall grid if present.
+    wallGrid.clear();
+    if (map.wallGrid != null) {
+      _copyWallGrid(map.wallGrid!, wallGrid);
     }
 
     // Restore custom tilesets from the map (bytes may already be loaded
@@ -675,6 +848,7 @@ class MapEditorState extends ChangeNotifier {
       objectLayer: objectLayerData.isEmpty ? null : objectLayerData.copy(),
       tilesetIds: tilesetIds,
       terrainGrid: terrainGrid.isEmpty ? null : terrainGrid.copy(),
+      wallGrid: wallGrid.isEmpty ? null : wallGrid.copy(),
       customTilesets: List.unmodifiable(_customTilesets),
     );
   }
@@ -802,6 +976,14 @@ class MapEditorState extends ChangeNotifier {
     for (var y = 0; y < gridSize; y++) {
       for (var x = 0; x < gridSize; x++) {
         dest.setTerrain(x, y, source.terrainAt(x, y));
+      }
+    }
+  }
+
+  void _copyWallGrid(WallGrid source, WallGrid dest) {
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        dest.setWall(x, y, source.wallAt(x, y));
       }
     }
   }
