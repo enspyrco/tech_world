@@ -5,6 +5,7 @@ import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
+import 'package:tech_world/map_editor/wall_grid.dart';
 
 /// JSON serialization/deserialization for tileset-based maps.
 ///
@@ -53,7 +54,7 @@ class TileMapFormat {
         'customTilesets': [
           for (final ts in map.customTilesets) ts.toJson(),
         ],
-      if (map.wallDefId != null) 'wallDefId': map.wallDefId,
+      if (map.wallGrid != null) 'wallGrid': map.wallGrid!.toJson(),
     };
   }
 
@@ -105,7 +106,9 @@ class TileMapFormat {
                   Tileset.fromJson(ts as Map<String, dynamic>))
               .toList() ??
           const [],
-      wallDefId: json['wallDefId'] as String?,
+      wallGrid: json['wallGrid'] != null
+          ? WallGrid.fromJson(json['wallGrid'] as List<dynamic>)
+          : null,
     );
   }
 }

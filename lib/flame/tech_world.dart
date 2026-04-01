@@ -29,7 +29,6 @@ import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
-import 'package:tech_world/flame/tiles/predefined_walls.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/map_sync_service.dart';
@@ -869,36 +868,15 @@ class TechWorld extends World with TapCallbacks {
           'floorLayer=${map.floorLayer != null}');
 
 
-      // Look up wall construction definition if the map specifies one.
-      final wallDef =
-          map.wallDefId != null ? lookupWallDef(map.wallDefId!) : null;
-
-      // ignore: avoid_print
-      print('WALL_DIAG: wallDefId=${map.wallDefId}, '
-          'wallDef=${wallDef?.id}, '
-          'tilesetIds=${map.tilesetIds}, '
-          'hasObjectLayer=${map.objectLayer != null}, '
-          'hasFloorLayer=${map.floorLayer != null}, '
-          'barriers=${barrierSet.length}');
-
-      // When a WallDef is present, always regenerate the object layer so
-      // construction tiles are used — even if the map has a saved objectLayer
-      // (which would contain old floor-copied tiles without wall caps).
-      var objectLayer = wallDef != null ? null : map.objectLayer;
+      var objectLayer = map.objectLayer;
       if (objectLayer == null &&
           map.floorLayer != null &&
           barrierSet.isNotEmpty) {
         objectLayer = buildObjectLayerFromBarriers(
           floorLayer: map.floorLayer!,
           barriers: barrierSet,
-          wallDef: wallDef,
         );
-        // ignore: avoid_print
-        print('WALL_DIAG: generated object layer '
-            '${wallDef != null ? 'WITH WallDef "${wallDef.id}"' : 'without WallDef (floor copy)'}');
-      } else {
-        // ignore: avoid_print
-        print('WALL_DIAG: using existing object layer (not regenerated)');
+        _log.info('loadMapComponents: auto-generated object layer from barriers');
       }
 
       final overrides = barrierSet.isNotEmpty

@@ -38,8 +38,7 @@ final lRoom = GameMap(
   spawnPoint: const Point(10, 15),
   terminals: const [Point(8, 12), Point(14, 12)],
   floorLayer: buildLRoomFloorLayer(),
-  tilesetIds: const ['single_room', 'room_builder_office'],
-  wallDefId: 'gray_brick',
+  tilesetIds: const ['single_room'],
 );
 
 /// Four Corners - open map, barriers come from painted tiles.
@@ -115,59 +114,17 @@ final Map<String, GameMap> _predefinedMapLookup = {
 ///
 /// Returns [map] unchanged if there is no predefined match or nothing to fill.
 GameMap applyPredefinedVisualFallback(GameMap map) {
-  final hasVisualLayers = map.floorLayer != null || map.objectLayer != null;
-
-  // ignore: avoid_print
-  print('FALLBACK_DIAG: "${map.name}" hasVisualLayers=$hasVisualLayers, '
-      'wallDefId=${map.wallDefId}, tilesetIds=${map.tilesetIds}');
-
-  // Even when visual layers exist, we may need to fill in metadata like
-  // wallDefId from the predefined match (e.g. Firestore rooms saved before
-  // wallDefId was added).
-  if (hasVisualLayers && map.wallDefId != null) {
-    // ignore: avoid_print
-    print('FALLBACK_DIAG: skipped — already has visual layers and wallDefId');
-    return map;
-  }
-
-  final predefined = _findPredefinedMatch(map);
-  if (predefined == null) {
-    if (!hasVisualLayers) {
-      _log.info('Visual fallback: "${map.name}" has no visual layers and '
-          'no predefined match');
-    }
-    return map;
-  }
-
-  // Fill in wallDefId from predefined even when visual layers already exist.
-  // ignore: avoid_print
-  print('FALLBACK_DIAG: predefined match found: "${predefined.name}", '
-      'predefined.wallDefId=${predefined.wallDefId}');
-  if (hasVisualLayers) {
-    if (predefined.wallDefId != null && map.wallDefId == null) {
-      // ignore: avoid_print
-      print('FALLBACK_DIAG: filling wallDefId="${predefined.wallDefId}" '
-          'and merging tilesetIds=${[...map.tilesetIds, ...predefined.tilesetIds]}');
-      return GameMap(
-        id: map.id,
-        name: map.name,
-        barriers: map.barriers,
-        spawnPoint: map.spawnPoint,
-        terminals: map.terminals,
-        floorLayer: map.floorLayer,
-        objectLayer: map.objectLayer,
-        objectLayerPriorityOverrides: map.objectLayerPriorityOverrides,
-        tilesetIds: {...map.tilesetIds, ...predefined.tilesetIds}.toList(),
-        terrainGrid: map.terrainGrid,
-        customTilesets: map.customTilesets,
-        wallDefId: predefined.wallDefId,
-      );
-    }
+  // Already has visual layers — nothing to fill.
+  if (map.floorLayer != null || map.objectLayer != null) {
+    _log.fine('Visual fallback skipped: "${map.name}" already has visual layers');
     return map;
   }
 
   _log.info('Visual fallback: "${map.name}" (id=${map.id}) has no visual '
-      'layers, applying predefined match...');
+      'layers, searching for predefined match...');
+
+  final predefined = _findPredefinedMatch(map);
+  if (predefined == null) return map;
 
   final needsFloor = predefined.floorLayer != null;
   final needsObjects = predefined.objectLayer != null;
@@ -188,7 +145,7 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
     tilesetIds: map.tilesetIds.isEmpty ? predefined.tilesetIds : map.tilesetIds,
     terrainGrid: map.terrainGrid ?? predefined.terrainGrid,
     customTilesets: map.customTilesets,
-    wallDefId: map.wallDefId ?? predefined.wallDefId,
+    wallGrid: map.wallGrid ?? predefined.wallGrid,
   );
 }
 
