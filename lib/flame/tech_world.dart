@@ -868,15 +868,14 @@ class TechWorld extends World with TapCallbacks {
           'floorLayer=${map.floorLayer != null}');
 
 
+      // Always regenerate the object layer from the actual barriers so that
+      // Firestore-painted barriers get proper wall tiles, not just the
+      // predefined ones baked into map.objectLayer.
       var objectLayer = map.objectLayer;
-      if (objectLayer == null &&
-          map.floorLayer != null &&
-          barrierSet.isNotEmpty) {
-        objectLayer = buildObjectLayerFromBarriers(
-          floorLayer: map.floorLayer!,
-          barriers: barrierSet,
-        );
-        _log.info('loadMapComponents: auto-generated object layer from barriers');
+      if (barrierSet.isNotEmpty) {
+        objectLayer = buildObjectLayerFromBarriers(barrierSet);
+        _log.info('loadMapComponents: generated object layer from '
+            '${barrierSet.length} barriers');
       }
 
       final overrides = barrierSet.isNotEmpty

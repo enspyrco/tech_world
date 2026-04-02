@@ -1,4 +1,5 @@
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
+import 'package:tech_world/flame/tiles/tile_ref.dart';
 
 /// Compute priority overrides from a barrier set for y-based depth sorting.
 ///
@@ -74,12 +75,9 @@ Map<(int, int), int> computePriorityOverrides(Set<(int, int)> barriers) {
             }
           }
 
-          // Bump the flanking barrier tiles (door frame columns) at y.
-          // Do NOT bump flanking tiles ABOVE (y-1) — those are full-height
-          // floor tiles that would fully occlude players walking above the
-          // wall.
-          _setMax(overrides, (x, y), lintelPriority);
-          _setMax(overrides, (gapEnd, y), lintelPriority);
+          // Door frame columns keep natural priority (y). Bumping them
+          // to y+1 would match the priority of a player at y+1 (just below
+          // the door), causing their head to clip against the frame.
         }
       }
     }
@@ -131,77 +129,154 @@ void _setMax(Map<(int, int), int> overrides, (int, int) key, int priority) {
       ifAbsent: () => priority);
 }
 
-/// Build an object layer by promoting floor tiles at barrier positions into
-/// individually y-sorted sprites.
+// ---------------------------------------------------------------------------
+// Wall bitmask — 4-bit cardinal neighbor mask for wall tile selection.
+// ---------------------------------------------------------------------------
+
+/// Direction bit constants for the 4-bit wall bitmask.
 ///
-/// The floor layer renders as a single cached [Picture] — it can't participate
-/// in per-sprite depth sorting. This function copies floor tiles at barrier
-/// positions (plus wall caps and lintel extended occlusion tiles) into a
-/// separate object layer where each tile is an individual [SpriteComponent]
-/// in the World's priority sort.
+/// ```
+///        N=1
+///  W=8 | cell | E=2
+///        S=4
+/// ```
+abstract final class WallBitmask {
+  static const int n = 1; // barrier at (x, y-1)
+  static const int e = 2; // barrier at (x+1, y)
+  static const int s = 4; // barrier at (x, y+1)
+  static const int w = 8; // barrier at (x-1, y)
+
+  /// Cardinal neighbor offsets indexed by bit position.
+  static const List<(int, int)> offsets = [
+    (0, -1), // N (bit 0)
+    (1, 0), // E (bit 1)
+    (0, 1), // S (bit 2)
+    (-1, 0), // W (bit 3)
+  ];
+}
+
+/// Compute the 4-bit cardinal bitmask for a barrier at ([cx], [cy]).
 ///
-/// The floor layer keeps its copies underneath — harmless duplication that
-/// prevents visual gaps when the object layer is hidden (e.g. editor mode).
-TileLayerData buildObjectLayerFromBarriers({
-  required TileLayerData floorLayer,
-  required Set<(int, int)> barriers,
-}) {
-  final layer = TileLayerData();
-  if (barriers.isEmpty) return layer;
-
-  // Compute which positions need object-layer tiles.
-  final positions = <(int, int)>{};
-
-  for (final (x, y) in barriers) {
-    // The barrier tile itself.
-    positions.add((x, y));
-
-    final isNorthFacing = !barriers.contains((x, y - 1));
-
-    // Vertical wall, horizontal gap.
-    final isVerticalDoorwayLintel =
-        !barriers.contains((x, y + 1)) && barriers.contains((x, y + 2));
-
-    // Wall cap: 1 row above any north-facing edge.
-    if (isNorthFacing && y - 1 >= 0) {
-      positions.add((x, y - 1));
-    }
-
-    // Vertical doorway: extended occlusion above lintel.
-    if (isVerticalDoorwayLintel && y - 1 >= 0) {
-      positions.add((x, y - 1));
-    }
-
-    // Horizontal doorway: scan for gap to the right.
-    if (!barriers.contains((x + 1, y))) {
-      var gapEnd = x + 1;
-      while (gapEnd < x + 10 && !barriers.contains((gapEnd, y))) {
-        gapEnd++;
-      }
-      if (barriers.contains((gapEnd, y))) {
-        final gapWidth = gapEnd - (x + 1);
-        if (gapWidth >= 1 && gapWidth <= 3) {
-          // Add tiles ABOVE the gap (visual lintel) to the object layer.
-          // The gap tiles themselves are floor — they stay in the floor layer.
-          if (y - 1 >= 0) {
-            for (var gx = x + 1; gx < gapEnd; gx++) {
-              positions.add((gx, y - 1));
-            }
-          }
-          // Do NOT add flanking tiles above (y-1) — those are full-height
-          // floor tiles that would fully occlude players walking above.
-        }
-      }
+/// Each bit indicates whether a barrier exists in that cardinal direction.
+/// Returns a value 0–15.
+int computeWallBitmask(int cx, int cy, Set<(int, int)> barriers) {
+  var mask = 0;
+  for (var i = 0; i < 4; i++) {
+    final (dx, dy) = WallBitmask.offsets[i];
+    if (barriers.contains((cx + dx, cy + dy))) {
+      mask |= 1 << i;
     }
   }
+  return mask;
+}
 
-  // Copy floor tiles at computed positions.
-  for (final (x, y) in positions) {
-    final ref = floorLayer.tileAt(x, y);
-    if (ref != null) {
-      layer.setTile(x, y, ref);
+// ---------------------------------------------------------------------------
+// Wall tile indices from `room_builder_office` tileset.
+// ---------------------------------------------------------------------------
+
+/// Tileset containing the wall tiles.
+///
+/// Currently only `room_builder_office` has wall art. When a second tileset
+/// with walls is needed, this should become a parameter or per-map config
+/// rather than a constant.
+const wallTilesetId = 'room_builder_office';
+
+/// Face tiles: gray stone brick from row 8 (indices 128–130).
+///
+/// - 129: fill (middle / default)
+/// - 128: left border (left end / isolated)
+/// - 130: right border (right end)
+const _faceTiles = <int, int>{
+  0: 128, // isolated
+  WallBitmask.n: 129,
+  WallBitmask.e: 128,
+  WallBitmask.s: 129,
+  WallBitmask.w: 130,
+  WallBitmask.n | WallBitmask.s: 129,
+  WallBitmask.e | WallBitmask.w: 129,
+  WallBitmask.n | WallBitmask.e: 128,
+  WallBitmask.n | WallBitmask.w: 130,
+  WallBitmask.s | WallBitmask.e: 128,
+  WallBitmask.s | WallBitmask.w: 130,
+  WallBitmask.n | WallBitmask.e | WallBitmask.w: 129,
+  WallBitmask.s | WallBitmask.e | WallBitmask.w: 129,
+  WallBitmask.n | WallBitmask.s | WallBitmask.e: 128,
+  WallBitmask.n | WallBitmask.s | WallBitmask.w: 130,
+  WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 129,
+};
+
+/// Cap tiles: smooth gray from row 5 (indices 90–92).
+///
+/// - 91: fill (default)
+/// - 90: left shading (left end)
+/// - 92: right edge (right end)
+const _capTiles = <int, int>{
+  0: 90,
+  WallBitmask.n: 91,
+  WallBitmask.e: 90,
+  WallBitmask.s: 91,
+  WallBitmask.w: 92,
+  WallBitmask.n | WallBitmask.s: 91,
+  WallBitmask.e | WallBitmask.w: 91,
+  WallBitmask.n | WallBitmask.e: 90,
+  WallBitmask.n | WallBitmask.w: 92,
+  WallBitmask.s | WallBitmask.e: 90,
+  WallBitmask.s | WallBitmask.w: 92,
+  WallBitmask.n | WallBitmask.e | WallBitmask.w: 91,
+  WallBitmask.s | WallBitmask.e | WallBitmask.w: 91,
+  WallBitmask.n | WallBitmask.s | WallBitmask.e: 90,
+  WallBitmask.n | WallBitmask.s | WallBitmask.w: 92,
+  WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 91,
+};
+
+/// Look up the face tile index for a barrier with the given neighbor [bitmask].
+int? faceForBitmask(int bitmask) => _faceTiles[bitmask];
+
+/// Look up the cap tile index for a wall-top with the given neighbor [bitmask].
+int? capForBitmask(int bitmask) => _capTiles[bitmask];
+
+// ---------------------------------------------------------------------------
+// Object layer generation from barriers.
+// ---------------------------------------------------------------------------
+
+/// Build an object layer from barriers with proper wall face + cap tiles.
+///
+/// Places dedicated wall face and cap tiles from `room_builder_office`,
+/// selected by 4-bit cardinal bitmask. This avoids the floor-pixel-bleed
+/// problem where copied floor tiles occlude the player with floor art.
+TileLayerData buildObjectLayerFromBarriers(Set<(int, int)> barriers) {
+  if (barriers.isEmpty) return TileLayerData();
+  return _buildWallObjectLayer(barriers);
+}
+
+/// Build object layer using dedicated wall tiles.
+TileLayerData _buildWallObjectLayer(Set<(int, int)> barriers) {
+  final layer = TileLayerData();
+
+  for (final (x, y) in barriers) {
+    final bitmask = computeWallBitmask(x, y, barriers);
+
+    // Face tile at barrier position.
+    final faceIndex = faceForBitmask(bitmask);
+    if (faceIndex != null) {
+      layer.setTile(
+          x, y, TileRef(tilesetId: wallTilesetId, tileIndex: faceIndex));
+    }
+
+    // Cap tile at y-1 for north-facing walls.
+    final isNorthFacing = !barriers.contains((x, y - 1));
+    if (isNorthFacing && y - 1 >= 0) {
+      final capIndex = capForBitmask(bitmask);
+      if (capIndex != null) {
+        layer.setTile(
+          x,
+          y - 1,
+          TileRef(tilesetId: wallTilesetId, tileIndex: capIndex),
+        );
+      }
     }
   }
 
   return layer;
 }
+

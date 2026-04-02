@@ -1,7 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
-import 'package:tech_world/flame/tiles/tile_layer_data.dart';
-import 'package:tech_world/flame/tiles/tile_ref.dart';
 
 void main() {
   group('computePriorityOverrides', () {
@@ -95,9 +93,9 @@ void main() {
 
       // Gap tile at y should NOT be bumped — it's floor.
       expect(overrides.containsKey((7, 23)), isFalse);
-      // Flanking barriers at y bumped to y+1.
-      expect(overrides[(6, 23)], equals(24));
-      expect(overrides[(8, 23)], equals(24));
+      // Flanking barriers keep natural priority — no bump.
+      expect(overrides.containsKey((6, 23)), isFalse);
+      expect(overrides.containsKey((8, 23)), isFalse);
       // Gap tile ABOVE bumped (lintel overhang).
       expect(overrides[(7, 22)], equals(24));
       // Flanking tiles ABOVE get wall cap priority (y=23), NOT lintel
@@ -119,8 +117,9 @@ void main() {
 
       expect(overrides.containsKey((7, 23)), isFalse);
       expect(overrides.containsKey((8, 23)), isFalse);
-      expect(overrides[(6, 23)], equals(24));
-      expect(overrides[(9, 23)], equals(24));
+      // Flanking barriers keep natural priority — no bump.
+      expect(overrides.containsKey((6, 23)), isFalse);
+      expect(overrides.containsKey((9, 23)), isFalse);
       // Gap tiles above bumped to lintel priority.
       expect(overrides[(7, 22)], equals(24));
       expect(overrides[(8, 22)], equals(24));
@@ -148,114 +147,51 @@ void main() {
   });
 
   group('buildObjectLayerFromBarriers', () {
-    test('copies floor tiles at barrier positions', () {
-      final floor = TileLayerData();
-      floor.setTile(4, 7, const TileRef(tilesetId: 'test', tileIndex: 42));
-      floor.setTile(4, 8, const TileRef(tilesetId: 'test', tileIndex: 43));
-
+    test('places face tiles at barrier positions', () {
       final barriers = {(4, 7), (4, 8)};
-      final objectLayer = buildObjectLayerFromBarriers(
-        floorLayer: floor,
-        barriers: barriers,
-      );
+      final objectLayer = buildObjectLayerFromBarriers(barriers);
 
-      expect(objectLayer.tileAt(4, 7)?.tileIndex, equals(42));
-      expect(objectLayer.tileAt(4, 8)?.tileIndex, equals(43));
+      // Each barrier should have a face tile.
+      expect(objectLayer.tileAt(4, 7), isNotNull);
+      expect(objectLayer.tileAt(4, 8), isNotNull);
     });
 
-    test('copies wall cap tiles above north-facing vertical wall edges', () {
-      final floor = TileLayerData();
-      floor.setTile(5, 6, const TileRef(tilesetId: 'test', tileIndex: 10));
-      floor.setTile(5, 7, const TileRef(tilesetId: 'test', tileIndex: 20));
-      floor.setTile(5, 8, const TileRef(tilesetId: 'test', tileIndex: 30));
-
+    test('places cap tiles above north-facing barriers', () {
+      // Vertical wall: (5,7) is north-facing (nothing at (5,6)).
       final barriers = {(5, 7), (5, 8)};
-      final objectLayer = buildObjectLayerFromBarriers(
-        floorLayer: floor,
-        barriers: barriers,
-      );
+      final objectLayer = buildObjectLayerFromBarriers(barriers);
 
-      expect(objectLayer.tileAt(5, 6)?.tileIndex, equals(10));
-      expect(objectLayer.tileAt(5, 7)?.tileIndex, equals(20));
-    });
-
-    test('all north-facing barriers get wall caps in object layer', () {
-      final floor = TileLayerData();
-      floor.setTile(5, 6, const TileRef(tilesetId: 'test', tileIndex: 10));
-      floor.setTile(5, 7, const TileRef(tilesetId: 'test', tileIndex: 20));
-      floor.setTile(6, 6, const TileRef(tilesetId: 'test', tileIndex: 11));
-      floor.setTile(6, 7, const TileRef(tilesetId: 'test', tileIndex: 21));
-
-      final barriers = {(5, 7), (6, 7)};
-      final objectLayer = buildObjectLayerFromBarriers(
-        floorLayer: floor,
-        barriers: barriers,
-      );
-
-      // Barrier tiles in the object layer.
-      expect(objectLayer.tileAt(5, 7)?.tileIndex, equals(20));
-      expect(objectLayer.tileAt(6, 7)?.tileIndex, equals(21));
-      // Wall caps at y=6 — all north-facing barriers get them.
-      expect(objectLayer.tileAt(5, 6)?.tileIndex, equals(10));
-      expect(objectLayer.tileAt(6, 6)?.tileIndex, equals(11));
-    });
-
-    test('horizontal doorway: gap lintel tiles at y-1, no flanking at y-1',
-        () {
-      final floor = TileLayerData();
-      floor.setTile(6, 22, const TileRef(tilesetId: 'test', tileIndex: 60));
-      floor.setTile(7, 22, const TileRef(tilesetId: 'test', tileIndex: 70));
-      floor.setTile(8, 22, const TileRef(tilesetId: 'test', tileIndex: 80));
-
-      // Horizontal wall at y=23, gap at x=7.
-      final barriers = {(5, 23), (6, 23), (8, 23), (9, 23)};
-      final objectLayer = buildObjectLayerFromBarriers(
-        floorLayer: floor,
-        barriers: barriers,
-      );
-
-      // Gap tile above (7,22) IS in the object layer (lintel overhang).
-      expect(objectLayer.tileAt(7, 22)?.tileIndex, equals(70));
-      // Flanking tiles above (6,22) and (8,22) are wall caps (all
-      // north-facing barriers get wall caps).
-      expect(objectLayer.tileAt(6, 22)?.tileIndex, equals(60));
-      expect(objectLayer.tileAt(8, 22)?.tileIndex, equals(80));
-    });
-
-    test('copies extended occlusion tiles above doorway lintels', () {
-      final floor = TileLayerData();
-      floor.setTile(4, 15, const TileRef(tilesetId: 'test', tileIndex: 1));
-      floor.setTile(4, 16, const TileRef(tilesetId: 'test', tileIndex: 2));
-      floor.setTile(4, 18, const TileRef(tilesetId: 'test', tileIndex: 3));
-
-      final barriers = {(4, 15), (4, 16), (4, 18)};
-      final objectLayer = buildObjectLayerFromBarriers(
-        floorLayer: floor,
-        barriers: barriers,
-      );
-
-      expect(objectLayer.tileAt(4, 16)?.tileIndex, equals(2));
-      expect(objectLayer.tileAt(4, 15)?.tileIndex, equals(1));
+      // Cap tile at y-1 of the north-facing barrier.
+      expect(objectLayer.tileAt(5, 6), isNotNull);
+      // (5,7) is the top barrier, so y-1 = 6 gets a cap.
+      // (5,8) has a barrier above at (5,7), so no cap at (5,7) from (5,8).
+      // But (5,7) already has a face tile from the barrier itself.
+      expect(objectLayer.tileAt(5, 7), isNotNull);
     });
 
     test('returns empty layer when no barriers', () {
-      final floor = TileLayerData();
-      floor.setTile(5, 5, const TileRef(tilesetId: 'test', tileIndex: 1));
-      final objectLayer = buildObjectLayerFromBarriers(
-        floorLayer: floor,
-        barriers: <(int, int)>{},
-      );
+      final objectLayer = buildObjectLayerFromBarriers(<(int, int)>{});
       expect(objectLayer.isEmpty, isTrue);
     });
 
-    test('skips positions where floor has no tile', () {
-      final floor = TileLayerData();
+    test('isolated barrier gets face and cap tiles', () {
       final barriers = {(4, 7)};
-      final objectLayer = buildObjectLayerFromBarriers(
-        floorLayer: floor,
-        barriers: barriers,
-      );
-      expect(objectLayer.tileAt(4, 7), isNull);
+      final objectLayer = buildObjectLayerFromBarriers(barriers);
+
+      // Face tile at barrier position.
+      expect(objectLayer.tileAt(4, 7), isNotNull);
+      // Cap tile above (north-facing since no barrier at (4,6)).
+      expect(objectLayer.tileAt(4, 6), isNotNull);
+    });
+
+    test('horizontal wall: all barriers get caps above', () {
+      final barriers = {(5, 7), (6, 7), (7, 7)};
+      final objectLayer = buildObjectLayerFromBarriers(barriers);
+
+      // All are north-facing (nothing at y=6).
+      expect(objectLayer.tileAt(5, 6), isNotNull);
+      expect(objectLayer.tileAt(6, 6), isNotNull);
+      expect(objectLayer.tileAt(7, 6), isNotNull);
     });
   });
 
@@ -304,4 +240,5 @@ void main() {
       expect(overlays, isEmpty);
     });
   });
+
 }

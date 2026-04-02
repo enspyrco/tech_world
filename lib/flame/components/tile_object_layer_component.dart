@@ -111,8 +111,8 @@ class TileObjectLayerComponent extends Component {
           final isOverridden = priorityOverrides?.containsKey((x, y)) ?? false;
           final label = TextComponent(
             text: isLintelOverlay
-                ? 'p$effectivePriority½'
-                : 'p$effectivePriority',
+                ? '($x,$y)p$effectivePriority½'
+                : '($x,$y)p$effectivePriority',
             position: Vector2(
               x * gridSquareSizeDouble + 2,
               y * gridSquareSizeDouble + 2,

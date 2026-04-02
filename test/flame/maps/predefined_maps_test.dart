@@ -34,23 +34,21 @@ void main() {
         expect(lRoom.name, equals('The L-Room'));
       });
 
-      test('has L-shaped wall barriers', () {
-        expect(lRoom.barriers, isNotEmpty);
-        // Vertical wall at x=4 (22 cells) + horizontal wall at y=7 (13 cells)
-        expect(lRoom.barriers.length, equals(35));
+      test('has no predefined barriers (all from Firestore)', () {
+        expect(lRoom.barriers, isEmpty);
       });
 
-      test('has spawn point at (10, 15)', () {
-        expect(lRoom.spawnPoint, equals(const Point(10, 15)));
+      test('has default spawn point', () {
+        expect(lRoom.spawnPoint, equals(const Point(25, 25)));
       });
 
-      test('has 2 terminals', () {
-        expect(lRoom.terminals.length, equals(2));
+      test('has no predefined terminals', () {
+        expect(lRoom.terminals, isEmpty);
       });
 
       test('uses tilesets for rendering', () {
         expect(lRoom.usesTilesets, isTrue);
-        expect(lRoom.tilesetIds, contains('single_room'));
+        expect(lRoom.tilesetIds, contains('room_builder_office'));
       });
 
       test('has non-empty floor layer', () {
@@ -58,11 +56,15 @@ void main() {
         expect(lRoom.floorLayer!.isEmpty, isFalse);
       });
 
-      test('floor layer references single_room tileset', () {
+      test('floor layer references room_builder_office tileset', () {
         expect(
           lRoom.floorLayer!.referencedTilesetIds,
-          equals({'single_room'}),
+          equals({'room_builder_office'}),
         );
+      });
+
+      test('object layer is built at runtime', () {
+        expect(lRoom.objectLayer, isNull);
       });
     });
 
@@ -170,30 +172,22 @@ void main() {
         expect(names.length, equals(allMaps.length));
       });
 
-      test('only lRoom has predefined barriers (offline fallback)', () {
+      test('no predefined maps have hardcoded barriers', () {
         for (final map in allMaps) {
-          if (map.id == 'l_room') {
-            expect(map.barriers, isNotEmpty,
-                reason: 'lRoom should have L-wall barriers for offline play');
-          } else {
-            expect(map.barriers, isEmpty,
-                reason: '${map.name} should have no predefined barriers');
-          }
+          expect(map.barriers, isEmpty,
+              reason: '${map.name} should have no predefined barriers');
         }
       });
     });
 
     group('applyPredefinedVisualFallback', () {
-      test('fills in missing floorLayer by structural match (Firestore ID)',
-          () {
-        // Simulate a Firestore room saved before tile floor was added.
-        // ID is a Firestore document ID, not the predefined map ID.
-        // Barriers match the L-Room's structure exactly.
-        final firestoreMap = GameMap(
+      test('fills in missing floorLayer by name match', () {
+        // Simulate a Firestore room that matches by name.
+        const firestoreMap = GameMap(
           id: 'abc123firestore',
-          name: "Nick's Room",
-          barriers: lRoom.barriers,
-          spawnPoint: lRoom.spawnPoint,
+          name: 'The L-Room',
+          barriers: [Point(5, 5), Point(6, 5)], // Firestore barriers
+          spawnPoint: Point(10, 15),
         );
 
         final merged = applyPredefinedVisualFallback(firestoreMap);
@@ -201,12 +195,12 @@ void main() {
         // Visual layers filled from predefined L-Room.
         expect(merged.floorLayer, isNotNull);
         expect(merged.floorLayer!.isEmpty, isFalse);
-        expect(merged.tilesetIds, contains('single_room'));
+        expect(merged.tilesetIds, contains('room_builder_office'));
 
         // Structural data preserved from Firestore.
         expect(merged.id, 'abc123firestore');
-        expect(merged.name, "Nick's Room");
-        expect(merged.spawnPoint, lRoom.spawnPoint);
+        expect(merged.name, 'The L-Room');
+        expect(merged.barriers.length, 2);
       });
 
       test('fills in missing floorLayer by direct ID match', () {
@@ -225,21 +219,22 @@ void main() {
         expect(merged.spawnPoint, const Point(12, 18));
       });
 
-      test('does not override existing floorLayer', () {
+      test('preserves existing floorLayer from Firestore', () {
         // If the Firestore room already has a floor layer, keep it.
         final existingFloor = lRoom.floorLayer!;
         final firestoreMap = GameMap(
           id: 'abc123',
-          name: 'My Room',
-          barriers: lRoom.barriers,
+          name: 'The L-Room',
+          barriers: const [Point(5, 5)],
           floorLayer: existingFloor,
-          tilesetIds: const ['single_room'],
+          tilesetIds: const ['room_builder_office'],
         );
 
         final merged = applyPredefinedVisualFallback(firestoreMap);
 
-        // Should be identical — already has visual layers.
-        expect(identical(merged, firestoreMap), isTrue);
+        // Floor layer preserved from Firestore.
+        expect(identical(merged.floorLayer, existingFloor), isTrue);
+        expect(merged.tilesetIds, contains('room_builder_office'));
       });
 
       test('returns map unchanged if no predefined match', () {
@@ -269,11 +264,11 @@ void main() {
       });
 
       test('preserves terminals and custom tilesets from Firestore', () {
-        final firestoreMap = GameMap(
+        const firestoreMap = GameMap(
           id: 'abc123',
-          name: 'My L-Room',
-          barriers: lRoom.barriers,
-          terminals: const [Point(5, 5), Point(10, 10)],
+          name: 'The L-Room',
+          barriers: [Point(5, 5)],
+          terminals: [Point(5, 5), Point(10, 10)],
         );
 
         final merged = applyPredefinedVisualFallback(firestoreMap);
@@ -290,8 +285,8 @@ void main() {
         expect(defaultMap, equals(lRoom));
       });
 
-      test('has L-wall barriers for offline play', () {
-        expect(defaultMap.barriers, isNotEmpty);
+      test('has floor layer for offline play', () {
+        expect(defaultMap.floorLayer, isNotNull);
       });
 
       test('is in allMaps', () {

@@ -54,11 +54,10 @@ void main() {
       expect(openArena.barriers, isEmpty);
     });
 
-    test('lRoom has L-wall barriers for offline fallback', () {
+    test('lRoom has no predefined barriers (all from Firestore)', () {
       expect(lRoom.id, equals('l_room'));
       expect(lRoom.name, equals('The L-Room'));
-      expect(lRoom.barriers, isNotEmpty);
-      expect(lRoom.barriers.length, equals(35));
+      expect(lRoom.barriers, isEmpty);
     });
 
     test('fourCorners has no predefined barriers', () {

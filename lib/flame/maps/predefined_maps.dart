@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:logging/logging.dart';
 
 import 'game_map.dart';
-import 'l_room_tile_data.dart';
+import 'gray_stone_room_data.dart';
 import 'map_parser.dart';
 
 final _log = Logger('PredefinedMaps');
@@ -16,30 +16,10 @@ const openArena = GameMap(
   spawnPoint: Point(25, 25),
 );
 
-/// The L-Room - original map with tile-based offline fallback.
+/// The L-Room — beige floor from `room_builder_office`.
 ///
-/// Visual content comes from the `single_room` tileset. Barriers define the
-/// L-shaped wall layout for offline play.
-final lRoom = GameMap(
-  id: 'l_room',
-  name: 'The L-Room',
-  barriers: const [
-    // Vertical wall at x=4 (gap at y=17 for door)
-    Point(4, 7), Point(4, 8), Point(4, 9), Point(4, 10), Point(4, 11),
-    Point(4, 12), Point(4, 13), Point(4, 14), Point(4, 15), Point(4, 16),
-    Point(4, 18), Point(4, 19), Point(4, 20), Point(4, 21), Point(4, 22),
-    Point(4, 23), Point(4, 24), Point(4, 25), Point(4, 26), Point(4, 27),
-    Point(4, 28), Point(4, 29),
-    // Horizontal wall at y=7
-    Point(5, 7), Point(6, 7), Point(7, 7), Point(8, 7), Point(9, 7),
-    Point(10, 7), Point(11, 7), Point(12, 7), Point(13, 7), Point(14, 7),
-    Point(15, 7), Point(16, 7), Point(17, 7),
-  ],
-  spawnPoint: const Point(10, 15),
-  terminals: const [Point(8, 12), Point(14, 12)],
-  floorLayer: buildLRoomFloorLayer(),
-  tilesetIds: const ['single_room'],
-);
+/// Barriers and wall tiles are generated at runtime from Firestore data.
+final lRoom = buildGrayStoneRoom();
 
 /// Four Corners - open map, barriers come from painted tiles.
 const fourCorners = GameMap(
@@ -114,24 +94,33 @@ final Map<String, GameMap> _predefinedMapLookup = {
 ///
 /// Returns [map] unchanged if there is no predefined match or nothing to fill.
 GameMap applyPredefinedVisualFallback(GameMap map) {
-  // Already has visual layers — nothing to fill.
-  if (map.floorLayer != null || map.objectLayer != null) {
-    _log.fine('Visual fallback skipped: "${map.name}" already has visual layers');
+  // Already has ALL visual layers — nothing to fill.
+  if (map.floorLayer != null && map.objectLayer != null) {
+    _log.fine('Visual fallback skipped: "${map.name}" already has all visual layers');
     return map;
   }
 
-  _log.info('Visual fallback: "${map.name}" (id=${map.id}) has no visual '
-      'layers, searching for predefined match...');
+  _log.info('Visual fallback: "${map.name}" (id=${map.id}), '
+      'floorLayer=${map.floorLayer != null}, objectLayer=${map.objectLayer != null}');
 
   final predefined = _findPredefinedMatch(map);
   if (predefined == null) return map;
 
-  final needsFloor = predefined.floorLayer != null;
-  final needsObjects = predefined.objectLayer != null;
+  // Merge each missing layer independently. A Firestore map might have a
+  // floor layer from before wall tiles existed but no object layer — we
+  // still want to fill in the wall object layer from the predefined match.
+  final needsFloor = map.floorLayer == null && predefined.floorLayer != null;
+  final needsObjects =
+      map.objectLayer == null && predefined.objectLayer != null;
   final needsTilesetIds =
-      map.tilesetIds.isEmpty && predefined.tilesetIds.isNotEmpty;
+      predefined.tilesetIds.isNotEmpty &&
+      !predefined.tilesetIds.every(map.tilesetIds.contains);
+  if (!needsFloor && !needsObjects && !needsTilesetIds) {
+    return map;
+  }
 
-  if (!needsFloor && !needsObjects && !needsTilesetIds) return map;
+  // Merge tileset IDs from both sources (deduped, order-preserving).
+  final mergedTilesetIds = {...map.tilesetIds, ...predefined.tilesetIds}.toList();
 
   return GameMap(
     id: map.id,
@@ -139,10 +128,10 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
     barriers: map.barriers,
     spawnPoint: map.spawnPoint,
     terminals: map.terminals,
-    floorLayer: predefined.floorLayer,
-    objectLayer: predefined.objectLayer,
+    floorLayer: map.floorLayer ?? predefined.floorLayer,
+    objectLayer: map.objectLayer ?? predefined.objectLayer,
     objectLayerPriorityOverrides: predefined.objectLayerPriorityOverrides,
-    tilesetIds: map.tilesetIds.isEmpty ? predefined.tilesetIds : map.tilesetIds,
+    tilesetIds: mergedTilesetIds,
     terrainGrid: map.terrainGrid ?? predefined.terrainGrid,
     customTilesets: map.customTilesets,
   );
