@@ -584,7 +584,9 @@ class MapEditorState extends ChangeNotifier {
       case EditorTool.terminal:
         _grid[y][x] = TileType.terminal;
       case EditorTool.eraser:
-        // If erasing a barrier, delegate to eraseWall for tile cleanup.
+        // Delegate all barrier erasure to eraseWall — it handles both
+        // wall-brush barriers (with face/cap tiles) and plain barriers
+        // (no tiles to clean, setTile(null) is a harmless no-op).
         if (_grid[y][x] == TileType.barrier) {
           eraseWall(x, y);
           return; // eraseWall already calls _markDirty + notifyListeners.

@@ -175,6 +175,10 @@ int computeWallBitmask(int cx, int cy, Set<(int, int)> barriers) {
 // ---------------------------------------------------------------------------
 
 /// Tileset containing the wall tiles.
+///
+/// Currently only `room_builder_office` has wall art. When a second tileset
+/// with walls is needed, this should become a parameter or per-map config
+/// rather than a constant.
 const wallTilesetId = 'room_builder_office';
 
 /// Face tiles: gray stone brick from row 8 (indices 128–130).
