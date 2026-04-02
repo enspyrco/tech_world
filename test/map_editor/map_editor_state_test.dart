@@ -173,13 +173,10 @@ void main() {
       expect(state.mapName, 'The L-Room');
       expect(state.mapId, 'l_room');
 
-      // lRoom has L-wall barriers for offline fallback.
-      expect(state.tileAt(4, 7), TileType.barrier);
+      // lRoom has no predefined barriers — all from Firestore.
+      expect(state.tileAt(4, 7), TileType.open);
       // Check spawn
-      expect(state.tileAt(10, 15), TileType.spawn);
-      // Check terminals
-      expect(state.tileAt(8, 12), TileType.terminal);
-      expect(state.tileAt(14, 12), TileType.terminal);
+      expect(state.tileAt(25, 25), TileType.spawn);
       // Check an open tile
       expect(state.tileAt(0, 0), TileType.open);
     });

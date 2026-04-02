@@ -3,8 +3,7 @@ import 'dart:math';
 import 'package:logging/logging.dart';
 
 import 'game_map.dart';
-import 'l_room_tile_data.dart';
-import 'l_room_wall_data.dart';
+import 'gray_stone_room_data.dart';
 import 'map_parser.dart';
 
 final _log = Logger('PredefinedMaps');
@@ -17,33 +16,10 @@ const openArena = GameMap(
   spawnPoint: Point(25, 25),
 );
 
-/// Pre-computed L-Room wall grid (marks structural walls for cap generation).
-final _lRoomWallGrid = _buildLRoomWallGrid();
-
-WallGrid _buildLRoomWallGrid() {
-  final grid = WallGrid();
-  for (final b in lRoomWallBarriers) {
-    grid.setWall(b.x, b.y, 'gray_brick');
-  }
-  return grid;
-}
-
-/// The L-Room - original map with tile-based offline fallback.
+/// The L-Room — beige floor from `room_builder_office`.
 ///
-/// No pre-built objectLayer — `buildObjectLayerFromBarriers` generates it at
-/// runtime (copies floor tiles at ALL barrier positions for depth sorting).
-/// The [wallGrid] tells the renderer to add cap tiles at y-1 above structural
-/// walls for wall-top occlusion.
-final lRoom = GameMap(
-  id: 'l_room',
-  name: 'The L-Room',
-  barriers: lRoomWallBarriers,
-  spawnPoint: const Point(10, 15),
-  terminals: const [Point(8, 12), Point(14, 12)],
-  floorLayer: buildLRoomFloorLayer(),
-  tilesetIds: const ['single_room'],
-  wallGrid: _lRoomWallGrid,
-);
+/// Barriers and wall tiles are generated at runtime from Firestore data.
+final lRoom = buildGrayStoneRoom();
 
 /// Four Corners - open map, barriers come from painted tiles.
 const fourCorners = GameMap(
@@ -139,10 +115,7 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
   final needsTilesetIds =
       predefined.tilesetIds.isNotEmpty &&
       !predefined.tilesetIds.every(map.tilesetIds.contains);
-  final needsWallGrid =
-      map.wallGrid == null && predefined.wallGrid != null;
-
-  if (!needsFloor && !needsObjects && !needsTilesetIds && !needsWallGrid) {
+  if (!needsFloor && !needsObjects && !needsTilesetIds) {
     return map;
   }
 
@@ -161,7 +134,6 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
     tilesetIds: mergedTilesetIds,
     terrainGrid: map.terrainGrid ?? predefined.terrainGrid,
     customTilesets: map.customTilesets,
-    wallGrid: map.wallGrid ?? predefined.wallGrid,
   );
 }
 

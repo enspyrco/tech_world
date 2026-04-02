@@ -82,9 +82,9 @@ void main() {
         final world = game.world as TechWorld;
         final position = world.localPlayerPosition;
 
-        // Player is positioned at the default map's spawn point (L-Room: 10,15).
-        expect(position.x, equals(10));
-        expect(position.y, equals(15));
+        // Player is positioned at the default map's spawn point (center: 25,25).
+        expect(position.x, equals(25));
+        expect(position.y, equals(25));
       },
     );
 

@@ -4,7 +4,6 @@ import 'package:collection/collection.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
-import 'package:tech_world/map_editor/wall_grid.dart';
 
 /// A game map definition containing barrier layout and spawn configuration.
 ///
@@ -26,7 +25,6 @@ class GameMap {
     this.tilesetIds = const [],
     this.terrainGrid,
     this.customTilesets = const [],
-    this.wallGrid,
   });
 
   /// Unique identifier for this map.
@@ -75,13 +73,6 @@ class GameMap {
   /// tilesets to fetch.
   final List<Tileset> customTilesets;
 
-  /// Optional wall grid for editor round-trips.
-  ///
-  /// Tracks which wall definition each cell uses, enabling the editor to
-  /// re-evaluate bitmask tiles when loading a saved map. Not needed at runtime
-  /// — the object layer tiles are self-sufficient.
-  final WallGrid? wallGrid;
-
   /// Whether this map uses tileset-based rendering.
   bool get usesTilesets =>
       tilesetIds.isNotEmpty ||
@@ -105,8 +96,7 @@ class GameMap {
           floorLayer == other.floorLayer &&
           objectLayer == other.objectLayer &&
           terrainGrid == other.terrainGrid &&
-          _tilesetListEquality.equals(customTilesets, other.customTilesets) &&
-          wallGrid == other.wallGrid;
+          _tilesetListEquality.equals(customTilesets, other.customTilesets);
 
   @override
   int get hashCode => Object.hash(
@@ -120,6 +110,5 @@ class GameMap {
         objectLayer,
         terrainGrid,
         _tilesetListEquality.hash(customTilesets),
-        wallGrid,
       );
 }

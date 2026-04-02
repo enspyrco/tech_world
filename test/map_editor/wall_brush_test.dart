@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tech_world/flame/tiles/predefined_walls.dart';
-import 'package:tech_world/flame/tiles/wall_def.dart';
+import 'package:tech_world/flame/maps/barrier_occlusion.dart'
+    show WallBitmask, faceForBitmask, capForBitmask, wallTilesetId;
 import 'package:tech_world/map_editor/map_editor_state.dart';
 
 void main() {
@@ -11,35 +11,30 @@ void main() {
   });
 
   group('Wall brush selection', () {
-    test('starts with no active wall brush', () {
-      expect(state.activeWallBrush, isNull);
+    test('starts with wall brush inactive', () {
+      expect(state.wallBrushActive, isFalse);
     });
 
-    test('setWallBrush sets and notifies', () {
+    test('setWallBrush(true) activates and notifies', () {
       var notified = false;
       state.addListener(() => notified = true);
 
-      state.setWallBrush(grayBrickWall);
+      state.setWallBrush(true);
 
-      expect(state.activeWallBrush, grayBrickWall);
+      expect(state.wallBrushActive, isTrue);
       expect(notified, isTrue);
     });
 
-    test('setWallBrush(null) clears wall brush', () {
-      state.setWallBrush(grayBrickWall);
-      state.setWallBrush(null);
-      expect(state.activeWallBrush, isNull);
+    test('setWallBrush(false) deactivates wall brush', () {
+      state.setWallBrush(true);
+      state.setWallBrush(false);
+      expect(state.wallBrushActive, isFalse);
     });
   });
 
   group('paintWall', () {
     setUp(() {
-      state.setWallBrush(grayBrickWall);
-    });
-
-    test('records wall in wallGrid', () {
-      state.paintWall(10, 10);
-      expect(state.wallGrid.wallAt(10, 10), 'gray_brick');
+      state.setWallBrush(true);
     });
 
     test('creates barrier on structure grid', () {
@@ -52,9 +47,9 @@ void main() {
 
       final face = state.objectLayerData.tileAt(10, 10);
       expect(face, isNotNull);
-      expect(face!.tilesetId, 'room_builder_office');
-      // Isolated wall (bitmask 0) → face tile index 64.
-      expect(face.tileIndex, grayBrickWall.faceForBitmask(0));
+      expect(face!.tilesetId, wallTilesetId);
+      // Isolated wall (bitmask 0) → face tile index from lookup.
+      expect(face.tileIndex, faceForBitmask(0));
     });
 
     test('places cap tile on object layer at y-1 (north-facing)', () {
@@ -62,9 +57,9 @@ void main() {
 
       final cap = state.objectLayerData.tileAt(10, 9);
       expect(cap, isNotNull);
-      expect(cap!.tilesetId, 'room_builder_office');
+      expect(cap!.tilesetId, wallTilesetId);
       // Isolated wall → cap bitmask 0.
-      expect(cap.tileIndex, grayBrickWall.capForBitmask(0));
+      expect(cap.tileIndex, capForBitmask(0));
     });
 
     test('does NOT place cap if wall exists above (not north-facing)', () {
@@ -87,7 +82,7 @@ void main() {
       final leftFace = state.objectLayerData.tileAt(10, 10);
       expect(
         leftFace!.tileIndex,
-        grayBrickWall.faceForBitmask(WallBitmask.e),
+        faceForBitmask(WallBitmask.e),
         reason: 'Left wall should see E neighbor',
       );
 
@@ -95,7 +90,7 @@ void main() {
       final rightFace = state.objectLayerData.tileAt(11, 10);
       expect(
         rightFace!.tileIndex,
-        grayBrickWall.faceForBitmask(WallBitmask.w),
+        faceForBitmask(WallBitmask.w),
         reason: 'Right wall should see W neighbor',
       );
     });
@@ -130,13 +125,7 @@ void main() {
 
   group('eraseWall', () {
     setUp(() {
-      state.setWallBrush(grayBrickWall);
-    });
-
-    test('removes wall from wallGrid', () {
-      state.paintWall(10, 10);
-      state.eraseWall(10, 10);
-      expect(state.wallGrid.wallAt(10, 10), isNull);
+      state.setWallBrush(true);
     });
 
     test('removes barrier from structure grid', () {
@@ -166,7 +155,7 @@ void main() {
       final face = state.objectLayerData.tileAt(10, 10);
       expect(
         face!.tileIndex,
-        grayBrickWall.faceForBitmask(0),
+        faceForBitmask(0),
         reason: 'Left wall should revert to isolated after neighbor erased',
       );
     });
@@ -185,34 +174,12 @@ void main() {
     });
   });
 
-  group('wallGrid round-trip', () {
-    setUp(() {
-      state.setWallBrush(grayBrickWall);
-    });
-
-    test('toGameMap includes wallGrid', () {
-      state.paintWall(10, 10);
-      final map = state.toGameMap();
-      expect(map.wallGrid, isNotNull);
-      expect(map.wallGrid!.wallAt(10, 10), 'gray_brick');
-    });
-
-    test('loadFromGameMap restores wallGrid', () {
-      state.paintWall(10, 10);
-      state.paintWall(11, 10);
-      final map = state.toGameMap();
-
-      final state2 = MapEditorState();
-      state2.loadFromGameMap(map);
-
-      expect(state2.wallGrid.wallAt(10, 10), 'gray_brick');
-      expect(state2.wallGrid.wallAt(11, 10), 'gray_brick');
-    });
-
-    test('resetEditor clears wallGrid', () {
+  group('clearAll resets wall brush', () {
+    test('clearAll deactivates wall brush', () {
+      state.setWallBrush(true);
       state.paintWall(10, 10);
       state.clearAll();
-      expect(state.wallGrid.isEmpty, isTrue);
+      expect(state.wallBrushActive, isFalse);
     });
   });
 }
