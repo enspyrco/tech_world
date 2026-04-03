@@ -275,6 +275,30 @@ TileLayerData _buildWallObjectLayer(Set<(int, int)> walls) {
         );
       }
     }
+
+    // Horizontal doorway lintel: wall at (x, y) is the left edge of a gap.
+    // Place cap tiles above the gap so the wall top continues over the door.
+    if (!walls.contains((x + 1, y))) {
+      var gapEnd = x + 1;
+      while (gapEnd < x + 10 && !walls.contains((gapEnd, y))) {
+        gapEnd++;
+      }
+      if (walls.contains((gapEnd, y))) {
+        final gapWidth = gapEnd - (x + 1);
+        if (gapWidth >= 1 && gapWidth <= 3 && y - 1 >= 0) {
+          // Use middle fill cap (bitmask E|W) for lintel tiles.
+          final lintelCapIndex =
+              capForBitmask(WallBitmask.e | WallBitmask.w) ?? 91;
+          for (var gx = x + 1; gx < gapEnd; gx++) {
+            layer.setTile(
+              gx,
+              y - 1,
+              TileRef(tilesetId: wallTilesetId, tileIndex: lintelCapIndex),
+            );
+          }
+        }
+      }
+    }
   }
 
   return layer;

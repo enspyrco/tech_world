@@ -193,6 +193,42 @@ void main() {
       expect(objectLayer.tileAt(6, 6), isNotNull);
       expect(objectLayer.tileAt(7, 6), isNotNull);
     });
+
+    test('horizontal doorway: cap tiles placed above gap as lintel', () {
+      // Wall-wall-gap-wall-wall pattern: door at x=7
+      //   (5,10) (6,10) [gap at 7,10] (8,10) (9,10)
+      // The gap at (7,10) should get a cap tile at (7,9) — the lintel.
+      final walls = {(5, 10), (6, 10), (8, 10), (9, 10)};
+      final objectLayer = buildObjectLayerFromWalls(walls);
+
+      // Lintel: cap tile above the gap.
+      expect(objectLayer.tileAt(7, 9), isNotNull,
+          reason: 'Lintel cap should be placed above doorway gap');
+    });
+
+    test('wider doorway: cap tiles placed above all gap cells', () {
+      // 2-tile wide door: gaps at x=7 and x=8
+      //   (5,10) (6,10) [gap 7,10] [gap 8,10] (9,10) (10,10)
+      final walls = {(5, 10), (6, 10), (9, 10), (10, 10)};
+      final objectLayer = buildObjectLayerFromWalls(walls);
+
+      expect(objectLayer.tileAt(7, 9), isNotNull,
+          reason: 'Lintel cap above left gap cell');
+      expect(objectLayer.tileAt(8, 9), isNotNull,
+          reason: 'Lintel cap above right gap cell');
+    });
+
+    test('no lintel for gap wider than 3 tiles', () {
+      // 4-tile gap — too wide to be a door
+      final walls = {(5, 10), (10, 10)};
+      final objectLayer = buildObjectLayerFromWalls(walls);
+
+      // No lintel tiles above the gap.
+      expect(objectLayer.tileAt(6, 9), isNull);
+      expect(objectLayer.tileAt(7, 9), isNull);
+      expect(objectLayer.tileAt(8, 9), isNull);
+      expect(objectLayer.tileAt(9, 9), isNull);
+    });
   });
 
   group('computeLintelOverlayPositions', () {
