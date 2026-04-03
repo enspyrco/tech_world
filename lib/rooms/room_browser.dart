@@ -154,6 +154,12 @@ class _RoomBrowserState extends State<RoomBrowser>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
+            )
+          else
+            Text(
+              'Sign in to create rooms',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
             ),
           if (widget.onSignOut != null)
             IconButton(
