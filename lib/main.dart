@@ -716,6 +716,7 @@ class _MyAppState extends State<MyApp> {
                                 roomService: _roomService!,
                                 userId: _currentUserId!,
                                 canCreateRoom: !_isAnonymous,
+                                onSignOut: () => locate<AuthService>().signOut(),
                                 onJoinRoom: _joinRoom,
                                 onCreateRoom: _onCreateRoom,
                                 joiningRoomId: _joiningRoomId,

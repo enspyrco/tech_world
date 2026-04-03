@@ -25,6 +25,7 @@ class GameMap {
     this.tilesetIds = const [],
     this.terrainGrid,
     this.customTilesets = const [],
+    this.walls = const {},
   });
 
   /// Unique identifier for this map.
@@ -73,6 +74,12 @@ class GameMap {
   /// tilesets to fetch.
   final List<Tileset> customTilesets;
 
+  /// Wall positions mapped to style IDs (e.g. `"gray_brick"`).
+  ///
+  /// Every wall is also a barrier (blocks movement), but not every barrier
+  /// is a wall. Only wall positions get face + cap tile art at runtime.
+  final Map<Point<int>, String> walls;
+
   /// Whether this map uses tileset-based rendering.
   bool get usesTilesets =>
       tilesetIds.isNotEmpty ||
@@ -82,6 +89,7 @@ class GameMap {
   static const _listEquality = ListEquality<Point<int>>();
   static const _stringListEquality = ListEquality<String>();
   static const _tilesetListEquality = ListEquality<Tileset>();
+  static const _wallsEquality = MapEquality<Point<int>, String>();
 
   @override
   bool operator ==(Object other) =>
@@ -96,7 +104,8 @@ class GameMap {
           floorLayer == other.floorLayer &&
           objectLayer == other.objectLayer &&
           terrainGrid == other.terrainGrid &&
-          _tilesetListEquality.equals(customTilesets, other.customTilesets);
+          _tilesetListEquality.equals(customTilesets, other.customTilesets) &&
+          _wallsEquality.equals(walls, other.walls);
 
   @override
   int get hashCode => Object.hash(
@@ -110,5 +119,6 @@ class GameMap {
         objectLayer,
         terrainGrid,
         _tilesetListEquality.hash(customTilesets),
+        _wallsEquality.hash(walls),
       );
 }

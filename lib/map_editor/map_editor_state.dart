@@ -18,8 +18,6 @@ import 'package:tech_world/flame/tiles/tile_brush.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
-import 'package:tech_world/flame/maps/barrier_occlusion.dart'
-    show WallBitmask, computeWallBitmask, wallTilesetId, faceForBitmask, capForBitmask;
 import 'package:tech_world/map_editor/automap_engine.dart';
 import 'package:tech_world/map_editor/automap_rule.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
@@ -28,7 +26,7 @@ import 'package:tech_world/map_editor/terrain_grid.dart';
 enum TileType { open, barrier, spawn, terminal }
 
 /// Tools available in the map editor.
-enum EditorTool { barrier, spawn, terminal, eraser, wall }
+enum EditorTool { barrier, wall, spawn, terminal, eraser }
 
 /// Which layer is active for editing.
 enum ActiveLayer {
@@ -159,6 +157,27 @@ class MapEditorState extends ChangeNotifier {
   TileBrush? get currentBrush => _currentBrush;
 
   // -------------------------------------------------------------------------
+  // Wall state
+  // -------------------------------------------------------------------------
+
+  /// Wall positions mapped to style IDs. Every wall is also a barrier.
+  final Map<(int, int), String> _walls = {};
+
+  /// The style applied when painting walls.
+  String _wallStyle = 'gray_brick';
+  String get wallStyle => _wallStyle;
+  set wallStyle(String style) {
+    _wallStyle = style;
+    notifyListeners();
+  }
+
+  /// Whether a wall exists at ([x], [y]).
+  bool isWallAt(int x, int y) => _walls.containsKey((x, y));
+
+  /// The wall style at ([x], [y]), or null if no wall.
+  String? wallStyleAt(int x, int y) => _walls[(x, y)];
+
+  // -------------------------------------------------------------------------
   // Terrain brush state
   // -------------------------------------------------------------------------
 
@@ -194,24 +213,6 @@ class MapEditorState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // -------------------------------------------------------------------------
-  // Wall brush state
-  // -------------------------------------------------------------------------
-
-  /// Whether the wall brush is active.
-  bool _wallBrushActive = false;
-  bool get wallBrushActive => _wallBrushActive;
-
-  /// Toggle the wall brush on or off.
-  ///
-  /// When active, painting places barriers with wall face + cap tiles.
-  void setWallBrush(bool active) {
-    _wallBrushActive = active;
-    if (active) {
-      _currentTool = EditorTool.wall;
-    }
-    notifyListeners();
-  }
 
   /// Paint auto-terrain at ([x], [y]) using the active terrain brush.
   ///
@@ -288,107 +289,6 @@ class MapEditorState extends ChangeNotifier {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Wall brush painting
-  // -------------------------------------------------------------------------
-
-  /// Paint a wall at ([x], [y]).
-  ///
-  /// Creates a barrier on the structure grid and re-evaluates face + cap tiles
-  /// for this cell and its 4 cardinal neighbors.
-  void paintWall(int x, int y) {
-    if (!_inBounds(x, y)) return;
-
-    _grid[y][x] = TileType.barrier;
-
-    // Re-evaluate this cell + all 4 cardinal neighbors.
-    _reevaluateWallCell(x, y);
-    for (final (dx, dy) in WallBitmask.offsets) {
-      final nx = x + dx;
-      final ny = y + dy;
-      if (_inBounds(nx, ny) && _grid[ny][nx] == TileType.barrier) {
-        _reevaluateWallCell(nx, ny);
-      }
-    }
-
-    _markDirty();
-    notifyListeners();
-  }
-
-  /// Erase a wall at ([x], [y]).
-  ///
-  /// Clears the barrier, removes face and cap tiles from the object layer,
-  /// and re-evaluates cardinal neighbors.
-  void eraseWall(int x, int y) {
-    if (!_inBounds(x, y)) return;
-    if (_grid[y][x] != TileType.barrier) return;
-
-    _grid[y][x] = TileType.open;
-
-    // Remove face tile at (x, y).
-    objectLayerData.setTile(x, y, null);
-
-    // Remove cap tile at (x, y-1) if no barrier above owns it.
-    if (_inBounds(x, y - 1) && _grid[y - 1][x] != TileType.barrier) {
-      objectLayerData.setTile(x, y - 1, null);
-    }
-
-    // Re-evaluate cardinal neighbors.
-    for (final (dx, dy) in WallBitmask.offsets) {
-      final nx = x + dx;
-      final ny = y + dy;
-      if (_inBounds(nx, ny) && _grid[ny][nx] == TileType.barrier) {
-        _reevaluateWallCell(nx, ny);
-      }
-    }
-
-    _markDirty();
-    notifyListeners();
-  }
-
-  /// Re-evaluate face + cap tiles for a single wall cell.
-  ///
-  /// Computes the 4-bit cardinal bitmask from barrier neighbors, then:
-  /// 1. Places the face tile at (x, y) on the object layer.
-  /// 2. If north-facing (no barrier above): places cap tile at (x, y-1).
-  /// 3. If NOT north-facing: clears any stale cap at (x, y-1).
-  void _reevaluateWallCell(int x, int y) {
-    // Build a set of barrier positions for bitmask computation.
-    final barrierPositions = <(int, int)>{};
-    for (final (dx, dy) in WallBitmask.offsets) {
-      final nx = x + dx;
-      final ny = y + dy;
-      if (_inBounds(nx, ny) && _grid[ny][nx] == TileType.barrier) {
-        barrierPositions.add((nx, ny));
-      }
-    }
-
-    final bitmask = computeWallBitmask(x, y, barrierPositions);
-
-    // Place face tile.
-    final faceIndex = faceForBitmask(bitmask);
-    if (faceIndex != null) {
-      objectLayerData.setTile(
-        x,
-        y,
-        TileRef(tilesetId: wallTilesetId, tileIndex: faceIndex),
-      );
-    }
-
-    // Cap logic: only north-facing walls get caps.
-    final hasBarrierAbove =
-        _inBounds(x, y - 1) && _grid[y - 1][x] == TileType.barrier;
-    if (!hasBarrierAbove) {
-      final capIndex = capForBitmask(bitmask);
-      if (capIndex != null) {
-        objectLayerData.setTile(
-          x,
-          y - 1,
-          TileRef(tilesetId: wallTilesetId, tileIndex: capIndex),
-        );
-      }
-    }
-  }
 
   /// Switch the active editing layer.
   ///
@@ -544,12 +444,8 @@ class MapEditorState extends ChangeNotifier {
   }
 
   /// Set the current painting tool.
-  ///
-  /// Selecting [EditorTool.wall] auto-activates the default wall brush
-  /// (gray brick). Selecting any other tool clears the wall brush.
   void setTool(EditorTool tool) {
     _currentTool = tool;
-    _wallBrushActive = tool == EditorTool.wall;
     notifyListeners();
   }
 
@@ -576,27 +472,19 @@ class MapEditorState extends ChangeNotifier {
 
     switch (_currentTool) {
       case EditorTool.barrier:
+        _walls.remove((x, y)); // plain barrier overrides any wall
         _grid[y][x] = TileType.barrier;
+      case EditorTool.wall:
+        _walls[(x, y)] = _wallStyle;
+        _grid[y][x] = TileType.barrier; // wall implies barrier
       case EditorTool.spawn:
-        // Remove existing spawn point first (only one allowed).
         _clearTilesOfType(TileType.spawn);
         _grid[y][x] = TileType.spawn;
       case EditorTool.terminal:
         _grid[y][x] = TileType.terminal;
       case EditorTool.eraser:
-        // Delegate all barrier erasure to eraseWall — it handles both
-        // wall-brush barriers (with face/cap tiles) and plain barriers
-        // (no tiles to clean, setTile(null) is a harmless no-op).
-        if (_grid[y][x] == TileType.barrier) {
-          eraseWall(x, y);
-          return; // eraseWall already calls _markDirty + notifyListeners.
-        }
+        _walls.remove((x, y));
         _grid[y][x] = TileType.open;
-      case EditorTool.wall:
-        // Wall painting is handled by paintWall(), not paintTile().
-        // If we get here, delegate to the wall brush.
-        paintWall(x, y);
-        return; // paintWall already calls _markDirty + notifyListeners.
     }
     _markDirty();
     notifyListeners();
@@ -609,6 +497,7 @@ class MapEditorState extends ChangeNotifier {
         _grid[y][x] = TileType.open;
       }
     }
+    _walls.clear();
     _autoBarrierCells.clear();
     _markDirty();
     notifyListeners();
@@ -619,7 +508,6 @@ class MapEditorState extends ChangeNotifier {
     clearGrid(); // Already calls _markDirty().
     _roomId = null;
     _activeTerrainBrush = null;
-    _wallBrushActive = false;
     _automappedCells.clear();
     _autoBarrierCells.clear();
     terrainGrid.clear();
@@ -653,6 +541,15 @@ class MapEditorState extends ChangeNotifier {
     for (final terminal in map.terminals) {
       if (_inBounds(terminal.x, terminal.y)) {
         _grid[terminal.y][terminal.x] = TileType.terminal;
+      }
+    }
+
+    // Load walls if present.
+    _walls.clear();
+    for (final entry in map.walls.entries) {
+      final p = entry.key;
+      if (_inBounds(p.x, p.y)) {
+        _walls[(p.x, p.y)] = entry.value;
       }
     }
 
@@ -816,6 +713,10 @@ class MapEditorState extends ChangeNotifier {
       tilesetIds: tilesetIds,
       terrainGrid: terrainGrid.isEmpty ? null : terrainGrid.copy(),
       customTilesets: List.unmodifiable(_customTilesets),
+      walls: {
+        for (final entry in _walls.entries)
+          Point(entry.key.$1, entry.key.$2): entry.value,
+      },
     );
   }
 

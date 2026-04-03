@@ -863,19 +863,21 @@ class TechWorld extends World with TapCallbacks {
       // Priority overrides are always computed dynamically from barriers so
       // that doorway lintels work for any map (predefined, editor, Firestore).
       final barrierSet = {for (final b in map.barriers) (b.x, b.y)};
+
+      // Wall positions for tile art — only walls get face + cap tiles.
+      final wallSet = {for (final p in map.walls.keys) (p.x, p.y)};
+
       _log.info('loadMapComponents: barriers=${barrierSet.length}, '
+          'walls=${wallSet.length}, '
           'objectLayer=${map.objectLayer != null}, '
           'floorLayer=${map.floorLayer != null}');
 
-
-      // Always regenerate the object layer from the actual barriers so that
-      // Firestore-painted barriers get proper wall tiles, not just the
-      // predefined ones baked into map.objectLayer.
+      // Generate wall tile art from wall positions only.
       var objectLayer = map.objectLayer;
-      if (barrierSet.isNotEmpty) {
-        objectLayer = buildObjectLayerFromBarriers(barrierSet);
+      if (wallSet.isNotEmpty) {
+        objectLayer = buildObjectLayerFromWalls(wallSet);
         _log.info('loadMapComponents: generated object layer from '
-            '${barrierSet.length} barriers');
+            '${wallSet.length} walls');
       }
 
       final overrides = barrierSet.isNotEmpty

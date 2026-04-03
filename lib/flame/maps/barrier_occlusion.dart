@@ -239,24 +239,24 @@ int? capForBitmask(int bitmask) => _capTiles[bitmask];
 // Object layer generation from barriers.
 // ---------------------------------------------------------------------------
 
-/// Build an object layer from barriers with proper wall face + cap tiles.
+/// Build an object layer from wall positions with face + cap tiles.
 ///
-/// Places dedicated wall face and cap tiles from `room_builder_office`,
-/// selected by 4-bit cardinal bitmask. This avoids the floor-pixel-bleed
-/// problem where copied floor tiles occlude the player with floor art.
-TileLayerData buildObjectLayerFromBarriers(Set<(int, int)> barriers) {
-  if (barriers.isEmpty) return TileLayerData();
-  return _buildWallObjectLayer(barriers);
+/// Only wall positions get tile art — plain barriers (furniture, water, etc.)
+/// are not rendered. The bitmask is computed against wall neighbors only,
+/// so wall ends get correct end-cap tiles even when adjacent to plain barriers.
+TileLayerData buildObjectLayerFromWalls(Set<(int, int)> walls) {
+  if (walls.isEmpty) return TileLayerData();
+  return _buildWallObjectLayer(walls);
 }
 
 /// Build object layer using dedicated wall tiles.
-TileLayerData _buildWallObjectLayer(Set<(int, int)> barriers) {
+TileLayerData _buildWallObjectLayer(Set<(int, int)> walls) {
   final layer = TileLayerData();
 
-  for (final (x, y) in barriers) {
-    final bitmask = computeWallBitmask(x, y, barriers);
+  for (final (x, y) in walls) {
+    final bitmask = computeWallBitmask(x, y, walls);
 
-    // Face tile at barrier position.
+    // Face tile at wall position.
     final faceIndex = faceForBitmask(bitmask);
     if (faceIndex != null) {
       layer.setTile(
@@ -264,7 +264,7 @@ TileLayerData _buildWallObjectLayer(Set<(int, int)> barriers) {
     }
 
     // Cap tile at y-1 for north-facing walls.
-    final isNorthFacing = !barriers.contains((x, y - 1));
+    final isNorthFacing = !walls.contains((x, y - 1));
     if (isNorthFacing && y - 1 >= 0) {
       final capIndex = capForBitmask(bitmask);
       if (capIndex != null) {
