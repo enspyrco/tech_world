@@ -146,10 +146,10 @@ void main() {
     });
   });
 
-  group('buildObjectLayerFromBarriers', () {
+  group('buildObjectLayerFromWalls', () {
     test('places face tiles at barrier positions', () {
       final barriers = {(4, 7), (4, 8)};
-      final objectLayer = buildObjectLayerFromBarriers(barriers);
+      final objectLayer = buildObjectLayerFromWalls(barriers);
 
       // Each barrier should have a face tile.
       expect(objectLayer.tileAt(4, 7), isNotNull);
@@ -159,7 +159,7 @@ void main() {
     test('places cap tiles above north-facing barriers', () {
       // Vertical wall: (5,7) is north-facing (nothing at (5,6)).
       final barriers = {(5, 7), (5, 8)};
-      final objectLayer = buildObjectLayerFromBarriers(barriers);
+      final objectLayer = buildObjectLayerFromWalls(barriers);
 
       // Cap tile at y-1 of the north-facing barrier.
       expect(objectLayer.tileAt(5, 6), isNotNull);
@@ -170,13 +170,13 @@ void main() {
     });
 
     test('returns empty layer when no barriers', () {
-      final objectLayer = buildObjectLayerFromBarriers(<(int, int)>{});
+      final objectLayer = buildObjectLayerFromWalls(<(int, int)>{});
       expect(objectLayer.isEmpty, isTrue);
     });
 
     test('isolated barrier gets face and cap tiles', () {
       final barriers = {(4, 7)};
-      final objectLayer = buildObjectLayerFromBarriers(barriers);
+      final objectLayer = buildObjectLayerFromWalls(barriers);
 
       // Face tile at barrier position.
       expect(objectLayer.tileAt(4, 7), isNotNull);
@@ -186,7 +186,7 @@ void main() {
 
     test('horizontal wall: all barriers get caps above', () {
       final barriers = {(5, 7), (6, 7), (7, 7)};
-      final objectLayer = buildObjectLayerFromBarriers(barriers);
+      final objectLayer = buildObjectLayerFromWalls(barriers);
 
       // All are north-facing (nothing at y=6).
       expect(objectLayer.tileAt(5, 6), isNotNull);

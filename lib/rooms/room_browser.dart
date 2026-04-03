@@ -15,6 +15,7 @@ class RoomBrowser extends StatefulWidget {
     required this.onJoinRoom,
     required this.onCreateRoom,
     this.canCreateRoom = true,
+    this.onSignOut,
     this.joiningRoomId,
     this.joinProgress,
     this.joinMessage,
@@ -26,6 +27,9 @@ class RoomBrowser extends StatefulWidget {
 
   /// Whether the current user can create rooms (false for anonymous guests).
   final bool canCreateRoom;
+
+  /// Called when the user taps "Sign out".
+  final VoidCallback? onSignOut;
 
   /// Called when the user selects a room to join.
   final void Function(RoomData room) onJoinRoom;
@@ -152,12 +156,17 @@ class _RoomBrowserState extends State<RoomBrowser>
               ),
             )
           else
-            Tooltip(
-              message: 'Sign in to create rooms',
-              child: Text(
-                'Sign in to create rooms',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
-              ),
+            Text(
+              'Sign in to create rooms',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4), fontSize: 12),
+            ),
+          if (widget.onSignOut != null)
+            IconButton(
+              onPressed: widget.onSignOut,
+              icon: const Icon(Icons.logout, size: 20),
+              tooltip: 'Sign out',
+              color: Colors.white54,
             ),
         ],
       ),

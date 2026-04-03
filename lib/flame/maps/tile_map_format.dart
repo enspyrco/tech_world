@@ -53,6 +53,11 @@ class TileMapFormat {
         'customTilesets': [
           for (final ts in map.customTilesets) ts.toJson(),
         ],
+      if (map.walls.isNotEmpty)
+        'walls': [
+          for (final e in map.walls.entries)
+            {'x': e.key.x, 'y': e.key.y, 'style': e.value},
+        ],
     };
   }
 
@@ -104,6 +109,18 @@ class TileMapFormat {
                   Tileset.fromJson(ts as Map<String, dynamic>))
               .toList() ??
           const [],
+      walls: _parseWalls(json['walls'] as List<dynamic>?),
     );
+  }
+
+  static Map<Point<int>, String> _parseWalls(List<dynamic>? json) {
+    if (json == null || json.isEmpty) return const {};
+    return {
+      for (final w in json)
+        Point(
+          (w as Map<String, dynamic>)['x'] as int,
+          w['y'] as int,
+        ): w['style'] as String,
+    };
   }
 }

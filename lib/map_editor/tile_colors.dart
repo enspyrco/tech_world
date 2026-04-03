@@ -5,6 +5,7 @@ import 'dart:ui';
 class TileColors {
   static const open = Color(0xFF2A2A2A);
   static const barrier = Color(0xFF4444FF);
+  static const wall = Color(0xFF8B6914);
   static const spawn = Color(0xFF00FF41);
   static const terminal = Color(0xFFD97757);
   static const gridLine = Color(0xFF333333);

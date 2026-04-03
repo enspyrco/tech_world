@@ -82,11 +82,12 @@ class MapEditorPanel extends StatelessWidget {
         child: Column(
           children: [
             _buildHeader(),
-            _LayerTabs(state: state),
+            ListenableBuilder(
+              listenable: state,
+              builder: (context, _) => _LayerTabs(state: state),
+            ),
             _MapToolbar(state: state),
-          // Only the grid area needs to rebuild on every state change.
-          // The header, layer tabs, toolbar, and footer manage their own
-          // listeners or are static.
+          // Only the grid area and layer tabs need to rebuild on state change.
           Expanded(
             child: ListenableBuilder(
               listenable: state,
@@ -571,7 +572,7 @@ class _MapToolbarState extends State<_MapToolbar> {
                     TileColors.barrier),
                 const SizedBox(width: 4),
                 _toolButton(EditorTool.wall, Icons.fence, 'Wall',
-                    Colors.blueGrey),
+                    TileColors.wall),
                 const SizedBox(width: 4),
                 _toolButton(EditorTool.spawn, Icons.my_location, 'Spawn',
                     TileColors.spawn),
@@ -1120,7 +1121,10 @@ class _GridPainter extends CustomPainter {
           // Editable structure grid on top.
           final tile = state.tileAt(x, y);
           if (tile != TileType.open || referenceMap != null) {
-            paint.color = _colorForTile(tile);
+            // Walls are barriers in the structure grid — distinguish by color.
+            paint.color = (tile == TileType.barrier && state.isWallAt(x, y))
+                ? TileColors.wall
+                : _colorForTile(tile);
             canvas.drawRect(rect, paint);
           }
         } else {
