@@ -872,10 +872,17 @@ class TechWorld extends World with TapCallbacks {
           'objectLayer=${map.objectLayer != null}, '
           'floorLayer=${map.floorLayer != null}');
 
-      // Generate wall tile art from wall positions only.
+      // Generate wall tile art and merge with any manually placed object tiles.
       var objectLayer = map.objectLayer;
       if (wallSet.isNotEmpty) {
-        objectLayer = buildObjectLayerFromWalls(wallSet);
+        final wallLayer = buildObjectLayerFromWalls(wallSet);
+        if (objectLayer != null) {
+          // Merge wall tiles into existing object layer (wall tiles take
+          // precedence at overlapping positions).
+          objectLayer = objectLayer.mergedWith(wallLayer);
+        } else {
+          objectLayer = wallLayer;
+        }
         _log.info('loadMapComponents: generated object layer from '
             '${wallSet.length} walls');
       }

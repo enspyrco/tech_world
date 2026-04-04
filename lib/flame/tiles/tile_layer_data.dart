@@ -94,6 +94,21 @@ class TileLayerData {
     return hash;
   }
 
+  /// Return a new layer with tiles from [other] merged on top of this layer.
+  ///
+  /// Tiles from [other] take precedence at overlapping positions. Tiles only
+  /// in this layer are preserved.
+  TileLayerData mergedWith(TileLayerData other) {
+    final result = copy();
+    for (var y = 0; y < gridSize; y++) {
+      for (var x = 0; x < gridSize; x++) {
+        final tile = other._grid[y][x];
+        if (tile != null) result._grid[y][x] = tile;
+      }
+    }
+    return result;
+  }
+
   /// Create a deep copy of this layer.
   TileLayerData copy() {
     final clone = TileLayerData();
