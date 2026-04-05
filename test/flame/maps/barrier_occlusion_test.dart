@@ -1,5 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
+import 'package:tech_world/flame/tiles/wall_style_def.dart';
+
+/// Convert a set of positions to a wall map using the default style.
+Map<(int, int), String> _wallMap(Set<(int, int)> positions) =>
+    {for (final p in positions) p: defaultWallStyleId};
 
 void main() {
   group('computePriorityOverrides', () {
@@ -149,7 +154,7 @@ void main() {
   group('buildObjectLayerFromWalls', () {
     test('places face tiles at barrier positions', () {
       final barriers = {(4, 7), (4, 8)};
-      final objectLayer = buildObjectLayerFromWalls(barriers);
+      final objectLayer = buildObjectLayerFromWalls(_wallMap(barriers));
 
       // Each barrier should have a face tile.
       expect(objectLayer.tileAt(4, 7), isNotNull);
@@ -159,7 +164,7 @@ void main() {
     test('places cap tiles above north-facing barriers', () {
       // Vertical wall: (5,7) is north-facing (nothing at (5,6)).
       final barriers = {(5, 7), (5, 8)};
-      final objectLayer = buildObjectLayerFromWalls(barriers);
+      final objectLayer = buildObjectLayerFromWalls(_wallMap(barriers));
 
       // Cap tile at y-1 of the north-facing barrier.
       expect(objectLayer.tileAt(5, 6), isNotNull);
@@ -170,13 +175,13 @@ void main() {
     });
 
     test('returns empty layer when no barriers', () {
-      final objectLayer = buildObjectLayerFromWalls(<(int, int)>{});
+      final objectLayer = buildObjectLayerFromWalls(<(int, int), String>{});
       expect(objectLayer.isEmpty, isTrue);
     });
 
     test('isolated barrier gets face and cap tiles', () {
       final barriers = {(4, 7)};
-      final objectLayer = buildObjectLayerFromWalls(barriers);
+      final objectLayer = buildObjectLayerFromWalls(_wallMap(barriers));
 
       // Face tile at barrier position.
       expect(objectLayer.tileAt(4, 7), isNotNull);
@@ -186,7 +191,7 @@ void main() {
 
     test('horizontal wall: all barriers get caps above', () {
       final barriers = {(5, 7), (6, 7), (7, 7)};
-      final objectLayer = buildObjectLayerFromWalls(barriers);
+      final objectLayer = buildObjectLayerFromWalls(_wallMap(barriers));
 
       // All are north-facing (nothing at y=6).
       expect(objectLayer.tileAt(5, 6), isNotNull);
@@ -199,7 +204,7 @@ void main() {
       //   (5,10) (6,10) [gap at 7,10] (8,10) (9,10)
       // The gap at (7,10) should get a cap tile at (7,9) — the lintel.
       final walls = {(5, 10), (6, 10), (8, 10), (9, 10)};
-      final objectLayer = buildObjectLayerFromWalls(walls);
+      final objectLayer = buildObjectLayerFromWalls(_wallMap(walls));
 
       // Lintel: cap tile above the gap.
       expect(objectLayer.tileAt(7, 9), isNotNull,
@@ -210,7 +215,7 @@ void main() {
       // 2-tile wide door: gaps at x=7 and x=8
       //   (5,10) (6,10) [gap 7,10] [gap 8,10] (9,10) (10,10)
       final walls = {(5, 10), (6, 10), (9, 10), (10, 10)};
-      final objectLayer = buildObjectLayerFromWalls(walls);
+      final objectLayer = buildObjectLayerFromWalls(_wallMap(walls));
 
       expect(objectLayer.tileAt(7, 9), isNotNull,
           reason: 'Lintel cap above left gap cell');
@@ -218,10 +223,29 @@ void main() {
           reason: 'Lintel cap above right gap cell');
     });
 
+    test('adjacent walls with different styles use their own tilesets', () {
+      // Two adjacent walls, each with a different style.
+      final walls = <(int, int), String>{
+        (5, 10): 'modern_gray_07',
+        (6, 10): 'coral_red',
+      };
+      final objectLayer = buildObjectLayerFromWalls(walls);
+
+      final leftTile = objectLayer.tileAt(5, 10)!;
+      final rightTile = objectLayer.tileAt(6, 10)!;
+
+      // Both use the same LimeZu tileset but different tile indices
+      // (different baseIndex in the sheet).
+      expect(leftTile.tilesetId, equals(rightTile.tilesetId),
+          reason: 'Both LimeZu styles share the same tileset');
+      expect(leftTile.tileIndex, isNot(equals(rightTile.tileIndex)),
+          reason: 'Different styles produce different tile indices');
+    });
+
     test('no lintel for gap wider than 3 tiles', () {
       // 4-tile gap — too wide to be a door
       final walls = {(5, 10), (10, 10)};
-      final objectLayer = buildObjectLayerFromWalls(walls);
+      final objectLayer = buildObjectLayerFromWalls(_wallMap(walls));
 
       // No lintel tiles above the gap.
       expect(objectLayer.tileAt(6, 9), isNull);

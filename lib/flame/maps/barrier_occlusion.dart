@@ -1,5 +1,6 @@
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
+import 'package:tech_world/flame/tiles/wall_style_def.dart';
 
 /// Compute priority overrides from a barrier set for y-based depth sorting.
 ///
@@ -171,129 +172,66 @@ int computeWallBitmask(int cx, int cy, Set<(int, int)> barriers) {
 }
 
 // ---------------------------------------------------------------------------
-// Wall tile indices from `room_builder_office` tileset.
+// Object layer generation from walls.
 // ---------------------------------------------------------------------------
 
-/// Tileset containing the wall tiles.
+/// Build an object layer from wall positions with style-aware face + cap tiles.
 ///
-/// Currently only `room_builder_office` has wall art. When a second tileset
-/// with walls is needed, this should become a parameter or per-map config
-/// rather than a constant.
-const wallTilesetId = 'room_builder_office';
-
-/// Face tiles: gray stone brick from row 8 (indices 128–130).
-///
-/// - 129: fill (middle / default)
-/// - 128: left border (left end / isolated)
-/// - 130: right border (right end)
-const _faceTiles = <int, int>{
-  0: 128, // isolated
-  WallBitmask.n: 129,
-  WallBitmask.e: 128,
-  WallBitmask.s: 129,
-  WallBitmask.w: 130,
-  WallBitmask.n | WallBitmask.s: 129,
-  WallBitmask.e | WallBitmask.w: 129,
-  WallBitmask.n | WallBitmask.e: 128,
-  WallBitmask.n | WallBitmask.w: 130,
-  WallBitmask.s | WallBitmask.e: 128,
-  WallBitmask.s | WallBitmask.w: 130,
-  WallBitmask.n | WallBitmask.e | WallBitmask.w: 129,
-  WallBitmask.s | WallBitmask.e | WallBitmask.w: 129,
-  WallBitmask.n | WallBitmask.s | WallBitmask.e: 128,
-  WallBitmask.n | WallBitmask.s | WallBitmask.w: 130,
-  WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 129,
-};
-
-/// Cap tiles: smooth gray from row 5 (indices 90–92).
-///
-/// - 91: fill (default)
-/// - 90: left shading (left end)
-/// - 92: right edge (right end)
-const _capTiles = <int, int>{
-  0: 90,
-  WallBitmask.n: 91,
-  WallBitmask.e: 90,
-  WallBitmask.s: 91,
-  WallBitmask.w: 92,
-  WallBitmask.n | WallBitmask.s: 91,
-  WallBitmask.e | WallBitmask.w: 91,
-  WallBitmask.n | WallBitmask.e: 90,
-  WallBitmask.n | WallBitmask.w: 92,
-  WallBitmask.s | WallBitmask.e: 90,
-  WallBitmask.s | WallBitmask.w: 92,
-  WallBitmask.n | WallBitmask.e | WallBitmask.w: 91,
-  WallBitmask.s | WallBitmask.e | WallBitmask.w: 91,
-  WallBitmask.n | WallBitmask.s | WallBitmask.e: 90,
-  WallBitmask.n | WallBitmask.s | WallBitmask.w: 92,
-  WallBitmask.n | WallBitmask.e | WallBitmask.s | WallBitmask.w: 91,
-};
-
-/// Look up the face tile index for a barrier with the given neighbor [bitmask].
-int? faceForBitmask(int bitmask) => _faceTiles[bitmask];
-
-/// Look up the cap tile index for a wall-top with the given neighbor [bitmask].
-int? capForBitmask(int bitmask) => _capTiles[bitmask];
-
-// ---------------------------------------------------------------------------
-// Object layer generation from barriers.
-// ---------------------------------------------------------------------------
-
-/// Build an object layer from wall positions with face + cap tiles.
+/// [walls] maps grid positions to style IDs. Each wall cell looks up its
+/// [WallStyleDef] to select the correct face and cap tiles from the 10×2
+/// autotile block.
 ///
 /// Only wall positions get tile art — plain barriers (furniture, water, etc.)
 /// are not rendered. The bitmask is computed against wall neighbors only,
 /// so wall ends get correct end-cap tiles even when adjacent to plain barriers.
-TileLayerData buildObjectLayerFromWalls(Set<(int, int)> walls) {
+TileLayerData buildObjectLayerFromWalls(Map<(int, int), String> walls) {
   if (walls.isEmpty) return TileLayerData();
-  return _buildWallObjectLayer(walls);
-}
 
-/// Build object layer using dedicated wall tiles.
-TileLayerData _buildWallObjectLayer(Set<(int, int)> walls) {
   final layer = TileLayerData();
+  final wallPositions = walls.keys.toSet();
 
-  for (final (x, y) in walls) {
-    final bitmask = computeWallBitmask(x, y, walls);
+  for (final entry in walls.entries) {
+    final (x, y) = entry.key;
+    final styleId = entry.value;
+    final style = lookupWallStyle(styleId);
+    if (style == null) continue;
+
+    final bitmask = computeWallBitmask(x, y, wallPositions);
 
     // Face tile at wall position.
-    final faceIndex = faceForBitmask(bitmask);
-    if (faceIndex != null) {
-      layer.setTile(
-          x, y, TileRef(tilesetId: wallTilesetId, tileIndex: faceIndex));
-    }
+    final faceIndex = style.faceForBitmask(bitmask);
+    layer.setTile(
+        x, y, TileRef(tilesetId: style.tilesetId, tileIndex: faceIndex));
 
     // Cap tile at y-1 for north-facing walls.
-    final isNorthFacing = !walls.contains((x, y - 1));
+    final isNorthFacing = !wallPositions.contains((x, y - 1));
     if (isNorthFacing && y - 1 >= 0) {
-      final capIndex = capForBitmask(bitmask);
-      if (capIndex != null) {
-        layer.setTile(
-          x,
-          y - 1,
-          TileRef(tilesetId: wallTilesetId, tileIndex: capIndex),
-        );
-      }
+      final capIndex = style.capForBitmask(bitmask);
+      layer.setTile(
+        x,
+        y - 1,
+        TileRef(tilesetId: style.tilesetId, tileIndex: capIndex),
+      );
     }
 
     // Horizontal doorway lintel: wall at (x, y) is the left edge of a gap.
     // Place cap tiles above the gap so the wall top continues over the door.
-    if (!walls.contains((x + 1, y))) {
+    if (!wallPositions.contains((x + 1, y))) {
       var gapEnd = x + 1;
-      while (gapEnd < x + 10 && !walls.contains((gapEnd, y))) {
+      while (gapEnd < x + 10 && !wallPositions.contains((gapEnd, y))) {
         gapEnd++;
       }
-      if (walls.contains((gapEnd, y))) {
+      if (wallPositions.contains((gapEnd, y))) {
         final gapWidth = gapEnd - (x + 1);
         if (gapWidth >= 1 && gapWidth <= 3 && y - 1 >= 0) {
-          // Use middle fill cap (bitmask E|W) for lintel tiles.
+          // Use middle fill cap (E|W bitmask) for lintel tiles.
           final lintelCapIndex =
-              capForBitmask(WallBitmask.e | WallBitmask.w) ?? 91;
+              style.capForBitmask(WallBitmask.e | WallBitmask.w);
           for (var gx = x + 1; gx < gapEnd; gx++) {
             layer.setTile(
               gx,
               y - 1,
-              TileRef(tilesetId: wallTilesetId, tileIndex: lintelCapIndex),
+              TileRef(tilesetId: style.tilesetId, tileIndex: lintelCapIndex),
             );
           }
         }

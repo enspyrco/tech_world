@@ -865,17 +865,19 @@ class TechWorld extends World with TapCallbacks {
       final barrierSet = {for (final b in map.barriers) (b.x, b.y)};
 
       // Wall positions for tile art — only walls get face + cap tiles.
-      final wallSet = {for (final p in map.walls.keys) (p.x, p.y)};
+      final wallMap = {
+        for (final entry in map.walls.entries) (entry.key.x, entry.key.y): entry.value,
+      };
 
       _log.info('loadMapComponents: barriers=${barrierSet.length}, '
-          'walls=${wallSet.length}, '
+          'walls=${wallMap.length}, '
           'objectLayer=${map.objectLayer != null}, '
           'floorLayer=${map.floorLayer != null}');
 
       // Generate wall tile art and merge with any manually placed object tiles.
       var objectLayer = map.objectLayer;
-      if (wallSet.isNotEmpty) {
-        final wallLayer = buildObjectLayerFromWalls(wallSet);
+      if (wallMap.isNotEmpty) {
+        final wallLayer = buildObjectLayerFromWalls(wallMap);
         if (objectLayer != null) {
           // Merge wall tiles into existing object layer (wall tiles take
           // precedence at overlapping positions).
@@ -884,7 +886,7 @@ class TechWorld extends World with TapCallbacks {
           objectLayer = wallLayer;
         }
         _log.info('loadMapComponents: generated object layer from '
-            '${wallSet.length} walls');
+            '${wallMap.length} walls');
       }
 
       final overrides = barrierSet.isNotEmpty
