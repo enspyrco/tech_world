@@ -152,10 +152,29 @@ void main() {
       expect(result!.tilesetId, 'limezu_walls');
     });
 
-    test('returns default style for legacy gray_brick ID', () {
+    test('returns backward-compat style for gray_brick ID', () {
       final result = lookupWallStyle('gray_brick');
       expect(result, isNotNull);
-      expect(result!.id, defaultWallStyleId);
+      expect(result!.id, 'gray_brick');
+      expect(result.tilesetId, 'room_builder_office');
+    });
+
+    test('gray_brick face tiles match original hardcoded values', () {
+      final style = lookupWallStyle('gray_brick')!;
+      // Original: 128 (left), 129 (fill), 130 (right).
+      expect(style.faceForBitmask(WallBitmask.e | WallBitmask.w), 129);
+      expect(style.faceForBitmask(WallBitmask.e), 128);
+      expect(style.faceForBitmask(WallBitmask.w), 130);
+      expect(style.faceForBitmask(0), 128); // isolated
+    });
+
+    test('gray_brick cap tiles match original hardcoded values', () {
+      final style = lookupWallStyle('gray_brick')!;
+      // Original: 90 (left), 91 (fill), 92 (right).
+      expect(style.capForBitmask(WallBitmask.e | WallBitmask.w), 91);
+      expect(style.capForBitmask(WallBitmask.e), 90);
+      expect(style.capForBitmask(WallBitmask.w), 92);
+      expect(style.capForBitmask(0), 90); // isolated
     });
 
     test('returns null for unknown ID', () {
