@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart' show Colors, FontWeight, TextStyle;
 import 'package:logging/logging.dart';
 
@@ -31,7 +29,7 @@ import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
-import 'package:tech_world/flame/tiles/tileset_cache_service.dart';
+import 'package:tech_world/flame/tiles/tileset_cache_provider.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/flame/tiles/tileset_registry.dart';
@@ -943,8 +941,9 @@ class TechWorld extends World with TapCallbacks {
   ///
   /// Collects the unique tileset IDs referenced by [styleIds], resolves each
   /// to a [Tileset] definition, and downloads missing ones from Firebase
-  /// Storage via [TilesetCacheService]. On web, disk caching is skipped
-  /// (relies on browser HTTP cache).
+  /// Storage. On native platforms, downloads are disk-cached via
+  /// [TilesetCacheService] (through [createCachedDownloader]). On web,
+  /// downloads go direct (relies on browser HTTP cache).
   Future<void> _ensureWallTilesetsLoaded(
     Iterable<String> styleIds,
     TilesetRegistry registry,
@@ -964,24 +963,13 @@ class TechWorld extends World with TapCallbacks {
     _log.info('_ensureWallTilesetsLoaded: downloading ${needed.keys}');
 
     final storageService = TilesetStorageService();
-    TilesetCacheService? cacheService;
-
-    // On native platforms, wrap with disk cache.
-    if (!kIsWeb) {
-      final dir = await _getWallTilesetCacheDir();
-      if (dir != null) {
-        cacheService = TilesetCacheService(
-          cacheDir: dir,
-          download: (id) => storageService.downloadTilesetImage(id),
-        );
-      }
-    }
+    final downloader = await createCachedDownloader(
+      (id) => storageService.downloadTilesetImage(id),
+    );
 
     await Future.wait(needed.entries.map((entry) async {
       try {
-        final bytes = cacheService != null
-            ? await cacheService.getTilesetImage(entry.key)
-            : await storageService.downloadTilesetImage(entry.key);
+        final bytes = await downloader(entry.key);
         if (bytes != null) {
           final codec = await ui.instantiateImageCodec(bytes);
           final frame = await codec.getNextFrame();
@@ -994,16 +982,6 @@ class TechWorld extends World with TapCallbacks {
         _log.warning('_ensureWallTilesetsLoaded: failed to load ${entry.key}', e);
       }
     }));
-  }
-
-  /// Returns the disk cache directory for wall tilesets, or `null` on web.
-  Future<Directory?> _getWallTilesetCacheDir() async {
-    try {
-      final appDir = await getApplicationSupportDirectory();
-      return Directory('${appDir.path}/tileset_cache');
-    } catch (_) {
-      return null;
-    }
   }
 
   /// Remove all map-specific components before loading a new map.

@@ -98,6 +98,12 @@ const _wallSheetRows = 40;
 /// It lives in Firebase Storage and is downloaded on demand when a map
 /// contains walls that reference LimeZu styles. The [imagePath] is used
 /// as a cache key in Flame's [Images] cache, not as an asset-relative path.
+///
+/// Marked [Tileset.isCustom] because it's loaded dynamically (not from
+/// the asset bundle). This is safe: `_removeMapComponents` only unloads
+/// tilesets listed in `map.customTilesets`, and `limezu_walls` is loaded
+/// by the wall style system — not per-map — so it persists across map
+/// switches.
 const limeZuWallsTileset = Tileset(
   id: wallTilesetId,
   name: 'LimeZu Walls',
