@@ -99,8 +99,9 @@ final Map<String, WallStyleDef> _wallStyles = _buildWallStyles();
 
 Map<String, WallStyleDef> _buildWallStyles() {
   // Style names — 3 per row-pair (group 0, 1, 2), 18 row-pairs + extras.
-  // Names are descriptive based on the catalog colors.
-  const styleNames = <String>[
+  // Names are descriptive based on the catalog colors. Null entries mark
+  // empty slots in the sheet (last two row-pairs have gaps).
+  const styleNames = <String?>[
     // Row 0-1
     'diamond_wallpaper', 'warm_wood', 'coral_red',
     // Row 2-3
@@ -136,9 +137,9 @@ Map<String, WallStyleDef> _buildWallStyles() {
     // Row 32-33
     'dark_slate', 'cherry_red', 'light_sky',
     // Row 34-35
-    'charcoal', 'royal_blue', /* group 2 empty */
+    'charcoal', 'royal_blue', null,
     // Row 36-37
-    /* group 0 empty */ 'purple', /* group 2 empty */
+    null, 'purple', null,
   ];
 
   final styles = <String, WallStyleDef>{};
@@ -149,10 +150,8 @@ Map<String, WallStyleDef> _buildWallStyles() {
       if (styleIndex >= styleNames.length) break;
 
       final name = styleNames[styleIndex];
-      if (name.isEmpty) {
-        styleIndex++;
-        continue;
-      }
+      styleIndex++;
+      if (name == null) continue;
 
       final baseRow = rowPair * 2;
       final baseCol = group * 10;
@@ -164,8 +163,6 @@ Map<String, WallStyleDef> _buildWallStyles() {
         baseIndex: baseIndex,
         columns: _wallSheetColumns,
       );
-
-      styleIndex++;
     }
   }
 

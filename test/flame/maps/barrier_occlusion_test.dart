@@ -223,6 +223,25 @@ void main() {
           reason: 'Lintel cap above right gap cell');
     });
 
+    test('adjacent walls with different styles use their own tilesets', () {
+      // Two adjacent walls, each with a different style.
+      final walls = <(int, int), String>{
+        (5, 10): 'modern_gray_07',
+        (6, 10): 'coral_red',
+      };
+      final objectLayer = buildObjectLayerFromWalls(walls);
+
+      final leftTile = objectLayer.tileAt(5, 10)!;
+      final rightTile = objectLayer.tileAt(6, 10)!;
+
+      // Both use the same LimeZu tileset but different tile indices
+      // (different baseIndex in the sheet).
+      expect(leftTile.tilesetId, equals(rightTile.tilesetId),
+          reason: 'Both LimeZu styles share the same tileset');
+      expect(leftTile.tileIndex, isNot(equals(rightTile.tileIndex)),
+          reason: 'Different styles produce different tile indices');
+    });
+
     test('no lintel for gap wider than 3 tiles', () {
       // 4-tile gap — too wide to be a door
       final walls = {(5, 10), (10, 10)};
