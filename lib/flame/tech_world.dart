@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart' show Colors, FontWeight, TextStyle;
 import 'package:logging/logging.dart';
 
@@ -29,7 +31,11 @@ import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tiles/tileset_cache_service.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
+import 'package:tech_world/flame/tiles/tileset.dart';
+import 'package:tech_world/flame/tiles/tileset_registry.dart';
+import 'package:tech_world/flame/tiles/wall_style_def.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/map_sync_service.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
@@ -874,6 +880,13 @@ class TechWorld extends World with TapCallbacks {
           'objectLayer=${map.objectLayer != null}, '
           'floorLayer=${map.floorLayer != null}');
 
+      // Ensure wall tilesets are loaded before generating tile art.
+      // Wall tilesets (e.g. limezu_walls) are not bundled — they're
+      // downloaded from Firebase Storage on first use and disk-cached.
+      if (wallMap.isNotEmpty) {
+        await _ensureWallTilesetsLoaded(wallMap.values, registry);
+      }
+
       // Generate wall tile art and merge with any manually placed object tiles.
       var objectLayer = map.objectLayer;
       if (wallMap.isNotEmpty) {
@@ -923,6 +936,73 @@ class TechWorld extends World with TapCallbacks {
       }
     } else {
       _log.info('loadMapComponents: skipped tile layers (game=${game != null}, usesTilesets=${map.usesTilesets})');
+    }
+  }
+
+  /// Download and register any wall tilesets not already in the registry.
+  ///
+  /// Collects the unique tileset IDs referenced by [styleIds], resolves each
+  /// to a [Tileset] definition, and downloads missing ones from Firebase
+  /// Storage via [TilesetCacheService]. On web, disk caching is skipped
+  /// (relies on browser HTTP cache).
+  Future<void> _ensureWallTilesetsLoaded(
+    Iterable<String> styleIds,
+    TilesetRegistry registry,
+  ) async {
+    // Collect unique tileset definitions from the wall styles.
+    final needed = <String, Tileset>{};
+    for (final styleId in styleIds) {
+      final style = lookupWallStyle(styleId);
+      if (style == null) continue;
+      if (registry.isLoaded(style.tilesetId)) continue;
+      if (style.tilesetId == wallTilesetId) {
+        needed[wallTilesetId] = limeZuWallsTileset;
+      }
+    }
+    if (needed.isEmpty) return;
+
+    _log.info('_ensureWallTilesetsLoaded: downloading ${needed.keys}');
+
+    final storageService = TilesetStorageService();
+    TilesetCacheService? cacheService;
+
+    // On native platforms, wrap with disk cache.
+    if (!kIsWeb) {
+      final dir = await _getWallTilesetCacheDir();
+      if (dir != null) {
+        cacheService = TilesetCacheService(
+          cacheDir: dir,
+          download: (id) => storageService.downloadTilesetImage(id),
+        );
+      }
+    }
+
+    await Future.wait(needed.entries.map((entry) async {
+      try {
+        final bytes = cacheService != null
+            ? await cacheService.getTilesetImage(entry.key)
+            : await storageService.downloadTilesetImage(entry.key);
+        if (bytes != null) {
+          final codec = await ui.instantiateImageCodec(bytes);
+          final frame = await codec.getNextFrame();
+          registry.loadFromImage(entry.value, frame.image);
+          _log.info('_ensureWallTilesetsLoaded: loaded ${entry.key}');
+        } else {
+          _log.warning('_ensureWallTilesetsLoaded: ${entry.key} not found');
+        }
+      } catch (e) {
+        _log.warning('_ensureWallTilesetsLoaded: failed to load ${entry.key}', e);
+      }
+    }));
+  }
+
+  /// Returns the disk cache directory for wall tilesets, or `null` on web.
+  Future<Directory?> _getWallTilesetCacheDir() async {
+    try {
+      final appDir = await getApplicationSupportDirectory();
+      return Directory('${appDir.path}/tileset_cache');
+    } catch (_) {
+      return null;
     }
   }
 
