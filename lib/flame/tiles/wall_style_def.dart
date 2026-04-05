@@ -1,4 +1,5 @@
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
+import 'package:tech_world/flame/tiles/tileset.dart';
 
 /// Defines a wall style within a tileset sprite sheet.
 ///
@@ -87,6 +88,31 @@ const wallTilesetId = 'limezu_walls';
 
 /// Column count of the repacked LimeZu wall sheet (30 cols at 32px).
 const _wallSheetColumns = 30;
+
+/// Row count of the repacked LimeZu wall sheet.
+const _wallSheetRows = 40;
+
+/// Tileset definition for the repacked LimeZu wall sprite sheet.
+///
+/// This tileset is **not** bundled in the asset directory (paid content).
+/// It lives in Firebase Storage and is downloaded on demand when a map
+/// contains walls that reference LimeZu styles. The [imagePath] is used
+/// as a cache key in Flame's [Images] cache, not as an asset-relative path.
+///
+/// Marked [Tileset.isCustom] because it's loaded dynamically (not from
+/// the asset bundle). This is safe: `_removeMapComponents` only unloads
+/// tilesets listed in `map.customTilesets`, and `limezu_walls` is loaded
+/// by the wall style system — not per-map — so it persists across map
+/// switches.
+const limeZuWallsTileset = Tileset(
+  id: wallTilesetId,
+  name: 'LimeZu Walls',
+  imagePath: 'remote/limezu_walls.png',
+  tileSize: 32,
+  columns: _wallSheetColumns,
+  rows: _wallSheetRows,
+  isCustom: true,
+);
 
 /// Default wall style — clean light gray (#7 in the catalog).
 const defaultWallStyleId = 'modern_gray_07';
