@@ -195,11 +195,54 @@ Map<String, WallStyleDef> _buildWallStyles() {
   return styles;
 }
 
+/// Backward-compatible wall style using bundled `room_builder_office` tiles.
+///
+/// The original 3-tile face (128-130) and cap (90-92) strips don't follow
+/// the 10×2 autotile block layout, so we override the bitmask methods
+/// directly. This ensures existing maps with `'gray_brick'` walls render
+/// immediately from bundled assets without downloading `limezu_walls`.
+final _grayBrickStyle = _GrayBrickWallStyleDef();
+
+class _GrayBrickWallStyleDef extends WallStyleDef {
+  _GrayBrickWallStyleDef()
+      : super(
+          id: 'gray_brick',
+          tilesetId: 'room_builder_office',
+          baseIndex: 0,
+          columns: 16,
+        );
+
+  // Face tiles: row 8 of room_builder_office (16 cols).
+  // 128 = left, 129 = fill, 130 = right.
+  @override
+  int faceForBitmask(int bitmask) {
+    final hasE = bitmask & WallBitmask.e != 0;
+    final hasW = bitmask & WallBitmask.w != 0;
+    if (hasE && hasW) return 129;
+    if (hasE) return 128;
+    if (hasW) return 130;
+    return 128; // isolated
+  }
+
+  // Cap tiles: row 5 of room_builder_office (16 cols).
+  // 90 = left, 91 = fill, 92 = right.
+  @override
+  int capForBitmask(int bitmask) {
+    final hasE = bitmask & WallBitmask.e != 0;
+    final hasW = bitmask & WallBitmask.w != 0;
+    if (hasE && hasW) return 91;
+    if (hasE) return 90;
+    if (hasW) return 92;
+    return 90; // isolated
+  }
+}
+
 /// Look up a wall style by ID.
 ///
-/// Returns `null` if the style is not found. Legacy `'gray_brick'` IDs
-/// are mapped to the default style.
+/// Returns the backward-compatible `gray_brick` style (using bundled
+/// `room_builder_office` tiles) for legacy IDs, or a LimeZu style for
+/// named style IDs. Returns `null` for unknown IDs.
 WallStyleDef? lookupWallStyle(String styleId) {
-  if (styleId == 'gray_brick') return _wallStyles[defaultWallStyleId];
+  if (styleId == 'gray_brick') return _grayBrickStyle;
   return _wallStyles[styleId];
 }
