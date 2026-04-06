@@ -164,7 +164,7 @@ class MapEditorState extends ChangeNotifier {
   final Map<(int, int), String> _walls = {};
 
   /// The style applied when painting walls.
-  String _wallStyle = 'modern_gray_07';
+  String _wallStyle = 'gray_brick';
   String get wallStyle => _wallStyle;
   set wallStyle(String style) {
     _wallStyle = style;

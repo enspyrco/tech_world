@@ -18,7 +18,6 @@ import 'package:tech_world/map_editor/map_sync_service.dart';
 import 'package:tech_world/map_editor/predefined_rules.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
 import 'package:tech_world/map_editor/tile_palette.dart';
-import 'package:tech_world/map_editor/wall_style_picker.dart';
 import 'package:tech_world/utils/locator.dart';
 
 final _log = Logger('MapEditorPanel');
@@ -572,7 +571,8 @@ class _MapToolbarState extends State<_MapToolbar> {
                 _toolButton(EditorTool.barrier, Icons.square, 'Barrier',
                     TileColors.barrier),
                 const SizedBox(width: 4),
-                _wallToolButton(),
+                _toolButton(EditorTool.wall, Icons.fence, 'Wall',
+                    TileColors.wall),
                 const SizedBox(width: 4),
                 _toolButton(EditorTool.spawn, Icons.my_location, 'Spawn',
                     TileColors.spawn),
@@ -795,102 +795,6 @@ class _MapToolbarState extends State<_MapToolbar> {
           padding: EdgeInsets.zero,
         ),
       ],
-    );
-  }
-
-  /// Wall tool button with style color indicator and popup picker.
-  Widget _wallToolButton() {
-    final selected = widget.state.currentTool == EditorTool.wall;
-    final styleColor = wallStyleSwatches
-        .where((s) => s.id == widget.state.wallStyle)
-        .map((s) => s.color)
-        .firstOrNull ?? TileColors.wall;
-
-    return Tooltip(
-      message: 'Wall',
-      child: InkWell(
-        onTap: () {
-          widget.state.setTool(EditorTool.wall);
-          _showWallStylePicker();
-        },
-        borderRadius: BorderRadius.circular(6),
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: selected
-                ? TileColors.wall.withValues(alpha: 0.3)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: selected ? TileColors.wall : Colors.grey.shade700,
-              width: selected ? 2 : 1,
-            ),
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(Icons.fence, color: TileColors.wall, size: 16),
-              // Style color indicator dot in bottom-right.
-              Positioned(
-                right: 2,
-                bottom: 2,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: styleColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.black54, width: 0.5),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showWallStylePicker() {
-    final buttonBox = context.findRenderObject() as RenderBox?;
-    if (buttonBox == null) return;
-
-    showDialog(
-      context: context,
-      barrierColor: Colors.black38,
-      builder: (ctx) => Dialog(
-        backgroundColor: const Color(0xFF2A2A2A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 340, maxHeight: 400),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text(
-                  'Wall Style',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Flexible(
-                child: WallStylePicker(
-                  selectedStyle: widget.state.wallStyle,
-                  onStyleSelected: (style) {
-                    widget.state.wallStyle = style;
-                    Navigator.of(ctx).pop();
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
