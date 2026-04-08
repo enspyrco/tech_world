@@ -63,10 +63,12 @@ class WallStyleDef {
     return _tileAt(3, 0); // isolated
   }
 
-  /// Face tile index for a wall cell with the given neighbor [bitmask].
+  /// Face tile index for the TOP cell of a wall section (north-facing).
   ///
-  /// Selection depends on E/W (left/mid/right) and S (bottom border).
-  /// N is ignored — it determines cap placement, not face selection.
+  /// Face tiles (cols 7-9) have the white band at top that connects to the
+  /// cap tile above. Use [bodyForBitmask] for non-top cells.
+  ///
+  /// Selection: E/W → left/mid/right, S → row 0 (continues) or row 1 (end).
   int faceForBitmask(int bitmask) {
     final hasE = bitmask & WallBitmask.e != 0;
     final hasW = bitmask & WallBitmask.w != 0;
@@ -76,6 +78,34 @@ class WallStyleDef {
     if (hasE) return hasS ? _tileAt(7, 0) : _tileAt(7, 1);
     if (hasW) return hasS ? _tileAt(9, 0) : _tileAt(9, 1);
     return hasS ? _tileAt(5, 1) : _tileAt(3, 1); // isolated
+  }
+
+  /// Body tile index for MIDDLE/BOTTOM cells of a wall section (not top).
+  ///
+  /// Body tiles (cols 4-6, row 0) are plain fill with side borders — no
+  /// white band or cap decoration. Bottom tiles (cols 0-3, row 1) add a
+  /// baseboard when the wall ends.
+  ///
+  /// [ewBitmask] provides the E/W context. For vertical walls below
+  /// corners, this should include inherited E/W from the northern neighbor
+  /// so the body width matches the face above.
+  int bodyForBitmask(int ewBitmask, {required bool hasS}) {
+    final hasE = ewBitmask & WallBitmask.e != 0;
+    final hasW = ewBitmask & WallBitmask.w != 0;
+
+    if (hasS) {
+      // Middle of wall — plain body tiles (cols 4-6, row 0).
+      if (hasE && hasW) return _tileAt(5, 0); // fill
+      if (hasE) return _tileAt(4, 0); // left edge
+      if (hasW) return _tileAt(6, 0); // right edge
+      return _tileAt(5, 0); // isolated vertical body
+    } else {
+      // Bottom of wall — baseboard tiles (cols 0-3, row 1).
+      if (hasE && hasW) return _tileAt(1, 1); // bottom middle
+      if (hasE) return _tileAt(0, 1); // bottom-left
+      if (hasW) return _tileAt(2, 1); // bottom-right
+      return _tileAt(3, 1); // isolated bottom
+    }
   }
 }
 
@@ -235,6 +265,12 @@ class _GrayBrickWallStyleDef extends WallStyleDef {
     if (hasW) return 92;
     return 90; // isolated
   }
+
+  // Body uses same tiles as face — 3-tile system has no body/bottom
+  // distinction. Ignore inherited E/W since the 3 tiles (L/fill/R) don't
+  // have body-specific variants.
+  @override
+  int bodyForBitmask(int ewBitmask, {required bool hasS}) => 129; // fill
 }
 
 /// Look up a wall style by ID.
