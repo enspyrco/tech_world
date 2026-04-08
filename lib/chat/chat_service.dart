@@ -9,6 +9,7 @@ import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/services/dreamfinder_client.dart';
 import 'package:tech_world/services/tts_service.dart';
 
 final _log = Logger('ChatService');
@@ -23,9 +24,11 @@ class ChatService {
   ChatService({
     required LiveKitService liveKitService,
     ChatMessageRepository? repository,
+    DreamfinderClient? dreamfinderClient,
     @visibleForTesting Duration historyTimeout = const Duration(seconds: 15),
   })  : _liveKitService = liveKitService,
         _repository = repository,
+        _dreamfinderClient = dreamfinderClient,
         _historyTimeout = historyTimeout,
         _ttsService = TtsService() {
     // Seed the group conversation.
@@ -39,6 +42,7 @@ class ChatService {
 
   final LiveKitService _liveKitService;
   final ChatMessageRepository? _repository;
+  final DreamfinderClient? _dreamfinderClient;
   final Duration _historyTimeout;
   final TtsService _ttsService;
 
@@ -376,6 +380,15 @@ class ChatService {
       // No destinationIdentities = broadcast to all
     );
 
+    // Forward to Dreamfinder for AI processing (fire-and-forget).
+    _dreamfinderClient?.sendEvent(
+      topic: 'chat',
+      roomName: _liveKitService.roomName,
+      senderId: _liveKitService.userId,
+      senderName: _liveKitService.displayName,
+      payload: payload,
+    );
+
     _log.info('Sent message: "$text"');
 
     // Persist to Firestore.
@@ -644,6 +657,15 @@ class ChatService {
       destinationIdentities: const [_botIdentity],
     );
 
+    // Forward to Dreamfinder for AI processing (fire-and-forget).
+    _dreamfinderClient?.sendEvent(
+      topic: 'help-request',
+      roomName: _liveKitService.roomName,
+      senderId: _liveKitService.userId,
+      senderName: _liveKitService.displayName,
+      payload: payload,
+    );
+
     _log.info('Sent help-request $requestId');
 
     try {
@@ -718,6 +740,7 @@ class ChatService {
     for (final controller in _dmStreamControllers.values) {
       controller.close();
     }
+    _dreamfinderClient?.dispose();
     _ttsService.dispose();
   }
 }

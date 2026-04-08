@@ -20,6 +20,7 @@ import 'package:tech_world/auth/user_profile_service.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/services/dreamfinder_client.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/code_editor_panel.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
@@ -328,6 +329,13 @@ class _MyAppState extends State<MyApp> {
     _chatService = ChatService(
       liveKitService: _liveKitService!,
       repository: _chatMessageRepository,
+      dreamfinderClient: DreamfinderClient(
+        baseUrl: 'https://dreamfinder.imagineering.cc',
+        apiKey: const String.fromEnvironment(
+          'DREAMFINDER_API_KEY',
+          defaultValue: '',
+        ),
+      ),
     );
     _proximityService = ProximityService();
 
