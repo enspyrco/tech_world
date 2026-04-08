@@ -24,6 +24,7 @@ dependencies:
   file_picker: ^8.0.0
   image_picker: ^1.1.2
   cloud_functions: ^6.0.2
+  http: ^1.2.0
   collection: ^1.19.1
   ffi: ^2.1.5
   web: ^1.1.0 # For web video capture APIs
