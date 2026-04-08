@@ -209,7 +209,9 @@ class TechWorld extends World with TapCallbacks {
 
   /// Called when the editor state changes — rebuild pathfinding grid.
   void _onEditorStateChanged() {
-    _pathComponent?.setGridFromEditor(_editorState!);
+    final editor = _editorState;
+    if (editor == null) return;
+    _pathComponent?.setGridFromEditor(editor);
   }
 
   /// Check if a challenge is completed via the [ProgressService].

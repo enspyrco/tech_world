@@ -197,14 +197,24 @@ TileLayerData buildObjectLayerFromWalls(Map<(int, int), String> walls) {
     if (style == null) continue;
 
     final bitmask = computeWallBitmask(x, y, wallPositions);
-
-    // Face tile at wall position.
-    final faceIndex = style.faceForBitmask(bitmask);
-    layer.setTile(
-        x, y, TileRef(tilesetId: style.tilesetId, tileIndex: faceIndex));
-
-    // Cap tile at y-1 for north-facing walls.
     final isNorthFacing = !wallPositions.contains((x, y - 1));
+    final hasS = bitmask & WallBitmask.s != 0;
+
+    // Tile at wall position — face for top cells, body for middle/bottom.
+    final int tileIndex;
+    if (isNorthFacing) {
+      // Top of wall section — face tile with white band connecting to cap.
+      tileIndex = style.faceForBitmask(bitmask);
+    } else {
+      // Middle/bottom — body tile (plain fill, matching borders).
+      // Inherit E/W from the northern neighbor so vertical walls below
+      // corners match the corner's border pattern.
+      final northBitmask = computeWallBitmask(x, y - 1, wallPositions);
+      final ewBitmask = bitmask | (northBitmask & (WallBitmask.e | WallBitmask.w));
+      tileIndex = style.bodyForBitmask(ewBitmask, hasS: hasS);
+    }
+    layer.setTile(
+        x, y, TileRef(tilesetId: style.tilesetId, tileIndex: tileIndex));
     if (isNorthFacing && y - 1 >= 0) {
       final capIndex = style.capForBitmask(bitmask);
       layer.setTile(

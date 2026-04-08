@@ -19,7 +19,7 @@ void main() {
 
       expect(state.tileAt(10, 10), TileType.barrier);
       expect(state.isWallAt(10, 10), isTrue);
-      expect(state.wallStyleAt(10, 10), 'gray_brick');
+      expect(state.wallStyleAt(10, 10), 'modern_gray_07');
     });
 
     test('barrier tool paints plain barrier without wall', () {
@@ -68,8 +68,8 @@ void main() {
       final map = state.toGameMap();
 
       expect(map.walls, hasLength(2));
-      expect(map.walls[const Point(5, 5)], 'gray_brick');
-      expect(map.walls[const Point(6, 5)], 'gray_brick');
+      expect(map.walls[const Point(5, 5)], 'modern_gray_07');
+      expect(map.walls[const Point(6, 5)], 'modern_gray_07');
       expect(map.walls.containsKey(const Point(7, 5)), isFalse);
 
       // All three should be barriers.
@@ -85,13 +85,13 @@ void main() {
         id: 'test',
         name: 'Test',
         barriers: [const Point(5, 5), const Point(6, 5)],
-        walls: {const Point(5, 5): 'gray_brick'},
+        walls: {const Point(5, 5): 'modern_gray_07'},
       );
 
       state.loadFromGameMap(map);
 
       expect(state.isWallAt(5, 5), isTrue);
-      expect(state.wallStyleAt(5, 5), 'gray_brick');
+      expect(state.wallStyleAt(5, 5), 'modern_gray_07');
       expect(state.isWallAt(6, 5), isFalse);
       expect(state.tileAt(5, 5), TileType.barrier);
       expect(state.tileAt(6, 5), TileType.barrier);
@@ -111,8 +111,8 @@ void main() {
       expect(state.tileAt(5, 5), TileType.open);
     });
 
-    test('wallStyle defaults to gray_brick and can be changed', () {
-      expect(state.wallStyle, 'gray_brick');
+    test('wallStyle defaults to modern_gray_07 and can be changed', () {
+      expect(state.wallStyle, 'modern_gray_07');
 
       state.wallStyle = 'red_brick';
       expect(state.wallStyle, 'red_brick');
@@ -131,7 +131,7 @@ void main() {
         name: 'Wall Test',
         barriers: [const Point(5, 5), const Point(6, 5), const Point(7, 5)],
         walls: {
-          const Point(5, 5): 'gray_brick',
+          const Point(5, 5): 'modern_gray_07',
           const Point(7, 5): 'red_brick',
         },
       );
@@ -140,7 +140,7 @@ void main() {
       final restored = TileMapFormat.fromJson(json);
 
       expect(restored.walls, hasLength(2));
-      expect(restored.walls[const Point(5, 5)], 'gray_brick');
+      expect(restored.walls[const Point(5, 5)], 'modern_gray_07');
       expect(restored.walls[const Point(7, 5)], 'red_brick');
 
       // Barriers should also round-trip.
