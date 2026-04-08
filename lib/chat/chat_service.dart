@@ -382,7 +382,7 @@ class ChatService {
 
     // Forward to Dreamfinder for AI processing (fire-and-forget).
     _dreamfinderClient?.sendEvent(
-      topic: 'chat',
+      topic: GameEventTopic.chat,
       roomName: _liveKitService.roomName,
       senderId: _liveKitService.userId,
       senderName: _liveKitService.displayName,
@@ -659,7 +659,7 @@ class ChatService {
 
     // Forward to Dreamfinder for AI processing (fire-and-forget).
     _dreamfinderClient?.sendEvent(
-      topic: 'help-request',
+      topic: GameEventTopic.helpRequest,
       roomName: _liveKitService.roomName,
       senderId: _liveKitService.userId,
       senderName: _liveKitService.displayName,
