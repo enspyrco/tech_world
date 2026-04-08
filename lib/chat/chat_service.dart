@@ -381,13 +381,13 @@ class ChatService {
     );
 
     // Forward to Dreamfinder for AI processing (fire-and-forget).
-    _dreamfinderClient?.sendEvent(
+    unawaited(_dreamfinderClient?.sendEvent(
       topic: GameEventTopic.chat,
       roomName: _liveKitService.roomName,
       senderId: _liveKitService.userId,
       senderName: _liveKitService.displayName,
       payload: payload,
-    );
+    ));
 
     _log.info('Sent message: "$text"');
 
@@ -658,13 +658,13 @@ class ChatService {
     );
 
     // Forward to Dreamfinder for AI processing (fire-and-forget).
-    _dreamfinderClient?.sendEvent(
+    unawaited(_dreamfinderClient?.sendEvent(
       topic: GameEventTopic.helpRequest,
       roomName: _liveKitService.roomName,
       senderId: _liveKitService.userId,
       senderName: _liveKitService.displayName,
       payload: payload,
-    );
+    ));
 
     _log.info('Sent help-request $requestId');
 
