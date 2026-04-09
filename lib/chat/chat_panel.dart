@@ -611,18 +611,19 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback? onSenderTap;
 
   static const clawdOrange = Color(0xFFD97757);
+  static const dreamfinderPurple = Color(0xFF9B72CF);
 
   @override
   Widget build(BuildContext context) {
     // Determine avatar and colors based on message type
     final isLocalUser = message.isLocalUser;
     final isBot = message.isBot;
-    final avatarLetter = isBot
-        ? 'C'
-        : message.senderName.isNotEmpty
-            ? message.senderName[0].toUpperCase()
-            : '?';
-    final avatarColor = isBot ? clawdOrange : Colors.blue;
+    final isDreamfinder = message.senderId == 'bot-dreamfinder';
+    final avatarLetter = message.senderName.isNotEmpty
+        ? message.senderName[0].toUpperCase()
+        : '?';
+    final avatarColor =
+        isBot ? (isDreamfinder ? dreamfinderPurple : clawdOrange) : Colors.blue;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
