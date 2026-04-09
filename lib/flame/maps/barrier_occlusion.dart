@@ -202,15 +202,27 @@ TileLayerData buildObjectLayerFromWalls(Map<(int, int), String> walls) {
 
     // Tile at wall position — face for top cells, body for middle/bottom.
     final int tileIndex;
-    if (isNorthFacing) {
-      // Top of wall section — face tile with white band connecting to cap.
+    if (isNorthFacing && !hasS) {
+      // Top of wall, single row — face tile with bottom border.
       tileIndex = style.faceForBitmask(bitmask);
+    } else if (isNorthFacing && hasS) {
+      // Top of wall, continues south — body tile (no white band).
+      // The cap above provides the decoration; body fills cleanly.
+      tileIndex = style.bodyForBitmask(bitmask, hasS: true);
     } else {
       // Middle/bottom — body tile (plain fill, matching borders).
-      // Inherit E/W from the northern neighbor so vertical walls below
-      // corners match the corner's border pattern.
-      final northBitmask = computeWallBitmask(x, y - 1, wallPositions);
-      final ewBitmask = bitmask | (northBitmask & (WallBitmask.e | WallBitmask.w));
+      // Walk up the wall column to find the nearest cell with E/W neighbors
+      // (the corner where horizontal meets vertical). Inherit its E/W so
+      // the entire vertical section matches the corner's border pattern.
+      var inheritedEW = 0;
+      var checkY = y - 1;
+      while (wallPositions.contains((x, checkY))) {
+        final checkBitmask = computeWallBitmask(x, checkY, wallPositions);
+        inheritedEW = checkBitmask & (WallBitmask.e | WallBitmask.w);
+        if (inheritedEW != 0) break;
+        checkY--;
+      }
+      final ewBitmask = bitmask | inheritedEW;
       tileIndex = style.bodyForBitmask(ewBitmask, hasS: hasS);
     }
     layer.setTile(
