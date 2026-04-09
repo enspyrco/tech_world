@@ -8,5 +8,11 @@ service firebase.storage {
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
+
+    // Tileset images — authenticated read, no client writes.
+    // Tilesets are uploaded via gsutil/admin SDK, not from the client.
+    match /tilesets/{tilesetFile} {
+      allow read: if request.auth != null;
+    }
   }
 }
