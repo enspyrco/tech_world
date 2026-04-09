@@ -219,12 +219,12 @@ class ChatService {
         isResponse: message.topic == 'dm-response',
       );
     } else if (message.topic == 'chat-response') {
-      // Bot response
+      // Bot response — use sender info from payload (supports multiple bots).
       botStatusNotifier.value = BotStatus.idle;
       _messages.add(ChatMessage(
         text: text,
-        senderName: 'Clawd',
-        senderId: _botIdentity,
+        senderName: senderName,
+        senderId: senderId ?? _botIdentity,
         conversationId: 'group',
         isBot: true,
       ));
