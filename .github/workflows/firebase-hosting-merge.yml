@@ -82,7 +82,9 @@ jobs:
           channel: stable
       - name: Install dependencies
         run: flutter pub get
-      - run: flutter build web --wasm --dart-define=DREAMFINDER_API_KEY=${{ secrets.DREAMFINDER_API_KEY }}
+      - run: flutter build web --wasm --dart-define="DREAMFINDER_API_KEY=$DREAMFINDER_API_KEY"
+        env:
+          DREAMFINDER_API_KEY: ${{ secrets.DREAMFINDER_API_KEY }}
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
