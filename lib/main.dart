@@ -329,13 +329,10 @@ class _MyAppState extends State<MyApp> {
     _chatService = ChatService(
       liveKitService: _liveKitService!,
       repository: _chatMessageRepository,
-      dreamfinderClient: const String.fromEnvironment('DREAMFINDER_API_KEY')
-                  .isNotEmpty
-          ? DreamfinderClient(
-              baseUrl: 'https://dreamfinder.imagineering.cc',
-              apiKey: const String.fromEnvironment('DREAMFINDER_API_KEY'),
-            )
-          : null,
+      dreamfinderClient: DreamfinderClient(
+        baseUrl: 'https://dreamfinder.imagineering.cc',
+        apiKey: const String.fromEnvironment('DREAMFINDER_API_KEY'),
+      ),
     );
     _proximityService = ProximityService();
 
