@@ -47,10 +47,20 @@ const gremlinBot = BotConfig(
   avatarLetter: 'G',
 );
 
+/// Dreamfinder — voice-interactive imagination facilitator (gold).
+const dreamfinderBot = BotConfig(
+  identity: 'bot-dreamfinder',
+  displayName: 'Dreamfinder',
+  spriteAsset: 'dreamfinder_bot.png',
+  accentColor: Color(0xFFDAA520),
+  avatarLetter: 'D',
+);
+
 /// All registered bots, keyed by participant identity.
 final botsByIdentity = <String, BotConfig>{
   clawdBot.identity: clawdBot,
   gremlinBot.identity: gremlinBot,
+  dreamfinderBot.identity: dreamfinderBot,
 };
 
 /// All bot identities as a set, for efficient lookups.
