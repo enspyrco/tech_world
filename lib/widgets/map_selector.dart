@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/generators/map_generator.dart';
+import 'package:tech_world/flame/maps/map_identity.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/rooms/room_data.dart';
@@ -172,9 +173,9 @@ class _MapSelectorState extends State<MapSelector> {
                 child: Row(
                   children: [
                     Icon(
-                      _mapIcon(map.id),
+                      MapIdentity.of(id: map.id).icon,
                       size: 16,
-                      color: _mapIconColor(map.id),
+                      color: MapIdentity.of(id: map.id).color,
                     ),
                     const SizedBox(width: 8),
                     Text(map.name),
@@ -268,28 +269,6 @@ class _MapSelectorState extends State<MapSelector> {
     );
   }
 }
-
-/// Icon for each predefined map in the dropdown.
-IconData _mapIcon(String mapId) => switch (mapId) {
-      'l_room' => Icons.auto_awesome,
-      'open_arena' => Icons.crop_free,
-      'four_corners' => Icons.grid_4x4,
-      'simple_maze' => Icons.route,
-      'the_library' => Icons.menu_book,
-      'the_workshop' => Icons.construction,
-      _ => Icons.map_outlined,
-    };
-
-/// Accent color for each map icon.
-Color _mapIconColor(String mapId) => switch (mapId) {
-      'l_room' => const Color(0xFFFFD54F),
-      'open_arena' => const Color(0xFF81C784),
-      'four_corners' => const Color(0xFFE57373),
-      'simple_maze' => const Color(0xFFBA68C8),
-      'the_library' => const Color(0xFF4DD0E1),
-      'the_workshop' => const Color(0xFFFFB74D),
-      _ => const Color(0xFF90A4AE),
-    };
 
 /// Sealed class representing popup menu actions.
 sealed class _MapAction {}
