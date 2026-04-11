@@ -151,6 +151,157 @@ void main() {
     });
   });
 
+  group('buildObjectLayerFromWalls tile selection', () {
+    // Use the default wall style for all golden-file tests. We compute
+    // expected tile indices from WallStyleDef methods directly, making the
+    // tests self-documenting: configuration → bitmask → style method → index.
+    late WallStyleDef style;
+
+    setUp(() {
+      style = lookupWallStyle(defaultWallStyleId)!;
+    });
+
+    test('isolated single cell: face tile + cap', () {
+      final walls = _wallMap({(5, 7)});
+      final layer = buildObjectLayerFromWalls(walls);
+
+      // Isolated: no N, E, S, W neighbors → bitmask = 0.
+      // North-facing without S → face tile.
+      expect(layer.tileAt(5, 7)!.tileIndex, equals(style.faceForBitmask(0)));
+      // Cap tile above.
+      expect(layer.tileAt(5, 6)!.tileIndex, equals(style.capForBitmask(0)));
+    });
+
+    test('single-row horizontal wall (3 cells): face tiles + caps', () {
+      final walls = _wallMap({(5, 7), (6, 7), (7, 7)});
+      final layer = buildObjectLayerFromWalls(walls);
+
+      const e = WallBitmask.e;
+      const w = WallBitmask.w;
+
+      // All cells are north-facing with no S → face tiles.
+      // Left end: E neighbor only.
+      expect(layer.tileAt(5, 7)!.tileIndex, equals(style.faceForBitmask(e)));
+      // Middle: E + W neighbors.
+      expect(
+          layer.tileAt(6, 7)!.tileIndex, equals(style.faceForBitmask(e | w)));
+      // Right end: W neighbor only.
+      expect(layer.tileAt(7, 7)!.tileIndex, equals(style.faceForBitmask(w)));
+
+      // Caps above each cell.
+      expect(layer.tileAt(5, 6)!.tileIndex, equals(style.capForBitmask(e)));
+      expect(
+          layer.tileAt(6, 6)!.tileIndex, equals(style.capForBitmask(e | w)));
+      expect(layer.tileAt(7, 6)!.tileIndex, equals(style.capForBitmask(w)));
+    });
+
+    test('multi-row vertical wall (3 cells): body + baseboard', () {
+      final walls = _wallMap({(5, 7), (5, 8), (5, 9)});
+      final layer = buildObjectLayerFromWalls(walls);
+
+      const s = WallBitmask.s;
+
+      // (5,7): north-facing with S → body (not face). No E/W neighbors.
+      expect(layer.tileAt(5, 7)!.tileIndex,
+          equals(style.bodyForBitmask(s, hasS: true)));
+      // (5,8): middle — not north-facing, hasS. E/W inheritance walks up to
+      // (5,7) which has no E/W → isolated vertical body.
+      expect(layer.tileAt(5, 8)!.tileIndex,
+          equals(style.bodyForBitmask(0, hasS: true)));
+      // (5,9): bottom — not north-facing, no S. Baseboard tile.
+      expect(layer.tileAt(5, 9)!.tileIndex,
+          equals(style.bodyForBitmask(0, hasS: false)));
+
+      // Only (5,7) is north-facing → cap at (5,6).
+      expect(layer.tileAt(5, 6)!.tileIndex, equals(style.capForBitmask(s)));
+      // No caps at (5,7) from (5,8) — (5,8) is not north-facing.
+    });
+
+    test('L-junction: vertical inherits W from corner', () {
+      // Horizontal bar: (5,7)-(7,7). Vertical drop from right end: (7,8)-(7,9).
+      //
+      //   (5,7) — (6,7) — (7,7)
+      //                     |
+      //                   (7,8)
+      //                     |
+      //                   (7,9)
+      final walls = _wallMap({(5, 7), (6, 7), (7, 7), (7, 8), (7, 9)});
+      final layer = buildObjectLayerFromWalls(walls);
+
+      const e = WallBitmask.e;
+      const w = WallBitmask.w;
+      const s = WallBitmask.s;
+
+      // Horizontal cells — north-facing, no S → face.
+      expect(layer.tileAt(5, 7)!.tileIndex, equals(style.faceForBitmask(e)));
+      expect(
+          layer.tileAt(6, 7)!.tileIndex, equals(style.faceForBitmask(e | w)));
+
+      // Junction cell (7,7): north-facing WITH S → body, not face.
+      // This is THE case that broke before — face here would show a white
+      // band that shouldn't be there when the wall continues south.
+      expect(layer.tileAt(7, 7)!.tileIndex,
+          equals(style.bodyForBitmask(w | s, hasS: true)));
+
+      // (7,8): not north-facing, hasS. Inherits W from (7,7).
+      expect(layer.tileAt(7, 8)!.tileIndex,
+          equals(style.bodyForBitmask(w, hasS: true)));
+
+      // (7,9): bottom. Inherits W from (7,7).
+      expect(layer.tileAt(7, 9)!.tileIndex,
+          equals(style.bodyForBitmask(w, hasS: false)));
+
+      // Caps: all three north-facing cells.
+      expect(layer.tileAt(5, 6)!.tileIndex, equals(style.capForBitmask(e)));
+      expect(
+          layer.tileAt(6, 6)!.tileIndex, equals(style.capForBitmask(e | w)));
+      expect(
+          layer.tileAt(7, 6)!.tileIndex, equals(style.capForBitmask(w | s)));
+    });
+
+    test('T-junction: vertical arm gets bordered tiles, not fill', () {
+      // Horizontal bar: (5,7)-(7,7). Vertical drop from center: (6,8)-(6,9).
+      //
+      //   (5,7) — (6,7) — (7,7)
+      //             |
+      //           (6,8)
+      //             |
+      //           (6,9)
+      final walls = _wallMap({(5, 7), (6, 7), (7, 7), (6, 8), (6, 9)});
+      final layer = buildObjectLayerFromWalls(walls);
+
+      const e = WallBitmask.e;
+      const w = WallBitmask.w;
+      const s = WallBitmask.s;
+
+      // Horizontal ends — north-facing, no S → face.
+      expect(layer.tileAt(5, 7)!.tileIndex, equals(style.faceForBitmask(e)));
+      expect(layer.tileAt(7, 7)!.tileIndex, equals(style.faceForBitmask(w)));
+
+      // Junction cell (6,7): north-facing WITH S → body.
+      // bitmask = E|W|S. Body sees E|W → fill tile. This is correct —
+      // the junction IS part of the horizontal bar.
+      expect(layer.tileAt(6, 7)!.tileIndex,
+          equals(style.bodyForBitmask(e | w | s, hasS: true)));
+
+      // (6,8): vertical arm below T-junction. Should NOT inherit E|W
+      // from junction — a single-wide column needs both side borders,
+      // not the borderless fill tile. Uses isolated vertical body (Viso).
+      expect(layer.tileAt(6, 8)!.tileIndex,
+          equals(style.bodyForBitmask(0, hasS: true)));
+
+      // (6,9): bottom of vertical arm. Isolated baseboard with borders.
+      expect(layer.tileAt(6, 9)!.tileIndex,
+          equals(style.bodyForBitmask(0, hasS: false)));
+
+      // Caps: all three north-facing cells.
+      expect(layer.tileAt(5, 6)!.tileIndex, equals(style.capForBitmask(e)));
+      expect(layer.tileAt(6, 6)!.tileIndex,
+          equals(style.capForBitmask(e | w | s)));
+      expect(layer.tileAt(7, 6)!.tileIndex, equals(style.capForBitmask(w)));
+    });
+  });
+
   group('buildObjectLayerFromWalls', () {
     test('places face tiles at barrier positions', () {
       final barriers = {(4, 7), (4, 8)};

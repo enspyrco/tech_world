@@ -56,7 +56,7 @@ void main() {
 
     test('lRoom has no predefined barriers (all from Firestore)', () {
       expect(lRoom.id, equals('l_room'));
-      expect(lRoom.name, equals('The L-Room'));
+      expect(lRoom.name, equals('Imagination Center'));
       expect(lRoom.barriers, isEmpty);
     });
 

@@ -344,6 +344,37 @@ class _RoomBrowserState extends State<RoomBrowser>
   }
 }
 
+/// Icon for a room card based on its name.
+///
+/// Room names are matched (case-insensitive) against known predefined maps.
+/// The Firestore document ID is NOT the original map ID, so we match by name.
+IconData _roomIcon(String name) {
+  final lower = name.toLowerCase();
+  if (lower.contains('imagination') || lower.contains('l-room')) {
+    return Icons.auto_awesome;
+  }
+  if (lower.contains('arena')) return Icons.crop_free;
+  if (lower.contains('corner')) return Icons.grid_4x4;
+  if (lower.contains('maze')) return Icons.route;
+  if (lower.contains('library')) return Icons.menu_book;
+  if (lower.contains('workshop')) return Icons.construction;
+  return Icons.map;
+}
+
+/// Accent color for a room card icon.
+Color _roomIconColor(String name) {
+  final lower = name.toLowerCase();
+  if (lower.contains('imagination') || lower.contains('l-room')) {
+    return const Color(0xFFFFD54F); // warm gold
+  }
+  if (lower.contains('arena')) return const Color(0xFF81C784); // green
+  if (lower.contains('corner')) return const Color(0xFFE57373); // coral
+  if (lower.contains('maze')) return const Color(0xFFBA68C8); // purple
+  if (lower.contains('library')) return const Color(0xFF4DD0E1); // cyan
+  if (lower.contains('workshop')) return const Color(0xFFFFB74D); // orange
+  return const Color(0xFF90A4AE); // blue-grey default
+}
+
 /// A card representing a single room in the browser list.
 ///
 /// When [joinProgress] is non-null the card shows an animated color fill
@@ -429,7 +460,8 @@ class _RoomCard extends StatelessWidget {
                       width: 48,
                       height: 48,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                        color: _roomIconColor(room.name)
+                            .withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: isJoining
@@ -447,9 +479,9 @@ class _RoomCard extends StatelessWidget {
                                 ),
                               ),
                             )
-                          : const Icon(
-                              Icons.map,
-                              color: Color(0xFF4FC3F7),
+                          : Icon(
+                              _roomIcon(room.name),
+                              color: _roomIconColor(room.name),
                               size: 24,
                             ),
                     ),

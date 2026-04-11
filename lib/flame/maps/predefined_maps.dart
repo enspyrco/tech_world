@@ -16,7 +16,7 @@ const openArena = GameMap(
   spawnPoint: Point(25, 25),
 );
 
-/// The L-Room — beige floor from `room_builder_office`.
+/// Imagination Center — beige floor from `room_builder_office`.
 ///
 /// Barriers and wall tiles are generated at runtime from Firestore data.
 final lRoom = buildGrayStoneRoom();

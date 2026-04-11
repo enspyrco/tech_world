@@ -18,7 +18,7 @@ const _floorTileIndex = 149;
 GameMap buildGrayStoneRoom() {
   return GameMap(
     id: 'l_room',
-    name: 'The L-Room',
+    name: 'Imagination Center',
     barriers: const [],
     spawnPoint: const Point(25, 25),
     floorLayer: _buildFloorLayer(),
