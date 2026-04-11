@@ -10,6 +10,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
@@ -66,7 +67,7 @@ class TechWorld extends World with TapCallbacks {
   );
 
   final Map<String, PlayerComponent> _otherPlayerComponentsMap = {};
-  BotCharacterComponent? _botCharacterComponent;
+  final Map<String, BotCharacterComponent> _botCharacterComponents = {};
   // final GridComponent _gridComponent = GridComponent();
   BarriersComponent _barriersComponent =
       BarriersComponent(barriers: defaultMap.barriers);
@@ -78,7 +79,6 @@ class TechWorld extends World with TapCallbacks {
   final List<TerminalComponent> _terminalComponents = [];
 
   // Bubble components - shown when player is near other players
-  static const _botUserId = 'bot-claude';
   static const _localPlayerBubbleKey = '_local_player_';
   static const _visualThreshold = 5; // grid squares — bubbles visible
   static const _audioThreshold = 2; // grid squares — audio enabled
@@ -261,9 +261,9 @@ class TechWorld extends World with TapCallbacks {
     final positions = _otherPlayerComponentsMap.map(
       (id, component) => MapEntry(id, component.miniGridPosition),
     );
-    // Include bot position if bot character exists
-    if (_botCharacterComponent != null) {
-      positions[_botUserId] = _botCharacterComponent!.miniGridPosition;
+    // Include all bot positions
+    for (final entry in _botCharacterComponents.entries) {
+      positions[entry.key] = entry.value.miniGridPosition;
     }
     return positions;
   }
@@ -326,23 +326,24 @@ class TechWorld extends World with TapCallbacks {
       }
     }
 
-    // Check proximity to bot character
-    if (_botCharacterComponent != null) {
-      final botGrid = _botCharacterComponent!.miniGridPosition;
+    // Check proximity to all bot characters
+    for (final entry in _botCharacterComponents.entries) {
+      final botId = entry.key;
+      final botComp = entry.value;
+      final botGrid = botComp.miniGridPosition;
       final botDistance = max(
         (botGrid.x - playerGrid.x).abs(),
         (botGrid.y - playerGrid.y).abs(),
       );
 
       if (botDistance <= _visualThreshold) {
-        nearbyPlayerIds.add(_botUserId);
+        nearbyPlayerIds.add(botId);
         if (botDistance < closestDistance) closestDistance = botDistance;
 
-        if (!_playerBubbles.containsKey(_botUserId)) {
-          // Create status bubble for bot
+        if (!_playerBubbles.containsKey(botId)) {
           final bubble = BotBubbleComponent();
-          bubble.position = _botCharacterComponent!.position + _bubbleOffset;
-          _playerBubbles[_botUserId] = bubble;
+          bubble.position = botComp.position + _bubbleOffset;
+          _playerBubbles[botId] = bubble;
           add(bubble);
         }
       }
@@ -406,12 +407,10 @@ class TechWorld extends World with TapCallbacks {
       if (entry.key == _localPlayerBubbleKey) {
         entry.value.position = _userPlayerComponent.position + _bubbleOffset;
         entry.value.priority = _userPlayerComponent.priority + 1;
-      } else if (entry.key == _botUserId) {
-        if (_botCharacterComponent != null) {
-          entry.value.position =
-              _botCharacterComponent!.position + _bubbleOffset;
-          entry.value.priority = _botCharacterComponent!.priority + 1;
-        }
+      } else if (_botCharacterComponents.containsKey(entry.key)) {
+        final botComp = _botCharacterComponents[entry.key]!;
+        entry.value.position = botComp.position + _bubbleOffset;
+        entry.value.priority = botComp.priority + 1;
       } else {
         final playerComponent = _otherPlayerComponentsMap[entry.key];
         if (playerComponent != null) {
@@ -483,19 +482,21 @@ class TechWorld extends World with TapCallbacks {
     _refreshBubbleForPlayer(participant.identity);
 
     // Create component based on participant type
-    if (participant.identity == _botUserId) {
+    if (isBotIdentity(participant.identity)) {
       // Create bot character component at the map's spawn point
-      if (_botCharacterComponent == null) {
+      if (!_botCharacterComponents.containsKey(participant.identity)) {
         final spawn = currentMap.value.spawnPoint;
-        _botCharacterComponent = BotCharacterComponent(
+        final botConfig = getBotConfig(participant.identity);
+        final botComp = BotCharacterComponent(
           position: Vector2(
             spawn.x * gridSquareSizeDouble,
             spawn.y * gridSquareSizeDouble,
           ),
           id: participant.identity,
-          displayName: 'Claude',
+          displayName: botConfig.displayName,
         );
-        add(_botCharacterComponent!);
+        _botCharacterComponents[participant.identity] = botComp;
+        add(botComp);
       }
 
       // Send the current map layout so the bot knows about barriers/terminals
@@ -555,9 +556,9 @@ class TechWorld extends World with TapCallbacks {
       // Don't process our own position
       if (path.playerId == userId) return;
 
-      if (path.playerId == _botUserId) {
+      if (_botCharacterComponents.containsKey(path.playerId)) {
         // Animate bot along the full path, just like player movement.
-        _botCharacterComponent?.move(path.largeGridPoints);
+        _botCharacterComponents[path.playerId]?.move(path.largeGridPoints);
       } else {
         // If player component doesn't exist, create it
         if (!_otherPlayerComponentsMap.containsKey(path.playerId)) {
@@ -596,11 +597,9 @@ class TechWorld extends World with TapCallbacks {
       _log.info('LiveKit participant left: ${participant.identity}');
 
       // Remove component based on participant type
-      if (participant.identity == _botUserId) {
-        if (_botCharacterComponent != null) {
-          remove(_botCharacterComponent!);
-          _botCharacterComponent = null;
-        }
+      if (_botCharacterComponents.containsKey(participant.identity)) {
+        final botComp = _botCharacterComponents.remove(participant.identity);
+        if (botComp != null) remove(botComp);
       } else {
         final playerComponent =
             _otherPlayerComponentsMap.remove(participant.identity);
@@ -1193,11 +1192,11 @@ class TechWorld extends World with TapCallbacks {
     }
     _otherPlayerComponentsMap.clear();
 
-    // Remove bot character
-    if (_botCharacterComponent != null) {
-      _botCharacterComponent!.removeFromParent();
-      _botCharacterComponent = null;
+    // Remove all bot characters
+    for (final botComp in _botCharacterComponents.values) {
+      botComp.removeFromParent();
     }
+    _botCharacterComponents.clear();
 
     // Reset position tracking
     _lastPlayerGridPosition = null;
