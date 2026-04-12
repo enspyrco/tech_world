@@ -11,6 +11,9 @@ import { onCall } from "firebase-functions/v2/https";
 
 export const retrieveLiveKitToken = onCall(async (request) => {
   const { AccessToken } = await import("livekit-server-sdk");
+  const { RoomAgentDispatch, RoomConfiguration } = await import(
+    "@livekit/protocol"
+  );
 
   // request.auth contains auth info as the user is always authenticated
   const user = request.auth?.token; // This object includes user information such as uid
@@ -39,6 +42,17 @@ export const retrieveLiveKitToken = onCall(async (request) => {
     canPublish: true,
     canPublishData: true,
     canSubscribe: true,
+  });
+
+  // Dispatch all Tech World bots when any user joins the room.
+  // This ensures bots are always present regardless of room age
+  // (automatic dispatch only fires for new rooms).
+  at.roomConfig = new RoomConfiguration({
+    agents: [
+      new RoomAgentDispatch({ agentName: "clawd" }),
+      new RoomAgentDispatch({ agentName: "gremlin" }),
+      new RoomAgentDispatch({ agentName: "dreamfinder" }),
+    ],
   });
 
   const token = await at.toJwt();
