@@ -241,6 +241,7 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<RemoteParticipant>? _participantLeftSubscription;
   StreamSubscription<AvatarUpdate>? _avatarSubscription;
   StreamSubscription<(Participant, bool)>? _speakingSubscription;
+  StreamSubscription<void>? _mapInfoRequestedSubscription;
 
   // Avatar tracking — stores updates for players not yet created
   final Map<String, String> _pendingAvatars = {};
@@ -485,10 +486,10 @@ class TechWorld extends World with TapCallbacks {
     if (isBotIdentity(participant.identity)) {
       final botConfig = getBotConfig(participant.identity);
       final spawn = currentMap.value.spawnPoint;
-      final botIndex = _botCharacterComponents.length +
-          _otherPlayerComponentsMap.keys
-              .where((id) => isBotIdentity(id))
-              .length;
+      // Stable spawn offset based on registry order (not arrival order),
+      // so reconnecting bots always land in the same position.
+      final botIndex =
+          allBotIdentities.toList().indexOf(participant.identity);
 
       if (botConfig.spriteSheetAsset != null) {
         // Animated bot — use PlayerComponent with sprite sheet.
@@ -501,6 +502,7 @@ class TechWorld extends World with TapCallbacks {
             id: participant.identity,
             displayName: botConfig.displayName,
             spriteAsset: botConfig.spriteSheetAsset!,
+            frameCount: botConfig.spriteFrameCount,
           );
           _otherPlayerComponentsMap[participant.identity] = playerComp;
           add(playerComp);
@@ -573,7 +575,8 @@ class TechWorld extends World with TapCallbacks {
     _log.info('Using LiveKitService from Locator');
 
     // Respond to bot map-info requests by sending the current map.
-    _liveKitService!.mapInfoRequested.listen((_) {
+    _mapInfoRequestedSubscription =
+        _liveKitService!.mapInfoRequested.listen((_) {
       _log.info('Bot requested map-info, sending current map');
       _liveKitService?.publishMapInfo(currentMap.value);
     });
@@ -1201,6 +1204,8 @@ class TechWorld extends World with TapCallbacks {
     _avatarSubscription = null;
     _speakingSubscription?.cancel();
     _speakingSubscription = null;
+    _mapInfoRequestedSubscription?.cancel();
+    _mapInfoRequestedSubscription = null;
 
     // Clear pending avatar data
     _pendingAvatars.clear();

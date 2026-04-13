@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
@@ -443,6 +444,7 @@ class LiveKitService {
     await publishJson(
       message,
       topic: 'map-info',
+      destinationIdentities: allBotIdentities.toList(),
     );
   }
 
