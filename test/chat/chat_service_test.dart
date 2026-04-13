@@ -1072,6 +1072,9 @@ class FakeLiveKitService implements LiveKitService {
   Future<void> publishMapInfo(GameMap map) async {}
 
   @override
+  Stream<void> get mapInfoRequested => const Stream.empty();
+
+  @override
   Future<void> publishPosition({
     required List<Vector2> points,
     required List<Direction> directions,

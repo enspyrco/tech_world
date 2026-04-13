@@ -126,6 +126,13 @@ class LiveKitService {
       .where((path) => path != null)
       .cast<PlayerPath>();
 
+  /// Stream that fires when a bot requests map info.
+  ///
+  /// Bots publish a `map-info-request` message when they connect and are
+  /// ready to receive data. The client responds by sending the current map.
+  Stream<void> get mapInfoRequested =>
+      dataReceived.where((msg) => msg.topic == 'map-info-request');
+
   /// Stream of avatar updates received from other participants.
   ///
   /// Filters [dataReceived] for the `avatar` topic and parses into
@@ -436,7 +443,6 @@ class LiveKitService {
     await publishJson(
       message,
       topic: 'map-info',
-      destinationIdentities: const ['bot-claude'],
     );
   }
 

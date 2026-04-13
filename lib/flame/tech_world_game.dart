@@ -22,6 +22,7 @@ class TechWorldGame extends FlameGame {
       'NPC12.png',
       'NPC13.png',
       'claude_bot.png',
+      'dreamfinder_bot_sheet.png',
     ]);
 
     // Initialize tileset registry and load all predefined tilesets.

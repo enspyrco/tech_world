@@ -17,6 +17,7 @@ class BotCharacterComponent extends PositionComponent with TapCallbacks {
     required Vector2 position,
     required this.id,
     required this.displayName,
+    this.spriteAsset = 'claude_bot.png',
   }) : super(
           position: position,
           size: Vector2.all(48), // Square size to preserve Clawd's aspect ratio
@@ -25,6 +26,9 @@ class BotCharacterComponent extends PositionComponent with TapCallbacks {
 
   final String id;
   final String displayName;
+
+  /// Asset filename for the bot's sprite (loaded from assets/images/).
+  final String spriteAsset;
 
   ui.Image? _clawdImage;
 
@@ -75,7 +79,7 @@ class BotCharacterComponent extends PositionComponent with TapCallbacks {
   @override
   Future<void> onLoad() async {
     super.onLoad();
-    _clawdImage = await Flame.images.load('claude_bot.png');
+    _clawdImage = await Flame.images.load(spriteAsset);
   }
 
   @override

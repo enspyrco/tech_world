@@ -483,23 +483,46 @@ class TechWorld extends World with TapCallbacks {
 
     // Create component based on participant type
     if (isBotIdentity(participant.identity)) {
-      // Create bot character component at the map's spawn point
-      if (!_botCharacterComponents.containsKey(participant.identity)) {
-        final spawn = currentMap.value.spawnPoint;
-        final botConfig = getBotConfig(participant.identity);
-        final botComp = BotCharacterComponent(
-          position: Vector2(
-            spawn.x * gridSquareSizeDouble,
-            spawn.y * gridSquareSizeDouble,
-          ),
-          id: participant.identity,
-          displayName: botConfig.displayName,
-        );
-        _botCharacterComponents[participant.identity] = botComp;
-        add(botComp);
+      final botConfig = getBotConfig(participant.identity);
+      final spawn = currentMap.value.spawnPoint;
+      final botIndex = _botCharacterComponents.length +
+          _otherPlayerComponentsMap.keys
+              .where((id) => isBotIdentity(id))
+              .length;
+
+      if (botConfig.spriteSheetAsset != null) {
+        // Animated bot — use PlayerComponent with sprite sheet.
+        if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
+          final playerComp = PlayerComponent(
+            position: Vector2(
+              (spawn.x + botIndex + 1) * gridSquareSizeDouble,
+              spawn.y * gridSquareSizeDouble,
+            ),
+            id: participant.identity,
+            displayName: botConfig.displayName,
+            spriteAsset: botConfig.spriteSheetAsset!,
+          );
+          _otherPlayerComponentsMap[participant.identity] = playerComp;
+          add(playerComp);
+        }
+      } else {
+        // Static bot — use BotCharacterComponent.
+        if (!_botCharacterComponents.containsKey(participant.identity)) {
+          final botComp = BotCharacterComponent(
+            position: Vector2(
+              (spawn.x + botIndex + 1) * gridSquareSizeDouble,
+              spawn.y * gridSquareSizeDouble,
+            ),
+            id: participant.identity,
+            displayName: botConfig.displayName,
+            spriteAsset: botConfig.spriteAsset,
+          );
+          _botCharacterComponents[participant.identity] = botComp;
+          add(botComp);
+        }
       }
 
-      // Send the current map layout so the bot knows about barriers/terminals
+      // Send the current map layout so the bot knows about barriers/terminals.
       _liveKitService?.publishMapInfo(currentMap.value);
     } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
       // Apply pending avatar if one arrived before the component was created
@@ -548,6 +571,12 @@ class TechWorld extends World with TapCallbacks {
     }
 
     _log.info('Using LiveKitService from Locator');
+
+    // Respond to bot map-info requests by sending the current map.
+    _liveKitService!.mapInfoRequested.listen((_) {
+      _log.info('Bot requested map-info, sending current map');
+      _liveKitService?.publishMapInfo(currentMap.value);
+    });
 
     // Subscribe to position updates from other players via LiveKit
     _liveKitPositionSubscription =

@@ -182,6 +182,8 @@ class _AuthGateState extends State<AuthGate> {
                                   hintText: 'Password',
                                   border: OutlineInputBorder(),
                                 ),
+                                textInputAction: TextInputAction.go,
+                                onFieldSubmitted: (_) => _emailAndPassword(),
                                 validator: (value) =>
                                     value != null && value.isNotEmpty
                                         ? null

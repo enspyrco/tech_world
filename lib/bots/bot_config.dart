@@ -11,6 +11,7 @@ class BotConfig {
     required this.spriteAsset,
     required this.accentColor,
     required this.avatarLetter,
+    this.spriteSheetAsset,
   });
 
   /// LiveKit participant identity (e.g. 'bot-claude', 'bot-gremlin').
@@ -27,6 +28,12 @@ class BotConfig {
 
   /// Single character shown in avatar circles.
   final String avatarLetter;
+
+  /// Optional sprite sheet for animated walk cycles (same format as NPC
+  /// sheets: 384x64, 4 directions x 3 frames, 32x64 per frame).
+  /// When set, the bot uses [PlayerComponent] instead of
+  /// [BotCharacterComponent] for animated movement.
+  final String? spriteSheetAsset;
 }
 
 /// Clawd — friendly coding tutor (orange).
@@ -54,6 +61,7 @@ const dreamfinderBot = BotConfig(
   spriteAsset: 'dreamfinder_bot.png',
   accentColor: Color(0xFFDAA520),
   avatarLetter: 'D',
+  spriteSheetAsset: 'dreamfinder_bot_sheet.png',
 );
 
 /// All registered bots, keyed by participant identity.
