@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
+import 'package:tech_world/flame/maps/map_identity.dart';
 import 'package:tech_world/rooms/manage_editors_dialog.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
@@ -429,7 +430,8 @@ class _RoomCard extends StatelessWidget {
                       width: 48,
                       height: 48,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4FC3F7).withValues(alpha: 0.15),
+                        color: MapIdentity.of(name: room.name).color
+                            .withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: isJoining
@@ -447,9 +449,9 @@ class _RoomCard extends StatelessWidget {
                                 ),
                               ),
                             )
-                          : const Icon(
-                              Icons.map,
-                              color: Color(0xFF4FC3F7),
+                          : Icon(
+                              MapIdentity.of(name: room.name).icon,
+                              color: MapIdentity.of(name: room.name).color,
                               size: 24,
                             ),
                     ),

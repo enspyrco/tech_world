@@ -31,7 +31,7 @@ void main() {
       });
 
       test('has correct name', () {
-        expect(lRoom.name, equals('The L-Room'));
+        expect(lRoom.name, equals('Imagination Center'));
       });
 
       test('has no predefined barriers (all from Firestore)', () {
@@ -185,7 +185,7 @@ void main() {
         // Simulate a Firestore room that matches by name.
         const firestoreMap = GameMap(
           id: 'abc123firestore',
-          name: 'The L-Room',
+          name: 'Imagination Center',
           barriers: [Point(5, 5), Point(6, 5)], // Firestore barriers
           spawnPoint: Point(10, 15),
         );
@@ -199,7 +199,7 @@ void main() {
 
         // Structural data preserved from Firestore.
         expect(merged.id, 'abc123firestore');
-        expect(merged.name, 'The L-Room');
+        expect(merged.name, 'Imagination Center');
         expect(merged.barriers.length, 2);
       });
 
@@ -207,7 +207,7 @@ void main() {
         // Direct ID match (e.g. predefined map used without Firestore).
         const firestoreMap = GameMap(
           id: 'l_room',
-          name: 'The L-Room',
+          name: 'Imagination Center',
           barriers: [Point(4, 7)], // different barriers
           spawnPoint: Point(12, 18),
         );
@@ -224,7 +224,7 @@ void main() {
         final existingFloor = lRoom.floorLayer!;
         final firestoreMap = GameMap(
           id: 'abc123',
-          name: 'The L-Room',
+          name: 'Imagination Center',
           barriers: const [Point(5, 5)],
           floorLayer: existingFloor,
           tilesetIds: const ['room_builder_office'],
@@ -266,7 +266,7 @@ void main() {
       test('preserves terminals and custom tilesets from Firestore', () {
         const firestoreMap = GameMap(
           id: 'abc123',
-          name: 'The L-Room',
+          name: 'Imagination Center',
           barriers: [Point(5, 5)],
           terminals: [Point(5, 5), Point(10, 10)],
         );

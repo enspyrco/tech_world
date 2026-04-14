@@ -218,8 +218,15 @@ TileLayerData buildObjectLayerFromWalls(Map<(int, int), String> walls) {
       var checkY = y - 1;
       while (wallPositions.contains((x, checkY))) {
         final checkBitmask = computeWallBitmask(x, checkY, wallPositions);
-        inheritedEW = checkBitmask & (WallBitmask.e | WallBitmask.w);
-        if (inheritedEW != 0) break;
+        final ew = checkBitmask & (WallBitmask.e | WallBitmask.w);
+        // Only inherit single-sided E/W (L-junction corner). When both
+        // E and W are set (T-junction), the vertical arm is single-wide
+        // and needs both side borders — not the borderless fill tile.
+        if (ew != 0 && ew != (WallBitmask.e | WallBitmask.w)) {
+          inheritedEW = ew;
+          break;
+        }
+        if (ew == (WallBitmask.e | WallBitmask.w)) break; // stop at T
         checkY--;
       }
       final ewBitmask = bitmask | inheritedEW;

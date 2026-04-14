@@ -12,7 +12,7 @@ void main() {
 
     test('has correct identity', () {
       expect(room.id, 'l_room');
-      expect(room.name, 'The L-Room');
+      expect(room.name, 'Imagination Center');
     });
 
     test('has no predefined barriers', () {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/generators/map_generator.dart';
+import 'package:tech_world/flame/maps/map_identity.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/rooms/room_data.dart';
@@ -171,10 +172,11 @@ class _MapSelectorState extends State<MapSelector> {
                 value: _LoadPredefinedMap(map),
                 child: Row(
                   children: [
-                    if (map.id == activeMap.id)
-                      const Icon(Icons.check, size: 16, color: Colors.blue)
-                    else
-                      const SizedBox(width: 16),
+                    Icon(
+                      MapIdentity.of(id: map.id).icon,
+                      size: 16,
+                      color: MapIdentity.of(id: map.id).color,
+                    ),
                     const SizedBox(width: 8),
                     Text(map.name),
                   ],

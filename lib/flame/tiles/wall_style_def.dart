@@ -98,7 +98,7 @@ class WallStyleDef {
       if (hasE && hasW) return _tileAt(5, 0); // fill
       if (hasE) return _tileAt(4, 0); // left edge
       if (hasW) return _tileAt(6, 0); // right edge
-      return _tileAt(5, 0); // isolated vertical body
+      return _tileAt(5, 1); // isolated vertical body (Viso — both borders)
     } else {
       // Bottom of wall — baseboard tiles (cols 0-3, row 1).
       if (hasE && hasW) return _tileAt(1, 1); // bottom middle
