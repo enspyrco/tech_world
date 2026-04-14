@@ -17,6 +17,7 @@ import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
+import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/tile_floor_component.dart';
@@ -68,6 +69,7 @@ class TechWorld extends World with TapCallbacks {
 
   final Map<String, PlayerComponent> _otherPlayerComponentsMap = {};
   final Map<String, BotCharacterComponent> _botCharacterComponents = {};
+  DreamfinderComponent? _dreamfinderComponent;
   // final GridComponent _gridComponent = GridComponent();
   BarriersComponent _barriersComponent =
       BarriersComponent(barriers: defaultMap.barriers);
@@ -491,8 +493,29 @@ class TechWorld extends World with TapCallbacks {
       final botIndex =
           allBotIdentities.toList().indexOf(participant.identity);
 
-      if (botConfig.spriteSheetAsset != null) {
-        // Animated bot — use PlayerComponent with sprite sheet.
+      if (participant.identity == dreamfinderBot.identity &&
+          _pathComponent != null) {
+        // Dreamfinder — use DreamfinderComponent with idle behavior.
+        if (_dreamfinderComponent == null) {
+          final dfComp = DreamfinderComponent(
+            position: Vector2(
+              (spawn.x + 8).clamp(0, gridSize - 1) * gridSquareSizeDouble,
+              (spawn.y - 5).clamp(0, gridSize - 1) * gridSquareSizeDouble,
+            ),
+            id: participant.identity,
+            displayName: botConfig.displayName,
+            pathComponent: _pathComponent!,
+          );
+          _dreamfinderComponent = dfComp;
+          add(dfComp);
+
+          // If the local user is already connected, notice them.
+          if (_userPlayerComponent.id.isNotEmpty) {
+            dfComp.noticePlayer(_userPlayerComponent.position);
+          }
+        }
+      } else if (botConfig.spriteSheetAsset != null) {
+        // Other animated bot — use PlayerComponent with sprite sheet.
         if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
           final playerComp = PlayerComponent(
             position: Vector2(
@@ -540,6 +563,9 @@ class TechWorld extends World with TapCallbacks {
       );
       _otherPlayerComponentsMap[participant.identity] = playerComponent;
       add(playerComponent);
+
+      // Dreamfinder notices the new human player arriving.
+      _dreamfinderComponent?.noticePlayer(playerComponent.position);
     }
   }
 
@@ -588,7 +614,12 @@ class TechWorld extends World with TapCallbacks {
       // Don't process our own position
       if (path.playerId == userId) return;
 
-      if (_botCharacterComponents.containsKey(path.playerId)) {
+      if (path.playerId == dreamfinderBot.identity &&
+          _dreamfinderComponent != null) {
+        // Route Dreamfinder movement through its dedicated component.
+        _dreamfinderComponent!
+            .moveFromServer(path.directions, path.largeGridPoints);
+      } else if (_botCharacterComponents.containsKey(path.playerId)) {
         // Animate bot along the full path, just like player movement.
         _botCharacterComponents[path.playerId]?.move(path.largeGridPoints);
       } else {
@@ -629,7 +660,11 @@ class TechWorld extends World with TapCallbacks {
       _log.info('LiveKit participant left: ${participant.identity}');
 
       // Remove component based on participant type
-      if (_botCharacterComponents.containsKey(participant.identity)) {
+      if (participant.identity == dreamfinderBot.identity &&
+          _dreamfinderComponent != null) {
+        remove(_dreamfinderComponent!);
+        _dreamfinderComponent = null;
+      } else if (_botCharacterComponents.containsKey(participant.identity)) {
         final botComp = _botCharacterComponents.remove(participant.identity);
         if (botComp != null) remove(botComp);
       } else {
