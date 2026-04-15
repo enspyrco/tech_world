@@ -115,6 +115,74 @@ class TechWorld extends World with TapCallbacks {
   TileObjectLayerComponent? _tileObjectLayer;
   bool _isLoadingMap = false;
 
+  /// Signals when the game world has finished loading and is ready to display.
+  ///
+  /// Set to `true` at the end of [onLoad] (initial mount) or after
+  /// [_loadMapComponents] completes during a runtime map switch.
+  final ValueNotifier<bool> gameReady = ValueNotifier(false);
+
+  /// Pre-fetched tileset image bytes, keyed by tileset ID.
+  ///
+  /// Populated by [prefetchTilesetBytes] before the game engine mounts so
+  /// that [_loadMapComponents] can consume them (via `.remove()`) instead of
+  /// downloading again. The `.remove()` call frees memory after decode.
+  final Map<String, Uint8List> _tilesetByteCache = {};
+
+  /// Download tileset image bytes into [_tilesetByteCache] for [map].
+  ///
+  /// Call this *before* the game engine mounts so that downloads overlap
+  /// with LiveKit connection and other setup. When [_loadMapComponents]
+  /// later needs bytes, it pulls from the cache instead of re-downloading.
+  ///
+  /// Only fetches tilesets not already loaded in the registry (which isn't
+  /// available pre-mount, so we check conservatively).
+  Future<void> prefetchTilesetBytes(GameMap map) async {
+    final storageService = TilesetStorageService();
+    final futures = <Future<void>>[];
+
+    // Custom tilesets (e.g. user-uploaded).
+    for (final tileset in map.customTilesets) {
+      if (_tilesetByteCache.containsKey(tileset.id)) continue;
+      futures.add(() async {
+        try {
+          final bytes = await storageService.downloadTilesetImage(tileset.id);
+          if (bytes != null) _tilesetByteCache[tileset.id] = bytes;
+        } catch (e) {
+          _log.warning('prefetchTilesetBytes: failed for ${tileset.id}', e);
+        }
+      }());
+    }
+
+    // Wall tilesets.
+    if (map.walls.isNotEmpty) {
+      final neededIds = <String>{};
+      for (final styleId in map.walls.values) {
+        final style = lookupWallStyle(styleId);
+        if (style != null && !_tilesetByteCache.containsKey(style.tilesetId)) {
+          neededIds.add(style.tilesetId);
+        }
+      }
+      if (neededIds.isNotEmpty) {
+        final downloader = await createCachedDownloader(
+          (id) => storageService.downloadTilesetImage(id),
+        );
+        for (final id in neededIds) {
+          futures.add(() async {
+            try {
+              final bytes = await downloader(id);
+              if (bytes != null) _tilesetByteCache[id] = bytes;
+            } catch (e) {
+              _log.warning('prefetchTilesetBytes: failed for $id', e);
+            }
+          }());
+        }
+      }
+    }
+
+    await Future.wait(futures);
+    _log.info('prefetchTilesetBytes: cached ${_tilesetByteCache.keys}');
+  }
+
   /// Close the code editor panel.
   void closeEditor() {
     // Only publish if we were actually in the editor.
@@ -840,6 +908,8 @@ class TechWorld extends World with TapCallbacks {
     // Load the video bubble shader
     await _loadVideoBubbleShader();
 
+    gameReady.value = true;
+
     _authStateChangesSubscription = _authStateChanges.listen((authUser) async {
       if (authUser is SignedOutUser) {
         // User signed out - clear LiveKit state so we can reconnect on next sign-in
@@ -897,14 +967,15 @@ class TechWorld extends World with TapCallbacks {
 
       // Download and register custom tilesets not already loaded.
       // Downloads run in parallel for faster map loading.
+      // Checks _tilesetByteCache first (populated by prefetchTilesetBytes).
       final unloadedTilesets =
           map.customTilesets.where((ts) => !registry.isLoaded(ts.id));
       if (unloadedTilesets.isNotEmpty) {
         final storageService = TilesetStorageService();
         await Future.wait(unloadedTilesets.map((tileset) async {
           try {
-            final bytes =
-                await storageService.downloadTilesetImage(tileset.id);
+            final bytes = _tilesetByteCache.remove(tileset.id)
+                ?? await storageService.downloadTilesetImage(tileset.id);
             if (bytes != null) {
               final codec = await ui.instantiateImageCodec(bytes);
               final frame = await codec.getNextFrame();
@@ -1037,7 +1108,8 @@ class TechWorld extends World with TapCallbacks {
 
     await Future.wait(needed.entries.map((entry) async {
       try {
-        final bytes = await downloader(entry.key);
+        final bytes = _tilesetByteCache.remove(entry.key)
+            ?? await downloader(entry.key);
         if (bytes != null) {
           final codec = await ui.instantiateImageCodec(bytes);
           final frame = await codec.getNextFrame();
@@ -1115,6 +1187,7 @@ class TechWorld extends World with TapCallbacks {
     }
 
     _isLoadingMap = true;
+    gameReady.value = false;
     try {
       // Auto-exit editor mode if active.
       if (mapEditorActive.value) await exitEditorMode();
@@ -1136,6 +1209,8 @@ class TechWorld extends World with TapCallbacks {
 
       // Notify the bot about the new map layout
       _liveKitService?.publishMapInfo(resolvedMap);
+
+      gameReady.value = true;
     } finally {
       _isLoadingMap = false;
     }
