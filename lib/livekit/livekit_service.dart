@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
@@ -125,6 +126,13 @@ class LiveKitService {
       })
       .where((path) => path != null)
       .cast<PlayerPath>();
+
+  /// Stream that fires when a bot requests map info.
+  ///
+  /// Bots publish a `map-info-request` message when they connect and are
+  /// ready to receive data. The client responds by sending the current map.
+  Stream<void> get mapInfoRequested =>
+      dataReceived.where((msg) => msg.topic == 'map-info-request');
 
   /// Stream of avatar updates received from other participants.
   ///
@@ -436,7 +444,7 @@ class LiveKitService {
     await publishJson(
       message,
       topic: 'map-info',
-      destinationIdentities: const ['bot-claude'],
+      destinationIdentities: allBotIdentities.toList(),
     );
   }
 

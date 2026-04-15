@@ -10,12 +10,14 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/auth/auth_user.dart';
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
+import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/tile_floor_component.dart';
@@ -66,7 +68,8 @@ class TechWorld extends World with TapCallbacks {
   );
 
   final Map<String, PlayerComponent> _otherPlayerComponentsMap = {};
-  BotCharacterComponent? _botCharacterComponent;
+  final Map<String, BotCharacterComponent> _botCharacterComponents = {};
+  DreamfinderComponent? _dreamfinderComponent;
   // final GridComponent _gridComponent = GridComponent();
   BarriersComponent _barriersComponent =
       BarriersComponent(barriers: defaultMap.barriers);
@@ -78,7 +81,6 @@ class TechWorld extends World with TapCallbacks {
   final List<TerminalComponent> _terminalComponents = [];
 
   // Bubble components - shown when player is near other players
-  static const _botUserId = 'bot-claude';
   static const _localPlayerBubbleKey = '_local_player_';
   static const _visualThreshold = 5; // grid squares — bubbles visible
   static const _audioThreshold = 2; // grid squares — audio enabled
@@ -112,6 +114,74 @@ class TechWorld extends World with TapCallbacks {
   TileFloorComponent? _tileFloor;
   TileObjectLayerComponent? _tileObjectLayer;
   bool _isLoadingMap = false;
+
+  /// Signals when the game world has finished loading and is ready to display.
+  ///
+  /// Set to `true` at the end of [onLoad] (initial mount) or after
+  /// [_loadMapComponents] completes during a runtime map switch.
+  final ValueNotifier<bool> gameReady = ValueNotifier(false);
+
+  /// Pre-fetched tileset image bytes, keyed by tileset ID.
+  ///
+  /// Populated by [prefetchTilesetBytes] before the game engine mounts so
+  /// that [_loadMapComponents] can consume them (via `.remove()`) instead of
+  /// downloading again. The `.remove()` call frees memory after decode.
+  final Map<String, Uint8List> _tilesetByteCache = {};
+
+  /// Download tileset image bytes into [_tilesetByteCache] for [map].
+  ///
+  /// Call this *before* the game engine mounts so that downloads overlap
+  /// with LiveKit connection and other setup. When [_loadMapComponents]
+  /// later needs bytes, it pulls from the cache instead of re-downloading.
+  ///
+  /// Only fetches tilesets not already loaded in the registry (which isn't
+  /// available pre-mount, so we check conservatively).
+  Future<void> prefetchTilesetBytes(GameMap map) async {
+    final storageService = TilesetStorageService();
+    final futures = <Future<void>>[];
+
+    // Custom tilesets (e.g. user-uploaded).
+    for (final tileset in map.customTilesets) {
+      if (_tilesetByteCache.containsKey(tileset.id)) continue;
+      futures.add(() async {
+        try {
+          final bytes = await storageService.downloadTilesetImage(tileset.id);
+          if (bytes != null) _tilesetByteCache[tileset.id] = bytes;
+        } catch (e) {
+          _log.warning('prefetchTilesetBytes: failed for ${tileset.id}', e);
+        }
+      }());
+    }
+
+    // Wall tilesets.
+    if (map.walls.isNotEmpty) {
+      final neededIds = <String>{};
+      for (final styleId in map.walls.values) {
+        final style = lookupWallStyle(styleId);
+        if (style != null && !_tilesetByteCache.containsKey(style.tilesetId)) {
+          neededIds.add(style.tilesetId);
+        }
+      }
+      if (neededIds.isNotEmpty) {
+        final downloader = await createCachedDownloader(
+          (id) => storageService.downloadTilesetImage(id),
+        );
+        for (final id in neededIds) {
+          futures.add(() async {
+            try {
+              final bytes = await downloader(id);
+              if (bytes != null) _tilesetByteCache[id] = bytes;
+            } catch (e) {
+              _log.warning('prefetchTilesetBytes: failed for $id', e);
+            }
+          }());
+        }
+      }
+    }
+
+    await Future.wait(futures);
+    _log.info('prefetchTilesetBytes: cached ${_tilesetByteCache.keys}');
+  }
 
   /// Close the code editor panel.
   void closeEditor() {
@@ -241,6 +311,7 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<RemoteParticipant>? _participantLeftSubscription;
   StreamSubscription<AvatarUpdate>? _avatarSubscription;
   StreamSubscription<(Participant, bool)>? _speakingSubscription;
+  StreamSubscription<void>? _mapInfoRequestedSubscription;
 
   // Avatar tracking — stores updates for players not yet created
   final Map<String, String> _pendingAvatars = {};
@@ -261,9 +332,9 @@ class TechWorld extends World with TapCallbacks {
     final positions = _otherPlayerComponentsMap.map(
       (id, component) => MapEntry(id, component.miniGridPosition),
     );
-    // Include bot position if bot character exists
-    if (_botCharacterComponent != null) {
-      positions[_botUserId] = _botCharacterComponent!.miniGridPosition;
+    // Include all bot positions
+    for (final entry in _botCharacterComponents.entries) {
+      positions[entry.key] = entry.value.miniGridPosition;
     }
     return positions;
   }
@@ -326,23 +397,24 @@ class TechWorld extends World with TapCallbacks {
       }
     }
 
-    // Check proximity to bot character
-    if (_botCharacterComponent != null) {
-      final botGrid = _botCharacterComponent!.miniGridPosition;
+    // Check proximity to all bot characters
+    for (final entry in _botCharacterComponents.entries) {
+      final botId = entry.key;
+      final botComp = entry.value;
+      final botGrid = botComp.miniGridPosition;
       final botDistance = max(
         (botGrid.x - playerGrid.x).abs(),
         (botGrid.y - playerGrid.y).abs(),
       );
 
       if (botDistance <= _visualThreshold) {
-        nearbyPlayerIds.add(_botUserId);
+        nearbyPlayerIds.add(botId);
         if (botDistance < closestDistance) closestDistance = botDistance;
 
-        if (!_playerBubbles.containsKey(_botUserId)) {
-          // Create status bubble for bot
+        if (!_playerBubbles.containsKey(botId)) {
           final bubble = BotBubbleComponent();
-          bubble.position = _botCharacterComponent!.position + _bubbleOffset;
-          _playerBubbles[_botUserId] = bubble;
+          bubble.position = botComp.position + _bubbleOffset;
+          _playerBubbles[botId] = bubble;
           add(bubble);
         }
       }
@@ -406,12 +478,10 @@ class TechWorld extends World with TapCallbacks {
       if (entry.key == _localPlayerBubbleKey) {
         entry.value.position = _userPlayerComponent.position + _bubbleOffset;
         entry.value.priority = _userPlayerComponent.priority + 1;
-      } else if (entry.key == _botUserId) {
-        if (_botCharacterComponent != null) {
-          entry.value.position =
-              _botCharacterComponent!.position + _bubbleOffset;
-          entry.value.priority = _botCharacterComponent!.priority + 1;
-        }
+      } else if (_botCharacterComponents.containsKey(entry.key)) {
+        final botComp = _botCharacterComponents[entry.key]!;
+        entry.value.position = botComp.position + _bubbleOffset;
+        entry.value.priority = botComp.priority + 1;
       } else {
         final playerComponent = _otherPlayerComponentsMap[entry.key];
         if (playerComponent != null) {
@@ -483,22 +553,69 @@ class TechWorld extends World with TapCallbacks {
     _refreshBubbleForPlayer(participant.identity);
 
     // Create component based on participant type
-    if (participant.identity == _botUserId) {
-      // Create bot character component at the map's spawn point
-      if (_botCharacterComponent == null) {
-        final spawn = currentMap.value.spawnPoint;
-        _botCharacterComponent = BotCharacterComponent(
-          position: Vector2(
-            spawn.x * gridSquareSizeDouble,
-            spawn.y * gridSquareSizeDouble,
-          ),
-          id: participant.identity,
-          displayName: 'Claude',
-        );
-        add(_botCharacterComponent!);
+    if (isBotIdentity(participant.identity)) {
+      final botConfig = getBotConfig(participant.identity);
+      final spawn = currentMap.value.spawnPoint;
+      // Stable spawn offset based on registry order (not arrival order),
+      // so reconnecting bots always land in the same position.
+      final botIndex =
+          allBotIdentities.toList().indexOf(participant.identity);
+
+      if (participant.identity == dreamfinderBot.identity &&
+          _pathComponent != null) {
+        // Dreamfinder — use DreamfinderComponent with idle behavior.
+        if (_dreamfinderComponent == null) {
+          final dfComp = DreamfinderComponent(
+            position: Vector2(
+              (spawn.x + 8).clamp(0, gridSize - 1) * gridSquareSizeDouble,
+              (spawn.y - 5).clamp(0, gridSize - 1) * gridSquareSizeDouble,
+            ),
+            id: participant.identity,
+            displayName: botConfig.displayName,
+            pathComponent: _pathComponent!,
+          );
+          _dreamfinderComponent = dfComp;
+          add(dfComp);
+
+          // If the local user is already connected, notice them.
+          if (_userPlayerComponent.id.isNotEmpty) {
+            dfComp.noticePlayer(_userPlayerComponent.position);
+          }
+        }
+      } else if (botConfig.spriteSheetAsset != null) {
+        // Other animated bot — use PlayerComponent with sprite sheet.
+        if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
+          final playerComp = PlayerComponent(
+            position: Vector2(
+              (spawn.x + botIndex + 1) * gridSquareSizeDouble,
+              spawn.y * gridSquareSizeDouble,
+            ),
+            id: participant.identity,
+            displayName: botConfig.displayName,
+            spriteAsset: botConfig.spriteSheetAsset!,
+            frameCount: botConfig.spriteFrameCount,
+          );
+          _otherPlayerComponentsMap[participant.identity] = playerComp;
+          add(playerComp);
+        }
+      } else {
+        // Static bot — use BotCharacterComponent.
+        if (!_botCharacterComponents.containsKey(participant.identity)) {
+          final botComp = BotCharacterComponent(
+            position: Vector2(
+              (spawn.x + botIndex + 1) * gridSquareSizeDouble,
+              spawn.y * gridSquareSizeDouble,
+            ),
+            id: participant.identity,
+            displayName: botConfig.displayName,
+            spriteAsset: botConfig.spriteAsset,
+          );
+          _botCharacterComponents[participant.identity] = botComp;
+          add(botComp);
+        }
       }
 
-      // Send the current map layout so the bot knows about barriers/terminals
+      // Send the current map layout so the bot knows about barriers/terminals.
       _liveKitService?.publishMapInfo(currentMap.value);
     } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
       // Apply pending avatar if one arrived before the component was created
@@ -514,6 +631,9 @@ class TechWorld extends World with TapCallbacks {
       );
       _otherPlayerComponentsMap[participant.identity] = playerComponent;
       add(playerComponent);
+
+      // Dreamfinder notices the new human player arriving.
+      _dreamfinderComponent?.noticePlayer(playerComponent.position);
     }
   }
 
@@ -548,6 +668,13 @@ class TechWorld extends World with TapCallbacks {
 
     _log.info('Using LiveKitService from Locator');
 
+    // Respond to bot map-info requests by sending the current map.
+    _mapInfoRequestedSubscription =
+        _liveKitService!.mapInfoRequested.listen((_) {
+      _log.info('Bot requested map-info, sending current map');
+      _liveKitService?.publishMapInfo(currentMap.value);
+    });
+
     // Subscribe to position updates from other players via LiveKit
     _liveKitPositionSubscription =
         _liveKitService!.positionReceived.listen((PlayerPath path) {
@@ -555,9 +682,14 @@ class TechWorld extends World with TapCallbacks {
       // Don't process our own position
       if (path.playerId == userId) return;
 
-      if (path.playerId == _botUserId) {
+      if (path.playerId == dreamfinderBot.identity &&
+          _dreamfinderComponent != null) {
+        // Route Dreamfinder movement through its dedicated component.
+        _dreamfinderComponent!
+            .moveFromServer(path.directions, path.largeGridPoints);
+      } else if (_botCharacterComponents.containsKey(path.playerId)) {
         // Animate bot along the full path, just like player movement.
-        _botCharacterComponent?.move(path.largeGridPoints);
+        _botCharacterComponents[path.playerId]?.move(path.largeGridPoints);
       } else {
         // If player component doesn't exist, create it
         if (!_otherPlayerComponentsMap.containsKey(path.playerId)) {
@@ -596,11 +728,13 @@ class TechWorld extends World with TapCallbacks {
       _log.info('LiveKit participant left: ${participant.identity}');
 
       // Remove component based on participant type
-      if (participant.identity == _botUserId) {
-        if (_botCharacterComponent != null) {
-          remove(_botCharacterComponent!);
-          _botCharacterComponent = null;
-        }
+      if (participant.identity == dreamfinderBot.identity &&
+          _dreamfinderComponent != null) {
+        remove(_dreamfinderComponent!);
+        _dreamfinderComponent = null;
+      } else if (_botCharacterComponents.containsKey(participant.identity)) {
+        final botComp = _botCharacterComponents.remove(participant.identity);
+        if (botComp != null) remove(botComp);
       } else {
         final playerComponent =
             _otherPlayerComponentsMap.remove(participant.identity);
@@ -774,6 +908,8 @@ class TechWorld extends World with TapCallbacks {
     // Load the video bubble shader
     await _loadVideoBubbleShader();
 
+    gameReady.value = true;
+
     _authStateChangesSubscription = _authStateChanges.listen((authUser) async {
       if (authUser is SignedOutUser) {
         // User signed out - clear LiveKit state so we can reconnect on next sign-in
@@ -831,14 +967,15 @@ class TechWorld extends World with TapCallbacks {
 
       // Download and register custom tilesets not already loaded.
       // Downloads run in parallel for faster map loading.
+      // Checks _tilesetByteCache first (populated by prefetchTilesetBytes).
       final unloadedTilesets =
           map.customTilesets.where((ts) => !registry.isLoaded(ts.id));
       if (unloadedTilesets.isNotEmpty) {
         final storageService = TilesetStorageService();
         await Future.wait(unloadedTilesets.map((tileset) async {
           try {
-            final bytes =
-                await storageService.downloadTilesetImage(tileset.id);
+            final bytes = _tilesetByteCache.remove(tileset.id)
+                ?? await storageService.downloadTilesetImage(tileset.id);
             if (bytes != null) {
               final codec = await ui.instantiateImageCodec(bytes);
               final frame = await codec.getNextFrame();
@@ -971,7 +1108,8 @@ class TechWorld extends World with TapCallbacks {
 
     await Future.wait(needed.entries.map((entry) async {
       try {
-        final bytes = await downloader(entry.key);
+        final bytes = _tilesetByteCache.remove(entry.key)
+            ?? await downloader(entry.key);
         if (bytes != null) {
           final codec = await ui.instantiateImageCodec(bytes);
           final frame = await codec.getNextFrame();
@@ -1049,6 +1187,7 @@ class TechWorld extends World with TapCallbacks {
     }
 
     _isLoadingMap = true;
+    gameReady.value = false;
     try {
       // Auto-exit editor mode if active.
       if (mapEditorActive.value) await exitEditorMode();
@@ -1070,6 +1209,8 @@ class TechWorld extends World with TapCallbacks {
 
       // Notify the bot about the new map layout
       _liveKitService?.publishMapInfo(resolvedMap);
+
+      gameReady.value = true;
     } finally {
       _isLoadingMap = false;
     }
@@ -1173,6 +1314,8 @@ class TechWorld extends World with TapCallbacks {
     _avatarSubscription = null;
     _speakingSubscription?.cancel();
     _speakingSubscription = null;
+    _mapInfoRequestedSubscription?.cancel();
+    _mapInfoRequestedSubscription = null;
 
     // Clear pending avatar data
     _pendingAvatars.clear();
@@ -1193,11 +1336,11 @@ class TechWorld extends World with TapCallbacks {
     }
     _otherPlayerComponentsMap.clear();
 
-    // Remove bot character
-    if (_botCharacterComponent != null) {
-      _botCharacterComponent!.removeFromParent();
-      _botCharacterComponent = null;
+    // Remove all bot characters
+    for (final botComp in _botCharacterComponents.values) {
+      botComp.removeFromParent();
     }
+    _botCharacterComponents.clear();
 
     // Reset position tracking
     _lastPlayerGridPosition = null;

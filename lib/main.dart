@@ -39,7 +39,9 @@ import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
+import 'package:tech_world/widgets/join_overlay.dart';
 import 'package:tech_world/widgets/map_selector.dart';
+import 'package:tech_world/widgets/wire_states.dart';
 import 'package:tech_world/widgets/edit_profile_dialog.dart'
     show EditProfileDialog, EditProfileResult;
 import 'package:tech_world/widgets/loading_screen.dart';
@@ -93,11 +95,11 @@ class _MyAppState extends State<MyApp> {
   String? _connectionFailureMessage;
   StreamSubscription<AuthUser>? _authSubscription;
 
-  /// The room ID currently being joined, or null when not joining.
-  String? _joiningRoomId;
+  /// Wire-state tracker for the current join operation's circuit-board overlay.
+  WireStates? _wireStates;
 
-  /// Drift timer that slowly creeps progress between discrete steps.
-  Timer? _progressDriftTimer;
+  /// Whether the circuit-board join overlay is visible.
+  bool _showJoinOverlay = false;
 
   Avatar? _selectedAvatar;
   bool _avatarLoaded = false;
@@ -122,7 +124,7 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     _authSubscription?.cancel();
-    _progressDriftTimer?.cancel();
+    _wireStates?.dispose();
     super.dispose();
   }
 
@@ -242,84 +244,148 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  /// Sets progress to [target] with [message], then starts a drift timer that
-  /// slowly creeps progress forward to give continuous visual motion.
-  void _setJoinStep(double target, String message) {
-    _progressDriftTimer?.cancel();
-    setState(() {
-      _progress = target;
-      _loadingMessage = message;
-    });
-
-    final ceiling = (target + 0.15).clamp(0.0, 0.99);
-    _progressDriftTimer = Timer.periodic(
-      const Duration(milliseconds: 150),
-      (_) {
-        if (_progress != null && _progress! < ceiling) {
-          setState(() {
-            _progress = (_progress! + 0.003).clamp(0.0, ceiling);
-          });
-        }
-      },
-    );
-  }
-
-  /// Join a room — load map and connect to LiveKit, with progress feedback.
+  /// Join a room — mount the game with overlay, run operations in parallel.
   ///
-  /// Progress is shown inline on the tapped room card. [_currentRoom] is set
-  /// at the end so the lobby stays visible throughout.
+  /// The circuit-board overlay appears immediately over the game canvas.
+  /// Tileset prefetch, LiveKit connection, and game engine init all run
+  /// concurrently. The overlay fades out when every wire completes.
   Future<void> _joinRoom(RoomData room) async {
     final userId = _currentUserId;
     if (userId == null) return;
 
-    setState(() => _joiningRoomId = room.id);
-    _setJoinStep(0.15, 'Loading map\u2026');
+    final techWorld = locate<TechWorld>();
+    final wires = WireStates();
+    // Don't dispose the old WireStates eagerly — the CircuitBoardProgress
+    // widget still holds a listener until didUpdateWidget/dispose runs.
+    // Reassigning _wireStates lets the widget swap cleanly on the next frame.
+    _wireStates = wires;
+
+    _mapEditorState.setRoomId(room.id);
+
+    // Store the map reference (fast — just updates ValueNotifier when not
+    // mounted, so onLoad() will pick it up).
+    await techWorld.loadMap(room.mapData);
+
+    // Mount GameWidget + overlay immediately — no more black flash.
+    setState(() {
+      _currentRoom = room;
+      _showJoinOverlay = true;
+    });
 
     try {
-      _mapEditorState.setRoomId(room.id);
+      // Wire A: prefetch tileset bytes into cache (parallel with engine init).
+      wires.start(Wire.tilesets);
+      final wireA = () async {
+        try {
+          await techWorld.prefetchTilesetBytes(room.mapData);
+          wires.complete(Wire.tilesets);
+        } catch (e) {
+          _log.warning('Tileset prefetch failed', e);
+          wires.error(Wire.tilesets);
+        }
+      }();
 
-      // Load the room's map into the game world.
-      await locate<TechWorld>().loadMap(room.mapData);
+      // Wire B: create services + connect to LiveKit server.
+      wires.start(Wire.server);
+      final wireB = () async {
+        try {
+          _createServices(room.id, userId, _currentDisplayName);
+          final result = await _liveKitService!.connect();
+          _log.info('LiveKit connection result for room ${room.id}: $result');
+          if (result == ConnectionResult.connected) {
+            wires.complete(Wire.server);
+            await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
-      _setJoinStep(0.35, 'Connecting to server\u2026');
+            // Wire C: camera + mic (depends on server connection).
+            wires.start(Wire.camera);
+            final wireC = () async {
+              try {
+                await Future.wait([
+                  _liveKitService!.setCameraEnabled(true),
+                  _liveKitService!.setMicrophoneEnabled(true),
+                ]);
+                wires.complete(Wire.camera);
+              } catch (e) {
+                _log.warning('Camera/mic setup failed', e);
+                wires.error(Wire.camera);
+              }
+            }();
 
-      await _setupLiveKit(
-        room.id,
-        userId,
-        _currentDisplayName,
-        onProgress: _setJoinStep,
-      );
+            // Wire D: chat history (depends on server connection).
+            wires.start(Wire.chat);
+            final wireD = () async {
+              try {
+                await _chatService!.loadHistory(room.id);
+                wires.complete(Wire.chat);
+              } catch (e) {
+                _log.warning('Chat history load failed', e);
+                wires.error(Wire.chat);
+              }
+            }();
 
-      _progressDriftTimer?.cancel();
-      setState(() {
-        _loadingMessage = 'Ready!';
-        _progress = 1.0;
-      });
+            await Future.wait([wireC, wireD]);
+          } else if (result != ConnectionResult.alreadyConnected) {
+            wires.complete(Wire.server);
+            // Mark dependent wires as complete (skipped) so overlay dismisses.
+            wires.complete(Wire.camera);
+            wires.complete(Wire.chat);
+            _liveKitConnectionFailed = true;
+            _connectionFailureMessage = switch (result) {
+              ConnectionResult.tokenAuthError =>
+                'Session expired — please sign in again',
+              ConnectionResult.tokenNetworkError =>
+                'Could not reach server — check your connection',
+              ConnectionResult.roomFailed =>
+                'Room connection failed — try again later',
+              _ => 'Video & chat unavailable — connection failed',
+            };
+          } else {
+            wires.complete(Wire.server);
+            wires.complete(Wire.camera);
+            wires.complete(Wire.chat);
+          }
+        } catch (e) {
+          _log.warning('LiveKit connection failed', e);
+          wires.error(Wire.server);
+          wires.complete(Wire.camera);
+          wires.complete(Wire.chat);
+        }
+      }();
 
-      // Brief delay to show completion before switching to the game view.
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Wire E: game engine ready (TechWorld.onLoad finishes).
+      // Times out after 30s to prevent hanging if onLoad throws.
+      wires.start(Wire.gameReady);
+      final wireE = () async {
+        try {
+          await techWorld.gameReady.waitForTrue(
+            timeout: const Duration(seconds: 30),
+          );
+          wires.complete(Wire.gameReady);
+        } catch (e) {
+          _log.warning('Game engine ready timed out', e);
+          wires.error(Wire.gameReady);
+        }
+      }();
 
-      // Now transition to the game — this hides the lobby.
-      setState(() => _currentRoom = room);
-    } finally {
-      _progressDriftTimer?.cancel();
-      setState(() => _joiningRoomId = null);
+      await Future.wait([wireA, wireB, wireE]);
+
+      // Apply saved avatar to game world.
+      if (_selectedAvatar != null) {
+        techWorld.setLocalAvatar(_selectedAvatar!);
+      }
+
+      // Fade out the overlay.
+      setState(() => _showJoinOverlay = false);
+    } catch (e) {
+      // If anything unexpected escapes the per-wire try/catch blocks,
+      // tear down and return to the lobby so the user isn't stuck.
+      _log.severe('Room join failed unexpectedly', e);
+      await _leaveRoom();
     }
   }
 
-  /// Create LiveKit, Chat, and Proximity services, connect, and enable media.
-  ///
-  /// Sets [_liveKitConnectionFailed] on failure so the UI can show a banner.
-  /// Applies the saved avatar if one is selected.
-  ///
-  /// When [onProgress] is provided, it is called at key stages so the caller
-  /// can update a progress indicator (used by [_joinRoom]).
-  Future<void> _setupLiveKit(
-    String roomId,
-    String userId,
-    String displayName, {
-    void Function(double progress, String message)? onProgress,
-  }) async {
+  /// Create and register LiveKit, Chat, and Proximity services.
+  void _createServices(String roomId, String userId, String displayName) {
     _liveKitService = LiveKitService(
       userId: userId,
       displayName: displayName,
@@ -342,19 +408,29 @@ class _MyAppState extends State<MyApp> {
     Locator.add<LiveKitService>(_liveKitService!);
     Locator.add<ChatService>(_chatService!);
     Locator.add<ProximityService>(_proximityService!);
+  }
+
+  /// Create LiveKit, Chat, and Proximity services, connect, and enable media.
+  ///
+  /// Sets [_liveKitConnectionFailed] on failure so the UI can show a banner.
+  /// Applies the saved avatar if one is selected.
+  ///
+  /// Used by the [_onCreateRoom] / save-room flow which doesn't use the
+  /// circuit-board overlay.
+  Future<void> _setupLiveKit(
+    String roomId,
+    String userId,
+    String displayName,
+  ) async {
+    _createServices(roomId, userId, displayName);
 
     final result = await _liveKitService!.connect();
     _log.info('LiveKit connection result for room $roomId: $result');
 
     if (result == ConnectionResult.connected) {
-      onProgress?.call(0.55, 'Setting up game world\u2026');
       await locate<TechWorld>().connectToLiveKit(userId, displayName);
-
-      onProgress?.call(0.70, 'Enabling camera\u2026');
       await _liveKitService!.setCameraEnabled(true);
       await _liveKitService!.setMicrophoneEnabled(true);
-
-      onProgress?.call(0.85, 'Loading chat history\u2026');
       await _chatService!.loadHistory(roomId);
     } else if (result != ConnectionResult.alreadyConnected) {
       _liveKitConnectionFailed = true;
@@ -408,6 +484,9 @@ class _MyAppState extends State<MyApp> {
     Locator.remove<ProximityService>();
     _currentRoom = null;
     _mapEditorState.setRoomId(null);
+    _wireStates?.dispose();
+    _wireStates = null;
+    _showJoinOverlay = false;
 
     setState(() {});
   }
@@ -727,13 +806,6 @@ class _MyAppState extends State<MyApp> {
                                 onSignOut: () => locate<AuthService>().signOut(),
                                 onJoinRoom: _joinRoom,
                                 onCreateRoom: _onCreateRoom,
-                                joiningRoomId: _joiningRoomId,
-                                joinProgress: _joiningRoomId != null
-                                    ? _progress
-                                    : null,
-                                joinMessage: _joiningRoomId != null
-                                    ? _loadingMessage
-                                    : null,
                               );
                             }
                             return Stack(
@@ -748,6 +820,13 @@ class _MyAppState extends State<MyApp> {
                                     room: _liveKitService!.room!,
                                     techWorld: locate<TechWorld>(),
                                     proximityService: _proximityService!,
+                                  ),
+                                // Circuit-board loading overlay
+                                if (_wireStates != null)
+                                  JoinOverlay(
+                                    wireStates: _wireStates!,
+                                    roomName: _currentRoom!.name,
+                                    visible: _showJoinOverlay,
                                   ),
                               ],
                             );

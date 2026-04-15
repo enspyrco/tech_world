@@ -3,6 +3,7 @@ import 'package:flame/flame.dart';
 import 'package:flame_test/flame_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 
@@ -18,9 +19,11 @@ class TestGameWithMockImages extends TechWorldGame {
     images.add('NPC13.png', await generateImage(384, 256));
     images.add('single_room.png', await generateImage(800, 600));
     images.add('claude_bot.png', await generateImage(48, 48));
+    images.add('dreamfinder_bot.png', await generateImage(104, 88));
 
     // Also add to Flame.images which BotCharacterComponent uses
     Flame.images.add('claude_bot.png', await generateImage(48, 48));
+    Flame.images.add('dreamfinder_bot.png', await generateImage(104, 88));
 
     camera.viewfinder.anchor = Anchor.center;
   }
@@ -171,6 +174,34 @@ void main() {
         bot.position = Vector2(160, 192); // 5, 6 in mini grid
         expect(bot.miniGridPosition.x, equals(5));
         expect(bot.miniGridPosition.y, equals(6));
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
+      'each bot loads its own sprite asset',
+      TestGameWithMockImages.new,
+      (game) async {
+        final clawd = BotCharacterComponent(
+          position: Vector2(100, 100),
+          id: clawdBot.identity,
+          displayName: clawdBot.displayName,
+          spriteAsset: clawdBot.spriteAsset,
+        );
+        final dreamfinder = BotCharacterComponent(
+          position: Vector2(200, 200),
+          id: dreamfinderBot.identity,
+          displayName: dreamfinderBot.displayName,
+          spriteAsset: dreamfinderBot.spriteAsset,
+        );
+
+        await game.world.add(clawd);
+        await game.world.add(dreamfinder);
+        await game.ready();
+
+        expect(clawd.isMounted, isTrue);
+        expect(dreamfinder.isMounted, isTrue);
+        expect(clawd.spriteAsset, equals('claude_bot.png'));
+        expect(dreamfinder.spriteAsset, equals('dreamfinder_bot.png'));
       },
     );
   });

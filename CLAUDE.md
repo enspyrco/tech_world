@@ -59,7 +59,7 @@ Use `Locator.maybeLocate<T>()` for services that may not be registered yet.
 
 - **Video/Audio**: LiveKit tracks for proximity-based video chat
 - **Data channels**: Player positions and chat messages
-- **Bot (Clawd)**: Runs on GCP Compute Engine, joins room as participant `bot-claude`
+- **Bot (Clawd)**: Runs on OCI, joins room as participant `bot-claude`
 
 **LiveKit room name**: Hardcoded as `'tech-world'` in `main.dart` (not the map ID).
 
@@ -191,7 +191,7 @@ lk room join --identity video-test-user --publish-demo l_room
 
 - `ChatService` manages shared chat via LiveKit data channels
 - All participants see all messages (questions and responses)
-- Bot responses come from `bot-claude` participant on GCP Compute Engine
+- Bot responses come from `bot-claude` participant on OCI
 - `ChatPanel` renders chat UI with mic button (STT) and auto-spoken responses (TTS)
 
 ### In-Game Code Editor
@@ -233,17 +233,13 @@ Browser (Flutter web)
 
 **Server management:**
 ```bash
-# Check proxy status
-gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="pm2 status"
-
-# View LSP proxy logs
-gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="pm2 logs lsp-proxy --lines 50"
+# SSH into OCI instance, then:
+pm2 status
+pm2 logs lsp-proxy --lines 50
 
 # nginx config
 # /etc/nginx/sites-available/lsp-proxy
 ```
-
-**Scaling**: e2-small (2 GB) supports ~3–5 concurrent LSP sessions. Upgrade to e2-medium (4 GB, ~$27/mo) for ~10 sessions.
 
 ### Auth
 
@@ -279,7 +275,7 @@ LIVEKIT_API_SECRET=<secret>
 ## Claude Bot (Clawd — AI Tutor)
 
 - **Source Code**: `../tech_world_bot/` — Node.js using `@livekit/agents` framework (v1.0+)
-- **Deployment**: GCP Compute Engine (`tech-world-bot` instance), managed by PM2
+- **Deployment**: OCI (Oracle Cloud Infrastructure), managed by PM2
 - **Joins LiveKit**: As participant `bot-claude`, listens for `chat` topic messages
 - **Claude API**: Uses Claude Haiku 4.5 for fast, cost-effective responses
 - **Shared Chat**: All participants see all questions and answers
@@ -308,14 +304,10 @@ The bot uses the `@livekit/agents` SDK to register as a worker with LiveKit Clou
 `sendMessage()` has a fast guard: if bot is absent, it immediately shows a system message instead of waiting for the 30-second timeout.
 
 ```bash
-# Check status
-gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="pm2 status"
-
-# View logs
-gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="pm2 logs --lines 50"
-
-# Update and restart
-gcloud compute ssh tech-world-bot --zone=us-central1-a --project=adventures-in-tech-world-0 --command="cd ~/tech_world_bot && git pull && npm install && npm run build && pm2 restart tech-world-bot"
+# SSH into the OCI instance, then:
+pm2 status
+pm2 logs --lines 50
+cd ~/tech_world_bot && git pull && npm install && npm run build && pm2 restart tech-world-bot
 ```
 
 ## Grant Application

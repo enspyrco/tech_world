@@ -26,12 +26,18 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     required this.id,
     required this.displayName,
     String spriteAsset = 'NPC11.png',
-  }) : _spriteAsset = spriteAsset;
+    int frameCount = 3,
+  })  : _spriteAsset = spriteAsset,
+        _frameCount = frameCount;
 
-  PlayerComponent.from(User user, {String spriteAsset = 'NPC11.png'})
-      : id = user.id,
+  PlayerComponent.from(
+    User user, {
+    String spriteAsset = 'NPC11.png',
+    int frameCount = 3,
+  })  : id = user.id,
         displayName = user.displayName,
-        _spriteAsset = spriteAsset {
+        _spriteAsset = spriteAsset,
+        _frameCount = frameCount {
     super.position = Vector2.zero();
   }
 
@@ -41,6 +47,7 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
   String displayName;
 
   String _spriteAsset;
+  final int _frameCount;
 
   /// The sprite sheet asset used for this player's animations.
   String get spriteAsset => _spriteAsset;
@@ -71,20 +78,12 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
   void _buildAnimations() {
     final image = game.images.fromCache(_spriteAsset);
 
-    final upAnimation = SpriteAnimation.fromFrameData(
-      image,
-      SpriteAnimationData.sequenced(
-        amount: 3,
-        textureSize: Vector2(32, 64),
-        stepTime: 0.12,
-        texturePosition: Vector2(192, 0),
-      ),
-    );
+    final sectionWidth = _frameCount * 32.0;
 
     final downAnimation = SpriteAnimation.fromFrameData(
       image,
       SpriteAnimationData.sequenced(
-        amount: 3,
+        amount: _frameCount,
         textureSize: Vector2(32, 64),
         stepTime: 0.12,
       ),
@@ -93,20 +92,30 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
     final leftAnimation = SpriteAnimation.fromFrameData(
       image,
       SpriteAnimationData.sequenced(
-        amount: 3,
+        amount: _frameCount,
         textureSize: Vector2(32, 64),
         stepTime: 0.12,
-        texturePosition: Vector2(96, 0),
+        texturePosition: Vector2(sectionWidth, 0),
+      ),
+    );
+
+    final upAnimation = SpriteAnimation.fromFrameData(
+      image,
+      SpriteAnimationData.sequenced(
+        amount: _frameCount,
+        textureSize: Vector2(32, 64),
+        stepTime: 0.12,
+        texturePosition: Vector2(sectionWidth * 2, 0),
       ),
     );
 
     final rightAnimation = SpriteAnimation.fromFrameData(
       image,
       SpriteAnimationData.sequenced(
-        amount: 3,
+        amount: _frameCount,
         textureSize: Vector2(32, 64),
         stepTime: 0.12,
-        texturePosition: Vector2(288, 0),
+        texturePosition: Vector2(sectionWidth * 3, 0),
       ),
     );
 
@@ -164,6 +173,7 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
           EffectController(duration: 0.2),
           onComplete: () {
             playing = false;
+            animationTicker?.reset();
             _addNextMoveEffect();
           },
         ),
