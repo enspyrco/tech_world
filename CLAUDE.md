@@ -338,6 +338,10 @@ For ~50 concurrent users:
 
 ARM64 compatible — can run on OCI free tier (4 OCPU / 24 GB Ampere).
 
+## TODO
+
+- Delete stale `functions/` directory (real Firebase functions live in `tech_world_firebase_functions/` sibling repo)
+
 ## Current Work
 
 ### Recently completed
