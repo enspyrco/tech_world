@@ -255,7 +255,9 @@ class _MyAppState extends State<MyApp> {
 
     final techWorld = locate<TechWorld>();
     final wires = WireStates();
-    _wireStates?.dispose();
+    // Don't dispose the old WireStates eagerly — the CircuitBoardProgress
+    // widget still holds a listener until didUpdateWidget/dispose runs.
+    // Reassigning _wireStates lets the widget swap cleanly on the next frame.
     _wireStates = wires;
 
     _mapEditorState.setRoomId(room.id);
@@ -270,101 +272,116 @@ class _MyAppState extends State<MyApp> {
       _showJoinOverlay = true;
     });
 
-    // Wire A: prefetch tileset bytes into cache (parallel with engine init).
-    wires.start(Wire.tilesets);
-    final wireA = () async {
-      try {
-        await techWorld.prefetchTilesetBytes(room.mapData);
-        wires.complete(Wire.tilesets);
-      } catch (e) {
-        _log.warning('Tileset prefetch failed', e);
-        wires.error(Wire.tilesets);
-      }
-    }();
+    try {
+      // Wire A: prefetch tileset bytes into cache (parallel with engine init).
+      wires.start(Wire.tilesets);
+      final wireA = () async {
+        try {
+          await techWorld.prefetchTilesetBytes(room.mapData);
+          wires.complete(Wire.tilesets);
+        } catch (e) {
+          _log.warning('Tileset prefetch failed', e);
+          wires.error(Wire.tilesets);
+        }
+      }();
 
-    // Wire B: create services + connect to LiveKit server.
-    wires.start(Wire.server);
-    final wireB = () async {
-      try {
-        _createServices(room.id, userId, _currentDisplayName);
-        final result = await _liveKitService!.connect();
-        _log.info('LiveKit connection result for room ${room.id}: $result');
-        if (result == ConnectionResult.connected) {
-          wires.complete(Wire.server);
-          await techWorld.connectToLiveKit(userId, _currentDisplayName);
+      // Wire B: create services + connect to LiveKit server.
+      wires.start(Wire.server);
+      final wireB = () async {
+        try {
+          _createServices(room.id, userId, _currentDisplayName);
+          final result = await _liveKitService!.connect();
+          _log.info('LiveKit connection result for room ${room.id}: $result');
+          if (result == ConnectionResult.connected) {
+            wires.complete(Wire.server);
+            await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
-          // Wire C: camera + mic (depends on server connection).
-          wires.start(Wire.camera);
-          final wireC = () async {
-            try {
-              await Future.wait([
-                _liveKitService!.setCameraEnabled(true),
-                _liveKitService!.setMicrophoneEnabled(true),
-              ]);
-              wires.complete(Wire.camera);
-            } catch (e) {
-              _log.warning('Camera/mic setup failed', e);
-              wires.error(Wire.camera);
-            }
-          }();
+            // Wire C: camera + mic (depends on server connection).
+            wires.start(Wire.camera);
+            final wireC = () async {
+              try {
+                await Future.wait([
+                  _liveKitService!.setCameraEnabled(true),
+                  _liveKitService!.setMicrophoneEnabled(true),
+                ]);
+                wires.complete(Wire.camera);
+              } catch (e) {
+                _log.warning('Camera/mic setup failed', e);
+                wires.error(Wire.camera);
+              }
+            }();
 
-          // Wire D: chat history (depends on server connection).
-          wires.start(Wire.chat);
-          final wireD = () async {
-            try {
-              await _chatService!.loadHistory(room.id);
-              wires.complete(Wire.chat);
-            } catch (e) {
-              _log.warning('Chat history load failed', e);
-              wires.error(Wire.chat);
-            }
-          }();
+            // Wire D: chat history (depends on server connection).
+            wires.start(Wire.chat);
+            final wireD = () async {
+              try {
+                await _chatService!.loadHistory(room.id);
+                wires.complete(Wire.chat);
+              } catch (e) {
+                _log.warning('Chat history load failed', e);
+                wires.error(Wire.chat);
+              }
+            }();
 
-          await Future.wait([wireC, wireD]);
-        } else if (result != ConnectionResult.alreadyConnected) {
-          wires.complete(Wire.server);
-          // Mark dependent wires as complete (skipped) so overlay dismisses.
-          wires.complete(Wire.camera);
-          wires.complete(Wire.chat);
-          _liveKitConnectionFailed = true;
-          _connectionFailureMessage = switch (result) {
-            ConnectionResult.tokenAuthError =>
-              'Session expired — please sign in again',
-            ConnectionResult.tokenNetworkError =>
-              'Could not reach server — check your connection',
-            ConnectionResult.roomFailed =>
-              'Room connection failed — try again later',
-            _ => 'Video & chat unavailable — connection failed',
-          };
-        } else {
-          wires.complete(Wire.server);
+            await Future.wait([wireC, wireD]);
+          } else if (result != ConnectionResult.alreadyConnected) {
+            wires.complete(Wire.server);
+            // Mark dependent wires as complete (skipped) so overlay dismisses.
+            wires.complete(Wire.camera);
+            wires.complete(Wire.chat);
+            _liveKitConnectionFailed = true;
+            _connectionFailureMessage = switch (result) {
+              ConnectionResult.tokenAuthError =>
+                'Session expired — please sign in again',
+              ConnectionResult.tokenNetworkError =>
+                'Could not reach server — check your connection',
+              ConnectionResult.roomFailed =>
+                'Room connection failed — try again later',
+              _ => 'Video & chat unavailable — connection failed',
+            };
+          } else {
+            wires.complete(Wire.server);
+            wires.complete(Wire.camera);
+            wires.complete(Wire.chat);
+          }
+        } catch (e) {
+          _log.warning('LiveKit connection failed', e);
+          wires.error(Wire.server);
           wires.complete(Wire.camera);
           wires.complete(Wire.chat);
         }
-      } catch (e) {
-        _log.warning('LiveKit connection failed', e);
-        wires.error(Wire.server);
-        wires.complete(Wire.camera);
-        wires.complete(Wire.chat);
+      }();
+
+      // Wire E: game engine ready (TechWorld.onLoad finishes).
+      // Times out after 30s to prevent hanging if onLoad throws.
+      wires.start(Wire.gameReady);
+      final wireE = () async {
+        try {
+          await techWorld.gameReady.waitForTrue(
+            timeout: const Duration(seconds: 30),
+          );
+          wires.complete(Wire.gameReady);
+        } catch (e) {
+          _log.warning('Game engine ready timed out', e);
+          wires.error(Wire.gameReady);
+        }
+      }();
+
+      await Future.wait([wireA, wireB, wireE]);
+
+      // Apply saved avatar to game world.
+      if (_selectedAvatar != null) {
+        techWorld.setLocalAvatar(_selectedAvatar!);
       }
-    }();
 
-    // Wire E: game engine ready (TechWorld.onLoad finishes).
-    wires.start(Wire.gameReady);
-    final wireE = () async {
-      await techWorld.gameReady.waitForTrue();
-      wires.complete(Wire.gameReady);
-    }();
-
-    await Future.wait([wireA, wireB, wireE]);
-
-    // Apply saved avatar to game world.
-    if (_selectedAvatar != null) {
-      techWorld.setLocalAvatar(_selectedAvatar!);
+      // Fade out the overlay.
+      setState(() => _showJoinOverlay = false);
+    } catch (e) {
+      // If anything unexpected escapes the per-wire try/catch blocks,
+      // tear down and return to the lobby so the user isn't stuck.
+      _log.severe('Room join failed unexpectedly', e);
+      await _leaveRoom();
     }
-
-    // Fade out the overlay.
-    setState(() => _showJoinOverlay = false);
   }
 
   /// Create and register LiveKit, Chat, and Proximity services.

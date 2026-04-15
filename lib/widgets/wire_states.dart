@@ -50,7 +50,11 @@ extension WaitForTrue on ValueNotifier<bool> {
   /// Checks eagerly — if already `true`, completes synchronously via
   /// [Future.value] to avoid race conditions where the notifier fires
   /// before the listener is attached.
-  Future<void> waitForTrue() {
+  ///
+  /// If [timeout] is provided and the value hasn't become `true` within
+  /// that duration, the future completes with a [TimeoutException]. The
+  /// listener is removed in either case to prevent memory leaks.
+  Future<void> waitForTrue({Duration? timeout}) {
     if (value) return Future.value();
     final completer = Completer<void>();
     void listener() {
@@ -61,6 +65,13 @@ extension WaitForTrue on ValueNotifier<bool> {
     }
 
     addListener(listener);
+
+    if (timeout != null) {
+      return completer.future.timeout(timeout, onTimeout: () {
+        removeListener(listener);
+        throw TimeoutException('waitForTrue timed out', timeout);
+      });
+    }
     return completer.future;
   }
 }
