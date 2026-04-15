@@ -170,7 +170,7 @@ void main() {
     test('loadFromGameMap populates grid from existing map', () {
       state.loadFromGameMap(lRoom);
 
-      expect(state.mapName, 'The L-Room');
+      expect(state.mapName, 'Imagination Center');
       expect(state.mapId, 'l_room');
 
       // lRoom has no predefined barriers — all from Firestore.
