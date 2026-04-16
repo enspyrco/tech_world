@@ -336,6 +336,10 @@ class TechWorld extends World with TapCallbacks {
     for (final entry in _botCharacterComponents.entries) {
       positions[entry.key] = entry.value.miniGridPosition;
     }
+    if (_dreamfinderComponent != null) {
+      positions[dreamfinderBot.identity] =
+          _dreamfinderComponent!.miniGridPosition;
+    }
     return positions;
   }
 

@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/livekit/widgets/bot_bubble.dart';
+
+const _testBot = BotConfig(
+  identity: 'bot-test',
+  displayName: 'TestBot',
+  spriteAsset: 'test_bot.png',
+  accentColor: Color(0xFF00FF00),
+  avatarLetter: 'T',
+);
 
 void main() {
   group('BotBubble', () {
@@ -8,7 +17,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: BotBubble(name: 'Test'),
+            body: BotBubble(config: _testBot),
           ),
         ),
       );
@@ -22,7 +31,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: BotBubble(name: 'Test', size: 120),
+            body: BotBubble(config: _testBot, size: 120),
           ),
         ),
       );
@@ -32,11 +41,12 @@ void main() {
       expect(container.constraints?.maxHeight, equals(120));
     });
 
-    testWidgets('has circular shape with orange border', (tester) async {
+    testWidgets('has circular shape with config accent color border',
+        (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: BotBubble(name: 'Test'),
+            body: BotBubble(config: _testBot),
           ),
         ),
       );
@@ -52,7 +62,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: BotBubble(name: 'Test'),
+            body: BotBubble(config: _testBot),
           ),
         ),
       );
@@ -60,42 +70,46 @@ void main() {
       expect(find.byType(ClipOval), findsOneWidget);
     });
 
-    testWidgets('attempts to load claude_bot.png image', (tester) async {
+    testWidgets('attempts to load bot sprite image', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: BotBubble(name: 'Claude'),
+            body: BotBubble(config: clawdBot),
           ),
         ),
       );
 
-      // The Image.asset widget should be present
       expect(find.byType(Image), findsOneWidget);
     });
 
-    test('clawdOrange constant is correct', () {
-      expect(BotBubble.clawdOrange.toARGB32(), equals(0xFFD97757));
-    });
+    testWidgets('uses accent color from BotConfig', (tester) async {
+      const goldBot = BotConfig(
+        identity: 'bot-gold',
+        displayName: 'GoldBot',
+        spriteAsset: 'gold.png',
+        accentColor: Color(0xFFDAA520),
+        avatarLetter: 'G',
+      );
 
-    test('_getInitial returns first letter uppercase for non-empty name', () {
-      // We test the widget's behavior indirectly since _getInitial is private
-      // The initial logic is: name.isNotEmpty ? name[0].toUpperCase() : '?'
-      // This is verified through the errorBuilder which uses _getInitial()
-      expect('Claude'[0].toUpperCase(), equals('C'));
-      expect('test'[0].toUpperCase(), equals('T'));
-    });
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: BotBubble(config: goldBot),
+          ),
+        ),
+      );
 
-    test('_getInitial returns ? for empty name', () {
-      const name = '';
-      final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-      expect(initial, equals('?'));
+      final container = tester.widget<Container>(find.byType(Container).first);
+      final decoration = container.decoration as BoxDecoration;
+      final border = decoration.border as Border;
+      expect(border.top.color, equals(const Color(0xFFDAA520)));
     });
 
     testWidgets('has shadow in decoration', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: BotBubble(name: 'Test'),
+            body: BotBubble(config: _testBot),
           ),
         ),
       );
@@ -110,12 +124,11 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: BotBubble(name: 'Test'),
+            body: BotBubble(config: _testBot),
           ),
         ),
       );
 
-      // Find the inner Container (second one)
       final containers = find.byType(Container);
       expect(containers, findsAtLeast(2));
     });
