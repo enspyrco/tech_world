@@ -6,6 +6,7 @@ import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tech_world.dart';
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/livekit/widgets/bot_bubble.dart';
 import 'package:tech_world/livekit/widgets/video_bubble.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
