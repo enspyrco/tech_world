@@ -8,11 +8,16 @@ class VideoBubble extends StatefulWidget {
   const VideoBubble({
     required this.participant,
     this.size = 80,
+    this.accentColor,
     super.key,
   });
 
   final Participant participant;
   final double size;
+
+  /// Optional accent color for the bubble border (used for bot participants).
+  /// When null, defaults to white (or green when speaking).
+  final Color? accentColor;
 
   @override
   State<VideoBubble> createState() => _VideoBubbleState();
@@ -68,7 +73,9 @@ class _VideoBubbleState extends State<VideoBubble> {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(
-          color: widget.participant.isSpeaking ? Colors.green : Colors.white,
+          color: widget.participant.isSpeaking
+              ? Colors.green
+              : (widget.accentColor ?? Colors.white),
           width: widget.participant.isSpeaking ? 3 : 2,
         ),
         boxShadow: [
