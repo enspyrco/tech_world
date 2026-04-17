@@ -126,6 +126,14 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
     return null;
   }
 
+  /// Whether [participant] has an active, unmuted video track.
+  bool _hasVideoTrack(Participant participant) {
+    for (final publication in participant.videoTrackPublications) {
+      if (publication.track != null && !publication.muted) return true;
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -156,22 +164,48 @@ class _ProximityVideoOverlayState extends State<ProximityVideoOverlay> {
             closestDistance = data.distance;
           }
 
-          // Special handling for bots - show BotBubble instead of VideoBubble
+          // Special handling for bots — prefer video track if available,
+          // fall back to static sprite bubble otherwise.
           if (isBotIdentity(entry.key)) {
-            bubbles.add(
-              Positioned(
-                left: screenPosition.dx - widget.bubbleSize / 2,
-                top: screenPosition.dy - widget.bubbleSize - 20,
-                child: Opacity(
-                  opacity: opacity,
-                  child: BotBubble(
-                    key: ValueKey(entry.key),
-                    config: getBotConfig(entry.key),
-                    size: widget.bubbleSize,
+            final participant = _findParticipant(entry.key);
+            final hasVideo =
+                participant != null && _hasVideoTrack(participant);
+
+            if (hasVideo) {
+              // Bot has a video track (e.g. embodied Dreamfinder) — show
+              // the live 3D avatar feed with the bot's accent color border.
+              bubbles.add(
+                Positioned(
+                  left: screenPosition.dx - widget.bubbleSize / 2,
+                  top: screenPosition.dy - widget.bubbleSize - 20,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: VideoBubble(
+                      key: ValueKey(entry.key),
+                      participant: participant,
+                      size: widget.bubbleSize,
+                      accentColor: getBotConfig(entry.key).accentColor,
+                    ),
                   ),
                 ),
-              ),
-            );
+              );
+            } else {
+              // Bot without video — show sprite avatar bubble.
+              bubbles.add(
+                Positioned(
+                  left: screenPosition.dx - widget.bubbleSize / 2,
+                  top: screenPosition.dy - widget.bubbleSize - 20,
+                  child: Opacity(
+                    opacity: opacity,
+                    child: BotBubble(
+                      key: ValueKey(entry.key),
+                      config: getBotConfig(entry.key),
+                      size: widget.bubbleSize,
+                    ),
+                  ),
+                ),
+              );
+            }
             continue;
           }
 
