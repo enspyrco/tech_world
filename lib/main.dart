@@ -101,6 +101,7 @@ class _MyAppState extends State<MyApp> {
   String? _connectionFailureMessage;
   StreamSubscription<AuthUser>? _authSubscription;
   StreamSubscription<String?>? _connectionLostSubscription;
+  bool _isReconnecting = false;
 
   /// Wire-state tracker for the current join operation's circuit-board overlay.
   WireStates? _wireStates;
@@ -477,6 +478,7 @@ class _MyAppState extends State<MyApp> {
     // Cancel connection-loss subscription before tearing down services.
     _connectionLostSubscription?.cancel();
     _connectionLostSubscription = null;
+    _isReconnecting = false;
 
     // Cancel TechWorld's LiveKit subscriptions before disposing services.
     techWorld.disconnectFromLiveKit();
@@ -517,6 +519,8 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _handleConnectionLost(String? reason) async {
     _log.warning('LiveKit connection lost: $reason');
+    if (_isReconnecting) return; // Already handling a reconnection attempt.
+    _isReconnecting = true;
 
     // Show failure banner immediately.
     _liveKitConnectionFailed = true;
@@ -529,33 +533,38 @@ class _MyAppState extends State<MyApp> {
     // which clears its subscriptions and nulls its service reference. That
     // enables re-initialization when connectToLiveKit() is called again.
 
-    // Wait briefly then attempt reconnection.
-    await Future.delayed(const Duration(seconds: 2));
-    if (_liveKitService == null || _currentRoom == null) return;
+    try {
+      // Wait briefly then attempt reconnection.
+      await Future.delayed(const Duration(seconds: 2));
+      if (_liveKitService == null || _currentRoom == null) return;
 
-    final result = await _liveKitService!.connect();
-    _log.info('Reconnection attempt result: $result');
+      final result = await _liveKitService!.connect();
+      _log.info('Reconnection attempt result: $result');
 
-    if (result == ConnectionResult.connected) {
-      // Re-initialize TechWorld's LiveKit subscriptions.
-      final userId = _currentUserId;
-      if (userId != null) {
-        await locate<TechWorld>()
-            .connectToLiveKit(userId, _currentDisplayName);
-        // Re-enable camera/mic.
-        await _liveKitService!.setCameraEnabled(true);
-        await _liveKitService!.setMicrophoneEnabled(true);
+      if (result == ConnectionResult.connected) {
+        // Re-initialize TechWorld's LiveKit subscriptions.
+        final userId = _currentUserId;
+        if (userId != null) {
+          await locate<TechWorld>()
+              .connectToLiveKit(userId, _currentDisplayName);
+          _listenForConnectionLoss();
+          // Re-enable camera/mic.
+          await _liveKitService!.setCameraEnabled(true);
+          await _liveKitService!.setMicrophoneEnabled(true);
+        }
+
+        _liveKitConnectionFailed = false;
+        _connectionFailureMessage = null;
+        _log.info('Reconnected successfully');
+        setState(() {});
+      } else {
+        // Reconnection failed — update banner.
+        _connectionFailureMessage =
+            'Video & chat unavailable — connection lost';
+        setState(() {});
       }
-
-      _liveKitConnectionFailed = false;
-      _connectionFailureMessage = null;
-      _log.info('Reconnected successfully');
-      setState(() {});
-    } else {
-      // Reconnection failed — update banner.
-      _connectionFailureMessage =
-          'Video & chat unavailable — connection lost';
-      setState(() {});
+    } finally {
+      _isReconnecting = false;
     }
   }
 
