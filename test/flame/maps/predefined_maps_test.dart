@@ -263,6 +263,29 @@ void main() {
         expect(identical(result, firestoreMap), isTrue);
       });
 
+      test('preserves walls from Firestore during visual fallback', () {
+        // Regression: walls field was omitted in the fallback merge,
+        // silently dropping wall style data on every room load.
+        final walls = {
+          const Point(5, 5): 'modern_gray_07',
+          const Point(6, 5): 'modern_gray_07',
+        };
+        final firestoreMap = GameMap(
+          id: 'abc123',
+          name: 'Imagination Center',
+          barriers: const [Point(5, 5), Point(6, 5)],
+          walls: walls,
+        );
+
+        final merged = applyPredefinedVisualFallback(firestoreMap);
+
+        // Walls must survive the merge — not silently dropped to empty.
+        expect(merged.walls, equals(firestoreMap.walls),
+            reason: 'Wall style data must be preserved through visual fallback');
+        expect(merged.walls.length, 2);
+        expect(merged.walls[const Point(5, 5)], 'modern_gray_07');
+      });
+
       test('preserves terminals and custom tilesets from Firestore', () {
         const firestoreMap = GameMap(
           id: 'abc123',

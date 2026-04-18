@@ -2,6 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/tile_map_format.dart';
 
+/// One-time renames: old Firestore name → current name. On first load the
+/// document is updated in place so the rename is permanent.
+const _renamedRooms = {
+  'The L-Room': 'Imagination Center',
+};
+
 /// A room in Tech World — a persistent map with ownership and access control.
 ///
 /// Each room maps to a Firestore document in the `rooms` collection.
@@ -57,10 +63,19 @@ class RoomData {
     final data = doc.data()!;
     final mapJson = data['mapData'] as Map<String, dynamic>;
 
+    // Migrate renamed rooms — update Firestore so it self-heals on first load.
+    var name = data['name'] as String;
+    final newName = _renamedRooms[name];
+    if (newName != null) {
+      name = newName;
+      doc.reference.update({'name': newName});
+    }
+
     // Migrate gray_brick walls to LimeZu. Self-healing: updates Firestore
     // on first load so it only runs once.
     final wallsJson = mapJson['walls'] as List<dynamic>?;
-    if (wallsJson != null && wallsJson.any((w) => w['style'] == 'gray_brick')) {
+    if (wallsJson != null &&
+        wallsJson.any((w) => w['style'] == 'gray_brick')) {
       for (final w in wallsJson) {
         if (w['style'] == 'gray_brick') w['style'] = 'modern_gray_07';
       }
@@ -71,12 +86,12 @@ class RoomData {
     final gameMap = TileMapFormat.fromJson({
       ...mapJson,
       'id': doc.id,
-      'name': data['name'] as String,
+      'name': name,
     });
 
     return RoomData(
       id: doc.id,
-      name: data['name'] as String,
+      name: name,
       ownerId: data['ownerId'] as String,
       ownerDisplayName: data['ownerDisplayName'] as String? ?? '',
       editorIds: (data['editorIds'] as List<dynamic>?)?.cast<String>() ?? [],
