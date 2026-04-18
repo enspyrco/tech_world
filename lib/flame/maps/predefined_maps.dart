@@ -8,6 +8,14 @@ import 'map_parser.dart';
 
 final _log = Logger('PredefinedMaps');
 
+/// Maps old room names to current predefined map names.
+///
+/// When predefined maps are renamed, Firestore rooms keep the old name.
+/// This lookup ensures old rooms still match their predefined counterpart.
+const _legacyNames = {
+  'The L-Room': 'Imagination Center',
+};
+
 /// Open Arena - no barriers, free movement everywhere.
 const openArena = GameMap(
   id: 'open_arena',
@@ -124,7 +132,7 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
 
   return GameMap(
     id: map.id,
-    name: map.name,
+    name: predefined.name,
     barriers: map.barriers,
     spawnPoint: map.spawnPoint,
     terminals: map.terminals,
@@ -134,6 +142,7 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
     tilesetIds: mergedTilesetIds,
     terrainGrid: map.terrainGrid ?? predefined.terrainGrid,
     customTilesets: map.customTilesets,
+    walls: map.walls,
   );
 }
 
@@ -151,9 +160,12 @@ GameMap? _findPredefinedMatch(GameMap map) {
       allMaps.where((m) => m.floorLayer != null || m.objectLayer != null);
 
   // Match by name — Firestore rooms preserve the map name at the room level.
+  // Also check legacy names from renames so existing rooms still match.
+  final resolvedName = _legacyNames[map.name] ?? map.name;
   for (final predefined in candidates) {
-    if (predefined.name == map.name) {
-      _log.info('Visual fallback: matched by name "${map.name}"');
+    if (predefined.name == resolvedName) {
+      _log.info('Visual fallback: matched by name "$resolvedName"'
+          '${resolvedName != map.name ? ' (legacy: "${map.name}")' : ''}');
       return predefined;
     }
   }

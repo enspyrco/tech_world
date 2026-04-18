@@ -214,19 +214,17 @@ TileLayerData buildObjectLayerFromWalls(Map<(int, int), String> walls) {
       // Walk up the wall column to find the nearest cell with E/W neighbors
       // (the corner where horizontal meets vertical). Inherit its E/W so
       // the entire vertical section matches the corner's border pattern.
+      // This includes T-junctions (E|W both set), where the vertical arm
+      // uses fill body for a seamless join with the junction above.
       var inheritedEW = 0;
       var checkY = y - 1;
       while (wallPositions.contains((x, checkY))) {
         final checkBitmask = computeWallBitmask(x, checkY, wallPositions);
         final ew = checkBitmask & (WallBitmask.e | WallBitmask.w);
-        // Only inherit single-sided E/W (L-junction corner). When both
-        // E and W are set (T-junction), the vertical arm is single-wide
-        // and needs both side borders — not the borderless fill tile.
-        if (ew != 0 && ew != (WallBitmask.e | WallBitmask.w)) {
+        if (ew != 0) {
           inheritedEW = ew;
           break;
         }
-        if (ew == (WallBitmask.e | WallBitmask.w)) break; // stop at T
         checkY--;
       }
       final ewBitmask = bitmask | inheritedEW;

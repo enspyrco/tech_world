@@ -259,7 +259,7 @@ void main() {
           layer.tileAt(7, 6)!.tileIndex, equals(style.capForBitmask(w | s)));
     });
 
-    test('T-junction: vertical arm gets bordered tiles, not fill', () {
+    test('T-junction: vertical arm inherits E|W for seamless junction', () {
       // Horizontal bar: (5,7)-(7,7). Vertical drop from center: (6,8)-(6,9).
       //
       //   (5,7) — (6,7) — (7,7)
@@ -279,20 +279,19 @@ void main() {
       expect(layer.tileAt(7, 7)!.tileIndex, equals(style.faceForBitmask(w)));
 
       // Junction cell (6,7): north-facing WITH S → body.
-      // bitmask = E|W|S. Body sees E|W → fill tile. This is correct —
-      // the junction IS part of the horizontal bar.
+      // bitmask = E|W|S. Body sees E|W → fill tile.
       expect(layer.tileAt(6, 7)!.tileIndex,
           equals(style.bodyForBitmask(e | w | s, hasS: true)));
 
-      // (6,8): vertical arm below T-junction. Should NOT inherit E|W
-      // from junction — a single-wide column needs both side borders,
-      // not the borderless fill tile. Uses isolated vertical body (Viso).
+      // (6,8): vertical arm below T-junction. Inherits E|W from junction
+      // for a seamless join — uses fill body (borderless), not Viso.
       expect(layer.tileAt(6, 8)!.tileIndex,
-          equals(style.bodyForBitmask(0, hasS: true)));
+          equals(style.bodyForBitmask(e | w, hasS: true)));
 
-      // (6,9): bottom of vertical arm. Isolated baseboard with borders.
+      // (6,9): bottom of vertical arm. Inherits E|W → bottom-middle
+      // baseboard for seamless continuation.
       expect(layer.tileAt(6, 9)!.tileIndex,
-          equals(style.bodyForBitmask(0, hasS: false)));
+          equals(style.bodyForBitmask(e | w, hasS: false)));
 
       // Caps: all three north-facing cells.
       expect(layer.tileAt(5, 6)!.tileIndex, equals(style.capForBitmask(e)));
