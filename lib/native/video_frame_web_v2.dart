@@ -328,10 +328,20 @@ class DirectTrackCapture {
       // to release the underlying video decoder resources
       videoFrame.close();
 
-      // Convert to Flutter ui.Image
-      final newFrame = await ui_web.createImageFromImageBitmap(
-        imageBitmap as JSAny,
-      );
+      // Bail out if disposed during the awaits above
+      if (!_isCapturing) return;
+
+      // Convert to Flutter ui.Image. Close ImageBitmap on error to prevent
+      // GPU memory leak.
+      ui.Image newFrame;
+      try {
+        newFrame = await ui_web.createImageFromImageBitmap(
+          imageBitmap as JSAny,
+        );
+      } catch (_) {
+        imageBitmap.close();
+        rethrow;
+      }
 
       // Swap frames
       final oldFrame = _currentFrame;
@@ -400,6 +410,7 @@ class VideoElementCapture {
   Timer? _captureTimer;
   bool _frameInFlight = false;
   bool _videoReady = false;
+  JSFunction? _jsLoadedMetadata;
 
   /// Create a capture instance from a MediaStream (preferred) or MediaStreamTrack.
   ///
@@ -655,13 +666,15 @@ class VideoElementCapture {
     if (_isCapturing) return;
     _isCapturing = true;
 
-    // Listen for when video has proper dimensions
+    // Listen for when video has proper dimensions.
+    // Store the JS callback so we can remove it on stop/dispose.
     void onLoadedMetadata(web.Event e) {
       final w = _videoElement.videoWidth;
       final h = _videoElement.videoHeight;
       _log.fine('VideoElementCapture: Metadata loaded ${w}x$h');
     }
-    _videoElement.addEventListener('loadedmetadata', onLoadedMetadata.toJS);
+    _jsLoadedMetadata = onLoadedMetadata.toJS;
+    _videoElement.addEventListener('loadedmetadata', _jsLoadedMetadata!);
 
     // Start playback only if we own the element (existing elements are already playing)
     if (ownsElement) {
@@ -685,8 +698,10 @@ class VideoElementCapture {
     _isCapturing = false;
     _captureTimer?.cancel();
     _captureTimer = null;
-    // Don't pause the video - it causes AbortError if play() is still in progress
-    // The video element will be cleaned up in dispose() anyway
+    if (_jsLoadedMetadata != null) {
+      _videoElement.removeEventListener('loadedmetadata', _jsLoadedMetadata!);
+      _jsLoadedMetadata = null;
+    }
     _log.info('VideoElementCapture: Stopped capture');
   }
 
@@ -730,10 +745,17 @@ class VideoElementCapture {
 
       final imageBitmap = await imageBitmapPromise.toDart;
 
-      // Convert to Flutter ui.Image
-      final newFrame = await ui_web.createImageFromImageBitmap(
-        imageBitmap as JSAny,
-      );
+      // Convert to Flutter ui.Image. Close ImageBitmap in finally to prevent
+      // GPU memory leak if createImageFromImageBitmap throws.
+      ui.Image newFrame;
+      try {
+        newFrame = await ui_web.createImageFromImageBitmap(
+          imageBitmap as JSAny,
+        );
+      } catch (_) {
+        imageBitmap.close();
+        rethrow;
+      }
 
       // Swap frames
       final oldFrame = _currentFrame;
