@@ -17,6 +17,7 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/avatar_selection_screen.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
+import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
@@ -99,6 +100,7 @@ class _MyAppState extends State<MyApp> {
   bool _liveKitConnectionFailed = false;
   String? _connectionFailureMessage;
   StreamSubscription<AuthUser>? _authSubscription;
+  StreamSubscription<String?>? _connectionLostSubscription;
 
   /// Wire-state tracker for the current join operation's circuit-board overlay.
   WireStates? _wireStates;
@@ -300,6 +302,7 @@ class _MyAppState extends State<MyApp> {
           if (result == ConnectionResult.connected) {
             wires.complete(Wire.server);
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
+            _listenForConnectionLoss();
 
             // Wire C: camera + mic (depends on server connection).
             wires.start(Wire.camera);
@@ -434,6 +437,7 @@ class _MyAppState extends State<MyApp> {
 
     if (result == ConnectionResult.connected) {
       await locate<TechWorld>().connectToLiveKit(userId, displayName);
+      _listenForConnectionLoss();
       await _liveKitService!.setCameraEnabled(true);
       await _liveKitService!.setMicrophoneEnabled(true);
       await _chatService!.loadHistory(roomId);
@@ -470,6 +474,10 @@ class _MyAppState extends State<MyApp> {
       await techWorld.exitEditorMode();
     }
 
+    // Cancel connection-loss subscription before tearing down services.
+    _connectionLostSubscription?.cancel();
+    _connectionLostSubscription = null;
+
     // Cancel TechWorld's LiveKit subscriptions before disposing services.
     techWorld.disconnectFromLiveKit();
 
@@ -494,6 +502,61 @@ class _MyAppState extends State<MyApp> {
     _showJoinOverlay = false;
 
     setState(() {});
+  }
+
+  /// Subscribe to [LiveKitService.connectionLost] for auto-reconnection.
+  ///
+  /// Called after a successful LiveKit connection from both [_joinRoom]
+  /// and [_setupLiveKit]. On unexpected disconnect: shows a banner, resets
+  /// bot presence, and attempts to reconnect automatically.
+  void _listenForConnectionLoss() {
+    _connectionLostSubscription?.cancel();
+    _connectionLostSubscription =
+        _liveKitService?.connectionLost.listen(_handleConnectionLost);
+  }
+
+  Future<void> _handleConnectionLost(String? reason) async {
+    _log.warning('LiveKit connection lost: $reason');
+
+    // Show failure banner immediately.
+    _liveKitConnectionFailed = true;
+    _connectionFailureMessage = 'Connection lost — reconnecting…';
+    // Reset bot presence so the chat panel shows "offline".
+    botStatusNotifier.value = BotStatus.absent;
+    setState(() {});
+
+    // TechWorld's own connectionLost listener calls disconnectFromLiveKit(),
+    // which clears its subscriptions and nulls its service reference. That
+    // enables re-initialization when connectToLiveKit() is called again.
+
+    // Wait briefly then attempt reconnection.
+    await Future.delayed(const Duration(seconds: 2));
+    if (_liveKitService == null || _currentRoom == null) return;
+
+    final result = await _liveKitService!.connect();
+    _log.info('Reconnection attempt result: $result');
+
+    if (result == ConnectionResult.connected) {
+      // Re-initialize TechWorld's LiveKit subscriptions.
+      final userId = _currentUserId;
+      if (userId != null) {
+        await locate<TechWorld>()
+            .connectToLiveKit(userId, _currentDisplayName);
+        // Re-enable camera/mic.
+        await _liveKitService!.setCameraEnabled(true);
+        await _liveKitService!.setMicrophoneEnabled(true);
+      }
+
+      _liveKitConnectionFailed = false;
+      _connectionFailureMessage = null;
+      _log.info('Reconnected successfully');
+      setState(() {});
+    } else {
+      // Reconnection failed — update banner.
+      _connectionFailureMessage =
+          'Video & chat unavailable — connection lost';
+      setState(() {});
+    }
   }
 
   /// Create a new room — enter editor with empty map, then save.

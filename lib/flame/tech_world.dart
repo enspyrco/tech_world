@@ -313,6 +313,7 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<RemoteParticipant>? _participantLeftSubscription;
   StreamSubscription<AvatarUpdate>? _avatarSubscription;
   StreamSubscription<(Participant, bool)>? _speakingSubscription;
+  StreamSubscription<String?>? _connectionLostSubscription;
   StreamSubscription<void>? _mapInfoRequestedSubscription;
 
   // Avatar tracking — stores updates for players not yet created
@@ -834,6 +835,15 @@ class TechWorld extends World with TapCallbacks {
             'downgrading bubble');
         _downgradeVideoBubble(participant.identity);
       }
+    });
+
+    // Listen for unexpected connection loss to clean up all LiveKit state.
+    // This enables reconnection: disconnectFromLiveKit() nulls _liveKitService,
+    // so the guard at the top of this method will pass on the next call.
+    _connectionLostSubscription =
+        _liveKitService!.connectionLost.listen((reason) {
+      _log.warning('LiveKit connection lost (reason: $reason), cleaning up');
+      disconnectFromLiveKit();
     });
 
     // Listen for local track publication to refresh local bubble when camera is ready
@@ -1441,6 +1451,8 @@ class TechWorld extends World with TapCallbacks {
     _avatarSubscription = null;
     _speakingSubscription?.cancel();
     _speakingSubscription = null;
+    _connectionLostSubscription?.cancel();
+    _connectionLostSubscription = null;
     _mapInfoRequestedSubscription?.cancel();
     _mapInfoRequestedSubscription = null;
 
