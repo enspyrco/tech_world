@@ -57,6 +57,16 @@ class RoomData {
     final data = doc.data()!;
     final mapJson = data['mapData'] as Map<String, dynamic>;
 
+    // Migrate gray_brick walls to LimeZu. Self-healing: updates Firestore
+    // on first load so it only runs once.
+    final wallsJson = mapJson['walls'] as List<dynamic>?;
+    if (wallsJson != null && wallsJson.any((w) => w['style'] == 'gray_brick')) {
+      for (final w in wallsJson) {
+        if (w['style'] == 'gray_brick') w['style'] = 'modern_gray_07';
+      }
+      doc.reference.update({'mapData.walls': wallsJson});
+    }
+
     // The map id and name are stored at the room level, not inside mapData.
     final gameMap = TileMapFormat.fromJson({
       ...mapJson,
