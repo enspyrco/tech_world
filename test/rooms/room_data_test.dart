@@ -110,6 +110,34 @@ void main() {
       expect(json['mapData']['barriers'], hasLength(2));
     });
 
+    test('fromFirestore renames "The L-Room" to "Imagination Center"',
+        () async {
+      final fakeFirestore = FakeFirebaseFirestore();
+      await fakeFirestore.collection('rooms').doc('old-room').set({
+        'name': 'The L-Room',
+        'ownerId': 'owner-uid',
+        'ownerDisplayName': 'Nick',
+        'mapData': {
+          'barriers': [],
+          'terminals': [],
+          'spawnPoint': {'x': 25, 'y': 25},
+        },
+      });
+      final doc =
+          await fakeFirestore.collection('rooms').doc('old-room').get();
+
+      final room = RoomData.fromFirestore(doc);
+
+      // Name updated in the returned RoomData.
+      expect(room.name, equals('Imagination Center'));
+      expect(room.mapData.name, equals('Imagination Center'));
+
+      // Firestore document also updated (self-healing).
+      final updated =
+          await fakeFirestore.collection('rooms').doc('old-room').get();
+      expect(updated.data()!['name'], equals('Imagination Center'));
+    });
+
     test('fromFirestore round-trips correctly', () async {
       final fakeFirestore = FakeFirebaseFirestore();
       const room = RoomData(

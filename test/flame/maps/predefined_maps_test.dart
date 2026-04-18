@@ -203,24 +203,6 @@ void main() {
         expect(merged.barriers.length, 2);
       });
 
-      test('matches by legacy name and updates to current name', () {
-        // Firestore room still has old name from before the rename.
-        const firestoreMap = GameMap(
-          id: 'abc123firestore',
-          name: 'The L-Room',
-          barriers: [Point(5, 5)],
-        );
-
-        final merged = applyPredefinedVisualFallback(firestoreMap);
-
-        // Should match via legacy name and apply visual layers.
-        expect(merged.floorLayer, isNotNull);
-        // Name should be updated to current predefined name.
-        expect(merged.name, 'Imagination Center');
-        // Structural data preserved.
-        expect(merged.id, 'abc123firestore');
-      });
-
       test('fills in missing floorLayer by direct ID match', () {
         // Direct ID match (e.g. predefined map used without Firestore).
         const firestoreMap = GameMap(
