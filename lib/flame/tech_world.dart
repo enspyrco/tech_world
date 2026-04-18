@@ -424,15 +424,7 @@ class TechWorld extends World with TapCallbacks {
               _liveKitService?.getParticipant(dreamfinderBot.identity);
           PositionComponent bubble;
           if (dfParticipant != null && _hasVideoTrack(dfParticipant)) {
-            final videoBubble = VideoBubbleComponent(
-              participant: dfParticipant,
-              displayName: dreamfinderBot.displayName,
-              bubbleSize: 64,
-              targetFps: 10,
-            );
-            videoBubble.glowColor = const Color(0xFFDAA520); // gold
-            videoBubble.glowIntensity = 0.7;
-            bubble = videoBubble;
+            bubble = _createDreamfinderVideoBubble(dfParticipant);
           } else {
             bubble = BotBubbleComponent();
           }
@@ -572,6 +564,21 @@ class TechWorld extends World with TapCallbacks {
   }
 
   /// Check if participant has an active video track
+  /// Create a [VideoBubbleComponent] configured for Dreamfinder's holographic
+  /// wizard projection (gold glow, 10fps for ethereal quality).
+  VideoBubbleComponent _createDreamfinderVideoBubble(
+      Participant participant) {
+    final videoBubble = VideoBubbleComponent(
+      participant: participant,
+      displayName: dreamfinderBot.displayName,
+      bubbleSize: 64,
+      targetFps: 10,
+    );
+    videoBubble.glowColor = const Color(0xFFDAA520); // gold
+    videoBubble.glowIntensity = 0.7;
+    return videoBubble;
+  }
+
   bool _hasVideoTrack(Participant participant) {
     for (final publication in participant.videoTrackPublications) {
       if (publication.track != null) {
@@ -822,7 +829,7 @@ class TechWorld extends World with TapCallbacks {
         _liveKitService!.trackUnsubscribed.listen((event) {
       final (participant, track) = event;
       if (track.kind == TrackType.VIDEO) {
-        _log.fine(
+        _log.info(
             'Video track unsubscribed for ${participant.identity}, '
             'downgrading bubble');
         _downgradeVideoBubble(participant.identity);
@@ -871,14 +878,7 @@ class TechWorld extends World with TapCallbacks {
           _liveKitService?.getParticipant(dreamfinderBot.identity);
       if (dfParticipant != null && _hasVideoTrack(dfParticipant)) {
         existingBubble.removeFromParent();
-        final videoBubble = VideoBubbleComponent(
-          participant: dfParticipant,
-          displayName: dreamfinderBot.displayName,
-          bubbleSize: 64,
-          targetFps: 10,
-        );
-        videoBubble.glowColor = const Color(0xFFDAA520);
-        videoBubble.glowIntensity = 0.7;
+        final videoBubble = _createDreamfinderVideoBubble(dfParticipant);
         videoBubble.position =
             _dreamfinderComponent!.position + _bubbleOffset;
         _playerBubbles[playerId] = videoBubble;
