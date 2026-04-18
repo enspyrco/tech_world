@@ -134,6 +134,7 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
     tilesetIds: mergedTilesetIds,
     terrainGrid: map.terrainGrid ?? predefined.terrainGrid,
     customTilesets: map.customTilesets,
+    walls: map.walls,
   );
 }
 
