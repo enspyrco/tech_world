@@ -79,7 +79,11 @@ final botsByIdentity = <String, BotConfig>{
 final allBotIdentities = botsByIdentity.keys.toSet();
 
 /// Returns `true` if [identity] belongs to a registered bot.
-bool isBotIdentity(String identity) => botsByIdentity.containsKey(identity);
+///
+/// Matches exact identities (e.g. 'bot-dreamfinder') and LiveKit agent
+/// auto-generated identities (e.g. 'agent-AJ_xxxxx').
+bool isBotIdentity(String identity) =>
+    botsByIdentity.containsKey(identity) || identity.startsWith('agent-');
 
 /// Returns the [BotConfig] for [identity], or [clawdBot] as fallback.
 BotConfig getBotConfig(String identity) =>

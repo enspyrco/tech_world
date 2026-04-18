@@ -171,5 +171,114 @@ void main() {
         expect(df.miniGridPosition.y, equals(5));
       },
     );
+
+    // -----------------------------------------------------------------------
+    // Wandering loop
+    // -----------------------------------------------------------------------
+
+    testWithGame<TestGameWithDreamfinder>(
+      'starts wandering after initial cooldown',
+      TestGameWithDreamfinder.new,
+      (game) async {
+        final df = DreamfinderComponent(
+          position: Vector2(256, 160),
+          id: 'bot-dreamfinder',
+          displayName: 'Dreamfinder',
+          pathComponent: pathComponent,
+        );
+
+        await game.world.add(pathComponent);
+        await game.world.add(df);
+        await game.ready();
+
+        final initialPos = df.position.clone();
+
+        for (var i = 0; i < 100; i++) {
+          game.update(0.1);
+        }
+
+        final moved = df.position != initialPos;
+        final walking = df.current?.name.startsWith('walk') == true;
+        expect(moved || walking, isTrue,
+            reason: 'Dreamfinder should wander after cooldown');
+      },
+    );
+
+    testWithGame<TestGameWithDreamfinder>(
+      'returns to working state at wander destination',
+      TestGameWithDreamfinder.new,
+      (game) async {
+        final df = DreamfinderComponent(
+          position: Vector2(256, 160),
+          id: 'bot-dreamfinder',
+          displayName: 'Dreamfinder',
+          pathComponent: pathComponent,
+        );
+
+        await game.world.add(pathComponent);
+        await game.world.add(df);
+        await game.ready();
+
+        for (var i = 0; i < 300; i++) {
+          game.update(0.1);
+        }
+
+        expect(df.current, equals(DreamfinderState.working));
+      },
+    );
+
+    testWithGame<TestGameWithDreamfinder>(
+      'resumes wandering after greeting a player',
+      TestGameWithDreamfinder.new,
+      (game) async {
+        final df = DreamfinderComponent(
+          position: Vector2(256, 160),
+          id: 'bot-dreamfinder',
+          displayName: 'Dreamfinder',
+          pathComponent: pathComponent,
+        );
+
+        await game.world.add(pathComponent);
+        await game.world.add(df);
+        await game.ready();
+
+        df.noticePlayer(Vector2(320, 160));
+
+        for (var i = 0; i < 200; i++) {
+          game.update(0.1);
+        }
+
+        final isActive = df.current == DreamfinderState.working ||
+            df.current?.name.startsWith('walk') == true;
+        expect(isActive, isTrue,
+            reason: 'Dreamfinder should resume wandering after greeting');
+      },
+    );
+
+    testWithGame<TestGameWithDreamfinder>(
+      'moveFromServer pauses autonomous wandering',
+      TestGameWithDreamfinder.new,
+      (game) async {
+        final df = DreamfinderComponent(
+          position: Vector2(256, 160),
+          id: 'bot-dreamfinder',
+          displayName: 'Dreamfinder',
+          pathComponent: pathComponent,
+        );
+
+        await game.world.add(pathComponent);
+        await game.world.add(df);
+        await game.ready();
+
+        df.moveFromServer([], [Vector2(320, 320)]);
+
+        final posAfterServer = df.position.clone();
+        for (var i = 0; i < 50; i++) {
+          game.update(0.1);
+        }
+
+        expect(df.position, equals(posAfterServer));
+      },
+    );
   });
 }

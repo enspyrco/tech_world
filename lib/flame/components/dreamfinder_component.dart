@@ -37,11 +37,25 @@ class DreamfinderComponent
   String displayName;
 
   final PathComponent _pathComponent;
+  final Random _random = Random();
 
   bool _hasNoticedPlayer = false;
+  bool _isWandering = false;
+  bool _isGreeting = false;
+  bool _serverControlled = false;
+  double _wanderCooldown = 0;
   List<MoveEffect> _moveEffects = [];
   List<Direction> _directions = [];
   int _pathSegmentNum = 0;
+
+  /// Interesting positions to wander toward (e.g. terminal locations).
+  /// If empty, picks random walkable grid cells.
+  List<Point<int>> wanderTargets = [];
+
+  static const _initialWanderDelay = 3.0;
+  static const _minWorkDuration = 5.0;
+  static const _maxWorkDuration = 12.0;
+  static const _postGreetingDelay = 4.0;
 
   static const _walkFrameCount = 4;
   static const _spriteAsset = 'dreamfinder_bot_sheet.png';
@@ -53,6 +67,7 @@ class DreamfinderComponent
     // Start in working state — Dreamfinder was here before you arrived.
     current = DreamfinderState.working;
     playing = true;
+    _wanderCooldown = _initialWanderDelay;
     return super.onLoad();
   }
 
@@ -60,6 +75,15 @@ class DreamfinderComponent
   void update(double dt) {
     super.update(dt);
     priority = position.y.round() ~/ gridSquareSize;
+
+    // Tick the wander cooldown when idle/working and not otherwise occupied.
+    if (!_isWandering && !_isGreeting && !_serverControlled &&
+        _wanderCooldown > 0) {
+      _wanderCooldown -= dt;
+      if (_wanderCooldown <= 0) {
+        _startWander();
+      }
+    }
   }
 
   /// Grid position as a tuple for pathfinding.
@@ -156,6 +180,8 @@ class DreamfinderComponent
   void noticePlayer(Vector2 playerPosition) {
     if (_hasNoticedPlayer) return;
     _hasNoticedPlayer = true;
+    _isWandering = false;
+    _isGreeting = true;
 
     // Interrupt any current movement.
     _removeAllEffects();
@@ -191,13 +217,52 @@ class DreamfinderComponent
     final points = _pathComponent.largeGridPoints;
 
     if (directions.isEmpty || points.isEmpty) {
-      // No path found — just stand idle facing down.
+      // Already near the player — greeting is done, resume wandering.
+      _isGreeting = false;
       current = DreamfinderState.idle;
       playing = false;
+      _wanderCooldown = _postGreetingDelay;
       return;
     }
 
     _move(directions, points);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wandering loop — autonomous exploration
+  // ---------------------------------------------------------------------------
+
+  void _startWander() {
+    final target = _pickWanderTarget();
+    _pathComponent.calculatePath(start: miniGridTuple, end: target);
+    final directions = _pathComponent.directions;
+    final points = _pathComponent.largeGridPoints;
+
+    if (directions.isEmpty || points.isEmpty) {
+      _wanderCooldown = 2.0;
+      return;
+    }
+
+    _isWandering = true;
+    _move(directions, points);
+  }
+
+  /// Pick a destination: prefer terminal locations, fall back to random grid cell.
+  (int, int) _pickWanderTarget() {
+    if (wanderTargets.isNotEmpty && _random.nextDouble() < 0.7) {
+      final target = wanderTargets[_random.nextInt(wanderTargets.length)];
+      final offset = _random.nextInt(3) - 1;
+      return (
+        (target.x + offset).clamp(0, gridSize - 1),
+        (target.y + 1).clamp(0, gridSize - 1),
+      );
+    }
+    return (_random.nextInt(gridSize), _random.nextInt(gridSize));
+  }
+
+  void _resetWanderCooldown() {
+    _wanderCooldown = _minWorkDuration +
+        _random.nextDouble() * (_maxWorkDuration - _minWorkDuration);
   }
 
   // ---------------------------------------------------------------------------
@@ -234,9 +299,20 @@ class DreamfinderComponent
 
   void _addNextMoveEffect() {
     if (_directions.isEmpty || _pathSegmentNum == _directions.length) {
-      // Path complete — stand idle.
-      current = DreamfinderState.idle;
-      playing = false;
+      if (_isWandering) {
+        _isWandering = false;
+        current = DreamfinderState.working;
+        playing = true;
+        _resetWanderCooldown();
+      } else if (_isGreeting) {
+        _isGreeting = false;
+        current = DreamfinderState.idle;
+        playing = false;
+        _wanderCooldown = _postGreetingDelay;
+      } else {
+        current = DreamfinderState.idle;
+        playing = false;
+      }
       return;
     }
     final direction = _directions[_pathSegmentNum];
@@ -256,8 +332,9 @@ class DreamfinderComponent
   ///
   /// This overrides any autonomous client-side movement.
   void moveFromServer(List<Direction> directions, List<Vector2> largeGridPoints) {
-    // Cancel autonomous behavior.
-    _hasNoticedPlayer = true;
+    _serverControlled = true;
+    _isWandering = false;
+    _isGreeting = false;
     animationTicker?.onComplete = null;
     _move(directions, largeGridPoints);
   }
