@@ -28,6 +28,7 @@ class ProximityService {
 
   final _proximityController = StreamController<ProximityEvent>.broadcast();
   final Set<String> _nearbyPlayers = {};
+  final Map<String, int> _lastDistances = {};
 
   Stream<ProximityEvent> get proximityEvents => _proximityController.stream;
   Set<String> get nearbyPlayers => Set.unmodifiable(_nearbyPlayers);
@@ -49,6 +50,7 @@ class ProximityService {
 
       if (isNearby && !wasNearby) {
         _nearbyPlayers.add(playerId);
+        _lastDistances[playerId] = distance;
         _proximityController.add(ProximityEvent(
           playerId: playerId,
           isNearby: true,
@@ -57,14 +59,17 @@ class ProximityService {
         ));
       } else if (!isNearby && wasNearby) {
         _nearbyPlayers.remove(playerId);
+        _lastDistances.remove(playerId);
         _proximityController.add(ProximityEvent(
           playerId: playerId,
           isNearby: false,
           position: otherPosition,
           distance: distance,
         ));
-      } else if (isNearby && wasNearby) {
-        // Already nearby — emit update with current distance for fade
+      } else if (isNearby && wasNearby &&
+          _lastDistances[playerId] != distance) {
+        // Only emit when distance actually changed (for opacity fading).
+        _lastDistances[playerId] = distance;
         _proximityController.add(ProximityEvent(
           playerId: playerId,
           isNearby: true,
@@ -79,6 +84,7 @@ class ProximityService {
     final removedPlayers = _nearbyPlayers.difference(currentPlayerIds);
     for (final playerId in removedPlayers) {
       _nearbyPlayers.remove(playerId);
+      _lastDistances.remove(playerId);
       _proximityController.add(ProximityEvent(
         playerId: playerId,
         isNearby: false,

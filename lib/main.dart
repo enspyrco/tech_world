@@ -54,11 +54,16 @@ void main() {
   runApp(const MyApp());
 }
 
+/// Subscription for the root logger — stored so it can be cancelled if needed
+/// and to prevent accidental duplicates on hot restart.
+StreamSubscription<LogRecord>? _logSubscription;
+
 /// Configure the root logger to route all log records to [developer.log],
 /// which shows up in DevTools and the debug console.
 void _initLogging() {
   Logger.root.level = Level.INFO;
-  Logger.root.onRecord.listen((record) {
+  _logSubscription?.cancel();
+  _logSubscription = Logger.root.onRecord.listen((record) {
     developer.log(
       record.message,
       time: record.time,
