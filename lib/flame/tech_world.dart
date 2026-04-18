@@ -3,7 +3,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show Colors, FontWeight, TextStyle;
+import 'package:flutter/material.dart' show Color, Colors, FontWeight, TextStyle;
 import 'package:logging/logging.dart';
 
 import 'package:flame/components.dart';
@@ -305,6 +305,8 @@ class TechWorld extends World with TapCallbacks {
   final Stream<AuthUser> _authStateChanges;
   StreamSubscription<AuthUser>? _authStateChangesSubscription;
   StreamSubscription<(Participant, VideoTrack)>? _trackSubscribedSubscription;
+  StreamSubscription<(Participant, VideoTrack)>?
+      _trackUnsubscribedSubscription;
   StreamSubscription<LocalTrackPublication>? _localTrackPublishedSubscription;
   StreamSubscription<PlayerPath>? _liveKitPositionSubscription;
   StreamSubscription<RemoteParticipant>? _participantJoinedSubscription;
@@ -401,6 +403,39 @@ class TechWorld extends World with TapCallbacks {
       }
     }
 
+    // Check proximity to Dreamfinder (separate from other bots — has its
+    // own component type and can publish a video track for the holographic
+    // wizard projection).
+    if (_dreamfinderComponent != null) {
+      final dfGrid = _dreamfinderComponent!.miniGridPosition;
+      final dfDistance = max(
+        (dfGrid.x - playerGrid.x).abs(),
+        (dfGrid.y - playerGrid.y).abs(),
+      );
+
+      if (dfDistance <= _visualThreshold) {
+        nearbyPlayerIds.add(dreamfinderBot.identity);
+        if (dfDistance < closestDistance) closestDistance = dfDistance;
+
+        if (!_playerBubbles.containsKey(dreamfinderBot.identity)) {
+          // Use video bubble if Dreamfinder has a video track (holographic
+          // wizard), otherwise fall back to static bot bubble.
+          final dfParticipant =
+              _liveKitService?.getParticipant(dreamfinderBot.identity);
+          PositionComponent bubble;
+          if (dfParticipant != null && _hasVideoTrack(dfParticipant)) {
+            bubble = _createDreamfinderVideoBubble(dfParticipant);
+          } else {
+            bubble = BotBubbleComponent();
+          }
+          bubble.position =
+              _dreamfinderComponent!.position + _bubbleOffset;
+          _playerBubbles[dreamfinderBot.identity] = bubble;
+          add(bubble);
+        }
+      }
+    }
+
     // Check proximity to all bot characters
     for (final entry in _botCharacterComponents.entries) {
       final botId = entry.key;
@@ -482,6 +517,11 @@ class TechWorld extends World with TapCallbacks {
       if (entry.key == _localPlayerBubbleKey) {
         entry.value.position = _userPlayerComponent.position + _bubbleOffset;
         entry.value.priority = _userPlayerComponent.priority + 1;
+      } else if (entry.key == dreamfinderBot.identity &&
+          _dreamfinderComponent != null) {
+        entry.value.position =
+            _dreamfinderComponent!.position + _bubbleOffset;
+        entry.value.priority = _dreamfinderComponent!.priority + 1;
       } else if (_botCharacterComponents.containsKey(entry.key)) {
         final botComp = _botCharacterComponents[entry.key]!;
         entry.value.position = botComp.position + _bubbleOffset;
@@ -524,6 +564,21 @@ class TechWorld extends World with TapCallbacks {
   }
 
   /// Check if participant has an active video track
+  /// Create a [VideoBubbleComponent] configured for Dreamfinder's holographic
+  /// wizard projection (gold glow, 10fps for ethereal quality).
+  VideoBubbleComponent _createDreamfinderVideoBubble(
+      Participant participant) {
+    final videoBubble = VideoBubbleComponent(
+      participant: participant,
+      displayName: dreamfinderBot.displayName,
+      bubbleSize: 64,
+      targetFps: 10,
+    );
+    videoBubble.glowColor = const Color(0xFFDAA520); // gold
+    videoBubble.glowIntensity = 0.7;
+    return videoBubble;
+  }
+
   bool _hasVideoTrack(Participant participant) {
     for (final publication in participant.videoTrackPublications) {
       if (publication.track != null) {
@@ -769,6 +824,18 @@ class TechWorld extends World with TapCallbacks {
       _notifyBubbleTrackReady(participant.identity);
     });
 
+    // Listen for track unsubscription to downgrade video bubbles back to static
+    _trackUnsubscribedSubscription =
+        _liveKitService!.trackUnsubscribed.listen((event) {
+      final (participant, track) = event;
+      if (track.kind == TrackType.VIDEO) {
+        _log.info(
+            'Video track unsubscribed for ${participant.identity}, '
+            'downgrading bubble');
+        _downgradeVideoBubble(participant.identity);
+      }
+    });
+
     // Listen for local track publication to refresh local bubble when camera is ready
     _localTrackPublishedSubscription =
         _liveKitService!.localTrackPublished.listen((publication) {
@@ -802,6 +869,24 @@ class TechWorld extends World with TapCallbacks {
     // If it's already a video bubble, no need to refresh
     if (existingBubble is VideoBubbleComponent) return;
 
+    // Handle Dreamfinder separately — it uses DreamfinderComponent, not
+    // PlayerComponent. When a video track arrives, upgrade its static
+    // BotBubbleComponent to a VideoBubbleComponent (holographic wizard).
+    if (playerId == dreamfinderBot.identity &&
+        _dreamfinderComponent != null) {
+      final dfParticipant =
+          _liveKitService?.getParticipant(dreamfinderBot.identity);
+      if (dfParticipant != null && _hasVideoTrack(dfParticipant)) {
+        existingBubble.removeFromParent();
+        final videoBubble = _createDreamfinderVideoBubble(dfParticipant);
+        videoBubble.position =
+            _dreamfinderComponent!.position + _bubbleOffset;
+        _playerBubbles[playerId] = videoBubble;
+        add(videoBubble);
+      }
+      return;
+    }
+
     // Get player component
     final playerComponent = _otherPlayerComponentsMap[playerId];
     if (playerComponent == null) return;
@@ -814,6 +899,42 @@ class TechWorld extends World with TapCallbacks {
     newBubble.position = playerComponent.position + _bubbleOffset;
     _playerBubbles[playerId] = newBubble;
     add(newBubble);
+  }
+
+  /// Downgrade a video bubble back to a static placeholder when the video
+  /// track is unsubscribed. Without this, dead [VideoBubbleComponent]s
+  /// accumulate and continue attempting frame capture on stale tracks.
+  void _downgradeVideoBubble(String playerId) {
+    final existingBubble = _playerBubbles[playerId];
+    if (existingBubble == null) return;
+
+    // Only downgrade if it's currently a video bubble
+    if (existingBubble is! VideoBubbleComponent) return;
+
+    final position = existingBubble.position.clone();
+    existingBubble.removeFromParent();
+
+    // Dreamfinder gets a BotBubbleComponent, others get PlayerBubbleComponent
+    if (playerId == dreamfinderBot.identity) {
+      final botBubble = BotBubbleComponent(bubbleSize: 64);
+      botBubble.position = position;
+      _playerBubbles[playerId] = botBubble;
+      add(botBubble);
+    } else {
+      final playerComponent = _otherPlayerComponentsMap[playerId];
+      if (playerComponent != null) {
+        final newBubble = PlayerBubbleComponent(
+          displayName: playerComponent.displayName,
+          playerId: playerId,
+        );
+        newBubble.position = position;
+        _playerBubbles[playerId] = newBubble;
+        add(newBubble);
+      } else {
+        // Player component already removed — just clean up the bubble entry
+        _playerBubbles.remove(playerId);
+      }
+    }
   }
 
   /// Refresh local player bubble (recreate if video is now available)
@@ -1306,6 +1427,8 @@ class TechWorld extends World with TapCallbacks {
     // Cancel all LiveKit-related subscriptions
     _trackSubscribedSubscription?.cancel();
     _trackSubscribedSubscription = null;
+    _trackUnsubscribedSubscription?.cancel();
+    _trackUnsubscribedSubscription = null;
     _localTrackPublishedSubscription?.cancel();
     _localTrackPublishedSubscription = null;
     _liveKitPositionSubscription?.cancel();

@@ -1,4 +1,3 @@
-import 'dart:async' show Completer;
 import 'dart:math' show pi;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -460,26 +459,28 @@ class VideoBubbleComponent extends PositionComponent {
 
   Future<ui.Image> _decodeRgbaImage(
       Uint8List bytes, int width, int height) async {
-    final completer = Completer<ui.Image>();
-
-    ui.ImmutableBuffer.fromUint8List(bytes).then((buffer) {
+    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    try {
       final descriptor = ui.ImageDescriptor.raw(
         buffer,
         width: width,
         height: height,
         pixelFormat: ui.PixelFormat.rgba8888,
       );
-
-      descriptor.instantiateCodec().then((codec) {
-        codec.getNextFrame().then((frameInfo) {
-          completer.complete(frameInfo.image);
+      try {
+        final codec = await descriptor.instantiateCodec();
+        try {
+          final frameInfo = await codec.getNextFrame();
+          return frameInfo.image;
+        } finally {
           codec.dispose();
-          descriptor.dispose();
-        });
-      });
-    });
-
-    return completer.future;
+        }
+      } finally {
+        descriptor.dispose();
+      }
+    } finally {
+      buffer.dispose();
+    }
   }
 
   void _updateShaderUniforms() {
