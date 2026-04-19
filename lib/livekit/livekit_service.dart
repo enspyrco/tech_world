@@ -57,7 +57,7 @@ class LiveKitService {
   final Future<String?> Function()? _tokenRetriever;
 
   // LiveKit server URL
-  static const _serverUrl = 'wss://enspyr.livekit.cloud';
+  static const _serverUrl = 'wss://livekit.imagineering.cc';
 
   Room? _room;
   EventsListener<RoomEvent>? _listener;
