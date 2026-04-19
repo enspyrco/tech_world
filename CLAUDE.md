@@ -282,7 +282,7 @@ LIVEKIT_API_SECRET=<secret>
 
 ### Agent Dispatch
 
-The bot uses the `@livekit/agents` SDK to register as a worker with LiveKit Cloud. LiveKit dispatches the bot to rooms via **token-based dispatch**: the Firebase Cloud Function (`retrieveLiveKitToken`) embeds a `RoomAgentDispatch` in every user's access token. When a user joins a room, LiveKit automatically dispatches the bot.
+The bot uses the `@livekit/agents` SDK to register as a worker with the self-hosted LiveKit server. LiveKit dispatches the bot to rooms via **token-based dispatch**: the Firebase Cloud Function (`retrieveLiveKitToken`) embeds a `RoomAgentDispatch` in every user's access token. When a user joins a room, LiveKit automatically dispatches the bot.
 
 **Why token-based dispatch?** LiveKit's automatic dispatch only fires for *new* rooms. The `tech-world` room has a 5-minute `empty_timeout`, so if users sign out and back in quickly, the room persists and automatic dispatch never triggers. Token-based dispatch ensures the bot is dispatched every time any user connects, regardless of room age.
 
@@ -290,7 +290,7 @@ The bot uses the `@livekit/agents` SDK to register as a worker with LiveKit Clou
 1. `pm2 logs tech-world-bot` — Is the worker registered? Look for `"registered worker"`.
 2. Room exists? Use LiveKit API: `POST /twirp/livekit.RoomService/ListRooms`
 3. Dispatch happening? Look for `"received job request"` and `"[Bot] Connected to room"` in logs.
-4. If worker registers but no dispatch, the `@livekit/agents` SDK version may be incompatible with LiveKit Cloud. Check `npm outdated @livekit/agents`.
+4. If worker registers but no dispatch, the `@livekit/agents` SDK version may be incompatible with the LiveKit server. Check `npm outdated @livekit/agents`.
 5. Manual dispatch (emergency): `POST /twirp/livekit.AgentDispatchService/CreateDispatch {"room": "tech-world"}`
 
 ### Bot Presence Indicator
@@ -314,29 +314,18 @@ cd ~/tech_world_bot && git pull && npm install && npm run build && pm2 restart t
 
 Screen Australia Games Production Fund application materials are in `docs/grant-application/`.
 
-## LiveKit Self-Hosting Migration
+## LiveKit Server
 
-### Current Setup (LiveKit Cloud)
+Self-hosted LiveKit v1.11.0 at `livekit.imagineering.cc` on OCI VPS (ARM64 Ampere).
 
 ```dart
 // lib/livekit/livekit_service.dart
-static const _serverUrl = 'wss://testing-g5wrpk39.livekit.cloud';
+static const _serverUrl = 'wss://livekit.imagineering.cc';
 ```
 
-- Free tier: 500 participant-minutes/month
-- Token generation via Firebase Cloud Function
-
-### Server Requirements
-
-For ~50 concurrent users:
-
-| Resource | Minimum |
-|----------|---------|
-| CPU | 4 cores |
-| RAM | 4-8 GB |
-| Ports | 443, 7881, UDP 50000-60000 |
-
-ARM64 compatible — can run on OCI free tier (4 OCPU / 24 GB Ampere).
+- Caddy handles TLS termination, Redis on port 6389 for agent dispatch
+- Token generation via Firebase Cloud Function (credentials must match server)
+- Config in `imagineering-infra/livekit/` (SOPS encrypted secrets)
 
 ## TODO
 
