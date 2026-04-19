@@ -7,6 +7,7 @@ import 'package:logging/logging.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/conversation.dart';
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/services/dreamfinder_client.dart';
@@ -66,7 +67,10 @@ class ChatService {
   Stream<List<ChatMessage>> get messages => _messagesController.stream;
   List<ChatMessage> get currentMessages => List.unmodifiable(_messages);
 
-  static const _botIdentity = 'bot-claude';
+  /// The active bot identity in the room. Updated dynamically when a bot
+  /// participant joins — supports both fixed identities ('bot-claude') and
+  /// LiveKit agent auto-identities ('agent-AJ_xxxxx').
+  String _activeBotIdentity = 'bot-claude';
 
   // -- Conversation / DM state --
   final Map<String, Conversation> _conversations = {};
@@ -161,21 +165,33 @@ class ChatService {
   void _trackBotPresence() {
     // Subscribe FIRST so no events are missed.
     _botJoinedSubscription = _liveKitService.participantJoined
-        .where((p) => p.identity == _botIdentity)
-        .listen((_) {
+        .where((p) => isBotIdentity(p.identity))
+        .listen((p) {
+      _activeBotIdentity = p.identity;
       botStatusNotifier.value = BotStatus.idle;
     });
 
     _botLeftSubscription = _liveKitService.participantLeft
-        .where((p) => p.identity == _botIdentity)
+        .where((p) => isBotIdentity(p.identity))
         .listen((_) {
-      botStatusNotifier.value = BotStatus.absent;
+      // Only go absent if no other bots remain.
+      final anyBotLeft = _liveKitService.remoteParticipants.values
+          .any((r) => isBotIdentity(r.identity));
+      if (!anyBotLeft) {
+        botStatusNotifier.value = BotStatus.absent;
+      }
     });
 
     // THEN check current state — idempotent if subscription already fired.
-    final botPresent =
-        _liveKitService.remoteParticipants.containsKey(_botIdentity);
-    botStatusNotifier.value = botPresent ? BotStatus.idle : BotStatus.absent;
+    final activeBot = _liveKitService.remoteParticipants.values
+        .where((p) => isBotIdentity(p.identity))
+        .firstOrNull;
+    if (activeBot != null) {
+      _activeBotIdentity = activeBot.identity;
+      botStatusNotifier.value = BotStatus.idle;
+    } else {
+      botStatusNotifier.value = BotStatus.absent;
+    }
   }
 
   void _handleMessage(DataChannelMessage message) {
@@ -224,7 +240,7 @@ class ChatService {
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: senderId ?? _botIdentity,
+        senderId: senderId ?? _activeBotIdentity,
         conversationId: 'group',
         isBot: true,
       ));
@@ -558,7 +574,7 @@ class ChatService {
             senderId: msg.senderId,
             conversationId: 'group',
             isLocalUser: msg.senderId == _liveKitService.userId,
-            isBot: msg.senderId == _botIdentity,
+            isBot: msg.senderId != null && isBotIdentity(msg.senderId!),
             timestamp: msg.timestamp,
           ));
         }
@@ -572,7 +588,7 @@ class ChatService {
             senderId: msg.senderId,
             conversationId: convId,
             isLocalUser: msg.senderId == _liveKitService.userId,
-            isBot: msg.senderId == _botIdentity,
+            isBot: msg.senderId != null && isBotIdentity(msg.senderId!),
             timestamp: msg.timestamp,
           );
         }).toList();
@@ -654,7 +670,7 @@ class ChatService {
     await _liveKitService.publishJson(
       payload,
       topic: 'help-request',
-      destinationIdentities: const [_botIdentity],
+      destinationIdentities: [_activeBotIdentity],
     );
 
     // Forward to Dreamfinder for AI processing (fire-and-forget).
