@@ -80,11 +80,16 @@ final allBotIdentities = botsByIdentity.keys.toSet();
 
 /// Returns `true` if [identity] belongs to a registered bot.
 ///
-/// Matches exact identities (e.g. 'bot-dreamfinder') and LiveKit agent
-/// auto-generated identities (e.g. 'agent-AJ_xxxxx').
+/// Also matches `agent-` prefixed identities from the `@livekit/agents`
+/// SDK, which assigns identities like `agent-{jobId}` when the worker
+/// doesn't override the identity via `requestFunc`.
 bool isBotIdentity(String identity) =>
     botsByIdentity.containsKey(identity) || identity.startsWith('agent-');
 
 /// Returns the [BotConfig] for [identity], or [clawdBot] as fallback.
+///
+/// Identities starting with `agent-` are mapped to [dreamfinderBot],
+/// since only Dreamfinder uses the `@livekit/agents` SDK directly.
 BotConfig getBotConfig(String identity) =>
-    botsByIdentity[identity] ?? clawdBot;
+    botsByIdentity[identity] ??
+    (identity.startsWith('agent-') ? dreamfinderBot : clawdBot);
