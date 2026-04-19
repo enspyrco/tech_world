@@ -17,7 +17,7 @@
 @property (nonatomic, assign) int targetFps;
 @property (nonatomic, assign) CFAbsoluteTime lastFrameTime;
 @property (nonatomic, assign) NSTimeInterval frameInterval;
-@property (nonatomic, weak) RTCVideoTrack* videoTrack;
+@property (nonatomic, strong) RTCVideoTrack* videoTrack;  // strong — prevent ARC dealloc
 @property (nonatomic, strong) NSLock* lock;
 @property (nonatomic, assign) BOOL active;
 @end
