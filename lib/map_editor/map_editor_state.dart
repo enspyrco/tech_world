@@ -177,6 +177,27 @@ class MapEditorState extends ChangeNotifier {
   /// The wall style at ([x], [y]), or null if no wall.
   String? wallStyleAt(int x, int y) => _walls[(x, y)];
 
+  /// Unmodifiable view of all wall positions and their style IDs.
+  ///
+  /// Used by [MapSyncService] to read wall state for sync and tile generation.
+  Map<(int, int), String> get wallMap => Map.unmodifiable(_walls);
+
+  /// Set or remove a wall at ([x], [y]) with the given [styleId].
+  ///
+  /// Called by [MapSyncService] when applying remote wall edits. Also updates
+  /// the structure grid (walls imply barriers). Pass `null` to remove.
+  void setWall(int x, int y, String? styleId) {
+    if (!_inBounds(x, y)) return;
+    if (styleId != null) {
+      _walls[(x, y)] = styleId;
+      _grid[y][x] = TileType.barrier;
+    } else {
+      _walls.remove((x, y));
+      // Only clear barrier if this was a wall-barrier (not a plain barrier).
+      // The structure op handles barrier state separately, so leave it.
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Terrain brush state
   // -------------------------------------------------------------------------
