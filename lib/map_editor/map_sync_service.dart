@@ -853,12 +853,18 @@ class MapSyncService {
     return cells;
   }
 
-  /// Cells affected by a wall paint at (x, y): target + 4 cardinal neighbors.
+  /// Cells affected by a wall paint at (x, y): target + 4 cardinal neighbors
+  /// + nearby walls that could form doorway lintels.
   ///
-  /// Wall bitmask is cardinal-only (N/E/S/W), so only those neighbors need
-  /// recomputation when a wall changes.
+  /// Wall bitmask is cardinal-only (N/E/S/W), so those neighbors need
+  /// recomputation. Additionally, walls up to 4 cells away horizontally
+  /// could produce lintels (cap tiles above 1–3 cell gaps), so we include
+  /// any existing wall within that range on the same row.
   List<(int, int)> _wallAffectedCells(int x, int y) {
+    final seen = <(int, int)>{(x, y)};
     final cells = <(int, int)>[(x, y)];
+
+    // Cardinal neighbors for bitmask recomputation.
     for (final (dx, dy) in const [
       (0, -1), // N
       (1, 0), // E
@@ -867,20 +873,38 @@ class MapSyncService {
     ]) {
       final nx = x + dx;
       final ny = y + dy;
-      if (_inBounds(nx, ny)) cells.add((nx, ny));
+      if (_inBounds(nx, ny) && seen.add((nx, ny))) cells.add((nx, ny));
     }
+
+    // Walls within lintel range (gap ≤ 3 → wall at distance ≤ 4) on same row.
+    // These walls' lintel scans could be affected by the new/removed wall.
+    for (var dx = -4; dx <= 4; dx++) {
+      if (dx == 0) continue;
+      final nx = x + dx;
+      if (_inBounds(nx, y) &&
+          _editorState.isWallAt(nx, y) &&
+          seen.add((nx, y))) {
+        cells.add((nx, y));
+      }
+    }
+
     return cells;
   }
 
   /// All cells whose object layer tiles might change due to wall edits.
   ///
-  /// Includes each affected cell plus the row above (for cap tiles placed
-  /// above north-facing walls).
+  /// Includes each affected cell, the row above (for cap tiles), and up to
+  /// 3 cells to the right at y-1 (for horizontal doorway lintels that span
+  /// gaps of 1–3 cells between walls).
   Set<(int, int)> _wallObjectCells(List<(int, int)> wallCells) {
     final result = <(int, int)>{};
     for (final (cx, cy) in wallCells) {
       result.add((cx, cy));
       if (_inBounds(cx, cy - 1)) result.add((cx, cy - 1));
+      // Lintel positions: caps above gap cells to the right (max 3).
+      for (var dx = 1; dx <= 3; dx++) {
+        if (_inBounds(cx + dx, cy - 1)) result.add((cx + dx, cy - 1));
+      }
     }
     return result;
   }

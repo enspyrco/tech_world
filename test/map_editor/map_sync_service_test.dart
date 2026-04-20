@@ -458,6 +458,33 @@ void main() {
       // Wall op should erase (null new value).
       expect(wallOps.first['new'], isNull);
     });
+
+    test('doorway lintel: cap tiles sync above gap between walls', () async {
+      state.setTool(EditorTool.wall);
+
+      // Paint two walls with a 2-cell gap between them (doorway).
+      syncService.paintWall(5, 10);
+      await Future.delayed(Duration.zero);
+      fakeLiveKit.publishedMessages.clear();
+
+      syncService.paintWall(8, 10);
+      await Future.delayed(Duration.zero);
+
+      final payload =
+          fakeLiveKit.publishedMessages.first['payload'] as Map<String, dynamic>;
+      final ops = payload['ops'] as List;
+
+      // Lintel caps should appear at (6,9) and (7,9) — above the gap cells.
+      final objectOps = ops.where((o) => o['layer'] == 'objects').toList();
+      final objectPositions = objectOps
+          .map((o) => (o['x'] as int, o['y'] as int))
+          .toSet();
+
+      expect(objectPositions, contains((6, 9)),
+          reason: 'lintel cap above first gap cell');
+      expect(objectPositions, contains((7, 9)),
+          reason: 'lintel cap above second gap cell');
+    });
   });
 }
 

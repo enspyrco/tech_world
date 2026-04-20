@@ -332,6 +332,26 @@ Map<(int, int), TileRef?> buildWallTilesForRegion(
       result[(x, y - 1)] =
           TileRef(tilesetId: style.tilesetId, tileIndex: capIndex);
     }
+
+    // Horizontal doorway lintel: wall is left edge of a 1–3 cell gap.
+    // Place cap tiles above the gap so the wall top continues over the door.
+    if (!wallPositions.contains((x + 1, y))) {
+      var gapEnd = x + 1;
+      while (gapEnd < x + 10 && !wallPositions.contains((gapEnd, y))) {
+        gapEnd++;
+      }
+      if (wallPositions.contains((gapEnd, y))) {
+        final gapWidth = gapEnd - (x + 1);
+        if (gapWidth >= 1 && gapWidth <= 3 && y - 1 >= 0) {
+          final lintelCapIndex =
+              style.capForBitmask(WallBitmask.e | WallBitmask.w);
+          for (var gx = x + 1; gx < gapEnd; gx++) {
+            result[(gx, y - 1)] =
+                TileRef(tilesetId: style.tilesetId, tileIndex: lintelCapIndex);
+          }
+        }
+      }
+    }
   }
 
   // Clear non-wall cells, but only positions not already set by a wall above
