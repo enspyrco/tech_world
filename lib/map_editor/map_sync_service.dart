@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:tech_world/flame/maps/barrier_occlusion.dart'
+    show buildWallTilesForRegion;
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -86,6 +88,203 @@ class MapSyncService {
       ops: [op],
     );
 
+    _pushAndPublish(batch);
+  }
+
+  /// Paint a wall at (x, y) using the active wall style.
+  ///
+  /// Follows the terrain pattern: capture old state for affected cells,
+  /// apply locally, diff to produce semantic (walls) + visual (objects) ops.
+  /// Wall bitmask uses 4 cardinal neighbors, plus cap tiles one row above.
+  void paintWall(int x, int y) {
+    if (!_inBounds(x, y)) return;
+
+    final counter = _undoManager.nextCounter();
+    final ops = <MapEditOp>[];
+
+    final affectedCells = _wallAffectedCells(x, y);
+
+    // Capture old state: wall styles, structure, and object layer tiles.
+    final oldWalls = <(int, int), String?>{};
+    final oldStructure = <(int, int), String?>{};
+    final oldObjects = <(int, int), TileRef?>{};
+    for (final (cx, cy) in affectedCells) {
+      oldWalls[(cx, cy)] = _editorState.wallStyleAt(cx, cy);
+      oldStructure[(cx, cy)] = _structureToValue(_editorState.tileAt(cx, cy));
+    }
+    // Object layer: also capture cap positions (y-1 for each cell).
+    final objectCells = _wallObjectCells(affectedCells);
+    for (final (cx, cy) in objectCells) {
+      oldObjects[(cx, cy)] = _editorState.objectLayerData.tileAt(cx, cy);
+    }
+
+    // Apply locally.
+    _editorState.paintTile(x, y);
+
+    // Recompute object layer tiles for affected wall cells.
+    final wallTiles = buildWallTilesForRegion(
+      _editorState.wallMap,
+      affectedCells.toSet(),
+    );
+    for (final entry in wallTiles.entries) {
+      _editorState.objectLayerData.setTile(
+        entry.key.$1,
+        entry.key.$2,
+        entry.value,
+      );
+    }
+
+    // Diff: wall layer ops.
+    for (final (cx, cy) in affectedCells) {
+      final newWall = _editorState.wallStyleAt(cx, cy);
+      if (oldWalls[(cx, cy)] != newWall) {
+        ops.add(MapEditOp(
+          playerId: _localPlayerId,
+          counter: counter,
+          x: cx,
+          y: cy,
+          layer: OpLayer.walls,
+          oldValue: oldWalls[(cx, cy)],
+          newValue: newWall,
+        ));
+      }
+
+      // Structure ops (wall implies barrier).
+      final newStructure = _structureToValue(_editorState.tileAt(cx, cy));
+      if (oldStructure[(cx, cy)] != newStructure) {
+        ops.add(MapEditOp(
+          playerId: _localPlayerId,
+          counter: counter,
+          x: cx,
+          y: cy,
+          layer: OpLayer.structure,
+          oldValue: oldStructure[(cx, cy)],
+          newValue: newStructure,
+        ));
+      }
+    }
+
+    // Diff: object layer ops (includes cap positions).
+    for (final (cx, cy) in objectCells) {
+      final newObj = wallTiles[(cx, cy)] ?? _editorState.objectLayerData.tileAt(cx, cy);
+      final oldObjVal = tileRefToOpValue(oldObjects[(cx, cy)]);
+      final newObjVal = tileRefToOpValue(newObj);
+      if (!opValueEquals(oldObjVal, newObjVal)) {
+        ops.add(MapEditOp(
+          playerId: _localPlayerId,
+          counter: counter,
+          x: cx,
+          y: cy,
+          layer: OpLayer.objects,
+          oldValue: oldObjVal,
+          newValue: newObjVal,
+        ));
+      }
+    }
+
+    if (ops.isEmpty) return;
+
+    final batch = MapEditBatch(
+      playerId: _localPlayerId,
+      counter: counter,
+      ops: ops,
+    );
+    _pushAndPublish(batch);
+  }
+
+  /// Erase a wall at (x, y).
+  ///
+  /// Removes the wall style and barrier, then recomputes neighbor tiles.
+  void eraseWall(int x, int y) {
+    if (!_inBounds(x, y)) return;
+
+    final counter = _undoManager.nextCounter();
+    final ops = <MapEditOp>[];
+
+    final affectedCells = _wallAffectedCells(x, y);
+
+    // Capture old state.
+    final oldWalls = <(int, int), String?>{};
+    final oldStructure = <(int, int), String?>{};
+    final oldObjects = <(int, int), TileRef?>{};
+    for (final (cx, cy) in affectedCells) {
+      oldWalls[(cx, cy)] = _editorState.wallStyleAt(cx, cy);
+      oldStructure[(cx, cy)] = _structureToValue(_editorState.tileAt(cx, cy));
+    }
+    final objectCells = _wallObjectCells(affectedCells);
+    for (final (cx, cy) in objectCells) {
+      oldObjects[(cx, cy)] = _editorState.objectLayerData.tileAt(cx, cy);
+    }
+
+    // Apply locally (eraser tool removes wall + barrier).
+    _editorState.paintTile(x, y);
+
+    // Recompute object layer tiles for affected cells.
+    final wallTiles = buildWallTilesForRegion(
+      _editorState.wallMap,
+      affectedCells.toSet(),
+    );
+    for (final entry in wallTiles.entries) {
+      _editorState.objectLayerData.setTile(
+        entry.key.$1,
+        entry.key.$2,
+        entry.value,
+      );
+    }
+
+    // Diff: wall layer ops.
+    for (final (cx, cy) in affectedCells) {
+      final newWall = _editorState.wallStyleAt(cx, cy);
+      if (oldWalls[(cx, cy)] != newWall) {
+        ops.add(MapEditOp(
+          playerId: _localPlayerId,
+          counter: counter,
+          x: cx,
+          y: cy,
+          layer: OpLayer.walls,
+          oldValue: oldWalls[(cx, cy)],
+          newValue: newWall,
+        ));
+      }
+
+      final newStructure = _structureToValue(_editorState.tileAt(cx, cy));
+      if (oldStructure[(cx, cy)] != newStructure) {
+        ops.add(MapEditOp(
+          playerId: _localPlayerId,
+          counter: counter,
+          x: cx,
+          y: cy,
+          layer: OpLayer.structure,
+          oldValue: oldStructure[(cx, cy)],
+          newValue: newStructure,
+        ));
+      }
+    }
+
+    for (final (cx, cy) in objectCells) {
+      final newObj = wallTiles[(cx, cy)] ?? _editorState.objectLayerData.tileAt(cx, cy);
+      final oldObjVal = tileRefToOpValue(oldObjects[(cx, cy)]);
+      final newObjVal = tileRefToOpValue(newObj);
+      if (!opValueEquals(oldObjVal, newObjVal)) {
+        ops.add(MapEditOp(
+          playerId: _localPlayerId,
+          counter: counter,
+          x: cx,
+          y: cy,
+          layer: OpLayer.objects,
+          oldValue: oldObjVal,
+          newValue: newObjVal,
+        ));
+      }
+    }
+
+    if (ops.isEmpty) return;
+
+    final batch = MapEditBatch(
+      playerId: _localPlayerId,
+      counter: counter,
+      ops: ops,
+    );
     _pushAndPublish(batch);
   }
 
@@ -422,6 +621,8 @@ class MapSyncService {
           op.y,
           op.newValue as String?,
         );
+      case OpLayer.walls:
+        _editorState.setWall(op.x, op.y, op.newValue as String?);
     }
   }
 
@@ -523,6 +724,32 @@ class MapSyncService {
       );
     }
 
+    // Apply walls and regenerate their object layer tiles.
+    final walls = json['walls'] as List<dynamic>? ?? [];
+    for (final entry in walls) {
+      final map = entry as Map<String, dynamic>;
+      _editorState.setWall(
+        map['x'] as int,
+        map['y'] as int,
+        map['s'] as String,
+      );
+    }
+    if (walls.isNotEmpty) {
+      // Regenerate all wall object tiles from the synced wall data.
+      final allWallCells = _editorState.wallMap.keys.toSet();
+      final wallTiles = buildWallTilesForRegion(
+        _editorState.wallMap,
+        allWallCells,
+      );
+      for (final entry in wallTiles.entries) {
+        _editorState.objectLayerData.setTile(
+          entry.key.$1,
+          entry.key.$2,
+          entry.value,
+        );
+      }
+    }
+
     // Load version map.
     final versions = json['versions'] as Map<String, dynamic>? ?? {};
     _versionMap.loadFromJson(versions);
@@ -587,12 +814,21 @@ class MapSyncService {
       }
     }
 
+    // Walls: sparse list of (x, y, style ID).
+    final wallMap = _editorState.wallMap;
+    final walls = <Map<String, dynamic>>[];
+    for (final entry in wallMap.entries) {
+      final (x, y) = entry.key;
+      walls.add({'x': x, 'y': y, 's': entry.value});
+    }
+
     return {
       'type': 'sync-response',
       'structure': structure,
       'floor': floor,
       'objects': objects,
       'terrain': terrain,
+      'walls': walls,
       'versions': _versionMap.toJson(),
       'clock': _undoManager.clock,
     };
@@ -615,6 +851,62 @@ class MapSyncService {
       if (_inBounds(nx, ny)) cells.add((nx, ny));
     }
     return cells;
+  }
+
+  /// Cells affected by a wall paint at (x, y): target + 4 cardinal neighbors
+  /// + nearby walls that could form doorway lintels.
+  ///
+  /// Wall bitmask is cardinal-only (N/E/S/W), so those neighbors need
+  /// recomputation. Additionally, walls up to 4 cells away horizontally
+  /// could produce lintels (cap tiles above 1–3 cell gaps), so we include
+  /// any existing wall within that range on the same row.
+  List<(int, int)> _wallAffectedCells(int x, int y) {
+    final seen = <(int, int)>{(x, y)};
+    final cells = <(int, int)>[(x, y)];
+
+    // Cardinal neighbors for bitmask recomputation.
+    for (final (dx, dy) in const [
+      (0, -1), // N
+      (1, 0), // E
+      (0, 1), // S
+      (-1, 0), // W
+    ]) {
+      final nx = x + dx;
+      final ny = y + dy;
+      if (_inBounds(nx, ny) && seen.add((nx, ny))) cells.add((nx, ny));
+    }
+
+    // Walls within lintel range (gap ≤ 3 → wall at distance ≤ 4) on same row.
+    // These walls' lintel scans could be affected by the new/removed wall.
+    for (var dx = -4; dx <= 4; dx++) {
+      if (dx == 0) continue;
+      final nx = x + dx;
+      if (_inBounds(nx, y) &&
+          _editorState.isWallAt(nx, y) &&
+          seen.add((nx, y))) {
+        cells.add((nx, y));
+      }
+    }
+
+    return cells;
+  }
+
+  /// All cells whose object layer tiles might change due to wall edits.
+  ///
+  /// Includes each affected cell, the row above (for cap tiles), and up to
+  /// 3 cells to the right at y-1 (for horizontal doorway lintels that span
+  /// gaps of 1–3 cells between walls).
+  Set<(int, int)> _wallObjectCells(List<(int, int)> wallCells) {
+    final result = <(int, int)>{};
+    for (final (cx, cy) in wallCells) {
+      result.add((cx, cy));
+      if (_inBounds(cx, cy - 1)) result.add((cx, cy - 1));
+      // Lintel positions: caps above gap cells to the right (max 3).
+      for (var dx = 1; dx <= 3; dx++) {
+        if (_inBounds(cx + dx, cy - 1)) result.add((cx + dx, cy - 1));
+      }
+    }
+    return result;
   }
 
   bool _inBounds(int x, int y) =>

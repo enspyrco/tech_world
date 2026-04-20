@@ -269,3 +269,102 @@ TileLayerData buildObjectLayerFromWalls(Map<(int, int), String> walls) {
   return layer;
 }
 
+/// Build wall tiles for a subset of [cells], using [walls] for bitmask context.
+///
+/// Unlike [buildObjectLayerFromWalls] which processes all walls, this scopes
+/// tile generation to only the specified cells — useful for incremental sync
+/// updates where a single wall paint affects the target + its neighbors.
+///
+/// For each cell in [cells]:
+/// - If it's a wall position: computes face/body tile + cap tile above.
+/// - If it's not a wall: clears any tile at that position (returns null).
+///
+/// Returns a map of (x, y) → TileRef? for all affected positions (including
+/// cap tile positions above north-facing walls).
+Map<(int, int), TileRef?> buildWallTilesForRegion(
+  Map<(int, int), String> walls,
+  Set<(int, int)> cells,
+) {
+  final result = <(int, int), TileRef?>{};
+  final wallPositions = walls.keys.toSet();
+
+  // Process wall cells first, then clear non-wall cells — ensures cap tiles
+  // placed above walls aren't overwritten by the non-wall clear logic.
+  final wallCells = cells.where((c) => walls.containsKey(c));
+  final nonWallCells = cells.where((c) => !walls.containsKey(c));
+
+  for (final (x, y) in wallCells) {
+    final styleId = walls[(x, y)]!;
+
+    final style = lookupWallStyle(styleId);
+    if (style == null) continue;
+
+    final bitmask = computeWallBitmask(x, y, wallPositions);
+    final isNorthFacing = !wallPositions.contains((x, y - 1));
+    final hasS = bitmask & WallBitmask.s != 0;
+
+    final int tileIndex;
+    if (isNorthFacing && !hasS) {
+      tileIndex = style.faceForBitmask(bitmask);
+    } else if (isNorthFacing && hasS) {
+      tileIndex = style.bodyForBitmask(bitmask, hasS: true);
+    } else {
+      var inheritedEW = 0;
+      var checkY = y - 1;
+      while (wallPositions.contains((x, checkY))) {
+        final checkBitmask = computeWallBitmask(x, checkY, wallPositions);
+        final ew = checkBitmask & (WallBitmask.e | WallBitmask.w);
+        if (ew != 0) {
+          inheritedEW = ew;
+          break;
+        }
+        checkY--;
+      }
+      final ewBitmask = bitmask | inheritedEW;
+      tileIndex = style.bodyForBitmask(ewBitmask, hasS: hasS);
+    }
+
+    result[(x, y)] =
+        TileRef(tilesetId: style.tilesetId, tileIndex: tileIndex);
+
+    if (isNorthFacing && y - 1 >= 0) {
+      final capIndex = style.capForBitmask(bitmask);
+      result[(x, y - 1)] =
+          TileRef(tilesetId: style.tilesetId, tileIndex: capIndex);
+    }
+
+    // Horizontal doorway lintel: wall is left edge of a 1–3 cell gap.
+    // Place cap tiles above the gap so the wall top continues over the door.
+    if (!wallPositions.contains((x + 1, y))) {
+      var gapEnd = x + 1;
+      while (gapEnd < x + 10 && !wallPositions.contains((gapEnd, y))) {
+        gapEnd++;
+      }
+      if (wallPositions.contains((gapEnd, y))) {
+        final gapWidth = gapEnd - (x + 1);
+        if (gapWidth >= 1 && gapWidth <= 3 && y - 1 >= 0) {
+          final lintelCapIndex =
+              style.capForBitmask(WallBitmask.e | WallBitmask.w);
+          for (var gx = x + 1; gx < gapEnd; gx++) {
+            result[(gx, y - 1)] =
+                TileRef(tilesetId: style.tilesetId, tileIndex: lintelCapIndex);
+          }
+        }
+      }
+    }
+  }
+
+  // Clear non-wall cells, but only positions not already set by a wall above
+  // (e.g. cap tiles placed at y-1 of a north-facing wall).
+  for (final (x, y) in nonWallCells) {
+    if (!result.containsKey((x, y))) {
+      result[(x, y)] = null;
+    }
+    if (y - 1 >= 0 && !result.containsKey((x, y - 1))) {
+      result[(x, y - 1)] = null;
+    }
+  }
+
+  return result;
+}
+

@@ -315,6 +315,177 @@ void main() {
       );
     });
   });
+
+  group('wall sync', () {
+    test('paintWall publishes wall + structure + object ops', () async {
+      state.setTool(EditorTool.wall);
+      syncService.paintWall(5, 10);
+
+      await Future.delayed(Duration.zero);
+
+      expect(state.tileAt(5, 10), TileType.barrier);
+      expect(state.isWallAt(5, 10), isTrue);
+      expect(fakeLiveKit.publishedMessages, hasLength(1));
+
+      final payload =
+          fakeLiveKit.publishedMessages.first['payload'] as Map<String, dynamic>;
+      final ops = payload['ops'] as List;
+
+      // Should have at least a walls op and a structure op.
+      final wallOps = ops.where((o) => o['layer'] == 'walls').toList();
+      final structureOps = ops.where((o) => o['layer'] == 'structure').toList();
+      expect(wallOps, isNotEmpty, reason: 'should include wall layer ops');
+      expect(structureOps, isNotEmpty, reason: 'should include structure ops');
+
+      // Wall op should carry the style ID.
+      expect(wallOps.first['new'], state.wallStyle);
+    });
+
+    test('remote wall op updates local walls and object layer', () async {
+      final styleId = state.wallStyle;
+
+      fakeLiveKit.simulateMapEdit({
+        'type': 'edit',
+        'playerId': 'bob',
+        'counter': 1,
+        'ops': [
+          {
+            'x': 3,
+            'y': 4,
+            'layer': 'walls',
+            'new': styleId,
+          },
+          {
+            'x': 3,
+            'y': 4,
+            'layer': 'structure',
+            'new': 'barrier',
+          },
+        ],
+      });
+
+      await Future.delayed(Duration.zero);
+
+      expect(state.isWallAt(3, 4), isTrue);
+      expect(state.wallStyleAt(3, 4), styleId);
+      expect(state.tileAt(3, 4), TileType.barrier);
+    });
+
+    test('wall neighbor cascade: adjacent wall changes bitmask', () async {
+      state.setTool(EditorTool.wall);
+
+      // Paint first wall.
+      syncService.paintWall(5, 10);
+      await Future.delayed(Duration.zero);
+      fakeLiveKit.publishedMessages.clear();
+
+      // Paint adjacent wall to the east — should produce ops for both cells.
+      syncService.paintWall(6, 10);
+      await Future.delayed(Duration.zero);
+
+      expect(fakeLiveKit.publishedMessages, hasLength(1));
+      final payload =
+          fakeLiveKit.publishedMessages.first['payload'] as Map<String, dynamic>;
+      final ops = payload['ops'] as List;
+
+      // Should have object layer ops for both (5,10) and (6,10) since
+      // wall at (5,10) now has an east neighbor and its bitmask changed.
+      final objectOps = ops.where((o) => o['layer'] == 'objects').toList();
+      final affectedPositions = objectOps
+          .map((o) => (o['x'] as int, o['y'] as int))
+          .toSet();
+      expect(affectedPositions, contains((5, 10)),
+          reason: 'existing wall should get updated object tile');
+      expect(affectedPositions, contains((6, 10)),
+          reason: 'new wall should get object tile');
+    });
+
+    test('snapshot includes wall data', () async {
+      state.setTool(EditorTool.wall);
+      syncService.paintWall(2, 3);
+      await Future.delayed(Duration.zero);
+      fakeLiveKit.publishedMessages.clear();
+
+      // Simulate a sync request from bob.
+      fakeLiveKit.simulateMapSync({
+        'type': 'sync-request',
+        'playerId': 'bob',
+      }, senderId: 'bob');
+
+      await Future.delayed(Duration.zero);
+
+      final syncMessages = fakeLiveKit.publishedMessages
+          .where((m) => m['topic'] == 'map-edit-sync')
+          .toList();
+      expect(syncMessages, hasLength(1));
+
+      final payload = syncMessages.first['payload'] as Map<String, dynamic>;
+      final walls = payload['walls'] as List;
+      expect(
+        walls.any(
+            (e) => e['x'] == 2 && e['y'] == 3 && e['s'] == state.wallStyle),
+        isTrue,
+        reason: 'snapshot should include wall with style ID',
+      );
+
+      // Should also include the wall in structure.
+      final structure = payload['structure'] as List;
+      expect(
+        structure.any((e) => e['x'] == 2 && e['y'] == 3 && e['v'] == 'barrier'),
+        isTrue,
+      );
+    });
+
+    test('eraseWall removes wall and publishes ops', () async {
+      state.setTool(EditorTool.wall);
+      syncService.paintWall(5, 10);
+      await Future.delayed(Duration.zero);
+      fakeLiveKit.publishedMessages.clear();
+
+      state.setTool(EditorTool.eraser);
+      syncService.eraseWall(5, 10);
+      await Future.delayed(Duration.zero);
+
+      expect(state.isWallAt(5, 10), isFalse);
+      expect(fakeLiveKit.publishedMessages, hasLength(1));
+
+      final payload =
+          fakeLiveKit.publishedMessages.first['payload'] as Map<String, dynamic>;
+      final ops = payload['ops'] as List;
+
+      final wallOps = ops.where((o) => o['layer'] == 'walls').toList();
+      expect(wallOps, isNotEmpty);
+      // Wall op should erase (null new value).
+      expect(wallOps.first['new'], isNull);
+    });
+
+    test('doorway lintel: cap tiles sync above gap between walls', () async {
+      state.setTool(EditorTool.wall);
+
+      // Paint two walls with a 2-cell gap between them (doorway).
+      syncService.paintWall(5, 10);
+      await Future.delayed(Duration.zero);
+      fakeLiveKit.publishedMessages.clear();
+
+      syncService.paintWall(8, 10);
+      await Future.delayed(Duration.zero);
+
+      final payload =
+          fakeLiveKit.publishedMessages.first['payload'] as Map<String, dynamic>;
+      final ops = payload['ops'] as List;
+
+      // Lintel caps should appear at (6,9) and (7,9) — above the gap cells.
+      final objectOps = ops.where((o) => o['layer'] == 'objects').toList();
+      final objectPositions = objectOps
+          .map((o) => (o['x'] as int, o['y'] as int))
+          .toSet();
+
+      expect(objectPositions, contains((6, 9)),
+          reason: 'lintel cap above first gap cell');
+      expect(objectPositions, contains((7, 9)),
+          reason: 'lintel cap above second gap cell');
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------

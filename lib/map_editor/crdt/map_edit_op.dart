@@ -1,7 +1,7 @@
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 
 /// Which layer a map edit operation targets.
-enum OpLayer { structure, floor, objects, terrain }
+enum OpLayer { structure, floor, objects, terrain, walls }
 
 /// A single cell edit in the map editor CRDT.
 ///
@@ -12,6 +12,7 @@ enum OpLayer { structure, floor, objects, terrain }
 /// - `structure`: `String?` — `'barrier'`, `'spawn'`, `'terminal'`, or `null` (open)
 /// - `floor` / `objects`: `Map<String, dynamic>?` — [TileRef.toJson] or `null`
 /// - `terrain`: `String?` — terrain ID or `null`
+/// - `walls`: `String?` — wall style ID or `null`
 class MapEditOp {
   const MapEditOp({
     required this.playerId,
