@@ -174,13 +174,16 @@ class VideoBubbleComponent extends PositionComponent {
     _captureRetryCount++;
     _captureInitializing = true;
 
-    if (kIsWeb) {
-      _initializeWebCapture();
-    } else if (_isMacOS) {
-      _initializeNativeCapture();
-    } else {
-      // Unsupported platform
-      _captureInitialized = true;
+    try {
+      if (kIsWeb) {
+        _initializeWebCapture();
+      } else if (_isMacOS) {
+        _initializeNativeCapture();
+      } else {
+        // Unsupported platform
+        _captureInitialized = true;
+      }
+    } finally {
       _captureInitializing = false;
     }
   }
@@ -189,7 +192,6 @@ class VideoBubbleComponent extends PositionComponent {
     final track = _getVideoTrack();
     if (track == null) {
       _log.fine('No video track found for $displayName');
-      _captureInitializing = false;
       return;
     }
 
@@ -285,13 +287,9 @@ class VideoBubbleComponent extends PositionComponent {
 
   void _initializeNativeCapture() {
     final track = _getVideoTrack();
-    if (track == null) {
-      _captureInitializing = false;
-      return;
-    }
+    if (track == null) return;
 
     if (_videoTrack == track && _capture != null) {
-      _captureInitializing = false;
       return; // Already attached
     }
 
@@ -300,10 +298,7 @@ class VideoBubbleComponent extends PositionComponent {
 
     // Get the WebRTC track ID (not the LiveKit sid)
     final trackId = track.mediaStreamTrack.id;
-    if (trackId == null || trackId.isEmpty) {
-      _captureInitializing = false;
-      return;
-    }
+    if (trackId == null || trackId.isEmpty) return;
 
     _capture = ffi.VideoFrameCapture.create(
       trackId,
@@ -315,7 +310,6 @@ class VideoBubbleComponent extends PositionComponent {
     if (_capture != null) {
       _captureInitialized = true;
     }
-    _captureInitializing = false;
   }
 
   void _disposeCapture() {

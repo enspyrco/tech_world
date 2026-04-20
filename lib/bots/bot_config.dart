@@ -88,6 +88,10 @@ bool isBotIdentity(String identity) =>
 
 /// Returns `true` if [identity] belongs to Dreamfinder, including the
 /// auto-generated `agent-*` identities used by the LiveKit agents SDK.
+///
+/// Note: this piggybacks on [getBotConfig], which maps all `agent-*`
+/// identities to [dreamfinderBot]. If a second bot adopts the agents SDK,
+/// update that mapping to disambiguate.
 bool isDreamfinderIdentity(String identity) =>
     getBotConfig(identity) == dreamfinderBot;
 
