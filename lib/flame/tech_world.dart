@@ -423,12 +423,14 @@ class TechWorld extends World with TapCallbacks {
         if (dfDistance < closestDistance) closestDistance = dfDistance;
 
         if (!_playerBubbles.containsKey(_dreamfinderIdentity)) {
-          // Use video bubble if Dreamfinder has a video track (holographic
-          // wizard), otherwise fall back to static bot bubble.
+          // Create Dreamfinder's video bubble eagerly once the participant
+          // exists. The video track may subscribe slightly later than the
+          // participant join event, so gating bubble creation on _hasVideoTrack
+          // can leave the hologram stuck on a static placeholder forever.
           final dfParticipant =
               _liveKitService?.getParticipant(_dreamfinderIdentity);
           PositionComponent bubble;
-          if (dfParticipant != null && _hasVideoTrack(dfParticipant)) {
+          if (dfParticipant != null) {
             bubble = _createDreamfinderVideoBubble(dfParticipant);
           } else {
             bubble = BotBubbleComponent();
@@ -625,7 +627,8 @@ class TechWorld extends World with TapCallbacks {
       final botIndex =
           allBotIdentities.toList().indexOf(participant.identity);
 
-      if (botConfig == dreamfinderBot && _pathComponent != null) {
+      if (isDreamfinderIdentity(participant.identity) &&
+          _pathComponent != null) {
         // Dreamfinder — use DreamfinderComponent with idle behavior.
         // Update identity to match whatever the agent SDK assigned
         // (e.g. `agent-{jobId}` instead of `bot-dreamfinder`).
@@ -756,8 +759,11 @@ class TechWorld extends World with TapCallbacks {
       } else if (_botCharacterComponents.containsKey(path.playerId)) {
         // Animate bot along the full path, just like player movement.
         _botCharacterComponents[path.playerId]?.move(path.largeGridPoints);
-      } else {
-        // If player component doesn't exist, create it
+      } else if (!isBotIdentity(path.playerId)) {
+        // If player component doesn't exist, create it.
+        // Skip bot identities — their component is created by
+        // _handleParticipantJoined, which may arrive after the first
+        // position update.
         if (!_otherPlayerComponentsMap.containsKey(path.playerId)) {
           _log.fine('Creating player component for ${path.playerId} from position data');
           final playerComponent = PlayerComponent(
@@ -794,7 +800,7 @@ class TechWorld extends World with TapCallbacks {
       _log.info('LiveKit participant left: ${participant.identity}');
 
       // Remove component based on participant type
-      if (participant.identity == _dreamfinderIdentity &&
+      if (isDreamfinderIdentity(participant.identity) &&
           _dreamfinderComponent != null) {
         remove(_dreamfinderComponent!);
         _dreamfinderComponent = null;
@@ -880,21 +886,16 @@ class TechWorld extends World with TapCallbacks {
 
   /// Refresh a player's bubble (recreate if video is now available)
   void _refreshBubbleForPlayer(String playerId) {
-    final existingBubble = _playerBubbles[playerId];
-    if (existingBubble == null) return; // No bubble to refresh
-
-    // If it's already a video bubble, no need to refresh
-    if (existingBubble is VideoBubbleComponent) return;
-
     // Handle Dreamfinder separately — it uses DreamfinderComponent, not
     // PlayerComponent. When a video track arrives, upgrade its static
     // BotBubbleComponent to a VideoBubbleComponent (holographic wizard).
-    if (playerId == _dreamfinderIdentity &&
+    if (isDreamfinderIdentity(playerId) &&
         _dreamfinderComponent != null) {
+      final existingBubble = _playerBubbles[playerId];
       final dfParticipant =
           _liveKitService?.getParticipant(_dreamfinderIdentity);
-      if (dfParticipant != null && _hasVideoTrack(dfParticipant)) {
-        existingBubble.removeFromParent();
+      if (dfParticipant != null && existingBubble is! VideoBubbleComponent) {
+        existingBubble?.removeFromParent();
         final videoBubble = _createDreamfinderVideoBubble(dfParticipant);
         videoBubble.position =
             _dreamfinderComponent!.position + _bubbleOffset;
@@ -903,6 +904,12 @@ class TechWorld extends World with TapCallbacks {
       }
       return;
     }
+
+    final existingBubble = _playerBubbles[playerId];
+    if (existingBubble == null) return; // No bubble to refresh
+
+    // If it's already a video bubble, no need to refresh
+    if (existingBubble is VideoBubbleComponent) return;
 
     // Get player component
     final playerComponent = _otherPlayerComponentsMap[playerId];
@@ -932,7 +939,7 @@ class TechWorld extends World with TapCallbacks {
     existingBubble.removeFromParent();
 
     // Dreamfinder gets a BotBubbleComponent, others get PlayerBubbleComponent
-    if (playerId == _dreamfinderIdentity) {
+    if (isDreamfinderIdentity(playerId)) {
       final botBubble = BotBubbleComponent(bubbleSize: 64);
       botBubble.position = position;
       _playerBubbles[playerId] = botBubble;
@@ -1502,4 +1509,3 @@ class TechWorld extends World with TapCallbacks {
     disconnectFromLiveKit();
   }
 }
-

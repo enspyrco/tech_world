@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/chat/conversation.dart';
@@ -618,7 +619,8 @@ class _MessageBubble extends StatelessWidget {
     // Determine avatar and colors based on message type
     final isLocalUser = message.isLocalUser;
     final isBot = message.isBot;
-    final isDreamfinder = message.senderId == 'bot-dreamfinder';
+    final isDreamfinder =
+        message.senderId != null && isDreamfinderIdentity(message.senderId!);
     final avatarLetter = message.senderName.isNotEmpty
         ? message.senderName[0].toUpperCase()
         : '?';

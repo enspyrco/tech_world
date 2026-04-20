@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform;
+    show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
@@ -91,7 +91,6 @@ class VideoBubbleComponent extends PositionComponent {
   double _timeSinceLastRetry = 0;
   static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
 
-
   // Opacity for distance-based fading
   double _opacity = 1.0;
 
@@ -132,6 +131,9 @@ class VideoBubbleComponent extends PositionComponent {
   /// Whether the component is still waiting for the first video frame
   bool get isWaitingForFrame => _isLoading;
 
+  @visibleForTesting
+  VideoTrack? get selectedVideoTrackForTesting => _getVideoTrack();
+
   /// Notify that the video track is ready (called when track subscription event fires)
   /// This triggers immediate capture initialization instead of waiting for retry timer.
   void notifyTrackReady() {
@@ -165,18 +167,23 @@ class VideoBubbleComponent extends PositionComponent {
 
   void _initializeCapture() {
     if (_captureInitialized) return;
-    if (_captureInitializing) return; // Already initializing, don't start another
+    if (_captureInitializing) {
+      return; // Already initializing, don't start another
+    }
 
     _captureRetryCount++;
     _captureInitializing = true;
 
-    if (kIsWeb) {
-      _initializeWebCapture();
-    } else if (_isMacOS) {
-      _initializeNativeCapture();
-    } else {
-      // Unsupported platform
-      _captureInitialized = true;
+    try {
+      if (kIsWeb) {
+        _initializeWebCapture();
+      } else if (_isMacOS) {
+        _initializeNativeCapture();
+      } else {
+        // Unsupported platform
+        _captureInitialized = true;
+      }
+    } finally {
       _captureInitializing = false;
     }
   }
@@ -218,7 +225,8 @@ class VideoBubbleComponent extends PositionComponent {
   /// MediaStreamTrackProcessor approach without any waiting.
   void _initializeLocalWebCapture(dynamic jsTrack, VideoTrack track) {
     if (!direct_capture.isMediaStreamTrackProcessorSupported) {
-      _log.fine('MediaStreamTrackProcessor not supported, using VideoElement for local');
+      _log.fine(
+          'MediaStreamTrackProcessor not supported, using VideoElement for local');
       // Fall back to VideoElementCapture even for local
       _initializeRemoteWebCapture(jsTrack, track);
       return;
@@ -247,7 +255,8 @@ class VideoBubbleComponent extends PositionComponent {
     _initializeRemoteWebCaptureAsync(jsTrack, track);
   }
 
-  Future<void> _initializeRemoteWebCaptureAsync(dynamic jsTrack, VideoTrack track) async {
+  Future<void> _initializeRemoteWebCaptureAsync(
+      dynamic jsTrack, VideoTrack track) async {
     try {
       _videoTrack = track;
 
@@ -257,7 +266,8 @@ class VideoBubbleComponent extends PositionComponent {
 
       // Try VideoElementCapture with just the track (it will create a fresh MediaStream)
       // This now waits for the video to be ready before returning
-      final capture = await direct_capture.VideoElementCapture.createFromStream(null, jsTrack);
+      final capture = await direct_capture.VideoElementCapture.createFromStream(
+          null, jsTrack);
       if (capture != null) {
         _log.fine('VideoElementCapture created for remote track $displayName');
         _remoteWebCapture = capture;
@@ -268,7 +278,6 @@ class VideoBubbleComponent extends PositionComponent {
       }
 
       _log.warning('Failed to create VideoElementCapture for $displayName');
-      _captureInitialized = true;
       _captureInitializing = false;
     } catch (e, stack) {
       _log.warning('Error initializing remote capture: $e\nStack: $stack');
@@ -448,12 +457,35 @@ class VideoBubbleComponent extends PositionComponent {
   }
 
   VideoTrack? _getVideoTrack() {
-    for (final publication in participant.videoTrackPublications) {
+    final publications = participant.videoTrackPublications;
+
+    VideoTrack? videoTrackFrom(TrackPublication publication) {
       final track = publication.track;
-      if (track != null && track.kind == TrackType.VIDEO) {
-        return track as VideoTrack;
+      if (track is VideoTrack && track.kind == TrackType.VIDEO) {
+        return track;
+      }
+      return null;
+    }
+
+    for (final publication in publications) {
+      if (publication.source == TrackSource.camera) {
+        final track = videoTrackFrom(publication);
+        if (track != null) return track;
       }
     }
+
+    for (final publication in publications) {
+      if (!publication.isScreenShare) {
+        final track = videoTrackFrom(publication);
+        if (track != null) return track;
+      }
+    }
+
+    for (final publication in publications) {
+      final track = videoTrackFrom(publication);
+      if (track != null) return track;
+    }
+
     return null;
   }
 
@@ -507,7 +539,8 @@ class VideoBubbleComponent extends PositionComponent {
     if (_opacity < 1.0) {
       canvas.saveLayer(
         Rect.fromCircle(center: center, radius: radius + 10),
-        Paint()..color = Color.fromARGB((_opacity * 255).round(), 255, 255, 255),
+        Paint()
+          ..color = Color.fromARGB((_opacity * 255).round(), 255, 255, 255),
       );
     }
 
@@ -654,11 +687,15 @@ class VideoBubbleComponent extends PositionComponent {
         'framesCaptured': _framesCaptured,
         'framesDropped': _framesDropped,
         'hasCurrentFrame': _currentFrame != null,
+        'captureInitializing': _captureInitializing,
+        'captureRetryCount': _captureRetryCount,
         'captureActive': kIsWeb
             ? (_webCapture?.isActive ?? _remoteWebCapture?.isActive ?? false)
             : _capture?.isActive ?? false,
         'captureType': kIsWeb
-            ? (_webCapture != null ? 'DirectTrack' : (_remoteWebCapture != null ? 'VideoElement' : 'none'))
+            ? (_webCapture != null
+                ? 'DirectTrack'
+                : (_remoteWebCapture != null ? 'VideoElement' : 'none'))
             : (_capture != null ? 'FFI' : 'none'),
         'targetFps': targetFps,
         'shaderEnabled':
