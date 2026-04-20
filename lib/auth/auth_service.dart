@@ -123,9 +123,11 @@ class AuthService {
       nonce: nonce,
     );
 
-    // Create OAuth credential for Firebase
+    // Create OAuth credential for Firebase — must include both the identity
+    // token and authorization code for firebase_auth 6.x server-side verification.
     final oauthCredential = OAuthProvider('apple.com').credential(
       idToken: appleCredential.identityToken,
+      accessToken: appleCredential.authorizationCode,
       rawNonce: rawNonce,
     );
 
@@ -149,7 +151,6 @@ class AuthService {
           .join(' ');
       if (displayName.isNotEmpty) {
         await credential.user!.updateDisplayName(displayName);
-        // Reload to get updated profile
         await credential.user!.reload();
       }
     }
@@ -182,8 +183,12 @@ class AuthService {
   Future<void> signInWithGoogle() async {
     final signIn = GoogleSignIn.instance;
 
-    // Initialize if not already done (safe to call multiple times)
-    await signIn.initialize();
+    // Initialize with serverClientId so the SDK returns an idToken for
+    // Firebase Auth. This is the web OAuth client ID from Google Cloud Console.
+    await signIn.initialize(
+      serverClientId:
+          '614230417388-k5gk56q0ssmj880egv1b1blq5nag3rs1.apps.googleusercontent.com',
+    );
 
     // Trigger the authentication flow
     // In google_sign_in 7.x, cancellation throws GoogleSignInCanceledException

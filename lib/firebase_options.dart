@@ -54,11 +54,11 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyABbMDsGLMuKZPXD04uMmtyG3eJg0cFBFw',
-    appId: '1:614230417388:ios:2dbbc66a8cb5e783246ac9',
+    appId: '1:614230417388:ios:7a8907f854976dae246ac9',
     messagingSenderId: '614230417388',
     projectId: 'adventures-in-tech-world-0',
     storageBucket: 'adventures-in-tech-world-0.firebasestorage.app',
-    iosBundleId: 'com.example.techWorld',
+    iosBundleId: 'co.enspyr.techWorld',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
