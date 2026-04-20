@@ -397,7 +397,8 @@ class _AuthGateState extends State<AuthGate> {
     setIsLoading();
     try {
       await locate<AuthService>().signInWithApple();
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('Apple sign-in error: $e\n$st');
       _setError('Apple sign-in failed. Please try again.');
     } finally {
       setIsLoading();
@@ -408,7 +409,8 @@ class _AuthGateState extends State<AuthGate> {
     setIsLoading();
     try {
       await locate<AuthService>().signInWithGoogle();
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('Google sign-in error: $e\n$st');
       _setError('Google sign-in failed. Please try again.');
     } finally {
       setIsLoading();
