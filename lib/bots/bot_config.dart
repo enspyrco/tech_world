@@ -86,6 +86,11 @@ final allBotIdentities = botsByIdentity.keys.toSet();
 bool isBotIdentity(String identity) =>
     botsByIdentity.containsKey(identity) || identity.startsWith('agent-');
 
+/// Returns `true` if [identity] belongs to Dreamfinder, including the
+/// auto-generated `agent-*` identities used by the LiveKit agents SDK.
+bool isDreamfinderIdentity(String identity) =>
+    getBotConfig(identity) == dreamfinderBot;
+
 /// Returns the [BotConfig] for [identity], or [clawdBot] as fallback.
 ///
 /// Identities starting with `agent-` are mapped to [dreamfinderBot],

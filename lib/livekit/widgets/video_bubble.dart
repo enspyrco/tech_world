@@ -45,21 +45,25 @@ class _VideoBubbleState extends State<VideoBubble> {
 
   void _onParticipantChanged() => setState(() {});
 
-  VideoTrack? get _videoTrack {
-    if (widget.participant is LocalParticipant) {
-      final pub = (widget.participant as LocalParticipant)
-          .videoTrackPublications
-          .where((t) => t.source == TrackSource.camera)
-          .firstOrNull;
-      return pub?.track;
-    } else if (widget.participant is RemoteParticipant) {
-      final pub = (widget.participant as RemoteParticipant)
-          .videoTrackPublications
-          .where((t) => t.source == TrackSource.camera)
-          .firstOrNull;
-      return pub?.track;
-    }
-    return null;
+  VideoTrack? get _videoTrack => _selectVideoTrack(widget.participant);
+
+  VideoTrack? _selectVideoTrack(Participant participant) {
+    final publications = participant.videoTrackPublications;
+
+    // Prefer the standard camera track when present, but fall back to any
+    // non-screen-share video track. Agent participants may publish video with
+    // a different source type, and requiring TrackSource.camera prevents their
+    // bubble from ever rendering.
+    final preferred = publications.firstWhereOrNull(
+          (t) => t.source == TrackSource.camera && t.track != null,
+        ) ??
+        publications.firstWhereOrNull(
+          (t) => !t.isScreenShare && t.track != null,
+        ) ??
+        publications.firstWhereOrNull((t) => t.track != null);
+
+    final track = preferred?.track;
+    return track is VideoTrack ? track : null;
   }
 
   @override

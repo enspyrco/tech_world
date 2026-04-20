@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:mocktail/mocktail.dart';
@@ -11,6 +13,8 @@ class MockParticipant extends Mock implements Participant {}
 
 class MockVideoTrackPublication extends Mock
     implements TrackPublication<VideoTrack> {}
+
+class MockVideoTrack extends Mock implements VideoTrack {}
 
 /// Testable subclass that exposes private methods for testing
 class TestableVideoBubbleComponent extends VideoBubbleComponent {
@@ -335,6 +339,71 @@ void main() {
 
         // Should not throw
         expect(() => bubble.notifyTrackReady(), returnsNormally);
+      });
+
+      test('does not get stuck initializing when no track exists on macOS', () {
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        addTearDown(() {
+          debugDefaultTargetPlatformOverride = null;
+        });
+
+        final bubble = VideoBubbleComponent(
+          participant: mockParticipant,
+          displayName: 'Test',
+        );
+
+        bubble.notifyTrackReady();
+
+        expect(bubble.debugStats['captureInitializing'], isFalse);
+        expect(bubble.debugStats['captureRetryCount'], equals(1));
+      });
+    });
+
+    group('video track selection', () {
+      test('selects non-camera non-screen-share video publications', () {
+        final publication = MockVideoTrackPublication();
+        final track = MockVideoTrack();
+
+        when(() => publication.source).thenReturn(TrackSource.unknown);
+        when(() => publication.isScreenShare).thenReturn(false);
+        when(() => publication.track).thenReturn(track);
+        when(() => track.kind).thenReturn(TrackType.VIDEO);
+        when(() => mockParticipant.videoTrackPublications)
+            .thenReturn([publication]);
+
+        final bubble = VideoBubbleComponent(
+          participant: mockParticipant,
+          displayName: 'Dreamfinder',
+        );
+
+        expect(bubble.selectedVideoTrackForTesting, same(track));
+      });
+
+      test('prefers camera over other video publications', () {
+        final unknownPublication = MockVideoTrackPublication();
+        final cameraPublication = MockVideoTrackPublication();
+        final unknownTrack = MockVideoTrack();
+        final cameraTrack = MockVideoTrack();
+
+        when(() => unknownPublication.source).thenReturn(TrackSource.unknown);
+        when(() => unknownPublication.isScreenShare).thenReturn(false);
+        when(() => unknownPublication.track).thenReturn(unknownTrack);
+        when(() => unknownTrack.kind).thenReturn(TrackType.VIDEO);
+
+        when(() => cameraPublication.source).thenReturn(TrackSource.camera);
+        when(() => cameraPublication.isScreenShare).thenReturn(false);
+        when(() => cameraPublication.track).thenReturn(cameraTrack);
+        when(() => cameraTrack.kind).thenReturn(TrackType.VIDEO);
+
+        when(() => mockParticipant.videoTrackPublications)
+            .thenReturn([unknownPublication, cameraPublication]);
+
+        final bubble = VideoBubbleComponent(
+          participant: mockParticipant,
+          displayName: 'Test',
+        );
+
+        expect(bubble.selectedVideoTrackForTesting, same(cameraTrack));
       });
     });
   });
