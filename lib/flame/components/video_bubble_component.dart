@@ -10,6 +10,7 @@ import 'package:logging/logging.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
+import '../../native/canvas_capture.dart';
 import '../../native/video_frame_capture.dart' as ffi;
 import '../../native/direct_track_capture.dart' as direct_capture;
 
@@ -44,6 +45,7 @@ class VideoBubbleComponent extends PositionComponent {
     required this.displayName,
     this.bubbleSize = 64,
     this.targetFps = 15,
+    this.externalCanvasCapture,
   }) : super(
           size: Vector2.all(bubbleSize),
           anchor: Anchor.bottomCenter,
@@ -53,6 +55,11 @@ class VideoBubbleComponent extends PositionComponent {
   final String displayName;
   final double bubbleSize;
   final int targetFps;
+
+  /// Optional external canvas capture (e.g., from Dreamfinder's 3D avatar).
+  /// When provided, bypasses participant video track discovery and uses this
+  /// capture source directly for frame data.
+  final CanvasCapture? externalCanvasCapture;
 
   ui.Image? _currentFrame;
   VideoTrack? _videoTrack;
@@ -137,7 +144,7 @@ class VideoBubbleComponent extends PositionComponent {
   /// Notify that the video track is ready (called when track subscription event fires)
   /// This triggers immediate capture initialization instead of waiting for retry timer.
   void notifyTrackReady() {
-    if (!_captureInitialized) {
+    if (!_captureInitialized && externalCanvasCapture == null) {
       _initializeCapture();
     }
   }
@@ -152,8 +159,11 @@ class VideoBubbleComponent extends PositionComponent {
       _loadingRotation += _loadingSpinSpeed * dt;
     }
 
-    // Try to initialize capture if not yet done (with retry backoff)
-    if (!_captureInitialized && _captureRetryCount < _maxCaptureRetries) {
+    // Try to initialize capture if not yet done (with retry backoff).
+    // Skip when using an external canvas capture — it manages its own lifecycle.
+    if (externalCanvasCapture == null &&
+        !_captureInitialized &&
+        _captureRetryCount < _maxCaptureRetries) {
       _timeSinceLastRetry += dt;
       if (_timeSinceLastRetry >= _retryIntervalSeconds) {
         _timeSinceLastRetry = 0;
@@ -342,6 +352,12 @@ class VideoBubbleComponent extends PositionComponent {
   }
 
   void _checkForNewWebFrame() {
+    // Check external canvas capture (e.g., Dreamfinder 3D avatar)
+    if (externalCanvasCapture != null && externalCanvasCapture!.hasNewFrame) {
+      _processWebFrame(externalCanvasCapture!.consumeFrame());
+      return;
+    }
+
     // Check local capture (DirectTrackCapture)
     if (_webCapture != null && _webCapture!.hasNewFrame) {
       _processWebFrame(_webCapture!.consumeFrame());
