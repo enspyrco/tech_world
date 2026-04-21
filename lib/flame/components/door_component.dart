@@ -23,6 +23,10 @@ class DoorComponent extends PositionComponent {
   /// The door data this component represents.
   final DoorData doorData;
 
+  /// Y-based depth sorting — same convention as players and wall occlusion.
+  @override
+  int get priority => doorData.position.y;
+
   // Locked state paints.
   static final _lockedBgPaint = Paint()..color = const Color(0xFF2A1A3E);
   static final _lockedBorderPaint = Paint()

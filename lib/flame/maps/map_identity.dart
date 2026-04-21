@@ -43,6 +43,10 @@ class MapIdentity {
       icon: Icons.construction,
       color: Color(0xFFFFB74D),
     ),
+    'wizards_tower': MapIdentity._(
+      icon: Icons.auto_fix_high,
+      color: Color(0xFFCE93D8),
+    ),
   };
 
   /// Name substrings for fallback matching (Firestore rooms).
@@ -54,6 +58,8 @@ class MapIdentity {
     'maze': 'simple_maze',
     'library': 'the_library',
     'workshop': 'the_workshop',
+    'wizard': 'wizards_tower',
+    'tower': 'wizards_tower',
   };
 
   /// Look up map identity by ID (preferred) or name (fallback).

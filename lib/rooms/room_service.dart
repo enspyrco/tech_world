@@ -1,7 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/maps/tile_map_format.dart';
 import 'package:tech_world/rooms/room_data.dart';
+
+final _log = Logger('RoomService');
 
 /// Firestore CRUD service for rooms.
 ///
@@ -128,5 +132,46 @@ class RoomService {
     json.remove('id');
     json.remove('name');
     return json;
+  }
+
+  /// Ensure the Wizard's Tower public room exists with current map data.
+  ///
+  /// Uses a version string stored in the Firestore document to skip updates
+  /// when the map definition hasn't changed. Bump [_wizardsTowerVersion] in
+  /// `predefined_maps.dart` whenever the tower layout changes.
+  Future<void> seedWizardsTower({
+    required String ownerId,
+    required String ownerDisplayName,
+  }) async {
+    final snapshot = await _collection
+        .where('name', isEqualTo: "The Wizard's Tower")
+        .where('isPublic', isEqualTo: true)
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isNotEmpty) {
+      final doc = snapshot.docs.first;
+      final storedVersion = doc.data()['mapVersion'] as String?;
+      if (storedVersion == wizardsTowerVersion) return; // Already up-to-date.
+
+      _log.info('Updating Wizard\'s Tower: $storedVersion → $wizardsTowerVersion');
+      await updateRoomMap(doc.id, wizardsTower);
+      await _collection.doc(doc.id).update({
+        'mapVersion': wizardsTowerVersion,
+      });
+      return;
+    }
+
+    _log.info('Seeding "The Wizard\'s Tower" room');
+    final room = await createRoom(
+      name: "The Wizard's Tower",
+      ownerId: ownerId,
+      ownerDisplayName: ownerDisplayName,
+      map: wizardsTower,
+      isPublic: true,
+    );
+    await _collection.doc(room.id).update({
+      'mapVersion': wizardsTowerVersion,
+    });
   }
 }

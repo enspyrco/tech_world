@@ -99,6 +99,7 @@ class GameMap {
   /// Whether this map uses tileset-based rendering.
   bool get usesTilesets =>
       tilesetIds.isNotEmpty ||
+      walls.isNotEmpty ||
       (floorLayer != null && !floorLayer!.isEmpty) ||
       (objectLayer != null && !objectLayer!.isEmpty);
 
