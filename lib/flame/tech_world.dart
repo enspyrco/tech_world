@@ -30,6 +30,7 @@ import 'package:tech_world/flame/components/terminal_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
+import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tileset_cache_provider.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
@@ -297,6 +298,8 @@ class TechWorld extends World with TapCallbacks {
 
   /// Update all terminal components' [isCompleted] state from current progress.
   void refreshTerminalStates() {
+    // Only code-mode terminals track challenge completion.
+    if (currentMap.value.terminalMode != TerminalMode.code) return;
     for (var i = 0; i < _terminalComponents.length; i++) {
       final challengeIndex = i % allChallenges.length;
       _terminalComponents[i].isCompleted =
@@ -1090,18 +1093,28 @@ class TechWorld extends World with TapCallbacks {
     await add(_barriersComponent);
     _pathComponent?.barriers = _barriersComponent;
 
-    // Terminals
+    // Terminals — only assign code challenges when terminal mode is `code`.
     for (var i = 0; i < map.terminals.length; i++) {
       final terminalPos = map.terminals[i];
-      final challengeIndex = i % allChallenges.length;
-      final challenge = allChallenges[challengeIndex];
+      final Challenge? challenge;
+      final bool isCompleted;
+      if (map.terminalMode == TerminalMode.code) {
+        final challengeIndex = i % allChallenges.length;
+        challenge = allChallenges[challengeIndex];
+        isCompleted = _isChallengeCompleted(challenge.id);
+      } else {
+        challenge = null;
+        isCompleted = false;
+      }
       final terminal = TerminalComponent(
         position: Vector2(
           terminalPos.x * gridSquareSizeDouble,
           terminalPos.y * gridSquareSizeDouble,
         ),
-        onInteract: () => _onTerminalInteract(terminalPos, challenge),
-        isCompleted: _isChallengeCompleted(challenge.id),
+        onInteract: challenge != null
+            ? () => _onTerminalInteract(terminalPos, challenge!)
+            : () => _log.fine('Terminal tapped in prompt mode at $terminalPos'),
+        isCompleted: isCompleted,
       );
       _terminalComponents.add(terminal);
       await add(terminal);

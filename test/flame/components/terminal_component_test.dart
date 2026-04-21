@@ -53,7 +53,7 @@ void main() {
           onInteract: () => called = true,
         );
 
-        terminal.onInteract();
+        terminal.onInteract!();
         expect(called, isTrue);
       });
     });

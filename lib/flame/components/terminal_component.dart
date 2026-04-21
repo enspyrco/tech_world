@@ -12,7 +12,7 @@ import 'package:tech_world/flame/shared/constants.dart';
 class TerminalComponent extends PositionComponent with TapCallbacks {
   TerminalComponent({
     required Vector2 position,
-    required this.onInteract,
+    this.onInteract,
     this.isCompleted = false,
   }) : super(
           position: position,
@@ -20,7 +20,10 @@ class TerminalComponent extends PositionComponent with TapCallbacks {
           anchor: Anchor.topLeft,
         );
 
-  final void Function() onInteract;
+  /// Called when the player taps this terminal. Null means the terminal
+  /// is not yet interactive (e.g. prompt mode terminals before the prompt
+  /// system is implemented).
+  final void Function()? onInteract;
 
   /// Whether the challenge at this terminal has been completed.
   bool isCompleted;
@@ -73,6 +76,6 @@ class TerminalComponent extends PositionComponent with TapCallbacks {
 
   @override
   void onTapDown(TapDownEvent event) {
-    onInteract();
+    onInteract?.call();
   }
 }
