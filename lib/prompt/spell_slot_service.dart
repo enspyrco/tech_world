@@ -83,8 +83,10 @@ class SpellSlotService extends ChangeNotifier {
   /// - Every 5 challenges completed: regen interval decreases by 30s
   ///   (floor at 1 minute)
   ///
-  /// [baseMaxSlots] and [baseRegenInterval] can be passed to override
-  /// the defaults (used when switching difficulty configs).
+  /// [baseMaxSlots] and [baseRegenInterval] override the current values
+  /// when switching difficulty configs. For example, moving from a beginner
+  /// room (5 base slots) to an advanced room (3 base slots) — pass the new
+  /// config's base values so progression bonuses are applied on top of them.
   void updateProgression({
     required int challengesCompleted,
     int? baseMaxSlots,
