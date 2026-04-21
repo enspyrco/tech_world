@@ -27,6 +27,10 @@ import 'package:tech_world/editor/code_editor_panel.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/tech_world.dart';
+import 'package:tech_world/prompt/chat_evaluation_engine.dart';
+import 'package:tech_world/prompt/predefined_prompt_challenges.dart';
+import 'package:tech_world/prompt/prompt_challenge_panel.dart';
+import 'package:tech_world/prompt/spell_slot_service.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/widgets/proximity_video_overlay.dart';
@@ -98,6 +102,7 @@ class _MyAppState extends State<MyApp> {
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
   final ValueNotifier<String?> _activeDmPeer = ValueNotifier<String?>(null);
   ChatMessageRepository? _chatMessageRepository;
+  final SpellSlotService _spellSlotService = SpellSlotService();
   bool _liveKitConnectionFailed = false;
   String? _connectionFailureMessage;
   StreamSubscription<AuthUser>? _authSubscription;
@@ -1236,6 +1241,70 @@ class _MyAppState extends State<MyApp> {
                               techWorld.refreshTerminalStates();
                             }
                           },
+                        );
+                      },
+                    );
+                  },
+                ),
+                // Prompt challenge modal overlay — only for prompt-mode terminals.
+                StreamBuilder<AuthUser>(
+                  stream: locate<AuthService>().authStateChanges,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData ||
+                        snapshot.data is SignedOutUser ||
+                        _currentRoom == null) {
+                      return const SizedBox.shrink();
+                    }
+                    final techWorld = locate<TechWorld>();
+                    if (techWorld.currentMap.value.terminalMode !=
+                        TerminalMode.prompt) {
+                      return const SizedBox.shrink();
+                    }
+                    return ValueListenableBuilder<String?>(
+                      valueListenable: techWorld.activePromptChallenge,
+                      builder: (context, challengeId, _) {
+                        if (challengeId == null) {
+                          return const SizedBox.shrink();
+                        }
+                        final challenge = allPromptChallenges.firstWhere(
+                          (c) => c.id == challengeId,
+                          orElse: () => allPromptChallenges.first,
+                        );
+                        final chatService =
+                            Locator.maybeLocate<ChatService>();
+                        return Positioned(
+                          top: 60,
+                          right: 0,
+                          bottom: 0,
+                          width: MediaQuery.of(context).size.width >= 800
+                              ? 400
+                              : 320,
+                          child: PromptChallengePanel(
+                            challenge: challenge,
+                            spellSlotService: _spellSlotService,
+                            onClose: techWorld.closeEditor,
+                            onCast: (prompt) async {
+                              if (chatService == null) {
+                                throw Exception('Chat service not available');
+                              }
+                              final engine =
+                                  ChatEvaluationEngine(chatService);
+                              final result =
+                                  await engine.evaluate(challenge, prompt);
+                              final (_, castResult) = result;
+
+                              // If passed, unlock linked doors.
+                              if (castResult.passed) {
+                                final doors = techWorld
+                                    .doorsForChallenge(challenge.id);
+                                for (final door in doors) {
+                                  techWorld.unlockDoor(door);
+                                }
+                              }
+
+                              return result;
+                            },
+                          ),
                         );
                       },
                     );
