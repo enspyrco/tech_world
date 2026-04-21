@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:collection/collection.dart';
+import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
@@ -26,6 +27,7 @@ class GameMap {
     this.terrainGrid,
     this.customTilesets = const [],
     this.walls = const {},
+    this.terminalMode = TerminalMode.code,
   });
 
   /// Unique identifier for this map.
@@ -79,6 +81,12 @@ class GameMap {
   /// Every wall is also a barrier (blocks movement), but not every barrier
   /// is a wall. Only wall positions get face + cap tile art at runtime.
   final Map<Point<int>, String> walls;
+
+  /// What type of interaction terminals provide in this map.
+  ///
+  /// Defaults to [TerminalMode.code] (coding challenges). Maps can override
+  /// this to [TerminalMode.prompt] for prompt spell challenges.
+  final TerminalMode terminalMode;
 
   /// Whether this map uses tileset-based rendering.
   bool get usesTilesets =>

@@ -25,6 +25,7 @@ import 'package:tech_world/services/dreamfinder_client.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/code_editor_panel.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
+import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -1159,7 +1160,7 @@ class _MyAppState extends State<MyApp> {
                     );
                   },
                 ),
-                // Code editor modal overlay
+                // Code editor modal overlay — only for code-mode terminals.
                 StreamBuilder<AuthUser>(
                   stream: locate<AuthService>().authStateChanges,
                   builder: (context, snapshot) {
@@ -1170,6 +1171,10 @@ class _MyAppState extends State<MyApp> {
                       return const SizedBox.shrink();
                     }
                     final techWorld = locate<TechWorld>();
+                    if (techWorld.currentMap.value.terminalMode !=
+                        TerminalMode.code) {
+                      return const SizedBox.shrink();
+                    }
                     return ValueListenableBuilder<String?>(
                       valueListenable: techWorld.activeChallenge,
                       builder: (context, challengeId, _) {
