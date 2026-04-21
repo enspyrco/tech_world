@@ -1,7 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/maps/predefined_maps.dart';
 import 'package:tech_world/flame/maps/tile_map_format.dart';
 import 'package:tech_world/rooms/room_data.dart';
+
+final _log = Logger('RoomService');
 
 /// Firestore CRUD service for rooms.
 ///
@@ -128,5 +132,37 @@ class RoomService {
     json.remove('id');
     json.remove('name');
     return json;
+  }
+
+  /// Ensure the Wizard's Tower public room exists with current map data.
+  ///
+  /// Checks for a public room named "The Wizard's Tower". Creates one if
+  /// missing, or updates the map data if the room exists but is stale
+  /// (e.g. walls were added after the initial seed).
+  Future<void> seedWizardsTower({
+    required String ownerId,
+    required String ownerDisplayName,
+  }) async {
+    final snapshot = await _collection
+        .where('name', isEqualTo: "The Wizard's Tower")
+        .where('isPublic', isEqualTo: true)
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isNotEmpty) {
+      // Room exists — update map data to pick up any changes (walls, doors).
+      final docId = snapshot.docs.first.id;
+      await updateRoomMap(docId, wizardsTower);
+      return;
+    }
+
+    _log.info('Seeding "The Wizard\'s Tower" room');
+    await createRoom(
+      name: "The Wizard's Tower",
+      ownerId: ownerId,
+      ownerDisplayName: ownerDisplayName,
+      map: wizardsTower,
+      isPublic: true,
+    );
   }
 }

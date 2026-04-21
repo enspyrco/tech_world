@@ -254,6 +254,12 @@ class _MyAppState extends State<MyApp> {
       _roomService = RoomService();
       Locator.add<RoomService>(_roomService!);
 
+      // Ensure the Wizard's Tower public room exists and is up-to-date.
+      await _roomService!.seedWizardsTower(
+        ownerId: user.id,
+        ownerDisplayName: user.displayName,
+      );
+
       setState(() {}); // Show lobby (or avatar picker first).
     }
   }

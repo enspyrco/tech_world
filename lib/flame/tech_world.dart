@@ -14,6 +14,7 @@ import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
+import 'package:tech_world/flame/components/door_component.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
@@ -87,6 +88,7 @@ class TechWorld extends World with TapCallbacks {
   final ValueNotifier<GameMap> currentMap = ValueNotifier(defaultMap);
 
   final List<TerminalComponent> _terminalComponents = [];
+  final List<DoorComponent> _doorComponents = [];
 
   // Bubble components - shown when player is near other players
   static const _localPlayerBubbleKey = '_local_player_';
@@ -1095,8 +1097,13 @@ class TechWorld extends World with TapCallbacks {
       'tilesetIds=${map.tilesetIds}',
     );
 
-    // Barriers
-    _barriersComponent = BarriersComponent(barriers: map.barriers);
+    // Barriers — include locked door positions so they block movement.
+    final allBarriers = [
+      ...map.barriers,
+      for (final door in map.doors)
+        if (!door.isUnlocked) door.position,
+    ];
+    _barriersComponent = BarriersComponent(barriers: allBarriers);
     await add(_barriersComponent);
     _pathComponent?.barriers = _barriersComponent;
 
@@ -1135,6 +1142,19 @@ class TechWorld extends World with TapCallbacks {
       );
       _terminalComponents.add(terminal);
       await add(terminal);
+    }
+
+    // Doors — visual components for locked/unlocked gates.
+    for (final door in map.doors) {
+      final doorComponent = DoorComponent(
+        position: Vector2(
+          door.position.x * gridSquareSizeDouble,
+          door.position.y * gridSquareSizeDouble,
+        ),
+        doorData: door,
+      );
+      _doorComponents.add(doorComponent);
+      await add(doorComponent);
     }
 
     // Tile layers.
@@ -1314,6 +1334,12 @@ class TechWorld extends World with TapCallbacks {
       terminal.removeFromParent();
     }
     _terminalComponents.clear();
+
+    // Doors
+    for (final door in _doorComponents) {
+      door.removeFromParent();
+    }
+    _doorComponents.clear();
 
     // Unload custom tilesets from previous map.
     final game = findGame() as TechWorldGame?;

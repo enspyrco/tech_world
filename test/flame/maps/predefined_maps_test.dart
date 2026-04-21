@@ -148,6 +148,86 @@ void main() {
       });
     });
 
+    group('wizardsTower', () {
+      test('has correct id', () {
+        expect(wizardsTower.id, equals('wizards_tower'));
+      });
+
+      test('uses prompt terminal mode', () {
+        expect(wizardsTower.terminalMode.name, equals('prompt'));
+      });
+
+      test('has 6 terminals', () {
+        expect(wizardsTower.terminals.length, equals(6));
+      });
+
+      test('has 3 doors', () {
+        expect(wizardsTower.doors.length, equals(3));
+      });
+
+      test('all terminals are inside the tower walls', () {
+        for (final t in wizardsTower.terminals) {
+          expect(t.x, greaterThan(16), reason: 'terminal at $t left of wall');
+          expect(t.x, lessThan(33), reason: 'terminal at $t right of wall');
+          expect(t.y, greaterThan(8), reason: 'terminal at $t above wall');
+          expect(t.y, lessThan(44), reason: 'terminal at $t below wall');
+        }
+      });
+
+      test('all doors are at doorway gaps (not barriers)', () {
+        final barrierSet = wizardsTower.barriers
+            .map((p) => (p.x, p.y))
+            .toSet();
+        for (final door in wizardsTower.doors) {
+          expect(
+            barrierSet.contains((door.position.x, door.position.y)),
+            isFalse,
+            reason: 'door at ${door.position} overlaps a barrier',
+          );
+        }
+      });
+
+      test('spawn is inside the antechamber', () {
+        final s = wizardsTower.spawnPoint;
+        expect(s.x, greaterThan(16));
+        expect(s.x, lessThan(33));
+        expect(s.y, greaterThan(36)); // below lowest internal wall
+        expect(s.y, lessThan(44));
+      });
+
+      test('doors require progressively harder challenges', () {
+        // D0: 1 beginner challenge
+        expect(wizardsTower.doors[0].requiredChallengeIds, hasLength(1));
+        // D1: 2 beginner challenges (from different schools)
+        expect(wizardsTower.doors[1].requiredChallengeIds, hasLength(2));
+        // D2: 2 intermediate challenges
+        expect(wizardsTower.doors[2].requiredChallengeIds, hasLength(2));
+      });
+
+      test('barriers form a closed tower with internal walls', () {
+        // Outer walls: top/bottom rows fully covered, left/right cols covered.
+        final barrierSet = wizardsTower.barriers
+            .map((p) => (p.x, p.y))
+            .toSet();
+
+        // Top wall
+        for (var x = 16; x <= 33; x++) {
+          expect(barrierSet.contains((x, 8)), isTrue,
+              reason: 'top wall missing at ($x, 8)');
+        }
+        // Bottom wall
+        for (var x = 16; x <= 33; x++) {
+          expect(barrierSet.contains((x, 44)), isTrue,
+              reason: 'bottom wall missing at ($x, 44)');
+        }
+        // Doorway gaps exist at col 24 in internal walls
+        for (final row in [15, 25, 36]) {
+          expect(barrierSet.contains((24, row)), isFalse,
+              reason: 'doorway gap missing at (24, $row)');
+        }
+      });
+    });
+
     group('allMaps', () {
       test('contains all predefined maps', () {
         expect(allMaps, contains(openArena));
@@ -156,10 +236,11 @@ void main() {
         expect(allMaps, contains(simpleMaze));
         expect(allMaps, contains(theLibrary));
         expect(allMaps, contains(theWorkshop));
+        expect(allMaps, contains(wizardsTower));
       });
 
-      test('has exactly 6 maps', () {
-        expect(allMaps.length, equals(6));
+      test('has exactly 7 maps', () {
+        expect(allMaps.length, equals(7));
       });
 
       test('all maps have unique ids', () {
@@ -172,8 +253,13 @@ void main() {
         expect(names.length, equals(allMaps.length));
       });
 
-      test('no predefined maps have hardcoded barriers', () {
-        for (final map in allMaps) {
+      test('tile-based maps have no hardcoded barriers', () {
+        // Maps backed by painted tile layers get barriers from tiles at
+        // runtime. The Wizard's Tower is an exception — it uses programmatic
+        // barriers because it has no tileset and needs structural walls.
+        final tileMaps =
+            allMaps.where((m) => m.id != 'wizards_tower');
+        for (final map in tileMaps) {
           expect(map.barriers, isEmpty,
               reason: '${map.name} should have no predefined barriers');
         }
