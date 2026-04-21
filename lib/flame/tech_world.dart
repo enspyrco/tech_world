@@ -602,6 +602,8 @@ class TechWorld extends World with TapCallbacks {
         _log.info('Dreamfinder avatar bridge ready — refreshing bubble');
         _refreshBubbleForPlayer(_dreamfinderIdentity);
       }
+    }).catchError((Object e) {
+      _log.warning('Dreamfinder avatar bridge failed to initialize: $e');
     });
   }
 
