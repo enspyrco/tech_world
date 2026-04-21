@@ -65,6 +65,10 @@ final theWorkshop = parseAsciiMap(
   ascii: _theWorkshopAscii,
 );
 
+/// Bump this whenever the Wizard's Tower layout changes so the Firestore
+/// seed updates existing rooms. Format: ISO date + optional revision letter.
+const wizardsTowerVersion = '2026-04-21b';
+
 /// The Wizard's Tower — a prompt spell map with gated progression.
 ///
 /// Four chambers stacked vertically inside a single tower:
@@ -415,16 +419,19 @@ String _chamberStyle(int y) {
 
 /// Build the floor layer for the Wizard's Tower.
 ///
-/// Fills the interior of each chamber (and doorway gaps) with floor tiles
-/// from the `room_builder_office` tileset. Different tiles per chamber
-/// give visual variety matching the wall color progression.
+/// Grass exterior, with per-chamber floor tiles from `room_builder_office`
+/// (all col 4, progressively darker as you ascend):
+///   Antechamber: row 5  (i84)  — lightest
+///   Great Hall:  row 7  (i116)
+///   Upper Study: row 9  (i148)
+///   Sanctum:     row 11 (i180) — darkest
 TileLayerData _wizardsTowerFloor() {
   const tilesetId = 'room_builder_office';
-  // Floor tile indices from room_builder_office (rows 5+, 16 columns):
-  //   149 = warm beige brick (row 9, col 5)  — Antechamber
-  //   148 = slightly darker variant           — Great Hall
-  //   146 = gray stone                        — Upper Study
-  //   144 = dark stone                        — Sanctum
+  const antechamberFloor = TileRef(tilesetId: tilesetId, tileIndex: 84);
+  const greatHallFloor = TileRef(tilesetId: tilesetId, tileIndex: 116);
+  const upperStudyFloor = TileRef(tilesetId: tilesetId, tileIndex: 148);
+  const sanctumFloor = TileRef(tilesetId: tilesetId, tileIndex: 180);
+
   final layer = TileLayerData();
   final barrierSet = {
     for (final b in _wizardsTowerBarriers()) (b.x, b.y),
@@ -444,14 +451,25 @@ TileLayerData _wizardsTowerFloor() {
   for (var y = 9; y <= 43; y++) {
     for (var x = 17; x <= 32; x++) {
       if (barrierSet.contains((x, y))) continue;
-      layer.setTile(x, y, const TileRef(tilesetId: tilesetId, tileIndex: 149));
+
+      final TileRef ref;
+      if (y <= 14) {
+        ref = sanctumFloor;
+      } else if (y <= 24) {
+        ref = upperStudyFloor;
+      } else if (y <= 35) {
+        ref = greatHallFloor;
+      } else {
+        ref = antechamberFloor;
+      }
+      layer.setTile(x, y, ref);
     }
   }
 
-  // Also fill doorway gap cells.
-  for (final row in [15, 25, 36]) {
-    layer.setTile(24, row, const TileRef(tilesetId: tilesetId, tileIndex: 149));
-  }
+  // Doorway gaps get the floor of the room above (the room you're entering).
+  layer.setTile(24, 36, greatHallFloor);
+  layer.setTile(24, 25, upperStudyFloor);
+  layer.setTile(24, 15, sanctumFloor);
 
   return layer;
 }

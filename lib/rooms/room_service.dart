@@ -136,9 +136,9 @@ class RoomService {
 
   /// Ensure the Wizard's Tower public room exists with current map data.
   ///
-  /// Checks for a public room named "The Wizard's Tower". Creates one if
-  /// missing, or updates the map data if the room exists but is stale
-  /// (e.g. walls were added after the initial seed).
+  /// Uses a version string stored in the Firestore document to skip updates
+  /// when the map definition hasn't changed. Bump [_wizardsTowerVersion] in
+  /// `predefined_maps.dart` whenever the tower layout changes.
   Future<void> seedWizardsTower({
     required String ownerId,
     required String ownerDisplayName,
@@ -150,19 +150,28 @@ class RoomService {
         .get();
 
     if (snapshot.docs.isNotEmpty) {
-      // Room exists — update map data to pick up any changes (walls, doors).
-      final docId = snapshot.docs.first.id;
-      await updateRoomMap(docId, wizardsTower);
+      final doc = snapshot.docs.first;
+      final storedVersion = doc.data()['mapVersion'] as String?;
+      if (storedVersion == wizardsTowerVersion) return; // Already up-to-date.
+
+      _log.info('Updating Wizard\'s Tower: $storedVersion → $wizardsTowerVersion');
+      await updateRoomMap(doc.id, wizardsTower);
+      await _collection.doc(doc.id).update({
+        'mapVersion': wizardsTowerVersion,
+      });
       return;
     }
 
     _log.info('Seeding "The Wizard\'s Tower" room');
-    await createRoom(
+    final room = await createRoom(
       name: "The Wizard's Tower",
       ownerId: ownerId,
       ownerDisplayName: ownerDisplayName,
       map: wizardsTower,
       isPublic: true,
     );
+    await _collection.doc(room.id).update({
+      'mapVersion': wizardsTowerVersion,
+    });
   }
 }
