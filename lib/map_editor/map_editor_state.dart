@@ -2,7 +2,9 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:tiled/tiled.dart' as tiled;
+import 'package:tech_world/flame/maps/door_data.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/maps/map_parser.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/flame/shared/constants.dart';
@@ -26,7 +28,7 @@ import 'package:tech_world/map_editor/terrain_grid.dart';
 enum TileType { open, barrier, spawn, terminal }
 
 /// Tools available in the map editor.
-enum EditorTool { barrier, wall, spawn, terminal, eraser }
+enum EditorTool { barrier, wall, spawn, terminal, door, eraser }
 
 /// Which layer is active for editing.
 enum ActiveLayer {
@@ -95,6 +97,8 @@ class MapEditorState extends ChangeNotifier {
 
   String _mapId = 'untitled_map';
   String get mapId => _mapId;
+
+  TerminalMode _terminalMode = TerminalMode.code;
 
   /// Firestore room ID when editing an existing room. Null for new maps.
   String? _roomId;
@@ -197,6 +201,23 @@ class MapEditorState extends ChangeNotifier {
       // The structure op handles barrier state separately, so leave it.
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Door state
+  // -------------------------------------------------------------------------
+
+  /// Door positions mapped to [DoorData]. Every door is also a barrier
+  /// when locked.
+  final Map<(int, int), DoorData> _doors = {};
+
+  /// Whether a door exists at ([x], [y]).
+  bool isDoorAt(int x, int y) => _doors.containsKey((x, y));
+
+  /// The door data at ([x], [y]), or null if no door.
+  DoorData? doorAt(int x, int y) => _doors[(x, y)];
+
+  /// Unmodifiable view of all door positions and their data.
+  Map<(int, int), DoorData> get doorMap => Map.unmodifiable(_doors);
 
   // -------------------------------------------------------------------------
   // Terrain brush state
@@ -503,8 +524,12 @@ class MapEditorState extends ChangeNotifier {
         _grid[y][x] = TileType.spawn;
       case EditorTool.terminal:
         _grid[y][x] = TileType.terminal;
+      case EditorTool.door:
+        _doors[(x, y)] = DoorData(position: Point(x, y));
+        _grid[y][x] = TileType.barrier; // doors block movement when locked
       case EditorTool.eraser:
         _walls.remove((x, y));
+        _doors.remove((x, y));
         _grid[y][x] = TileType.open;
     }
     _markDirty();
@@ -519,6 +544,7 @@ class MapEditorState extends ChangeNotifier {
       }
     }
     _walls.clear();
+    _doors.clear();
     _autoBarrierCells.clear();
     _markDirty();
     notifyListeners();
@@ -548,6 +574,7 @@ class MapEditorState extends ChangeNotifier {
     _automappedCells.clear();
     _mapName = map.name;
     _mapId = map.id;
+    _terminalMode = map.terminalMode;
 
     for (final barrier in map.barriers) {
       if (_inBounds(barrier.x, barrier.y)) {
@@ -571,6 +598,15 @@ class MapEditorState extends ChangeNotifier {
       final p = entry.key;
       if (_inBounds(p.x, p.y)) {
         _walls[(p.x, p.y)] = entry.value;
+      }
+    }
+
+    // Load doors if present.
+    _doors.clear();
+    for (final door in map.doors) {
+      final p = door.position;
+      if (_inBounds(p.x, p.y)) {
+        _doors[(p.x, p.y)] = door;
       }
     }
 
@@ -738,6 +774,10 @@ class MapEditorState extends ChangeNotifier {
         for (final entry in _walls.entries)
           Point(entry.key.$1, entry.key.$2): entry.value,
       },
+      doors: [
+        for (final door in _doors.values) door,
+      ],
+      terminalMode: _terminalMode,
     );
   }
 
