@@ -47,6 +47,7 @@ import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
+import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/progress/progress_service.dart';
@@ -79,6 +80,7 @@ class TechWorld extends World with TapCallbacks {
   /// Defaults to [dreamfinderBot.identity] (`bot-dreamfinder`) but updated
   /// at runtime when the embodied agent joins with an `agent-{jobId}` identity.
   String _dreamfinderIdentity = dreamfinderBot.identity;
+  DreamfinderAvatarBridge? _dreamfinderAvatarBridge;
   // final GridComponent _gridComponent = GridComponent();
   BarriersComponent _barriersComponent =
       BarriersComponent(barriers: defaultMap.barriers);
@@ -582,9 +584,34 @@ class TechWorld extends World with TapCallbacks {
     );
   }
 
-  /// Check if participant has an active video track
+  /// Initialize the Dreamfinder 3D avatar bridge (web only).
+  ///
+  /// Creates a hidden iframe that renders the Three.js avatar, then captures
+  /// frames from its canvas for display as a [VideoBubbleComponent] in the
+  /// Flame world. Also forwards audio and mood data channels to the iframe
+  /// for lip-sync and expression changes.
+  void _initDreamfinderAvatarBridge() {
+    if (_dreamfinderAvatarBridge != null) return;
+    final liveKit = _liveKitService;
+    if (liveKit == null) return;
+
+    _dreamfinderAvatarBridge =
+        DreamfinderAvatarBridge(liveKitService: liveKit);
+    _dreamfinderAvatarBridge!.initialize().then((_) {
+      if (_dreamfinderAvatarBridge?.isReady == true) {
+        _log.info('Dreamfinder avatar bridge ready — refreshing bubble');
+        _refreshBubbleForPlayer(_dreamfinderIdentity);
+      }
+    }).catchError((Object e) {
+      _log.warning('Dreamfinder avatar bridge failed to initialize: $e');
+    });
+  }
+
   /// Create a [VideoBubbleComponent] configured for Dreamfinder's holographic
   /// wizard projection (gold glow, 10fps for ethereal quality).
+  ///
+  /// If the 3D avatar bridge is active, uses its [CanvasCapture] as the frame
+  /// source instead of a LiveKit video track (which DF does not publish).
   VideoBubbleComponent _createDreamfinderVideoBubble(
       Participant participant) {
     final videoBubble = VideoBubbleComponent(
@@ -592,6 +619,7 @@ class TechWorld extends World with TapCallbacks {
       displayName: dreamfinderBot.displayName,
       bubbleSize: 64,
       targetFps: 10,
+      externalCanvasCapture: _dreamfinderAvatarBridge?.canvasCapture,
     );
     videoBubble.glowColor = const Color(0xFFDAA520); // gold
     videoBubble.glowIntensity = 0.7;
@@ -662,6 +690,9 @@ class TechWorld extends World with TapCallbacks {
           if (_userPlayerComponent.id.isNotEmpty) {
             dfComp.noticePlayer(_userPlayerComponent.position);
           }
+
+          // Initialize the 3D avatar bridge (web only — loads iframe renderer).
+          _initDreamfinderAvatarBridge();
         }
       } else if (botConfig.spriteSheetAsset != null) {
         // Other animated bot — use PlayerComponent with sprite sheet.
@@ -817,6 +848,8 @@ class TechWorld extends World with TapCallbacks {
         remove(_dreamfinderComponent!);
         _dreamfinderComponent = null;
         _dreamfinderIdentity = dreamfinderBot.identity; // reset to default
+        _dreamfinderAvatarBridge?.dispose();
+        _dreamfinderAvatarBridge = null;
       } else if (_botCharacterComponents.containsKey(participant.identity)) {
         final botComp = _botCharacterComponents.remove(participant.identity);
         if (botComp != null) remove(botComp);
@@ -1585,6 +1618,10 @@ class TechWorld extends World with TapCallbacks {
 
     // Clear the service reference so _connectToLiveKit can reconnect
     _liveKitService = null;
+
+    // Clean up avatar bridge
+    _dreamfinderAvatarBridge?.dispose();
+    _dreamfinderAvatarBridge = null;
 
     // Remove all player bubbles
     for (final bubble in _playerBubbles.values) {
