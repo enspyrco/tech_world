@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:collection/collection.dart';
+import 'package:tech_world/flame/maps/door_data.dart';
 import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
@@ -27,6 +28,7 @@ class GameMap {
     this.terrainGrid,
     this.customTilesets = const [],
     this.walls = const {},
+    this.doors = const [],
     this.terminalMode = TerminalMode.code,
   });
 
@@ -82,6 +84,12 @@ class GameMap {
   /// is a wall. Only wall positions get face + cap tile art at runtime.
   final Map<Point<int>, String> walls;
 
+  /// Doors placed on the map.
+  ///
+  /// Each door is a barrier when locked, passable when unlocked. Doors can
+  /// require specific challenges to be completed before they unlock.
+  final List<DoorData> doors;
+
   /// What type of interaction terminals provide in this map.
   ///
   /// Defaults to [TerminalMode.code] (coding challenges). Maps can override
@@ -98,6 +106,7 @@ class GameMap {
   static const _stringListEquality = ListEquality<String>();
   static const _tilesetListEquality = ListEquality<Tileset>();
   static const _wallsEquality = MapEquality<Point<int>, String>();
+  static const _doorListEquality = ListEquality<DoorData>();
 
   @override
   bool operator ==(Object other) =>
@@ -113,7 +122,9 @@ class GameMap {
           objectLayer == other.objectLayer &&
           terrainGrid == other.terrainGrid &&
           _tilesetListEquality.equals(customTilesets, other.customTilesets) &&
-          _wallsEquality.equals(walls, other.walls);
+          _wallsEquality.equals(walls, other.walls) &&
+          _doorListEquality.equals(doors, other.doors) &&
+          terminalMode == other.terminalMode;
 
   @override
   int get hashCode => Object.hash(
@@ -128,5 +139,7 @@ class GameMap {
         terrainGrid,
         _tilesetListEquality.hash(customTilesets),
         _wallsEquality.hash(walls),
+        _doorListEquality.hash(doors),
+        terminalMode,
       );
 }

@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:tech_world/flame/maps/door_data.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
@@ -58,6 +60,12 @@ class TileMapFormat {
           for (final e in map.walls.entries)
             {'x': e.key.x, 'y': e.key.y, 'style': e.value},
         ],
+      if (map.doors.isNotEmpty)
+        'doors': [
+          for (final d in map.doors) d.toJson(),
+        ],
+      if (map.terminalMode != TerminalMode.code)
+        'terminalMode': map.terminalMode.name,
     };
   }
 
@@ -110,7 +118,14 @@ class TileMapFormat {
               .toList() ??
           const [],
       walls: _parseWalls(json['walls'] as List<dynamic>?),
+      doors: _parseDoors(json['doors'] as List<dynamic>?),
+      terminalMode: _parseTerminalMode(json['terminalMode'] as String?),
     );
+  }
+
+  static TerminalMode _parseTerminalMode(String? value) {
+    if (value == null) return TerminalMode.code;
+    return TerminalMode.values.byName(value);
   }
 
   static Map<Point<int>, String> _parseWalls(List<dynamic>? json) {
@@ -122,5 +137,13 @@ class TileMapFormat {
           w['y'] as int,
         ): w['style'] as String,
     };
+  }
+
+  static List<DoorData> _parseDoors(List<dynamic>? json) {
+    if (json == null || json.isEmpty) return const [];
+    return [
+      for (final d in json)
+        DoorData.fromJson(d as Map<String, dynamic>),
+    ];
   }
 }
