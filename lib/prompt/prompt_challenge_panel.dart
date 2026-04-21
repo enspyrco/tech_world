@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/prompt/cast_result.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/prompt/spell_school.dart';
@@ -406,12 +407,11 @@ class _PromptChallengePanelState extends State<PromptChallengePanel> {
     );
   }
 
-  Widget _difficultyChip(dynamic difficulty) {
-    final (label, color) = switch (difficulty.toString()) {
-      'Difficulty.beginner' => ('Beginner', const Color(0xFF44AA44)),
-      'Difficulty.intermediate' => ('Intermediate', const Color(0xFFDDAA00)),
-      'Difficulty.advanced' => ('Advanced', const Color(0xFFDD4444)),
-      _ => ('Unknown', Colors.grey),
+  Widget _difficultyChip(Difficulty difficulty) {
+    final (label, color) = switch (difficulty) {
+      Difficulty.beginner => ('Beginner', const Color(0xFF44AA44)),
+      Difficulty.intermediate => ('Intermediate', const Color(0xFFDDAA00)),
+      Difficulty.advanced => ('Advanced', const Color(0xFFDD4444)),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

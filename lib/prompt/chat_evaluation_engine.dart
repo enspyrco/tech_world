@@ -71,8 +71,12 @@ class ChatEvaluationEngine extends EvaluationEngine {
   ///
   /// Visible for testing.
   static CastResult parseResponse(String responseText) {
+    // Match RESULT: only at line start (or start of string) to reduce
+    // the risk of a player embedding RESULT:PASS in their prompt text.
+    final resultPattern = RegExp(r'(^|\n)\s*RESULT:', caseSensitive: false);
+    final hasResult = resultPattern.hasMatch(responseText);
     final upper = responseText.toUpperCase();
-    final passed = upper.contains('RESULT:PASS');
+    final passed = hasResult && upper.contains('RESULT:PASS');
 
     if (passed) {
       return CastResult(
