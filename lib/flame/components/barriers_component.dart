@@ -52,6 +52,19 @@ class BarriersComponent extends PositionComponent with HasWorldReference {
     return pf.Grid(gridSize, gridSize, matrix);
   }
 
+  /// Remove the barrier at [position] from both the data model and the visual.
+  ///
+  /// Used when a door unlocks and the barrier should be passable.
+  void removeBarrierAt(Point<int> position) {
+    final index = _points.indexWhere((p) => p.x == position.x && p.y == position.y);
+    if (index == -1) return;
+    _points.removeAt(index);
+    if (index < _rectangles.length) {
+      _rectangles[index].removeFromParent();
+      _rectangles.removeAt(index);
+    }
+  }
+
   /// Remove all barrier rectangles from the world.
   void removeBarriers() {
     for (final rect in _rectangles) {

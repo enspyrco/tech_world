@@ -30,7 +30,10 @@ import 'package:tech_world/flame/components/terminal_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/predefined_maps.dart';
+import 'package:tech_world/flame/maps/door_data.dart';
 import 'package:tech_world/flame/maps/terminal_mode.dart';
+import 'package:tech_world/prompt/predefined_prompt_challenges.dart';
+import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tileset_cache_provider.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
@@ -104,8 +107,11 @@ class TechWorld extends World with TapCallbacks {
   LiveKitService? _liveKitService;
   ui.FragmentProgram? _shaderProgram; // Keep reference for creating new shaders
 
-  /// Notifier for active challenge ID. Null means no editor open.
+  /// Notifier for active code challenge ID. Null means no editor open.
   final ValueNotifier<String?> activeChallenge = ValueNotifier(null);
+
+  /// Notifier for active prompt challenge ID. Null means no prompt panel open.
+  final ValueNotifier<String?> activePromptChallenge = ValueNotifier(null);
 
   /// Grid position of the terminal the player is currently interacting with.
   /// Null when no editor is open.
@@ -195,6 +201,7 @@ class TechWorld extends World with TapCallbacks {
       _liveKitService?.publishTerminalActivity(action: 'close');
     }
     activeChallenge.value = null;
+    activePromptChallenge.value = null;
     activeTerminalPosition.value = null;
   }
 
@@ -1106,6 +1113,14 @@ class TechWorld extends World with TapCallbacks {
         challenge = null;
         isCompleted = false;
       }
+
+      // Prompt-mode terminals get prompt challenges instead.
+      PromptChallenge? promptChallenge;
+      if (map.terminalMode == TerminalMode.prompt) {
+        final idx = i % allPromptChallenges.length;
+        promptChallenge = allPromptChallenges[idx];
+      }
+
       final terminal = TerminalComponent(
         position: Vector2(
           terminalPos.x * gridSquareSizeDouble,
@@ -1113,7 +1128,9 @@ class TechWorld extends World with TapCallbacks {
         ),
         onInteract: challenge != null
             ? () => _onTerminalInteract(terminalPos, challenge!)
-            : () => _log.fine('Terminal tapped in prompt mode at $terminalPos'),
+            : promptChallenge != null
+                ? () => _onPromptTerminalInteract(terminalPos, promptChallenge!)
+                : null,
         isCompleted: isCompleted,
       );
       _terminalComponents.add(terminal);
@@ -1430,6 +1447,60 @@ class TechWorld extends World with TapCallbacks {
         ),
       );
     }
+  }
+
+  /// Handle interaction with a prompt-mode terminal.
+  void _onPromptTerminalInteract(
+    Point<int> terminalPos,
+    PromptChallenge challenge,
+  ) {
+    final playerGrid = _userPlayerComponent.miniGridPosition;
+    final distance = max(
+      (terminalPos.x - playerGrid.x).abs(),
+      (terminalPos.y - playerGrid.y).abs(),
+    );
+    if (distance <= _terminalProximityThreshold) {
+      activePromptChallenge.value = challenge.id;
+      activeTerminalPosition.value = terminalPos;
+    } else {
+      _showHint(
+        'Walk closer to use this terminal',
+        Vector2(
+          terminalPos.x * gridSquareSizeDouble + gridSquareSizeDouble / 2,
+          terminalPos.y * gridSquareSizeDouble - 12,
+        ),
+      );
+    }
+  }
+
+  /// Unlock a door and update its visual state.
+  ///
+  /// Called when a prompt challenge is passed and the door's required
+  /// challenges are all completed. Broadcasts the unlock to other players.
+  void unlockDoor(DoorData door) {
+    door.isUnlocked = true;
+
+    // Remove the barrier at the door position so the player can walk through.
+    _barriersComponent.removeBarrierAt(door.position);
+
+    // Broadcast to other players.
+    _liveKitService?.publishJson(
+      {
+        'type': 'door-unlock',
+        'doorX': door.position.x,
+        'doorY': door.position.y,
+      },
+      topic: 'door-unlock',
+    );
+
+    _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
+  }
+
+  /// Find all doors that require a specific challenge to be completed.
+  List<DoorData> doorsForChallenge(String challengeId) {
+    return currentMap.value.doors
+        .where((d) => d.requiredChallengeIds.contains(challengeId) && !d.isUnlocked)
+        .toList();
   }
 
   /// Show an ephemeral text hint that fades out after a short delay.
