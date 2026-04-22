@@ -178,32 +178,41 @@ class AuthService {
     );
   }
 
-  /// Sign in with Google - works on Android, iOS, macOS, and Web.
-  /// Uses google_sign_in 7.x API with singleton pattern.
-  Future<void> signInWithGoogle() async {
-    final signIn = GoogleSignIn.instance;
+  static const _googleClientId =
+      '614230417388-k5gk56q0ssmj880egv1b1blq5nag3rs1.apps.googleusercontent.com';
 
-    // Initialize with serverClientId so the SDK returns an idToken for
-    // Firebase Auth. This is the web OAuth client ID from Google Cloud Console.
-    await signIn.initialize(
-      serverClientId:
-          '614230417388-k5gk56q0ssmj880egv1b1blq5nag3rs1.apps.googleusercontent.com',
+  /// Ensure GoogleSignIn is initialized (idempotent).
+  Future<void> initializeGoogleSignIn() async {
+    await GoogleSignIn.instance.initialize(
+      serverClientId: _googleClientId,
     );
+  }
 
-    // Trigger the authentication flow
-    // In google_sign_in 7.x, cancellation throws GoogleSignInCanceledException
-    final googleUser = await signIn.authenticate();
+  /// Sign in with Google — native platforms (Android, iOS, macOS).
+  ///
+  /// On web, use [renderButton] + [handleGoogleAuthEvent] instead, since
+  /// the GIS library requires a user-clicked Google-rendered button.
+  Future<void> signInWithGoogle() async {
+    await initializeGoogleSignIn();
+    final googleUser = await GoogleSignIn.instance.authenticate();
+    await _completeGoogleSignIn(googleUser.authentication);
+  }
 
-    // Get the ID token from authentication (access token is now separate)
-    final googleAuth = googleUser.authentication;
+  /// Complete Firebase sign-in from a Google auth result.
+  ///
+  /// Called by [signInWithGoogle] (native) and by the auth_gate's
+  /// [authenticationEvents] listener (web).
+  Future<void> handleGoogleAuthEvent(
+      GoogleSignInAuthentication authentication) async {
+    await _completeGoogleSignIn(authentication);
+  }
 
-    // Create a new credential using ID token
-    // Note: accessToken is optional for Firebase Auth
+  Future<void> _completeGoogleSignIn(
+      GoogleSignInAuthentication googleAuth) async {
     final credential = GoogleAuthProvider.credential(
       idToken: googleAuth.idToken,
     );
 
-    // Sign in to Firebase
     final userCredential =
         await FirebaseAuth.instance.signInWithCredential(credential);
 
@@ -214,7 +223,6 @@ class AuthService {
 
     final firebaseUser = userCredential.user!;
 
-    // Save to Firestore
     await _userProfileService.saveUserProfile(
       uid: firebaseUser.uid,
       displayName: firebaseUser.displayName,

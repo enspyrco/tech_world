@@ -1,0 +1,12 @@
+[
+  {
+    "origin": [
+      "https://adventures-in-tech.world",
+      "https://adventures-in-tech-world-0.web.app",
+      "https://adventures-in-tech-world-0.firebaseapp.com",
+      "https://world.imagineering.cc"
+    ],
+    "method": ["GET"],
+    "maxAgeSeconds": 3600
+  }
+]
