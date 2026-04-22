@@ -28,7 +28,9 @@ import 'livekit_service.dart';
 final _log = Logger('DreamfinderAvatarBridge');
 
 /// URL path for the avatar renderer (same-origin).
-const _avatarPath = '/avatar?muted';
+/// No ?muted — the iframe handles audio playback via Web Audio since DF's
+/// voice comes through the data channel, not a LiveKit audio track.
+const _avatarPath = '/avatar';
 
 class DreamfinderAvatarBridge {
   DreamfinderAvatarBridge({required LiveKitService liveKitService})
@@ -64,12 +66,15 @@ class DreamfinderAvatarBridge {
 
       // Check for renderer-ready message
       try {
-        final type = (data as JSObject).getProperty('type'.toJS);
-        if ((type as JSString?)?.toDart == 'renderer-ready') {
+        final jsObj = data as JSObject;
+        final type = jsObj.getProperty('type'.toJS);
+        final typeStr = (type as JSString?)?.toDart;
+
+        if (typeStr == 'renderer-ready') {
           if (!readyCompleter.isCompleted) readyCompleter.complete();
         }
-      } catch (_) {
-        // Not the message we're looking for
+      } catch (e) {
+        _log.fine('postMessage parse error: $e');
       }
     }).toJS;
 
@@ -80,10 +85,12 @@ class DreamfinderAvatarBridge {
     _log.info('Loading avatar renderer from $_avatarPath');
 
     // Wait for the renderer to signal ready (with timeout).
+    // The 3D avatar GLB model (~42MB) can take over 30s on first load.
+    // Browser caches it after the first download, so subsequent loads are fast.
     try {
-      await readyCompleter.future.timeout(const Duration(seconds: 30));
+      await readyCompleter.future.timeout(const Duration(seconds: 120));
     } on TimeoutException {
-      _log.severe('Avatar renderer did not signal ready within 30 seconds');
+      _log.severe('Avatar renderer did not signal ready within 120 seconds');
       return;
     }
 
@@ -119,8 +126,6 @@ class DreamfinderAvatarBridge {
     iframe.style.width = '256px';
     iframe.style.height = '256px';
     iframe.style.border = 'none';
-    // Allow scripts and same-origin access.
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
     return iframe;
   }
 

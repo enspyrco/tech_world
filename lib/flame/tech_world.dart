@@ -939,7 +939,18 @@ class TechWorld extends World with TapCallbacks {
       final existingBubble = _playerBubbles[playerId];
       final dfParticipant =
           _liveKitService?.getParticipant(_dreamfinderIdentity);
-      if (dfParticipant != null && existingBubble is! VideoBubbleComponent) {
+      if (dfParticipant == null) return;
+
+      // Recreate the bubble if:
+      // - It's not a VideoBubbleComponent yet (initial placeholder), OR
+      // - It's a VideoBubbleComponent without canvas capture but the bridge
+      //   is now ready (bridge initialized after the bubble was created).
+      final hasCanvasCapture = existingBubble is VideoBubbleComponent &&
+          existingBubble.externalCanvasCapture != null;
+      final needsUpgrade = existingBubble is! VideoBubbleComponent ||
+          (!hasCanvasCapture && _dreamfinderAvatarBridge?.isReady == true);
+
+      if (needsUpgrade) {
         existingBubble?.removeFromParent();
         final videoBubble = _createDreamfinderVideoBubble(dfParticipant);
         videoBubble.position =

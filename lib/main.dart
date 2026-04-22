@@ -33,7 +33,6 @@ import 'package:tech_world/prompt/prompt_challenge_panel.dart';
 import 'package:tech_world/prompt/spell_slot_service.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
-import 'package:tech_world/livekit/widgets/proximity_video_overlay.dart';
 import 'package:tech_world/livekit/widgets/screen_share_overlay.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/map_editor/map_editor_panel.dart';
@@ -902,14 +901,8 @@ class _MyAppState extends State<MyApp> {
                                 GameWidget(
                                   game: locate<TechWorldGame>(),
                                 ),
-                                // Video bubble overlay using native Flutter rendering
-                                if (_liveKitService?.room != null &&
-                                    _proximityService != null)
-                                  ProximityVideoOverlay(
-                                    room: _liveKitService!.room!,
-                                    techWorld: locate<TechWorld>(),
-                                    proximityService: _proximityService!,
-                                  ),
+                                // Video bubbles render in-world as Flame components
+                                // (VideoBubbleComponent) — no Flutter overlay needed.
                                 // Circuit-board loading overlay
                                 if (_wireStates != null)
                                   JoinOverlay(

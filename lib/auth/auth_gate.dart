@@ -1,10 +1,11 @@
-import 'dart:async' show Timer;
+import 'dart:async' show StreamSubscription, Timer;
 import 'dart:io' show Platform;
 
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuthException;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:tech_world/auth/auth_service.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -56,6 +57,7 @@ class _AuthGateState extends State<AuthGate> {
   String error = '';
   String verificationId = '';
   Timer? _errorTimer;
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _googleAuthSubscription;
 
   AuthMode mode = AuthMode.login;
 
@@ -64,8 +66,41 @@ class _AuthGateState extends State<AuthGate> {
   bool get _isApplePlatform => !kIsWeb && (Platform.isIOS || Platform.isMacOS);
 
   @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) _initGoogleSignInWeb();
+  }
+
+  /// On web, initialize GoogleSignIn and listen for auth events from
+  /// the GIS renderButton (since programmatic authenticate() is unsupported).
+  Future<void> _initGoogleSignInWeb() async {
+    try {
+      await locate<AuthService>().initializeGoogleSignIn();
+
+      _googleAuthSubscription = GoogleSignIn.instance.authenticationEvents
+          .listen((GoogleSignInAuthenticationEvent event) async {
+        if (event is GoogleSignInAuthenticationEventSignIn) {
+          setIsLoading();
+          try {
+            await locate<AuthService>()
+                .handleGoogleAuthEvent(event.user.authentication);
+          } catch (e) {
+            debugPrint('Google sign-in (web) error: $e');
+            _setError('Google sign-in failed. Please try again.');
+          } finally {
+            setIsLoading();
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('Google Sign-In init failed: $e');
+    }
+  }
+
+  @override
   void dispose() {
     _errorTimer?.cancel();
+    _googleAuthSubscription?.cancel();
     emailController.dispose();
     passwordController.dispose();
     displayNameController.dispose();
@@ -406,6 +441,30 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _signInWithGoogle() async {
+    if (kIsWeb) {
+      // On web, attemptLightweightAuthentication triggers One Tap / FedCM.
+      // The result arrives via authenticationEvents (subscribed in initState).
+      // Returns null on web when the prompt is shown asynchronously.
+      try {
+        await locate<AuthService>().initializeGoogleSignIn();
+        final account =
+            GoogleSignIn.instance.attemptLightweightAuthentication();
+        if (account != null) {
+          final user = await account;
+          if (user != null) {
+            await locate<AuthService>()
+                .handleGoogleAuthEvent(user.authentication);
+            return;
+          }
+        }
+        // null means One Tap prompt shown — result via authenticationEvents
+      } catch (e) {
+        debugPrint('Google sign-in (web) trigger error: $e');
+        _setError('Google sign-in failed. Please try again.');
+      }
+      return;
+    }
+
     setIsLoading();
     try {
       await locate<AuthService>().signInWithGoogle();
