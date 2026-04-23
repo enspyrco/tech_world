@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide User;
 import 'package:google_sign_in/google_sign_in.dart';
@@ -182,9 +183,12 @@ class AuthService {
       '614230417388-k5gk56q0ssmj880egv1b1blq5nag3rs1.apps.googleusercontent.com';
 
   /// Ensure GoogleSignIn is initialized (idempotent).
+  ///
+  /// On web, the client ID is set via a `<meta>` tag in `index.html` —
+  /// `serverClientId` is not supported by `google_sign_in_web`.
   Future<void> initializeGoogleSignIn() async {
     await GoogleSignIn.instance.initialize(
-      serverClientId: _googleClientId,
+      serverClientId: kIsWeb ? null : _googleClientId,
     );
   }
 
