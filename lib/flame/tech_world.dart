@@ -47,6 +47,7 @@ import 'package:tech_world/map_editor/map_sync_service.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/infra/infra_health_service.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -335,6 +336,7 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<String?>? _connectionLostSubscription;
   StreamSubscription<void>? _mapInfoRequestedSubscription;
   StreamSubscription<DataChannelMessage>? _speechTranscriptSubscription;
+  InfraHealthService? _infraHealthService;
 
   // Avatar tracking — stores updates for players not yet created
   final Map<String, String> _pendingAvatars = {};
@@ -956,6 +958,12 @@ class TechWorld extends World with TapCallbacks {
     _speechTranscriptSubscription = _liveKitService!.dataReceived
         .where((msg) => msg.topic == 'speech-transcript')
         .listen(_handleSpeechTranscript);
+
+    // Infrastructure health monitoring.
+    _infraHealthService = InfraHealthService(
+      liveKitService: _liveKitService!,
+    );
+    Locator.add<InfraHealthService>(_infraHealthService!);
 
     // Listen for unexpected connection loss to clean up all LiveKit state.
     // This enables reconnection: disconnectFromLiveKit() nulls _liveKitService,
@@ -1687,6 +1695,11 @@ class TechWorld extends World with TapCallbacks {
     _mapInfoRequestedSubscription = null;
     _speechTranscriptSubscription?.cancel();
     _speechTranscriptSubscription = null;
+
+    // Dispose infrastructure health monitoring.
+    _infraHealthService?.dispose();
+    Locator.remove<InfraHealthService>();
+    _infraHealthService = null;
 
     // Clear speech bubbles
     for (final bubble in _speechBubbles.values) {
