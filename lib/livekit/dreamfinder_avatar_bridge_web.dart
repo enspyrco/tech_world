@@ -41,6 +41,9 @@ class DreamfinderAvatarBridge {
   web.HTMLIFrameElement? _iframe;
   CanvasCapture? _canvasCapture;
   bool _isReady = false;
+
+  /// Download progress of the avatar GLB (0–100), or null if not loading.
+  int? avatarLoadProgress;
   StreamSubscription<DataChannelMessage>? _audioSubscription;
   StreamSubscription<DataChannelMessage>? _moodSubscription;
   JSFunction? _messageListener;
@@ -71,7 +74,11 @@ class DreamfinderAvatarBridge {
         final typeStr = (type as JSString?)?.toDart;
 
         if (typeStr == 'renderer-ready') {
+          avatarLoadProgress = null; // download complete
           if (!readyCompleter.isCompleted) readyCompleter.complete();
+        } else if (typeStr == 'avatar-progress') {
+          final pct = jsObj.getProperty('percent'.toJS);
+          avatarLoadProgress = (pct as JSNumber?)?.toDartInt;
         }
       } catch (e) {
         _log.fine('postMessage parse error: $e');

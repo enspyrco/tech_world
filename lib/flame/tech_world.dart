@@ -21,6 +21,7 @@ import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
+import 'package:tech_world/flame/components/speech_bubble_component.dart';
 import 'package:tech_world/flame/components/tile_floor_component.dart';
 import 'package:tech_world/flame/components/tile_object_layer_component.dart';
 // Grid lines — uncomment for visual debugging:
@@ -46,6 +47,7 @@ import 'package:tech_world/map_editor/map_sync_service.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/infra/infra_health_service.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -333,6 +335,8 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<(Participant, bool)>? _speakingSubscription;
   StreamSubscription<String?>? _connectionLostSubscription;
   StreamSubscription<void>? _mapInfoRequestedSubscription;
+  StreamSubscription<DataChannelMessage>? _speechTranscriptSubscription;
+  InfraHealthService? _infraHealthService;
 
   // Avatar tracking — stores updates for players not yet created
   final Map<String, String> _pendingAvatars = {};
@@ -543,6 +547,11 @@ class TechWorld extends World with TapCallbacks {
         entry.value.position =
             _dreamfinderComponent!.position + _bubbleOffset;
         entry.value.priority = _dreamfinderComponent!.priority + 1;
+        // Pass avatar download progress to the bubble's loading spinner.
+        if (entry.value is VideoBubbleComponent) {
+          (entry.value as VideoBubbleComponent).loadingProgress =
+              _dreamfinderAvatarBridge?.avatarLoadProgress;
+        }
       } else if (_botCharacterComponents.containsKey(entry.key)) {
         final botComp = _botCharacterComponents[entry.key]!;
         entry.value.position = botComp.position + _bubbleOffset;
@@ -760,6 +769,56 @@ class TechWorld extends World with TapCallbacks {
     }
   }
 
+  // Active speech bubbles keyed by speaker identity.
+  final Map<String, SpeechBubbleComponent> _speechBubbles = {};
+
+  /// Handle a speech transcript from the voice pipeline.
+  ///
+  /// Creates a [SpeechBubbleComponent] with per-letter fade-in below the
+  /// appropriate character (Dreamfinder or the local player).
+  void _handleSpeechTranscript(DataChannelMessage msg) {
+    final json = msg.json;
+    if (json == null) return;
+
+    final speaker = json['speaker'] as String?;
+    final text = json['text'] as String?;
+    if (speaker == null || text == null || text.isEmpty) return;
+
+    // Determine which component to attach the bubble to.
+    PositionComponent? target;
+    Color bubbleColor;
+    Color? borderColor;
+
+    if (speaker == 'dreamfinder' && _dreamfinderComponent != null) {
+      target = _dreamfinderComponent;
+      bubbleColor = const Color(0xCC1A1020); // dark purple
+      borderColor = const Color(0xFFDAA520); // gold
+    } else if (speaker == 'user') {
+      target = _userPlayerComponent;
+      bubbleColor = const Color(0xCC1A1A2E); // dark blue
+      borderColor = null;
+    } else {
+      return;
+    }
+
+    // Remove existing speech bubble for this speaker.
+    _speechBubbles[speaker]?.removeFromParent();
+
+    final bubble = SpeechBubbleComponent(
+      text: text,
+      backgroundColor: bubbleColor,
+      borderColor: borderColor,
+      maxWidth: 140,
+      fontSize: 9,
+    );
+
+    // Position below the character sprite.
+    bubble.position = target!.position + Vector2(16, 36);
+    bubble.priority = target.priority + 1;
+    _speechBubbles[speaker] = bubble;
+    add(bubble);
+  }
+
   /// Connect to LiveKit room.
   ///
   /// Safe to call multiple times — returns immediately if already connected.
@@ -894,6 +953,17 @@ class TechWorld extends World with TapCallbacks {
         _downgradeVideoBubble(participant.identity);
       }
     });
+
+    // Subscribe to speech transcripts for in-game speech bubbles.
+    _speechTranscriptSubscription = _liveKitService!.dataReceived
+        .where((msg) => msg.topic == 'speech-transcript')
+        .listen(_handleSpeechTranscript);
+
+    // Infrastructure health monitoring.
+    _infraHealthService = InfraHealthService(
+      liveKitService: _liveKitService!,
+    );
+    Locator.add<InfraHealthService>(_infraHealthService!);
 
     // Listen for unexpected connection loss to clean up all LiveKit state.
     // This enables reconnection: disconnectFromLiveKit() nulls _liveKitService,
@@ -1623,6 +1693,19 @@ class TechWorld extends World with TapCallbacks {
     _connectionLostSubscription = null;
     _mapInfoRequestedSubscription?.cancel();
     _mapInfoRequestedSubscription = null;
+    _speechTranscriptSubscription?.cancel();
+    _speechTranscriptSubscription = null;
+
+    // Dispose infrastructure health monitoring.
+    _infraHealthService?.dispose();
+    Locator.remove<InfraHealthService>();
+    _infraHealthService = null;
+
+    // Clear speech bubbles
+    for (final bubble in _speechBubbles.values) {
+      bubble.removeFromParent();
+    }
+    _speechBubbles.clear();
 
     // Clear pending avatar data
     _pendingAvatars.clear();

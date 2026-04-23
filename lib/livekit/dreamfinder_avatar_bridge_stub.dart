@@ -13,6 +13,9 @@ class DreamfinderAvatarBridge {
   /// Always false.
   bool get isReady => false;
 
+  /// Always null.
+  int? get avatarLoadProgress => null;
+
   /// No-op.
   Future<void> initialize() async {}
 

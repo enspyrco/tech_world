@@ -16,11 +16,15 @@ import 'package:web/web.dart' as web;
 final _log = Logger('CanvasCapture');
 
 class CanvasCapture {
-  CanvasCapture._(this._canvas, {int fps = 15})
+  CanvasCapture._(this._canvas, {int fps = 15, this.onBeforeCapture})
       : _captureInterval = Duration(milliseconds: (1000 / fps).round());
 
   final web.HTMLCanvasElement _canvas;
   final Duration _captureInterval;
+
+  /// Optional callback invoked before each frame capture.
+  /// Used to force a render when the canvas uses preserveDrawingBuffer: false.
+  final void Function()? onBeforeCapture;
 
   ui.Image? _currentFrame;
   bool _hasNewFrame = false;
@@ -30,11 +34,15 @@ class CanvasCapture {
   Timer? _captureTimer;
 
   /// Create a capture from an HTMLCanvasElement.
-  static CanvasCapture? create(web.HTMLCanvasElement canvas, {int fps = 15}) {
+  static CanvasCapture? create(
+    web.HTMLCanvasElement canvas, {
+    int fps = 15,
+    void Function()? onBeforeCapture,
+  }) {
     if (canvas.width == 0 && canvas.height == 0) {
       _log.warning('Canvas has zero dimensions');
     }
-    return CanvasCapture._(canvas, fps: fps);
+    return CanvasCapture._(canvas, fps: fps, onBeforeCapture: onBeforeCapture);
   }
 
   bool get hasNewFrame => _hasNewFrame;
@@ -71,6 +79,9 @@ class CanvasCapture {
     _frameInFlight = true;
 
     try {
+      // Force a render if the canvas doesn't preserve its drawing buffer.
+      onBeforeCapture?.call();
+
       final imageBitmap = await web.window
           .createImageBitmap(_canvas as web.ImageBitmapSource)
           .toDart;
@@ -81,6 +92,9 @@ class CanvasCapture {
           imageBitmap as JSAny,
         );
       } catch (_) {
+        // Only close on error — on success, CanvasKit may still need the
+        // ImageBitmap's backing data for GPU texture upload. Let GC handle
+        // the successful case.
         imageBitmap.close();
         rethrow;
       }
