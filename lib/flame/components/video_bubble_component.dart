@@ -1,4 +1,4 @@
-import 'dart:math' show pi;
+import 'dart:math' show pi, sin, sqrt;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -100,6 +100,10 @@ class VideoBubbleComponent extends PositionComponent {
 
   // Opacity for distance-based fading
   double _opacity = 1.0;
+
+  /// Optional loading progress (0–100) shown in the spinner.
+  /// Set by the parent when the avatar GLB is downloading.
+  int? loadingProgress;
 
   /// Set the opacity for distance-based fading (0.0 to 1.0).
   set opacity(double value) => _opacity = value.clamp(0.0, 1.0);
@@ -612,38 +616,43 @@ class VideoBubbleComponent extends PositionComponent {
       canvas.restore();
       canvas.restore();
     } else {
-      // Fallback: draw colored background with initial
+      // Fallback: draw placeholder with hologram boot effect during download
       canvas.save();
       final clipPath = Path()
         ..addOval(Rect.fromCircle(center: center, radius: radius));
       canvas.clipPath(clipPath);
 
-      final bgPaint = Paint()..color = Colors.grey[800]!;
+      final bgPaint = Paint()..color = const Color(0xFF0A0A1A);
       canvas.drawCircle(center, radius, bgPaint);
 
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: _getInitial(),
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: bubbleSize * 0.4,
-            fontWeight: FontWeight.bold,
+      if (_isLoading && loadingProgress != null && loadingProgress! > 0) {
+        // Hologram boot: scan lines fill up as download progresses
+        _drawHologramBoot(canvas, center, radius);
+      } else {
+        // Static initial
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: _getInitial(),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: bubbleSize * 0.4,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout();
-      textPainter.paint(
-        canvas,
-        Offset(
-          center.dx - textPainter.width / 2,
-          center.dy - textPainter.height / 2,
-        ),
-      );
+          textDirection: TextDirection.ltr,
+        );
+        textPainter.layout();
+        textPainter.paint(
+          canvas,
+          Offset(
+            center.dx - textPainter.width / 2,
+            center.dy - textPainter.height / 2,
+          ),
+        );
+      }
 
       canvas.restore();
 
-      // Draw loading spinner overlay if still loading
       if (_isLoading) {
         _drawLoadingSpinner(canvas, center, radius);
       }
@@ -662,12 +671,11 @@ class VideoBubbleComponent extends PositionComponent {
     }
   }
 
-  /// Draw a spinning loading indicator arc
+  /// Draw a spinning loading indicator arc with optional progress text.
   void _drawLoadingSpinner(Canvas canvas, Offset center, double radius) {
     final spinnerRadius = radius * 0.6;
     final spinnerRect = Rect.fromCircle(center: center, radius: spinnerRadius);
 
-    // Draw a spinning arc
     final spinnerPaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.8)
       ..style = PaintingStyle.stroke
@@ -679,16 +687,100 @@ class VideoBubbleComponent extends PositionComponent {
     canvas.rotate(_loadingRotation);
     canvas.translate(-center.dx, -center.dy);
 
-    // Draw arc (270 degrees, leaving a gap)
-    canvas.drawArc(
-      spinnerRect,
-      0,
-      pi * 1.5, // 270 degrees
-      false,
-      spinnerPaint,
-    );
-
+    // Draw arc — if progress is known and > 0, show proportional arc.
+    // Otherwise show the default spinning 270° arc.
+    final hasProgress = loadingProgress != null && loadingProgress! > 0;
+    final arcExtent = hasProgress
+        ? pi * 2 * (loadingProgress! / 100).clamp(0.01, 1.0)
+        : pi * 1.5;
+    canvas.drawArc(spinnerRect, 0, arcExtent, false, spinnerPaint);
     canvas.restore();
+
+    // Draw progress percentage text
+    if (loadingProgress != null) {
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: '$loadingProgress%',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.9),
+            fontSize: radius * 0.35,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(
+          center.dx - textPainter.width / 2,
+          center.dy - textPainter.height / 2,
+        ),
+      );
+      textPainter.dispose();
+    }
+  }
+
+  /// Draw a hologram materializing effect — scan lines fill the bubble
+  /// from bottom to top as the avatar GLB downloads.
+  void _drawHologramBoot(Canvas canvas, Offset center, double radius) {
+    final progress = (loadingProgress ?? 0) / 100.0;
+    final diameter = radius * 2;
+    final lineSpacing = 3.0;
+    final totalLines = (diameter / lineSpacing).ceil();
+    final revealedLines = (totalLines * progress).ceil();
+
+    // Gold hologram color
+    const baseColor = Color(0xFFDAA520);
+
+    for (int i = 0; i < revealedLines; i++) {
+      // Draw from bottom up
+      final y = center.dy + radius - (i * lineSpacing);
+      if (y < center.dy - radius) break;
+
+      // Calculate horizontal extent at this y (circle geometry)
+      final dy = (y - center.dy).abs();
+      if (dy > radius) continue;
+      final halfWidth = sqrt(radius * radius - dy * dy);
+
+      // Lines near the reveal edge shimmer
+      final distFromEdge = (revealedLines - i).toDouble();
+      final shimmer = distFromEdge < 5
+          ? 0.3 + 0.7 * sin(_time * 8 + i * 0.5).abs()
+          : 0.4 + 0.3 * sin(_time * 2 + i * 0.3).abs();
+
+      final linePaint = Paint()
+        ..color = baseColor.withValues(alpha: shimmer * 0.8)
+        ..strokeWidth = 1.5;
+
+      canvas.drawLine(
+        Offset(center.dx - halfWidth, y),
+        Offset(center.dx + halfWidth, y),
+        linePaint,
+      );
+    }
+
+    // Progress text
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: '$loadingProgress%',
+        style: TextStyle(
+          color: baseColor.withValues(alpha: 0.9),
+          fontSize: radius * 0.4,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        center.dx - textPainter.width / 2,
+        center.dy - textPainter.height / 2,
+      ),
+    );
+    textPainter.dispose();
   }
 
   String _getInitial() {
