@@ -30,12 +30,20 @@ class InfraHealthService {
     _bootSubscription = _liveKitService.dataReceived
         .where((msg) => msg.topic == 'infra-boot')
         .listen(_onBootMessage);
+
+    // Mark all services as unknown if no heartbeat arrives within 2× the
+    // expected interval (agent publishes every 10s → stale after 20s).
+    _staleTimer = Timer.periodic(_staleTimeout, (_) => _checkStale());
   }
+
+  static const _staleTimeout = Duration(seconds: 20);
 
   final LiveKitService _liveKitService;
   StreamSubscription<DataChannelMessage>? _healthSubscription;
   StreamSubscription<DataChannelMessage>? _healResultSubscription;
   StreamSubscription<DataChannelMessage>? _bootSubscription;
+  Timer? _staleTimer;
+  DateTime? _lastHeartbeat;
 
   /// Latest health snapshot. Starts empty (all unknown).
   final healthState = ValueNotifier<InfraHealthSnapshot>(
@@ -55,6 +63,7 @@ class InfraHealthService {
     if (json == null) return;
 
     try {
+      _lastHeartbeat = DateTime.now();
       healthState.value = InfraHealthSnapshot.fromJson(json);
     } catch (e) {
       _log.warning('Failed to parse infra-health message: $e');
@@ -83,6 +92,17 @@ class InfraHealthService {
     }
   }
 
+  /// If no heartbeat has arrived within the stale timeout, reset all
+  /// services to [ServiceStatus.unknown].
+  void _checkStale() {
+    if (_lastHeartbeat == null) return;
+    final age = DateTime.now().difference(_lastHeartbeat!);
+    if (age > _staleTimeout && healthState.value != InfraHealthSnapshot.empty) {
+      _log.warning('No infra-health heartbeat for ${age.inSeconds}s — marking stale');
+      healthState.value = InfraHealthSnapshot.empty;
+    }
+  }
+
   /// Request the agent to heal a broken service.
   ///
   /// Publishes on the `infra-heal` topic targeted at the Dreamfinder agent.
@@ -96,6 +116,7 @@ class InfraHealthService {
   }
 
   void dispose() {
+    _staleTimer?.cancel();
     _healthSubscription?.cancel();
     _healResultSubscription?.cancel();
     _bootSubscription?.cancel();

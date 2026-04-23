@@ -64,10 +64,22 @@ class SpeechBubbleComponent extends PositionComponent {
   double _totalHeight = 0;
   bool _layoutDone = false;
 
+  // Cached paragraph — rebuilt only when revealed count or opacity changes.
+  ui.Paragraph? _cachedParagraph;
+  int _lastRevealedCount = -1;
+  double _lastOverallOpacity = -1;
+
   @override
   void onMount() {
     super.onMount();
     _computeLayout();
+  }
+
+  @override
+  void onRemove() {
+    _cachedParagraph?.dispose();
+    _cachedParagraph = null;
+    super.onRemove();
   }
 
   /// Pre-compute the position of every character using TextPainter.
@@ -151,33 +163,46 @@ class SpeechBubbleComponent extends PositionComponent {
       canvas.drawRRect(rrect, borderPaint);
     }
 
-    // Draw each character with individual opacity.
-    for (final charLayout in _chars) {
-      if (charLayout.char == ' ' || charLayout.char == '\n') continue;
+    // Build a single Paragraph with per-character opacity spans.
+    // Rebuilt only when the visible character count or overall opacity changes.
+    final revealedCount = _chars
+        .where((c) => _elapsed - c.index / letterRevealRate > 0)
+        .length;
+    if (revealedCount != _lastRevealedCount ||
+        _overallOpacity != _lastOverallOpacity) {
+      _lastRevealedCount = revealedCount;
+      _lastOverallOpacity = _overallOpacity;
+      _cachedParagraph?.dispose();
 
-      // When does this character start revealing?
-      final revealStart = charLayout.index / letterRevealRate;
-      final charAge = _elapsed - revealStart;
-
-      if (charAge <= 0) continue; // Not revealed yet.
-
-      final charOpacity =
-          (charAge / letterFadeDuration).clamp(0.0, 1.0) * _overallOpacity;
-
-      final paragraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle(
+      final builder = ui.ParagraphBuilder(ui.ParagraphStyle(
         textDirection: TextDirection.ltr,
+        maxLines: null,
       ));
-      paragraphBuilder.pushStyle(ui.TextStyle(
-        color: textColor.withValues(alpha: charOpacity),
-        fontSize: fontSize,
-        height: 1.3,
-      ));
-      paragraphBuilder.addText(charLayout.char);
-      final paragraph = paragraphBuilder.build();
-      paragraph.layout(const ui.ParagraphConstraints(width: 50));
 
-      canvas.drawParagraph(paragraph, charLayout.offset);
-      paragraph.dispose();
+      for (final charLayout in _chars) {
+        final revealStart = charLayout.index / letterRevealRate;
+        final charAge = _elapsed - revealStart;
+        final charOpacity = charAge <= 0
+            ? 0.0
+            : (charAge / letterFadeDuration).clamp(0.0, 1.0) *
+                _overallOpacity;
+
+        builder.pushStyle(ui.TextStyle(
+          color: textColor.withValues(alpha: charOpacity),
+          fontSize: fontSize,
+          height: 1.3,
+        ));
+        builder.addText(charLayout.char);
+        builder.pop();
+      }
+
+      _cachedParagraph = builder.build();
+      _cachedParagraph!
+          .layout(ui.ParagraphConstraints(width: maxWidth - 16));
+    }
+
+    if (_cachedParagraph != null) {
+      canvas.drawParagraph(_cachedParagraph!, const Offset(8, 6));
     }
   }
 }
