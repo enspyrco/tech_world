@@ -91,11 +91,12 @@ class CanvasCapture {
         newFrame = await ui_web.createImageFromImageBitmap(
           imageBitmap as JSAny,
         );
-      } finally {
-        // Always close the ImageBitmap to prevent VideoFrame GC leak.
-        // createImageFromImageBitmap transfers the pixel data; the
-        // ImageBitmap handle itself must still be released.
+      } catch (_) {
+        // Only close on error — on success, CanvasKit may still need the
+        // ImageBitmap's backing data for GPU texture upload. Let GC handle
+        // the successful case.
         imageBitmap.close();
+        rethrow;
       }
 
       final oldFrame = _currentFrame;
