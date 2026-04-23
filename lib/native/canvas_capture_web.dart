@@ -108,7 +108,12 @@ class CanvasCapture {
         _log.info('First canvas frame captured: ${w}x$h');
       }
 
-      oldFrame?.dispose();
+      // Defer old frame disposal to the next microtask so CanvasKit can
+      // finish any in-progress render pass that references the texture.
+      // Immediate disposal causes "texImage2D: source data detached".
+      if (oldFrame != null) {
+        Future.microtask(() => oldFrame.dispose());
+      }
     } catch (e) {
       _log.warning('Canvas frame capture error: $e', e);
     } finally {
