@@ -1,14 +1,18 @@
-/// Captures frames from an HTMLCanvasElement via createImageBitmap.
+/// Captures frames from an HTMLCanvasElement via 2D canvas pixel readback.
 ///
 /// Designed for capturing Three.js render output from a same-origin iframe.
 /// Uses the same frame interface as [VideoElementCapture] so it plugs directly
 /// into [VideoBubbleComponent]'s existing frame consumption loop.
+///
+/// Capture pipeline: WebGL canvas → drawImage to 2D canvas → getImageData →
+/// decodeImageFromPixels → ui.Image. This avoids createImageFromImageBitmap
+/// which produces black frames in CanvasKit due to premultiplied alpha issues.
 library;
 
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'dart:ui_web' as ui_web;
 
 import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
@@ -87,11 +91,9 @@ class CanvasCapture {
       // Force a render if the canvas doesn't preserve its drawing buffer.
       onBeforeCapture?.call();
 
-      // Draw the WebGL canvas onto a 2D canvas to normalize premultiplied
-      // alpha. CanvasKit's createImageFromImageBitmap produces black frames
-      // when given a premultiplied-alpha WebGL ImageBitmap directly.
-      final w = _canvas.width;
-      final h = _canvas.height;
+      // Draw WebGL canvas onto a 2D canvas, then read raw RGBA pixels.
+      // This avoids createImageFromImageBitmap which produces black frames
+      // in CanvasKit due to premultiplied alpha handling.
       if (_offscreen == null || _offscreen!.width != w || _offscreen!.height != h) {
         _offscreen = web.document.createElement('canvas') as web.HTMLCanvasElement;
         _offscreen!.width = w;
@@ -101,19 +103,20 @@ class CanvasCapture {
       _offscreenCtx!.clearRect(0, 0, w, h);
       _offscreenCtx!.drawImage(_canvas as web.CanvasImageSource, 0, 0);
 
-      final imageBitmap = await web.window
-          .createImageBitmap(_offscreen! as web.ImageBitmapSource)
-          .toDart;
+      // Read raw RGBA pixel data from the 2D canvas.
+      final imageData = _offscreenCtx!.getImageData(0, 0, w, h);
+      final pixels = imageData.data.toDart;
 
-      ui.Image newFrame;
-      try {
-        newFrame = await ui_web.createImageFromImageBitmap(
-          imageBitmap as JSAny,
-        );
-      } catch (_) {
-        imageBitmap.close();
-        rethrow;
-      }
+      // Convert to ui.Image via decodeImageFromPixels (synchronous pixel copy).
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        Uint8List.fromList(pixels),
+        w,
+        h,
+        ui.PixelFormat.rgba8888,
+        completer.complete,
+      );
+      final newFrame = await completer.future;
 
       final oldFrame = _currentFrame;
       _currentFrame = newFrame;
