@@ -1,18 +1,22 @@
-/// Captures frames from an HTMLCanvasElement via 2D canvas pixel readback.
+/// Captures frames from an HTMLCanvasElement via captureStream + video element.
 ///
 /// Designed for capturing Three.js render output from a same-origin iframe.
 /// Uses the same frame interface as [VideoElementCapture] so it plugs directly
 /// into [VideoBubbleComponent]'s existing frame consumption loop.
 ///
-/// Capture pipeline: WebGL canvas → drawImage to 2D canvas → getImageData →
-/// decodeImageFromPixels → ui.Image. This avoids createImageFromImageBitmap
-/// which produces black frames in CanvasKit due to premultiplied alpha issues.
+/// Capture pipeline: canvas.captureStream() → MediaStream → <video> element →
+/// createImageBitmap(video) → createImageFromImageBitmap → ui.Image.
+///
+/// This approach reuses the same video-element-to-texture path that already
+/// works for every remote participant's video feed, avoiding the various
+/// getImageData / decodeImageFromPixels / createImageFromImageBitmap(canvas)
+/// paths that produce black frames in CanvasKit.
 library;
 
 import 'dart:async';
 import 'dart:js_interop';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'dart:ui_web' as ui_web;
 
 import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
@@ -21,19 +25,16 @@ final _log = Logger('CanvasCapture');
 
 class CanvasCapture {
   CanvasCapture._(this._canvas, {int fps = 15, this.onBeforeCapture})
-      : _captureInterval = Duration(milliseconds: (1000 / fps).round());
+      : _captureInterval = Duration(milliseconds: (1000 / fps).round()),
+        _fps = fps;
 
   final web.HTMLCanvasElement _canvas;
   final Duration _captureInterval;
+  final int _fps;
 
   /// Optional callback invoked before each frame capture.
   /// Used to force a render when the canvas uses preserveDrawingBuffer: false.
   final void Function()? onBeforeCapture;
-
-  // Offscreen 2D canvas used to normalize WebGL premultiplied alpha before
-  // passing to CanvasKit's createImageFromImageBitmap.
-  web.HTMLCanvasElement? _offscreen;
-  web.CanvasRenderingContext2D? _offscreenCtx;
 
   ui.Image? _currentFrame;
   bool _hasNewFrame = false;
@@ -41,6 +42,9 @@ class CanvasCapture {
   bool _frameInFlight = false;
   int _frameNumber = 0;
   Timer? _captureTimer;
+
+  // Video element driven by the canvas's captureStream.
+  web.HTMLVideoElement? _video;
 
   /// Create a capture from an HTMLCanvasElement.
   static CanvasCapture? create(
@@ -67,23 +71,47 @@ class CanvasCapture {
   void startCapture() {
     if (_isCapturing) return;
     _isCapturing = true;
+
+    // Create a MediaStream from the canvas and pipe it into a <video> element.
+    // This gives us a standard video source that CanvasKit can capture from
+    // using the same createImageBitmap(video) path as remote participants.
+    _video = web.document.createElement('video') as web.HTMLVideoElement;
+    _video!.style.display = 'none';
+    _video!.autoplay = true;
+    _video!.muted = true;
+    // playsInline needed for iOS/Safari autoplay.
+    _video!.setAttribute('playsinline', '');
+    web.document.body?.appendChild(_video!);
+
+    final stream = _canvas.captureStream(_fps);
+    _video!.srcObject = stream as web.MediaProvider;
+
     _captureTimer = Timer.periodic(_captureInterval, (_) => _captureFrame());
-    _log.info('Started canvas capture at ${_captureInterval.inMilliseconds}ms interval');
+    _log.info(
+        'Started canvas capture via captureStream at ${_captureInterval.inMilliseconds}ms interval');
   }
 
   void stopCapture() {
     _isCapturing = false;
     _captureTimer?.cancel();
     _captureTimer = null;
+
+    _video?.srcObject = null;
+    _video?.remove();
+    _video = null;
+
     _log.info('Stopped canvas capture');
   }
 
   Future<void> _captureFrame() async {
-    if (!_isCapturing || _frameInFlight) return;
+    if (!_isCapturing || _frameInFlight || _video == null) return;
 
-    final w = _canvas.width;
-    final h = _canvas.height;
-    if (w == 0 || h == 0) return;
+    // Wait until the video has enough data to render a frame.
+    if (_video!.readyState < 2) return; // HAVE_CURRENT_DATA
+
+    final vw = _video!.videoWidth;
+    final vh = _video!.videoHeight;
+    if (vw == 0 || vh == 0) return;
 
     _frameInFlight = true;
 
@@ -91,32 +119,20 @@ class CanvasCapture {
       // Force a render if the canvas doesn't preserve its drawing buffer.
       onBeforeCapture?.call();
 
-      // Draw WebGL canvas onto a 2D canvas, then read raw RGBA pixels.
-      // This avoids createImageFromImageBitmap which produces black frames
-      // in CanvasKit due to premultiplied alpha handling.
-      if (_offscreen == null || _offscreen!.width != w || _offscreen!.height != h) {
-        _offscreen = web.document.createElement('canvas') as web.HTMLCanvasElement;
-        _offscreen!.width = w;
-        _offscreen!.height = h;
-        _offscreenCtx = _offscreen!.getContext('2d') as web.CanvasRenderingContext2D;
+      // Capture from the <video> element — same path as remote participants.
+      final imageBitmap = await web.window
+          .createImageBitmap(_video! as web.ImageBitmapSource)
+          .toDart;
+
+      ui.Image newFrame;
+      try {
+        newFrame = await ui_web.createImageFromImageBitmap(
+          imageBitmap as JSAny,
+        );
+      } catch (_) {
+        imageBitmap.close();
+        rethrow;
       }
-      _offscreenCtx!.clearRect(0, 0, w, h);
-      _offscreenCtx!.drawImage(_canvas as web.CanvasImageSource, 0, 0);
-
-      // Read raw RGBA pixel data from the 2D canvas.
-      final imageData = _offscreenCtx!.getImageData(0, 0, w, h);
-      final pixels = imageData.data.toDart;
-
-      // Convert to ui.Image via decodeImageFromPixels (synchronous pixel copy).
-      final completer = Completer<ui.Image>();
-      ui.decodeImageFromPixels(
-        Uint8List.fromList(pixels),
-        w,
-        h,
-        ui.PixelFormat.rgba8888,
-        completer.complete,
-      );
-      final newFrame = await completer.future;
 
       final oldFrame = _currentFrame;
       _currentFrame = newFrame;
@@ -124,12 +140,10 @@ class CanvasCapture {
       _frameNumber++;
 
       if (_frameNumber == 1) {
-        _log.info('First canvas frame captured: ${w}x$h');
+        _log.info('First canvas frame captured: ${vw}x$vh');
       }
 
-      // Defer old frame disposal to the next microtask so CanvasKit can
-      // finish any in-progress render pass that references the texture.
-      // Immediate disposal causes "texImage2D: source data detached".
+      // Defer old frame disposal so CanvasKit can finish rendering it.
       if (oldFrame != null) {
         Future.microtask(() => oldFrame.dispose());
       }
