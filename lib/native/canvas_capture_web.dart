@@ -14,7 +14,6 @@ library;
 
 import 'dart:async';
 import 'dart:js_interop';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:logging/logging.dart';
@@ -57,8 +56,8 @@ class CanvasCapture implements FrameSource {
   @override
   bool get hasNewFrame => _hasNewFrame;
 
-  @override
   /// Consume the current frame, transferring ownership to the caller.
+  @override
   ui.Image? consumeFrame() {
     _hasNewFrame = false;
     final frame = _currentFrame;
@@ -114,12 +113,16 @@ class CanvasCapture implements FrameSource {
       // createImageFromImageBitmap (CanvasKit's MakeLazyImageFromTextureSource)
       // which renders black due to Skia issue 14637.
       final imageData = _offscreenCtx!.getImageData(0, 0, w, h);
-      final rgbaBytes = imageData.data.toDart;
+      final clamped = imageData.data.toDart;
+      // View the clamped bytes as a Uint8List without copying.
+      final rgbaBytes = clamped.buffer.asUint8List(
+        clamped.offsetInBytes,
+        clamped.lengthInBytes,
+      );
 
       // Decode raw RGBA into a ui.Image via ImageDescriptor.raw —
       // the same proven path used by the macOS FFI capture.
-      final buffer =
-          await ui.ImmutableBuffer.fromUint8List(Uint8List.fromList(rgbaBytes));
+      final buffer = await ui.ImmutableBuffer.fromUint8List(rgbaBytes);
       final descriptor = ui.ImageDescriptor.raw(
         buffer,
         width: w,
