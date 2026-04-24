@@ -83,6 +83,9 @@ class TechWorld extends World with TapCallbacks {
   /// at runtime when the embodied agent joins with an `agent-{jobId}` identity.
   String _dreamfinderIdentity = dreamfinderBot.identity;
   DreamfinderAvatarBridge? _dreamfinderAvatarBridge;
+  // Participant saved when DF joins before onLoad completes (pathComponent
+  // not yet available). Processed in onLoad once the world is ready.
+  RemoteParticipant? _pendingDreamfinderParticipant;
   // final GridComponent _gridComponent = GridComponent();
   BarriersComponent _barriersComponent =
       BarriersComponent(barriers: defaultMap.barriers);
@@ -677,6 +680,14 @@ class TechWorld extends World with TapCallbacks {
           allBotIdentities.toList().indexOf(participant.identity);
 
       if (isDreamfinderIdentity(participant.identity) &&
+          _pathComponent == null) {
+        // PathComponent not ready yet — defer until onLoad completes.
+        _pendingDreamfinderParticipant = participant;
+        _dreamfinderIdentity = participant.identity;
+        return;
+      }
+
+      if (isDreamfinderIdentity(participant.identity) &&
           _pathComponent != null) {
         // Dreamfinder — use DreamfinderComponent with idle behavior.
         // Update identity to match whatever the agent SDK assigned
@@ -1184,6 +1195,12 @@ class TechWorld extends World with TapCallbacks {
     await _loadVideoBubbleShader();
 
     gameReady.value = true;
+
+    // Process deferred Dreamfinder participant (joined before onLoad).
+    if (_pendingDreamfinderParticipant != null) {
+      _handleParticipantJoined(_pendingDreamfinderParticipant!);
+      _pendingDreamfinderParticipant = null;
+    }
 
     _authStateChangesSubscription = _authStateChanges.listen((authUser) async {
       if (authUser is SignedOutUser) {
