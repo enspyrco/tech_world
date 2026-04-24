@@ -22,7 +22,7 @@ import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
 
 import '../bots/bot_config.dart';
-import '../native/video_frame_web_v2.dart' show VideoElementCapture;
+import '../native/canvas_capture_web.dart';
 import 'livekit_service.dart';
 
 final _log = Logger('DreamfinderAvatarBridge');
@@ -39,7 +39,7 @@ class DreamfinderAvatarBridge {
   final LiveKitService _liveKitService;
 
   web.HTMLIFrameElement? _iframe;
-  VideoElementCapture? _videoCapture;
+  CanvasCapture? _canvasCapture;
   bool _isReady = false;
 
   /// Download progress of the avatar GLB (0–100), or null if not loading.
@@ -48,8 +48,8 @@ class DreamfinderAvatarBridge {
   StreamSubscription<DataChannelMessage>? _moodSubscription;
   JSFunction? _messageListener;
 
-  /// The video capture instance, available after the iframe is ready.
-  VideoElementCapture? get videoCapture => _videoCapture;
+  /// The canvas capture instance, available after the iframe is ready.
+  CanvasCapture? get canvasCapture => _canvasCapture;
 
   /// Whether the iframe has loaded and the canvas is being captured.
   bool get isReady => _isReady;
@@ -113,17 +113,16 @@ class DreamfinderAvatarBridge {
     // Diagnostic: verify preserveDrawingBuffer and alpha settings.
     _logCanvasDiagnostics(canvas);
 
-    // Route canvas frames through a <video> element so that
-    // createImageBitmap(video) produces ImageBitmaps that CanvasKit's
-    // MakeLazyImageFromTextureSource can render. Canvas-sourced ImageBitmaps
-    // hit a Skia regression (issue 14637) and render black.
-    final stream = canvas.captureStream(15);
-    final capture = await VideoElementCapture.createFromStream(stream, null);
+    // Capture frames via direct pixel readback (getImageData → raw RGBA →
+    // ImageDescriptor.raw). This bypasses createImageFromImageBitmap which
+    // hits Skia issue 14637 and renders black in CanvasKit.
+    final capture = CanvasCapture.create(canvas, fps: 15);
     if (capture == null) {
-      _log.severe('Failed to create VideoElementCapture from canvas stream');
+      _log.severe('Failed to create CanvasCapture');
       return;
     }
-    _videoCapture = capture;
+
+    _canvasCapture = capture;
     capture.startCapture();
     _isReady = true;
 
@@ -279,8 +278,8 @@ class DreamfinderAvatarBridge {
   void dispose() {
     _audioSubscription?.cancel();
     _moodSubscription?.cancel();
-    _videoCapture?.dispose();
-    _videoCapture = null;
+    _canvasCapture?.dispose();
+    _canvasCapture = null;
 
     if (_messageListener != null) {
       web.window.removeEventListener('message', _messageListener!);

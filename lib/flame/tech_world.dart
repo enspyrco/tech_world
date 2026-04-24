@@ -631,7 +631,7 @@ class TechWorld extends World with TapCallbacks {
       displayName: dreamfinderBot.displayName,
       bubbleSize: 64,
       targetFps: 10,
-      externalVideoCapture: _dreamfinderAvatarBridge?.videoCapture,
+      externalVideoCapture: _dreamfinderAvatarBridge?.canvasCapture,
     );
     videoBubble.glowColor = const Color(0xFFDAA520); // gold
     videoBubble.glowIntensity = 0.7;

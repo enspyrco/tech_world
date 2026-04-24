@@ -15,14 +15,15 @@ library;
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:ui' as ui;
-import 'dart:ui_web' as ui_web;
 
 import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
 
+import 'frame_source.dart';
+
 final _log = Logger('CanvasCapture');
 
-class CanvasCapture {
+class CanvasCapture implements FrameSource {
   CanvasCapture._(this._canvas, {int fps = 15})
       : _captureInterval = Duration(milliseconds: (1000 / fps).round());
 
@@ -52,9 +53,11 @@ class CanvasCapture {
     return CanvasCapture._(canvas, fps: fps);
   }
 
+  @override
   bool get hasNewFrame => _hasNewFrame;
 
   /// Consume the current frame, transferring ownership to the caller.
+  @override
   ui.Image? consumeFrame() {
     _hasNewFrame = false;
     final frame = _currentFrame;
@@ -103,27 +106,35 @@ class CanvasCapture {
             _offscreen!.getContext('2d')! as web.CanvasRenderingContext2D;
       }
 
-      // Direct canvas-to-canvas copy. This is the exact call we verified
-      // produces pixels from the browser console:
-      //   [239, 205, 180, 255] — skin tone from the 3D avatar.
+      // Direct canvas-to-canvas copy via 2D context.
       _offscreenCtx!.drawImage(_canvas as web.CanvasImageSource, 0, 0);
 
-      // Create ImageBitmap from the 2D offscreen canvas (CPU-backed).
-      // Unlike captureStream-sourced ImageBitmaps, these work correctly
-      // with CanvasKit's createImageFromImageBitmap.
-      final imageBitmap = await web.window
-          .createImageBitmap(_offscreen! as web.ImageBitmapSource)
-          .toDart;
+      // Read raw RGBA pixels via getImageData. This bypasses
+      // createImageFromImageBitmap (CanvasKit's MakeLazyImageFromTextureSource)
+      // which renders black due to Skia issue 14637.
+      final imageData = _offscreenCtx!.getImageData(0, 0, w, h);
+      final clamped = imageData.data.toDart;
+      // View the clamped bytes as a Uint8List without copying.
+      final rgbaBytes = clamped.buffer.asUint8List(
+        clamped.offsetInBytes,
+        clamped.lengthInBytes,
+      );
 
-      ui.Image newFrame;
-      try {
-        newFrame = await ui_web.createImageFromImageBitmap(
-          imageBitmap as JSAny,
-        );
-      } catch (_) {
-        imageBitmap.close();
-        rethrow;
-      }
+      // Decode raw RGBA into a ui.Image via ImageDescriptor.raw —
+      // the same proven path used by the macOS FFI capture.
+      final buffer = await ui.ImmutableBuffer.fromUint8List(rgbaBytes);
+      final descriptor = ui.ImageDescriptor.raw(
+        buffer,
+        width: w,
+        height: h,
+        pixelFormat: ui.PixelFormat.rgba8888,
+      );
+      final codec = await descriptor.instantiateCodec();
+      final frameInfo = await codec.getNextFrame();
+      final newFrame = frameInfo.image;
+      codec.dispose();
+      descriptor.dispose();
+      buffer.dispose();
 
       final oldFrame = _currentFrame;
       _currentFrame = newFrame;
