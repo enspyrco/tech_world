@@ -1,20 +1,20 @@
-/// Captures frames from an HTMLCanvasElement via MediaStreamTrackProcessor.
+/// Captures frames from an HTMLCanvasElement via raw pixel readback.
 ///
 /// Designed for capturing Three.js render output from a same-origin iframe.
 /// Uses the same frame interface as [VideoElementCapture] so it plugs directly
 /// into [VideoBubbleComponent]'s existing frame consumption loop.
 ///
 /// Capture pipeline: canvas.captureStream() → MediaStreamTrackProcessor →
-/// VideoFrame → createImageBitmap → createImageFromImageBitmap → ui.Image.
+/// VideoFrame → drawImage to 2D canvas → getImageData → decodeImageFromPixels.
 ///
-/// This reuses the exact same VideoFrame→ImageBitmap→ui.Image path that works
-/// for remote participant video via DirectTrackCapture.
+/// This avoids createImageFromImageBitmap which produces black frames in
+/// CanvasKit due to a bug in MakeLazyImageFromTextureSource's texture upload.
 library;
 
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'dart:ui_web' as ui_web;
 
 import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
@@ -48,10 +48,9 @@ class CanvasCapture {
   MediaStreamTrackProcessor? _processor;
   web.ReadableStreamDefaultReader? _reader;
 
-  // Previous VideoFrame kept alive until the next frame arrives.
-  // captureStream VideoFrames share GPU backing with their ImageBitmaps,
-  // so we can't close them until CanvasKit has uploaded the texture.
-  VideoFrame? _previousVideoFrame;
+  // Offscreen 2D canvas for pixel readback.
+  web.HTMLCanvasElement? _offscreen;
+  web.CanvasRenderingContext2D? _offscreenCtx;
 
   /// Create a capture from an HTMLCanvasElement.
   static CanvasCapture? create(
@@ -151,34 +150,38 @@ class CanvasCapture {
         return;
       }
 
-      // VideoFrame → ImageBitmap → ui.Image
+      // VideoFrame → 2D canvas → raw RGBA pixels → decodeImageFromPixels.
       //
-      // IMPORTANT: Do NOT close the VideoFrame before the ImageBitmap is
-      // consumed. captureStream VideoFrames share their GPU backing store
-      // with ImageBitmaps — closing the VideoFrame detaches that shared
-      // data, causing CanvasKit's lazy texImage2D to fail with
-      // "source data has been detached".
-      //
-      // Instead, keep the previous VideoFrame alive until this frame
-      // replaces it, then close the old one.
-      // Close the previous VideoFrame now — by this point CanvasKit has
-      // had at least one render cycle to upload its texture via texImage2D.
-      _previousVideoFrame?.close();
-      _previousVideoFrame = videoFrame;
-
-      final imageBitmap = await web.window
-          .createImageBitmap(videoFrame as web.ImageBitmapSource)
-          .toDart;
-
-      ui.Image newFrame;
-      try {
-        newFrame = await ui_web.createImageFromImageBitmap(
-          imageBitmap as JSAny,
-        );
-      } catch (_) {
-        imageBitmap.close();
-        rethrow;
+      // We bypass createImageFromImageBitmap because CanvasKit's
+      // MakeLazyImageFromTextureSource fails to upload captureStream-sourced
+      // ImageBitmaps correctly (black texture, no error). Raw pixel readback
+      // through a 2D canvas is reliable and fast at 256×256.
+      if (_offscreen == null ||
+          _offscreen!.width != vw ||
+          _offscreen!.height != vh) {
+        _offscreen =
+            web.document.createElement('canvas') as web.HTMLCanvasElement;
+        _offscreen!.width = vw;
+        _offscreen!.height = vh;
+        _offscreenCtx =
+            _offscreen!.getContext('2d')! as web.CanvasRenderingContext2D;
       }
+
+      _offscreenCtx!.drawImage(videoFrame as web.CanvasImageSource, 0, 0);
+      videoFrame.close();
+
+      final imageData = _offscreenCtx!.getImageData(0, 0, vw, vh);
+      final pixels = Uint8List.fromList(imageData.data.toDart);
+
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        pixels,
+        vw,
+        vh,
+        ui.PixelFormat.rgba8888,
+        completer.complete,
+      );
+      final newFrame = await completer.future;
 
       final oldFrame = _currentFrame;
       _currentFrame = newFrame;
@@ -202,8 +205,6 @@ class CanvasCapture {
 
   void dispose() {
     stopCapture();
-    _previousVideoFrame?.close();
-    _previousVideoFrame = null;
     _currentFrame?.dispose();
     _currentFrame = null;
   }
