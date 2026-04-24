@@ -22,7 +22,7 @@ import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
 
 import '../bots/bot_config.dart';
-import '../native/canvas_capture_web.dart';
+import '../native/video_frame_web_v2.dart' show VideoElementCapture;
 import 'livekit_service.dart';
 
 final _log = Logger('DreamfinderAvatarBridge');
@@ -39,7 +39,7 @@ class DreamfinderAvatarBridge {
   final LiveKitService _liveKitService;
 
   web.HTMLIFrameElement? _iframe;
-  CanvasCapture? _canvasCapture;
+  VideoElementCapture? _videoCapture;
   bool _isReady = false;
 
   /// Download progress of the avatar GLB (0–100), or null if not loading.
@@ -48,8 +48,8 @@ class DreamfinderAvatarBridge {
   StreamSubscription<DataChannelMessage>? _moodSubscription;
   JSFunction? _messageListener;
 
-  /// The canvas capture instance, available after the iframe is ready.
-  CanvasCapture? get canvasCapture => _canvasCapture;
+  /// The video capture instance, available after the iframe is ready.
+  VideoElementCapture? get videoCapture => _videoCapture;
 
   /// Whether the iframe has loaded and the canvas is being captured.
   bool get isReady => _isReady;
@@ -113,8 +113,18 @@ class DreamfinderAvatarBridge {
     // Diagnostic: verify preserveDrawingBuffer and alpha settings.
     _logCanvasDiagnostics(canvas);
 
-    _canvasCapture = CanvasCapture.create(canvas, fps: 15);
-    _canvasCapture?.startCapture();
+    // Route canvas frames through a <video> element so that
+    // createImageBitmap(video) produces ImageBitmaps that CanvasKit's
+    // MakeLazyImageFromTextureSource can render. Canvas-sourced ImageBitmaps
+    // hit a Skia regression (issue 14637) and render black.
+    final stream = canvas.captureStream(15);
+    final capture = await VideoElementCapture.createFromStream(stream, null);
+    if (capture == null) {
+      _log.severe('Failed to create VideoElementCapture from canvas stream');
+      return;
+    }
+    _videoCapture = capture;
+    capture.startCapture();
     _isReady = true;
 
     // Start forwarding data channels to the iframe.
@@ -269,8 +279,8 @@ class DreamfinderAvatarBridge {
   void dispose() {
     _audioSubscription?.cancel();
     _moodSubscription?.cancel();
-    _canvasCapture?.dispose();
-    _canvasCapture = null;
+    _videoCapture?.dispose();
+    _videoCapture = null;
 
     if (_messageListener != null) {
       web.window.removeEventListener('message', _messageListener!);
