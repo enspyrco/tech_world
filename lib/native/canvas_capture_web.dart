@@ -26,6 +26,11 @@ class CanvasCapture {
   /// Used to force a render when the canvas uses preserveDrawingBuffer: false.
   final void Function()? onBeforeCapture;
 
+  // Offscreen 2D canvas used to normalize WebGL premultiplied alpha before
+  // passing to CanvasKit's createImageFromImageBitmap.
+  web.HTMLCanvasElement? _offscreen;
+  web.CanvasRenderingContext2D? _offscreenCtx;
+
   ui.Image? _currentFrame;
   bool _hasNewFrame = false;
   bool _isCapturing = false;
@@ -82,8 +87,22 @@ class CanvasCapture {
       // Force a render if the canvas doesn't preserve its drawing buffer.
       onBeforeCapture?.call();
 
+      // Draw the WebGL canvas onto a 2D canvas to normalize premultiplied
+      // alpha. CanvasKit's createImageFromImageBitmap produces black frames
+      // when given a premultiplied-alpha WebGL ImageBitmap directly.
+      final w = _canvas.width;
+      final h = _canvas.height;
+      if (_offscreen == null || _offscreen!.width != w || _offscreen!.height != h) {
+        _offscreen = web.document.createElement('canvas') as web.HTMLCanvasElement;
+        _offscreen!.width = w;
+        _offscreen!.height = h;
+        _offscreenCtx = _offscreen!.getContext('2d') as web.CanvasRenderingContext2D;
+      }
+      _offscreenCtx!.clearRect(0, 0, w, h);
+      _offscreenCtx!.drawImage(_canvas as web.CanvasImageSource, 0, 0);
+
       final imageBitmap = await web.window
-          .createImageBitmap(_canvas as web.ImageBitmapSource)
+          .createImageBitmap(_offscreen! as web.ImageBitmapSource)
           .toDart;
 
       ui.Image newFrame;
@@ -92,9 +111,6 @@ class CanvasCapture {
           imageBitmap as JSAny,
         );
       } catch (_) {
-        // Only close on error — on success, CanvasKit may still need the
-        // ImageBitmap's backing data for GPU texture upload. Let GC handle
-        // the successful case.
         imageBitmap.close();
         rethrow;
       }

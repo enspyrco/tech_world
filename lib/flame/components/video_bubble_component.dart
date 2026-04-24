@@ -391,11 +391,14 @@ class VideoBubbleComponent extends PositionComponent {
     }
     _lastFrameTime = now;
 
-    // Swap frames
+    // Swap frames — defer old frame disposal so CanvasKit can finish
+    // any in-progress render pass that references the texture.
     final oldFrame = _currentFrame;
     _currentFrame = newFrame;
     _framesCaptured++;
-    oldFrame?.dispose();
+    if (oldFrame != null) {
+      Future.microtask(() => oldFrame.dispose());
+    }
 
     // First frame received - no longer loading
     if (_isLoading) {
