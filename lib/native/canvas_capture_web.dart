@@ -1,14 +1,15 @@
-/// Captures frames from an HTMLCanvasElement via raw pixel readback.
+/// Captures frames from an HTMLCanvasElement via direct pixel readback.
 ///
 /// Designed for capturing Three.js render output from a same-origin iframe.
 /// Uses the same frame interface as [VideoElementCapture] so it plugs directly
 /// into [VideoBubbleComponent]'s existing frame consumption loop.
 ///
-/// Capture pipeline: canvas.captureStream() → MediaStreamTrackProcessor →
-/// VideoFrame → drawImage to 2D canvas → getImageData → decodeImageFromPixels.
+/// Capture pipeline: drawImage(source canvas → offscreen 2D canvas) →
+/// getImageData → decodeImageFromPixels → ui.Image.
 ///
-/// This avoids createImageFromImageBitmap which produces black frames in
-/// CanvasKit due to a bug in MakeLazyImageFromTextureSource's texture upload.
+/// This is the simplest possible capture path — no captureStream, no
+/// VideoFrames, no ImageBitmaps, no createImageFromImageBitmap. Just a
+/// direct canvas-to-canvas pixel copy via the 2D context.
 library;
 
 import 'dart:async';
@@ -19,24 +20,14 @@ import 'dart:ui' as ui;
 import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
 
-// Reuse JS interop types from video_frame_web_v2.dart
-import 'package:tech_world/native/video_frame_web_v2.dart'
-    show MediaStreamTrackProcessor, MediaStreamTrackProcessorInit,
-         MediaStreamTrackProcessorExtension, VideoFrame, VideoFrameExtension;
-
 final _log = Logger('CanvasCapture');
 
 class CanvasCapture {
-  CanvasCapture._(this._canvas, {int fps = 15, this.onBeforeCapture})
-      : _captureInterval = Duration(milliseconds: (1000 / fps).round()),
-        _fps = fps;
+  CanvasCapture._(this._canvas, {int fps = 15})
+      : _captureInterval = Duration(milliseconds: (1000 / fps).round());
 
   final web.HTMLCanvasElement _canvas;
   final Duration _captureInterval;
-  final int _fps;
-
-  /// Optional callback invoked before each frame capture.
-  final void Function()? onBeforeCapture;
 
   ui.Image? _currentFrame;
   bool _hasNewFrame = false;
@@ -44,9 +35,6 @@ class CanvasCapture {
   bool _frameInFlight = false;
   int _frameNumber = 0;
   Timer? _captureTimer;
-
-  MediaStreamTrackProcessor? _processor;
-  web.ReadableStreamDefaultReader? _reader;
 
   // Offscreen 2D canvas for pixel readback.
   web.HTMLCanvasElement? _offscreen;
@@ -61,7 +49,7 @@ class CanvasCapture {
     if (canvas.width == 0 && canvas.height == 0) {
       _log.warning('Canvas has zero dimensions');
     }
-    return CanvasCapture._(canvas, fps: fps, onBeforeCapture: onBeforeCapture);
+    return CanvasCapture._(canvas, fps: fps);
   }
 
   bool get hasNewFrame => _hasNewFrame;
@@ -78,25 +66,9 @@ class CanvasCapture {
     if (_isCapturing) return;
     _isCapturing = true;
 
-    // Create a MediaStream from the canvas, extract the video track,
-    // and pipe it through MediaStreamTrackProcessor to get VideoFrames.
-    final stream = _canvas.captureStream(_fps);
-    final tracks = stream.getVideoTracks();
-    if (tracks.length == 0) {
-      _log.severe('captureStream returned no video tracks');
-      return;
-    }
-    final track = tracks.toDart.first;
-
-    _processor = MediaStreamTrackProcessor(
-      MediaStreamTrackProcessorInit(track: track),
-    );
-    _reader =
-        _processor!.readable.getReader() as web.ReadableStreamDefaultReader;
-
     _captureTimer = Timer.periodic(_captureInterval, (_) => _captureFrame());
     _log.info(
-      'Started canvas capture via MediaStreamTrackProcessor '
+      'Started canvas capture via direct drawImage readback '
       'at ${_captureInterval.inMilliseconds}ms interval',
     );
   }
@@ -105,79 +77,47 @@ class CanvasCapture {
     _isCapturing = false;
     _captureTimer?.cancel();
     _captureTimer = null;
-
-    try {
-      _reader?.cancel().toDart.ignore();
-    } catch (e) {
-      _log.warning('Error cancelling reader: $e');
-    }
-    _reader = null;
-    _processor = null;
-
     _log.info('Stopped canvas capture');
   }
 
   Future<void> _captureFrame() async {
-    if (!_isCapturing || _reader == null) return;
+    if (!_isCapturing) return;
     if (_frameInFlight) return;
+
+    final w = _canvas.width;
+    final h = _canvas.height;
+    if (w == 0 || h == 0) return;
 
     _frameInFlight = true;
 
     try {
-      // Force a render if the canvas doesn't preserve its drawing buffer.
-      onBeforeCapture?.call();
-
-      // Read the next VideoFrame from the processor stream.
-      final result = await _reader!.read().toDart;
-      if (result.done) {
-        _log.info('Capture stream ended');
-        _isCapturing = false;
-        _frameInFlight = false;
-        return;
-      }
-
-      final videoFrame = result.value as VideoFrame?;
-      if (videoFrame == null) {
-        _frameInFlight = false;
-        return;
-      }
-
-      final vw = videoFrame.displayWidth;
-      final vh = videoFrame.displayHeight;
-      if (vw == 0 || vh == 0) {
-        videoFrame.close();
-        _frameInFlight = false;
-        return;
-      }
-
-      // VideoFrame → 2D canvas → raw RGBA pixels → decodeImageFromPixels.
-      //
-      // We bypass createImageFromImageBitmap because CanvasKit's
-      // MakeLazyImageFromTextureSource fails to upload captureStream-sourced
-      // ImageBitmaps correctly (black texture, no error). Raw pixel readback
-      // through a 2D canvas is reliable and fast at 256×256.
+      // Ensure offscreen canvas matches source dimensions.
       if (_offscreen == null ||
-          _offscreen!.width != vw ||
-          _offscreen!.height != vh) {
+          _offscreen!.width != w ||
+          _offscreen!.height != h) {
         _offscreen =
             web.document.createElement('canvas') as web.HTMLCanvasElement;
-        _offscreen!.width = vw;
-        _offscreen!.height = vh;
+        _offscreen!.width = w;
+        _offscreen!.height = h;
         _offscreenCtx =
             _offscreen!.getContext('2d')! as web.CanvasRenderingContext2D;
       }
 
-      _offscreenCtx!.drawImage(videoFrame as web.CanvasImageSource, 0, 0);
-      videoFrame.close();
+      // Direct canvas-to-canvas copy. This is the exact call we verified
+      // produces pixels from the browser console:
+      //   [239, 205, 180, 255] — skin tone from the 3D avatar.
+      _offscreenCtx!.drawImage(_canvas as web.CanvasImageSource, 0, 0);
 
-      final imageData = _offscreenCtx!.getImageData(0, 0, vw, vh);
+      // Read raw RGBA pixels.
+      final imageData = _offscreenCtx!.getImageData(0, 0, w, h);
       final pixels = Uint8List.fromList(imageData.data.toDart);
 
+      // Create ui.Image from raw pixel data.
       final completer = Completer<ui.Image>();
       ui.decodeImageFromPixels(
         pixels,
-        vw,
-        vh,
+        w,
+        h,
         ui.PixelFormat.rgba8888,
         completer.complete,
       );
@@ -189,7 +129,7 @@ class CanvasCapture {
       _frameNumber++;
 
       if (_frameNumber == 1) {
-        _log.info('First canvas frame captured: ${vw}x$vh');
+        _log.info('First canvas frame captured: ${w}x$h');
       }
 
       // Defer old frame disposal so CanvasKit can finish rendering it.
