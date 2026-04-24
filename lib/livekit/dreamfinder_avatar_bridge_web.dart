@@ -110,6 +110,9 @@ class DreamfinderAvatarBridge {
       return;
     }
 
+    // Diagnostic: verify preserveDrawingBuffer and alpha settings.
+    _logCanvasDiagnostics(canvas);
+
     _canvasCapture = CanvasCapture.create(canvas, fps: 15);
     _canvasCapture?.startCapture();
     _isReady = true;
@@ -154,6 +157,48 @@ class DreamfinderAvatarBridge {
     } catch (e) {
       _log.severe('Cannot access iframe canvas (cross-origin?): $e');
       return null;
+    }
+  }
+
+  /// Log WebGL context attributes and initial pixel state of the canvas.
+  void _logCanvasDiagnostics(web.HTMLCanvasElement canvas) {
+    try {
+      final contentWindow = _iframe?.contentWindow;
+      if (contentWindow == null) return;
+
+      // Read context attributes via iframe's window
+      final win = contentWindow as JSObject;
+      final attrs = win.getProperty('_attrs'.toJS);
+      if (attrs != null) {
+        final attrsObj = attrs as JSObject;
+        final pdb = attrsObj.getProperty('preserveDrawingBuffer'.toJS);
+        final alpha = attrsObj.getProperty('alpha'.toJS);
+        _log.info(
+          'DIAG canvas attrs: preserveDrawingBuffer=$pdb, alpha=$alpha, '
+          'size=${canvas.width}x${canvas.height}',
+        );
+      } else {
+        _log.info(
+          'DIAG canvas size=${canvas.width}x${canvas.height}, '
+          'attrs not exposed (no window._attrs)',
+        );
+      }
+
+      // Read pixels from canvas via 2D drawImage
+      final probe = web.document.createElement('canvas') as web.HTMLCanvasElement;
+      probe.width = canvas.width;
+      probe.height = canvas.height;
+      final ctx = probe.getContext('2d')! as web.CanvasRenderingContext2D;
+      ctx.drawImage(canvas as web.CanvasImageSource, 0, 0);
+      final px = ctx.getImageData(
+        canvas.width ~/ 2, canvas.height ~/ 2, 1, 1,
+      ).data.toDart;
+      _log.info(
+        'DIAG initial canvas pixels: center=[${px.join(",")}], '
+        'hasData=${px.any((v) => v > 0)}',
+      );
+    } catch (e) {
+      _log.warning('DIAG canvas diagnostics failed: $e');
     }
   }
 
