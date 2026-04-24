@@ -14,8 +14,8 @@ library;
 
 import 'dart:async';
 import 'dart:js_interop';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'dart:ui_web' as ui_web;
 
 import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
@@ -108,20 +108,22 @@ class CanvasCapture {
       //   [239, 205, 180, 255] — skin tone from the 3D avatar.
       _offscreenCtx!.drawImage(_canvas as web.CanvasImageSource, 0, 0);
 
-      // Read raw RGBA pixels.
-      final imageData = _offscreenCtx!.getImageData(0, 0, w, h);
-      final pixels = Uint8List.fromList(imageData.data.toDart);
+      // Create ImageBitmap from the 2D offscreen canvas (CPU-backed).
+      // Unlike captureStream-sourced ImageBitmaps, these work correctly
+      // with CanvasKit's createImageFromImageBitmap.
+      final imageBitmap = await web.window
+          .createImageBitmap(_offscreen! as web.ImageBitmapSource)
+          .toDart;
 
-      // Create ui.Image from raw pixel data.
-      final completer = Completer<ui.Image>();
-      ui.decodeImageFromPixels(
-        pixels,
-        w,
-        h,
-        ui.PixelFormat.rgba8888,
-        completer.complete,
-      );
-      final newFrame = await completer.future;
+      ui.Image newFrame;
+      try {
+        newFrame = await ui_web.createImageFromImageBitmap(
+          imageBitmap as JSAny,
+        );
+      } catch (_) {
+        imageBitmap.close();
+        rethrow;
+      }
 
       final oldFrame = _currentFrame;
       _currentFrame = newFrame;
