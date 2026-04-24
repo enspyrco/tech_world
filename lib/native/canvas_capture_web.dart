@@ -1,16 +1,14 @@
-/// Captures frames from an HTMLCanvasElement via captureStream + video element.
+/// Captures frames from an HTMLCanvasElement via MediaStreamTrackProcessor.
 ///
 /// Designed for capturing Three.js render output from a same-origin iframe.
 /// Uses the same frame interface as [VideoElementCapture] so it plugs directly
 /// into [VideoBubbleComponent]'s existing frame consumption loop.
 ///
-/// Capture pipeline: canvas.captureStream() → MediaStream → <video> element →
-/// createImageBitmap(video) → createImageFromImageBitmap → ui.Image.
+/// Capture pipeline: canvas.captureStream() → MediaStreamTrackProcessor →
+/// VideoFrame → createImageBitmap → createImageFromImageBitmap → ui.Image.
 ///
-/// This approach reuses the same video-element-to-texture path that already
-/// works for every remote participant's video feed, avoiding the various
-/// getImageData / decodeImageFromPixels / createImageFromImageBitmap(canvas)
-/// paths that produce black frames in CanvasKit.
+/// This reuses the exact same VideoFrame→ImageBitmap→ui.Image path that works
+/// for remote participant video via DirectTrackCapture.
 library;
 
 import 'dart:async';
@@ -20,6 +18,11 @@ import 'dart:ui_web' as ui_web;
 
 import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
+
+// Reuse JS interop types from video_frame_web_v2.dart
+import 'package:tech_world/native/video_frame_web_v2.dart'
+    show MediaStreamTrackProcessor, MediaStreamTrackProcessorInit,
+         MediaStreamTrackProcessorExtension, VideoFrame, VideoFrameExtension;
 
 final _log = Logger('CanvasCapture');
 
@@ -33,7 +36,6 @@ class CanvasCapture {
   final int _fps;
 
   /// Optional callback invoked before each frame capture.
-  /// Used to force a render when the canvas uses preserveDrawingBuffer: false.
   final void Function()? onBeforeCapture;
 
   ui.Image? _currentFrame;
@@ -43,8 +45,8 @@ class CanvasCapture {
   int _frameNumber = 0;
   Timer? _captureTimer;
 
-  // Video element driven by the canvas's captureStream.
-  web.HTMLVideoElement? _video;
+  MediaStreamTrackProcessor? _processor;
+  web.ReadableStreamDefaultReader? _reader;
 
   /// Create a capture from an HTMLCanvasElement.
   static CanvasCapture? create(
@@ -72,23 +74,27 @@ class CanvasCapture {
     if (_isCapturing) return;
     _isCapturing = true;
 
-    // Create a MediaStream from the canvas and pipe it into a <video> element.
-    // This gives us a standard video source that CanvasKit can capture from
-    // using the same createImageBitmap(video) path as remote participants.
-    _video = web.document.createElement('video') as web.HTMLVideoElement;
-    _video!.style.display = 'none';
-    _video!.autoplay = true;
-    _video!.muted = true;
-    // playsInline needed for iOS/Safari autoplay.
-    _video!.setAttribute('playsinline', '');
-    web.document.body?.appendChild(_video!);
-
+    // Create a MediaStream from the canvas, extract the video track,
+    // and pipe it through MediaStreamTrackProcessor to get VideoFrames.
     final stream = _canvas.captureStream(_fps);
-    _video!.srcObject = stream as web.MediaProvider;
+    final tracks = stream.getVideoTracks();
+    if (tracks.length == 0) {
+      _log.severe('captureStream returned no video tracks');
+      return;
+    }
+    final track = tracks.toDart.first;
+
+    _processor = MediaStreamTrackProcessor(
+      MediaStreamTrackProcessorInit(track: track),
+    );
+    _reader =
+        _processor!.readable.getReader() as web.ReadableStreamDefaultReader;
 
     _captureTimer = Timer.periodic(_captureInterval, (_) => _captureFrame());
     _log.info(
-        'Started canvas capture via captureStream at ${_captureInterval.inMilliseconds}ms interval');
+      'Started canvas capture via MediaStreamTrackProcessor '
+      'at ${_captureInterval.inMilliseconds}ms interval',
+    );
   }
 
   void stopCapture() {
@@ -96,22 +102,20 @@ class CanvasCapture {
     _captureTimer?.cancel();
     _captureTimer = null;
 
-    _video?.srcObject = null;
-    _video?.remove();
-    _video = null;
+    try {
+      _reader?.cancel().toDart.ignore();
+    } catch (e) {
+      _log.warning('Error cancelling reader: $e');
+    }
+    _reader = null;
+    _processor = null;
 
     _log.info('Stopped canvas capture');
   }
 
   Future<void> _captureFrame() async {
-    if (!_isCapturing || _frameInFlight || _video == null) return;
-
-    // Wait until the video has enough data to render a frame.
-    if (_video!.readyState < 2) return; // HAVE_CURRENT_DATA
-
-    final vw = _video!.videoWidth;
-    final vh = _video!.videoHeight;
-    if (vw == 0 || vh == 0) return;
+    if (!_isCapturing || _reader == null) return;
+    if (_frameInFlight) return;
 
     _frameInFlight = true;
 
@@ -119,10 +123,37 @@ class CanvasCapture {
       // Force a render if the canvas doesn't preserve its drawing buffer.
       onBeforeCapture?.call();
 
-      // Capture from the <video> element — same path as remote participants.
+      // Read the next VideoFrame from the processor stream.
+      final result = await _reader!.read().toDart;
+      if (result.done) {
+        _log.info('Capture stream ended');
+        _isCapturing = false;
+        _frameInFlight = false;
+        return;
+      }
+
+      final videoFrame = result.value as VideoFrame?;
+      if (videoFrame == null) {
+        _frameInFlight = false;
+        return;
+      }
+
+      final vw = videoFrame.displayWidth;
+      final vh = videoFrame.displayHeight;
+      if (vw == 0 || vh == 0) {
+        videoFrame.close();
+        _frameInFlight = false;
+        return;
+      }
+
+      // VideoFrame → ImageBitmap → ui.Image
+      // Same proven path as DirectTrackCapture for remote participants.
       final imageBitmap = await web.window
-          .createImageBitmap(_video! as web.ImageBitmapSource)
+          .createImageBitmap(videoFrame as web.ImageBitmapSource)
           .toDart;
+
+      // Close VideoFrame immediately to release decoder resources.
+      videoFrame.close();
 
       ui.Image newFrame;
       try {
