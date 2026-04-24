@@ -120,21 +120,19 @@ class CanvasCapture implements FrameSource {
         clamped.lengthInBytes,
       );
 
-      // Decode raw RGBA into a ui.Image via ImageDescriptor.raw —
-      // the same proven path used by the macOS FFI capture.
-      final buffer = await ui.ImmutableBuffer.fromUint8List(rgbaBytes);
-      final descriptor = ui.ImageDescriptor.raw(
-        buffer,
-        width: w,
-        height: h,
-        pixelFormat: ui.PixelFormat.rgba8888,
+      // Decode raw RGBA into a ui.Image via decodeImageFromPixels.
+      // ImageDescriptor.raw and createImageFromImageBitmap both render
+      // black in CanvasKit WASM. decodeImageFromPixels uses a different
+      // internal path (SkImage.MakeRasterData).
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        rgbaBytes,
+        w,
+        h,
+        ui.PixelFormat.rgba8888,
+        completer.complete,
       );
-      final codec = await descriptor.instantiateCodec();
-      final frameInfo = await codec.getNextFrame();
-      final newFrame = frameInfo.image;
-      codec.dispose();
-      descriptor.dispose();
-      buffer.dispose();
+      final newFrame = await completer.future;
 
       final oldFrame = _currentFrame;
       _currentFrame = newFrame;
