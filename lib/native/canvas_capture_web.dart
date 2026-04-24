@@ -48,41 +48,10 @@ class CanvasCapture {
   MediaStreamTrackProcessor? _processor;
   web.ReadableStreamDefaultReader? _reader;
 
-  /// Diagnostic: read pixels from an ImageBitmap via 2D canvas and log them.
-  void _logImageBitmapPixels(web.ImageBitmap bmp, int w, int h) {
-    try {
-      final c = web.document.createElement('canvas') as web.HTMLCanvasElement;
-      c.width = w;
-      c.height = h;
-      final ctx = c.getContext('2d')! as web.CanvasRenderingContext2D;
-      ctx.drawImage(bmp as web.CanvasImageSource, 0, 0);
-      // Sample center pixel + corners
-      final center = ctx.getImageData(w ~/ 2, h ~/ 2, 1, 1).data.toDart;
-      final topLeft = ctx.getImageData(0, 0, 1, 1).data.toDart;
-      final hasData = center.any((v) => v > 0) || topLeft.any((v) => v > 0);
-      _log.info(
-        'DIAG frame#$_frameNumber: ImageBitmap ${bmp.width}x${bmp.height}, '
-        'center=[${center.join(",")}], topLeft=[${topLeft.join(",")}], '
-        'hasData=$hasData',
-      );
-
-      // Also probe source canvas directly
-      final srcC = web.document.createElement('canvas') as web.HTMLCanvasElement;
-      srcC.width = _canvas.width;
-      srcC.height = _canvas.height;
-      final srcCtx = srcC.getContext('2d')! as web.CanvasRenderingContext2D;
-      srcCtx.drawImage(_canvas as web.CanvasImageSource, 0, 0);
-      final srcPx = srcCtx.getImageData(
-        _canvas.width ~/ 2, _canvas.height ~/ 2, 1, 1,
-      ).data.toDart;
-      _log.info(
-        'DIAG frame#$_frameNumber: Source canvas ${_canvas.width}x${_canvas.height}, '
-        'center=[${srcPx.join(",")}], hasData=${srcPx.any((v) => v > 0)}',
-      );
-    } catch (e) {
-      _log.warning('DIAG pixel probe failed: $e');
-    }
-  }
+  // Previous VideoFrame kept alive until the next frame arrives.
+  // captureStream VideoFrames share GPU backing with their ImageBitmaps,
+  // so we can't close them until CanvasKit has uploaded the texture.
+  VideoFrame? _previousVideoFrame;
 
   /// Create a capture from an HTMLCanvasElement.
   static CanvasCapture? create(
@@ -183,19 +152,23 @@ class CanvasCapture {
       }
 
       // VideoFrame → ImageBitmap → ui.Image
-      // Same proven path as DirectTrackCapture for remote participants.
+      //
+      // IMPORTANT: Do NOT close the VideoFrame before the ImageBitmap is
+      // consumed. captureStream VideoFrames share their GPU backing store
+      // with ImageBitmaps — closing the VideoFrame detaches that shared
+      // data, causing CanvasKit's lazy texImage2D to fail with
+      // "source data has been detached".
+      //
+      // Instead, keep the previous VideoFrame alive until this frame
+      // replaces it, then close the old one.
+      // Close the previous VideoFrame now — by this point CanvasKit has
+      // had at least one render cycle to upload its texture via texImage2D.
+      _previousVideoFrame?.close();
+      _previousVideoFrame = videoFrame;
+
       final imageBitmap = await web.window
           .createImageBitmap(videoFrame as web.ImageBitmapSource)
           .toDart;
-
-      // Close VideoFrame immediately to release decoder resources.
-      videoFrame.close();
-
-      // Diagnostic: on first few frames, read ImageBitmap pixels via 2D
-      // canvas to verify data BEFORE it enters createImageFromImageBitmap.
-      if (_frameNumber < 3) {
-        _logImageBitmapPixels(imageBitmap, vw, vh);
-      }
 
       ui.Image newFrame;
       try {
@@ -229,6 +202,8 @@ class CanvasCapture {
 
   void dispose() {
     stopCapture();
+    _previousVideoFrame?.close();
+    _previousVideoFrame = null;
     _currentFrame?.dispose();
     _currentFrame = null;
   }
