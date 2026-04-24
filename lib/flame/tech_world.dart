@@ -631,7 +631,7 @@ class TechWorld extends World with TapCallbacks {
       displayName: dreamfinderBot.displayName,
       bubbleSize: 64,
       targetFps: 10,
-      externalCanvasCapture: _dreamfinderAvatarBridge?.canvasCapture,
+      externalVideoCapture: _dreamfinderAvatarBridge?.videoCapture,
     );
     videoBubble.glowColor = const Color(0xFFDAA520); // gold
     videoBubble.glowIntensity = 0.7;
@@ -1051,7 +1051,7 @@ class TechWorld extends World with TapCallbacks {
       // - It's a VideoBubbleComponent without canvas capture but the bridge
       //   is now ready (bridge initialized after the bubble was created).
       final hasCanvasCapture = existingBubble is VideoBubbleComponent &&
-          existingBubble.externalCanvasCapture != null;
+          existingBubble.externalVideoCapture != null;
       final needsUpgrade = existingBubble is! VideoBubbleComponent ||
           (!hasCanvasCapture && _dreamfinderAvatarBridge?.isReady == true);
 
