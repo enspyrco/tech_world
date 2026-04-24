@@ -577,9 +577,11 @@ class VideoBubbleComponent extends PositionComponent {
       _updateShaderUniforms();
 
       final paint = Paint();
-      if (_shader != null && ui.ImageFilter.isShaderFilterSupported) {
-        paint.imageFilter = ui.ImageFilter.shader(_shader!);
-      }
+      // Shader disabled — investigating black frame issue.
+      // TODO: re-enable once frame capture is verified working.
+      // if (_shader != null && ui.ImageFilter.isShaderFilterSupported) {
+      //   paint.imageFilter = ui.ImageFilter.shader(_shader!);
+      // }
 
       canvas.saveLayer(
         Rect.fromCircle(center: center, radius: radius + 10),
