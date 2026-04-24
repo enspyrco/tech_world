@@ -1,7 +1,4 @@
-# Based on Firebase CLI auto-generated workflow
-# Added: test execution and coverage reporting
-
-name: Test and Deploy to Firebase Hosting on merge
+name: Test and Deploy
 on:
   push:
     branches:
@@ -98,11 +95,11 @@ jobs:
       - run: flutter build web --wasm --pwa-strategy=none --dart-define="DREAMFINDER_API_KEY=$DREAMFINDER_API_KEY"
         env:
           DREAMFINDER_API_KEY: ${{ secrets.DREAMFINDER_API_KEY }}
-      - uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ADVENTURES_IN_TECH_WORLD_0 }}
-          channelId: live
-          projectId: adventures-in-tech-world-0
-        env:
-          FIREBASE_CLI_EXPERIMENTS: webframeworks
+      - name: Deploy to world.imagineering.cc
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.OCI_SSH_KEY }}" > ~/.ssh/oci_key
+          chmod 600 ~/.ssh/oci_key
+          ssh-keyscan -H 149.118.69.221 >> ~/.ssh/known_hosts 2>/dev/null
+          rsync -avz --delete -e "ssh -i ~/.ssh/oci_key" build/web/ nick@149.118.69.221:/srv/tech-world/
+          rm -f ~/.ssh/oci_key
