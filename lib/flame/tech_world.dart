@@ -665,6 +665,28 @@ class TechWorld extends World with TapCallbacks {
     }
   }
 
+  /// Listen for gameReady and process pending Dreamfinder participant.
+  ///
+  /// Called when DF joins before onLoad completes. When gameReady becomes
+  /// true (pathComponent available), processes the deferred participant.
+  void _waitForGameReady() {
+    void listener() {
+      if (gameReady.value && _pendingDreamfinderParticipant != null) {
+        gameReady.removeListener(listener);
+        final pending = _pendingDreamfinderParticipant!;
+        _pendingDreamfinderParticipant = null;
+        _handleParticipantJoined(pending);
+      }
+    }
+
+    if (gameReady.value) {
+      // Already ready — process immediately.
+      listener();
+    } else {
+      gameReady.addListener(listener);
+    }
+  }
+
   /// Handle a participant joining the room
   void _handleParticipantJoined(RemoteParticipant participant) {
     _log.info('LiveKit participant joined: ${participant.identity}');
@@ -681,9 +703,11 @@ class TechWorld extends World with TapCallbacks {
 
       if (isDreamfinderIdentity(participant.identity) &&
           _pathComponent == null) {
-        // PathComponent not ready yet — defer until onLoad completes.
+        // PathComponent not ready yet (onLoad hasn't finished).
+        // Defer until gameReady fires.
         _pendingDreamfinderParticipant = participant;
         _dreamfinderIdentity = participant.identity;
+        _waitForGameReady();
         return;
       }
 
@@ -1197,6 +1221,8 @@ class TechWorld extends World with TapCallbacks {
     gameReady.value = true;
 
     // Process deferred Dreamfinder participant (joined before onLoad).
+    // Also handled by _waitForGameReady, but this catches the case where
+    // onLoad finishes before connectToLiveKit runs.
     if (_pendingDreamfinderParticipant != null) {
       _handleParticipantJoined(_pendingDreamfinderParticipant!);
       _pendingDreamfinderParticipant = null;
