@@ -10,6 +10,7 @@ import 'package:logging/logging.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
+import '../../native/frame_source.dart';
 import '../../native/video_frame_capture.dart' as ffi;
 import '../../native/direct_track_capture.dart' as direct_capture;
 
@@ -55,11 +56,10 @@ class VideoBubbleComponent extends PositionComponent {
   final double bubbleSize;
   final int targetFps;
 
-  /// Optional external video capture (e.g., from Dreamfinder's 3D avatar
-  /// routed through a <video> element via captureStream).
-  /// When provided, bypasses participant video track discovery and uses this
-  /// capture source directly for frame data.
-  final direct_capture.VideoElementCapture? externalVideoCapture;
+  /// Optional external frame source (e.g., [CanvasCapture] from
+  /// Dreamfinder's 3D avatar iframe). When provided, bypasses participant
+  /// video track discovery and uses this source directly for frame data.
+  final FrameSource? externalVideoCapture;
 
   ui.Image? _currentFrame;
   VideoTrack? _videoTrack;

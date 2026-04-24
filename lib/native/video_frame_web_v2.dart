@@ -18,6 +18,8 @@ import 'dart:ui_web' as ui_web;
 import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
 
+import 'frame_source.dart';
+
 final _log = Logger('VideoFrameWebV2');
 
 /// JS interop for MediaStreamTrackProcessor (not yet in package:web)
@@ -395,7 +397,7 @@ class DirectTrackCapture {
 /// It waits for the video to be ready before capturing frames.
 ///
 /// Use this for remote tracks where MediaStreamTrackProcessor doesn't work reliably.
-class VideoElementCapture {
+class VideoElementCapture implements FrameSource {
   VideoElementCapture._(this._videoElement, this._stream, {this.ownsElement = true});
 
   final web.HTMLVideoElement _videoElement;
@@ -643,7 +645,7 @@ class VideoElementCapture {
     return null;
   }
 
-  /// Whether a new frame is available.
+  @override
   bool get hasNewFrame => _hasNewFrame;
 
   /// Whether capture is active.
@@ -781,7 +783,7 @@ class VideoElementCapture {
     _hasNewFrame = false;
   }
 
-  /// Get the current frame and transfer ownership to caller.
+  @override
   ui.Image? consumeFrame() {
     _hasNewFrame = false;
     final frame = _currentFrame;
