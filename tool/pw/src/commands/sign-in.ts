@@ -22,7 +22,7 @@ export async function signIn(options: SignInOptions): Promise<void> {
   const url = options.url ?? process.env.PW_URL ?? DEFAULT_URL;
   const method = options.method ?? (process.env.PW_EMAIL ? 'email' : 'anonymous');
 
-  const browser = await launchBrowser();
+  const browser = await launchBrowser(true);
   const { page } = await getPage(browser);
 
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60_000 });

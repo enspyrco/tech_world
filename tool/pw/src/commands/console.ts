@@ -2,7 +2,7 @@
  * Navigate to the app and capture console output for a specified duration.
  */
 
-import { launchBrowser, getPage } from '../browser.js';
+import { getOrLaunchBrowser, getPage } from '../browser.js';
 
 const DEFAULT_URL = 'https://world.imagineering.cc';
 
@@ -17,7 +17,7 @@ export async function consoleCommand(options: ConsoleOptions): Promise<void> {
   const duration = parseInt(options.duration ?? '30') * 1000;
   const filter = options.filter ?? 'all';
 
-  const browser = await launchBrowser();
+  const browser = await getOrLaunchBrowser();
   try {
     const { context, page } = await getPage(browser);
     const messages: string[] = [];

@@ -3,7 +3,7 @@
  * Prints the result to stdout.
  */
 
-import { launchBrowser, getPage } from '../browser.js';
+import { getOrLaunchBrowser, getPage } from '../browser.js';
 
 const DEFAULT_URL = 'https://world.imagineering.cc';
 
@@ -14,7 +14,7 @@ interface EvalOptions {
 export async function evalCommand(expression: string, options: EvalOptions): Promise<void> {
   const url = options.url ?? process.env.PW_URL ?? DEFAULT_URL;
 
-  const browser = await launchBrowser();
+  const browser = await getOrLaunchBrowser();
   try {
     const { context, page } = await getPage(browser);
 

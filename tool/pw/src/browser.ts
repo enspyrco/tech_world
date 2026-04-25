@@ -6,7 +6,7 @@
  * if available, tracked via /tmp/pw-session.json.
  */
 
-import { chromium, type Browser, type BrowserContext, type Page, type BrowserServer } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
 
 const SESSION_FILE = '/tmp/pw-session.json';

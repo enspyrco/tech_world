@@ -2,7 +2,7 @@
  * Take a screenshot of the app. Navigates fresh each time.
  */
 
-import { launchBrowser, getPage } from '../browser.js';
+import { getOrLaunchBrowser, getPage } from '../browser.js';
 import { waitForFlutterLoaded } from '../detect.js';
 
 const DEFAULT_URL = 'https://world.imagineering.cc';
@@ -18,7 +18,7 @@ export async function screenshot(options: ScreenshotOptions): Promise<void> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const outPath = options.out ?? `pw-screenshot-${timestamp}.png`;
 
-  const browser = await launchBrowser();
+  const browser = await getOrLaunchBrowser();
   try {
     const { context, page } = await getPage(browser);
 

@@ -110,4 +110,3 @@ coverage/
 # pw CLI tool build artifacts
 tool/pw/node_modules/
 tool/pw/dist/
-web/avatar/
