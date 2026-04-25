@@ -75,3 +75,4 @@ flutter:
   shaders:
     - shaders/video_bubble.frag
     - shaders/metaball_field.frag
+    - shaders/merged_video_bubble.frag

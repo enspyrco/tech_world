@@ -17,6 +17,7 @@ import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/door_component.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
 import 'package:tech_world/flame/components/bubble_field_component.dart';
+import 'package:tech_world/flame/components/merged_video_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
@@ -105,6 +106,7 @@ class TechWorld extends World with TapCallbacks {
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
   final Map<String, PositionComponent> _playerBubbles = {};
+  final Map<String, Vector2> _bubbleDisplacements = {}; // physics repulsion
   final Set<String> _audioEnabledParticipants = {}; // track audio state
   Point<int>? _lastPlayerGridPosition; // track to skip unnecessary updates
 
@@ -117,7 +119,12 @@ class TechWorld extends World with TapCallbacks {
   LiveKitService? _liveKitService;
   ui.FragmentProgram? _shaderProgram; // Keep reference for creating new shaders
   ui.FragmentProgram? _metaballShaderProgram;
+  ui.FragmentProgram? _mergedVideoShaderProgram;
   BubbleFieldComponent? _bubbleField;
+  MergedVideoBubbleComponent? _mergedBubble;
+
+  /// Distance below which video bubbles merge into a single blob.
+  static const double _mergeThreshold = 96.0; // 1.5× bubble diameter
 
   /// Notifier for active code challenge ID. Null means no editor open.
   final ValueNotifier<String?> activeChallenge = ValueNotifier(null);
@@ -377,16 +384,16 @@ class TechWorld extends World with TapCallbacks {
   @override
   void update(double dt) {
     super.update(dt);
-    _updatePlayerBubbles();
+    _updatePlayerBubbles(dt);
   }
 
-  void _updatePlayerBubbles() {
+  void _updatePlayerBubbles(double dt) {
     final playerGrid = _userPlayerComponent.miniGridPosition;
 
     // Skip update if player hasn't moved to a new grid position
     if (_lastPlayerGridPosition == playerGrid) {
       // Still update positions of existing bubbles
-      _updateBubblePositions();
+      _updateBubblePositions(dt);
       return;
     }
     _lastPlayerGridPosition = playerGrid;
@@ -515,7 +522,7 @@ class TechWorld extends World with TapCallbacks {
       _playerBubbles.remove(playerId);
     }
 
-    _updateBubblePositions();
+    _updateBubblePositions(dt);
   }
 
   /// Apply opacity to a bubble component (works for both Video and Player types).
@@ -543,11 +550,13 @@ class TechWorld extends World with TapCallbacks {
     }
   }
 
-  void _updateBubblePositions() {
-    // Collect bubble centre positions for the metaball field.
-    final centres = <Vector2>[];
-    int lowestPriority = 999;
+  // Physics repulsion constants
+  static const double _bubbleDiameter = 64.0;
+  static const double _maxTetherDistance = 24.0;
+  static const double _repulsionDamping = 0.85;
 
+  void _updateBubblePositions(double dt) {
+    // 1. Set base positions from owning characters.
     for (final entry in _playerBubbles.entries) {
       if (entry.key == _localPlayerBubbleKey) {
         entry.value.position = _userPlayerComponent.position + _bubbleOffset;
@@ -573,9 +582,15 @@ class TechWorld extends World with TapCallbacks {
           entry.value.priority = playerComponent.priority + 1;
         }
       }
+    }
 
-      // Record the bubble centre in parent (world) coordinates.
-      // PositionComponent.center accounts for the anchor offset.
+    // 2. Apply physics repulsion so bubbles don't overlap.
+    _applyBubbleRepulsion(dt);
+
+    // 3. Collect centres for the metaball field.
+    final centres = <Vector2>[];
+    int lowestPriority = 999;
+    for (final entry in _playerBubbles.entries) {
       centres.add(entry.value.center);
       if (entry.value.priority < lowestPriority) {
         lowestPriority = entry.value.priority;
@@ -583,6 +598,152 @@ class TechWorld extends World with TapCallbacks {
     }
 
     _updateBubbleField(centres, lowestPriority);
+    _updateMergedVideo(lowestPriority);
+  }
+
+  /// Detect merge groups and manage the merged video renderer.
+  void _updateMergedVideo(int lowestPriority) {
+    if (_mergedVideoShaderProgram == null) return;
+
+    // Find VideoBubbleComponents close enough to merge.
+    final videoBubbles = <String, VideoBubbleComponent>{};
+    for (final entry in _playerBubbles.entries) {
+      if (entry.value is VideoBubbleComponent) {
+        videoBubbles[entry.key] = entry.value as VideoBubbleComponent;
+      }
+    }
+
+    // Find the largest connected group within merge threshold.
+    final mergeGroup = _findMergeGroup(videoBubbles);
+
+    if (mergeGroup.length >= 2) {
+      // Lazily create the merged renderer.
+      if (_mergedBubble == null) {
+        _mergedBubble = MergedVideoBubbleComponent(
+          shaderProgram: _mergedVideoShaderProgram!,
+          glowColor: const Color(0xFF00FF88),
+          bubbleRadius: 32,
+        );
+        add(_mergedBubble!);
+      }
+
+      // Hide individual bubbles and feed their frames to the merged renderer.
+      final sources = <VideoBubbleComponent>[];
+      final positions = <Vector2>[];
+      for (final key in mergeGroup) {
+        final bubble = videoBubbles[key]!;
+        bubble.hiddenForMerge = true;
+        sources.add(bubble);
+        positions.add(bubble.center);
+      }
+
+      _mergedBubble!.priority = lowestPriority;
+      _mergedBubble!.updateSources(sources);
+      _mergedBubble!.updatePositions(positions);
+
+      // Un-hide any video bubbles NOT in the merge group.
+      for (final entry in videoBubbles.entries) {
+        if (!mergeGroup.contains(entry.key)) {
+          entry.value.hiddenForMerge = false;
+        }
+      }
+    } else {
+      // No merge — un-hide all and remove the merged renderer.
+      for (final bubble in videoBubbles.values) {
+        bubble.hiddenForMerge = false;
+      }
+      _mergedBubble?.removeFromParent();
+      _mergedBubble = null;
+    }
+  }
+
+  /// Find the largest connected group of video bubbles within merge distance.
+  List<String> _findMergeGroup(Map<String, VideoBubbleComponent> bubbles) {
+    if (bubbles.length < 2) return [];
+
+    final keys = bubbles.keys.toList();
+    final visited = <String>{};
+    List<String> largestGroup = [];
+
+    for (final startKey in keys) {
+      if (visited.contains(startKey)) continue;
+
+      // BFS from startKey.
+      final group = <String>[startKey];
+      final queue = <String>[startKey];
+      visited.add(startKey);
+
+      while (queue.isNotEmpty) {
+        final current = queue.removeAt(0);
+        final currentCenter = bubbles[current]!.center;
+
+        for (final candidateKey in keys) {
+          if (visited.contains(candidateKey)) continue;
+          final candidateCenter = bubbles[candidateKey]!.center;
+          final dist = currentCenter.distanceTo(candidateCenter);
+          if (dist < _mergeThreshold) {
+            visited.add(candidateKey);
+            group.add(candidateKey);
+            queue.add(candidateKey);
+          }
+        }
+      }
+
+      if (group.length > largestGroup.length) {
+        largestGroup = group;
+      }
+    }
+
+    return largestGroup.length >= 2
+        ? largestGroup.take(maxMergedBubbles).toList()
+        : [];
+  }
+
+  /// Pairwise spring repulsion — prevents bubble overlap.
+  ///
+  /// Each bubble accumulates a displacement that persists across frames
+  /// (damped). When two bubbles are closer than [_bubbleDiameter], they
+  /// push each other apart along the connecting line.
+  void _applyBubbleRepulsion(double dt) {
+    final entries = _playerBubbles.entries.toList();
+    if (entries.length < 2) return;
+
+    // Clean up stale displacements.
+    _bubbleDisplacements.removeWhere((k, _) => !_playerBubbles.containsKey(k));
+
+    // Accumulate repulsion forces.
+    final forces = <String, Vector2>{};
+    for (var i = 0; i < entries.length; i++) {
+      for (var j = i + 1; j < entries.length; j++) {
+        final ci = entries[i].value.center;
+        final cj = entries[j].value.center;
+        final delta = ci - cj;
+        final dist = delta.length;
+        if (dist < _bubbleDiameter && dist > 0.01) {
+          final overlap = _bubbleDiameter - dist;
+          final direction = delta.normalized();
+          // Force proportional to overlap, scaled by dt for frame-independence.
+          final clampedDt = min(dt, 0.05);
+          final push = direction * (overlap * 0.5 * clampedDt / 0.016);
+          forces[entries[i].key] =
+              (forces[entries[i].key] ?? Vector2.zero()) + push;
+          forces[entries[j].key] =
+              (forces[entries[j].key] ?? Vector2.zero()) - push;
+        }
+      }
+    }
+
+    // Apply forces + damping, then update positions.
+    for (final entry in entries) {
+      final key = entry.key;
+      var disp = _bubbleDisplacements[key] ?? Vector2.zero();
+      disp = disp * _repulsionDamping + (forces[key] ?? Vector2.zero());
+      if (disp.length > _maxTetherDistance) {
+        disp = disp.normalized() * _maxTetherDistance;
+      }
+      _bubbleDisplacements[key] = disp;
+      entry.value.position += disp;
+    }
   }
 
   /// Create, update, or remove the metaball field based on active bubbles.
@@ -712,6 +873,16 @@ class TechWorld extends World with TapCallbacks {
           await ui.FragmentProgram.fromAsset('shaders/metaball_field.frag');
     } catch (e) {
       _log.warning('Metaball shader failed to load', e);
+    }
+  }
+
+  /// Load the merged video bubble shader program.
+  Future<void> _loadMergedVideoShader() async {
+    try {
+      _mergedVideoShaderProgram = await ui.FragmentProgram.fromAsset(
+          'shaders/merged_video_bubble.frag');
+    } catch (e) {
+      _log.warning('Merged video shader failed to load', e);
     }
   }
 
@@ -1266,7 +1437,11 @@ class TechWorld extends World with TapCallbacks {
     game?.camera.follow(_userPlayerComponent);
 
     // Load shaders
-    await Future.wait([_loadVideoBubbleShader(), _loadMetaballShader()]);
+    await Future.wait([
+      _loadVideoBubbleShader(),
+      _loadMetaballShader(),
+      _loadMergedVideoShader(),
+    ]);
 
     gameReady.value = true;
 
@@ -1815,8 +1990,11 @@ class TechWorld extends World with TapCallbacks {
       bubble.removeFromParent();
     }
     _playerBubbles.clear();
+    _bubbleDisplacements.clear();
     _bubbleField?.removeFromParent();
     _bubbleField = null;
+    _mergedBubble?.removeFromParent();
+    _mergedBubble = null;
     _audioEnabledParticipants.clear();
 
     // Remove other player components
