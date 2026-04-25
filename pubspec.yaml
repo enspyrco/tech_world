@@ -74,3 +74,4 @@ flutter:
     - assets/images/tilesets/
   shaders:
     - shaders/video_bubble.frag
+    - shaders/metaball_field.frag

@@ -86,6 +86,10 @@ class VideoBubbleComponent extends PositionComponent {
   Color _glowColor = Colors.green;
   double _speakingLevel = 0.0;
 
+  // Breathing animation — sinusoidal scale pulsing
+  static const double _breathAmount = 0.025; // ±2.5% scale
+  static const double _breathSpeed = 2.0; // cycles per second (radians)
+
   // Track stats for debugging
   int _framesCaptured = 0;
   int _framesDropped = 0;
@@ -558,6 +562,13 @@ class VideoBubbleComponent extends PositionComponent {
     final center = Offset(size.x / 2, size.y / 2);
     final radius = bubbleSize / 2;
 
+    // ── Breathing: scale the entire bubble around its centre ──
+    final breathScale = 1.0 + _breathAmount * sin(_time * _breathSpeed);
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.scale(breathScale);
+    canvas.translate(-center.dx, -center.dy);
+
     // Apply opacity via saveLayer when not fully opaque
     if (_opacity < 1.0) {
       canvas.saveLayer(
@@ -567,11 +578,33 @@ class VideoBubbleComponent extends PositionComponent {
       );
     }
 
-    // Draw shadow
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.3)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-    canvas.drawCircle(center + const Offset(0, 2), radius, shadowPaint);
+    // Draw shadow (skip when glowing — the glow replaces the shadow)
+    if (_glowIntensity <= 0) {
+      final shadowPaint = Paint()
+        ..color = Colors.black.withValues(alpha: 0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+      canvas.drawCircle(center + const Offset(0, 2), radius, shadowPaint);
+    }
+
+    // ── Radial glow ──────────────────────────────────────
+    // Draws a soft halo behind the video circle. Intensity and color
+    // are set per-bubble (e.g. gold for Dreamfinder, green for players).
+    if (_glowIntensity > 0 && _currentFrame != null) {
+      final glowPulse = 1.0 + 0.15 * sin(_time * 2.5);
+      final glowRadius = radius + 8.0 * _glowIntensity * glowPulse;
+      final glowPaint = Paint()
+        ..color = _glowColor.withValues(alpha: 0.45 * _glowIntensity * glowPulse)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 12.0 * _glowIntensity);
+      canvas.drawCircle(center, glowRadius, glowPaint);
+
+      // Inner bright ring at the bubble edge
+      final ringPaint = Paint()
+        ..color = _glowColor.withValues(alpha: 0.3 * _glowIntensity)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+      canvas.drawCircle(center, radius + 1, ringPaint);
+    }
 
     if (_currentFrame != null) {
       _updateShaderUniforms();
@@ -665,7 +698,7 @@ class VideoBubbleComponent extends PositionComponent {
 
     if (_shader == null || !ui.ImageFilter.isShaderFilterSupported) {
       final borderPaint = Paint()
-        ..color = _currentFrame != null ? Colors.green : Colors.white
+        ..color = _currentFrame != null ? _glowColor : Colors.white
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
       canvas.drawCircle(center, radius, borderPaint);
@@ -674,6 +707,9 @@ class VideoBubbleComponent extends PositionComponent {
     if (_opacity < 1.0) {
       canvas.restore();
     }
+
+    // ── End breathing transform ──
+    canvas.restore();
   }
 
   /// Draw a spinning loading indicator arc with optional progress text.

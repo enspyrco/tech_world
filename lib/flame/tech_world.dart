@@ -16,6 +16,7 @@ import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/door_component.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
+import 'package:tech_world/flame/components/bubble_field_component.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
@@ -115,6 +116,8 @@ class TechWorld extends World with TapCallbacks {
   // LiveKit integration for video bubbles
   LiveKitService? _liveKitService;
   ui.FragmentProgram? _shaderProgram; // Keep reference for creating new shaders
+  ui.FragmentProgram? _metaballShaderProgram;
+  BubbleFieldComponent? _bubbleField;
 
   /// Notifier for active code challenge ID. Null means no editor open.
   final ValueNotifier<String?> activeChallenge = ValueNotifier(null);
@@ -541,6 +544,10 @@ class TechWorld extends World with TapCallbacks {
   }
 
   void _updateBubblePositions() {
+    // Collect bubble centre positions for the metaball field.
+    final centres = <Vector2>[];
+    int lowestPriority = 999;
+
     for (final entry in _playerBubbles.entries) {
       if (entry.key == _localPlayerBubbleKey) {
         entry.value.position = _userPlayerComponent.position + _bubbleOffset;
@@ -566,7 +573,40 @@ class TechWorld extends World with TapCallbacks {
           entry.value.priority = playerComponent.priority + 1;
         }
       }
+
+      // Record the bubble centre in parent (world) coordinates.
+      // PositionComponent.center accounts for the anchor offset.
+      centres.add(entry.value.center);
+      if (entry.value.priority < lowestPriority) {
+        lowestPriority = entry.value.priority;
+      }
     }
+
+    _updateBubbleField(centres, lowestPriority);
+  }
+
+  /// Create, update, or remove the metaball field based on active bubbles.
+  void _updateBubbleField(List<Vector2> centres, int lowestPriority) {
+    if (centres.length < 2 || _metaballShaderProgram == null) {
+      // Not enough bubbles to merge — remove the field if it exists.
+      _bubbleField?.removeFromParent();
+      _bubbleField = null;
+      return;
+    }
+
+    // Lazily create the field component.
+    if (_bubbleField == null) {
+      _bubbleField = BubbleFieldComponent(
+        shaderProgram: _metaballShaderProgram!,
+        glowColor: const Color(0xFF00FF88),
+        bubbleRadius: 32,
+      );
+      add(_bubbleField!);
+    }
+
+    // Render just below the lowest bubble so glow appears behind video.
+    _bubbleField!.priority = lowestPriority - 1;
+    _bubbleField!.updateBubblePositions(centres);
   }
 
   PositionComponent _createBubbleForPlayer(
@@ -662,6 +702,16 @@ class TechWorld extends World with TapCallbacks {
           await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
     } catch (e) {
       // Shader loading failed - video bubbles will render without effects
+    }
+  }
+
+  /// Load the metaball field shader program.
+  Future<void> _loadMetaballShader() async {
+    try {
+      _metaballShaderProgram =
+          await ui.FragmentProgram.fromAsset('shaders/metaball_field.frag');
+    } catch (e) {
+      _log.warning('Metaball shader failed to load', e);
     }
   }
 
@@ -1215,8 +1265,8 @@ class TechWorld extends World with TapCallbacks {
     final game = findGame() as TechWorldGame?;
     game?.camera.follow(_userPlayerComponent);
 
-    // Load the video bubble shader
-    await _loadVideoBubbleShader();
+    // Load shaders
+    await Future.wait([_loadVideoBubbleShader(), _loadMetaballShader()]);
 
     gameReady.value = true;
 
@@ -1765,6 +1815,8 @@ class TechWorld extends World with TapCallbacks {
       bubble.removeFromParent();
     }
     _playerBubbles.clear();
+    _bubbleField?.removeFromParent();
+    _bubbleField = null;
     _audioEnabledParticipants.clear();
 
     // Remove other player components
