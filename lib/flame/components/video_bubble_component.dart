@@ -62,6 +62,13 @@ class VideoBubbleComponent extends PositionComponent {
   final FrameSource? externalVideoCapture;
 
   ui.Image? _currentFrame;
+
+  /// The latest video frame, for use by [MergedVideoBubbleComponent].
+  ui.Image? get currentFrame => _currentFrame;
+
+  /// When true, [render] is skipped but [update] continues capturing frames.
+  bool _hiddenForMerge = false;
+  set hiddenForMerge(bool value) => _hiddenForMerge = value;
   VideoTrack? _videoTrack;
 
   // Native FFI capture (macOS)
@@ -557,7 +564,7 @@ class VideoBubbleComponent extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
-    if (_opacity <= 0) return;
+    if (_opacity <= 0 || _hiddenForMerge) return;
 
     final center = Offset(size.x / 2, size.y / 2);
     final radius = bubbleSize / 2;
