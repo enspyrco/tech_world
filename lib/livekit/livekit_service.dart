@@ -251,10 +251,16 @@ class LiveKitService {
       _listener = _room!.createListener();
       _setupListeners();
 
-      // Connect to room
+      // Connect to room — explicit RTCConfiguration ensures TURN relay
+      // candidates are tried alongside direct UDP.
       await _room!.connect(
         _serverUrl,
         tokenResult.token!,
+        connectOptions: const ConnectOptions(
+          rtcConfiguration: RTCConfiguration(
+            iceTransportPolicy: RTCIceTransportPolicy.all,
+          ),
+        ),
         fastConnectOptions: FastConnectOptions(
           microphone: const TrackOption(enabled: false),
           camera: const TrackOption(enabled: false),
