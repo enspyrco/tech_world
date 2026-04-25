@@ -132,21 +132,34 @@ void main() {
 
     if (inside > 0.01) {
         // Find nearest and second-nearest bubble.
-        float dists[4] = float[](d0, d1, d2, d3);
+        // No arrays or dynamic loops — CanvasKit's WebGL compiler forbids both.
         int nearest = 0;
         float nearDist = d0;
         int secondNearest = -1;
         float secDist = 1e6;
 
-        for (int i = 1; i < count; i++) {
-            if (dists[i] < nearDist) {
-                secondNearest = nearest;
-                secDist = nearDist;
-                nearest = i;
-                nearDist = dists[i];
-            } else if (dists[i] < secDist) {
-                secondNearest = i;
-                secDist = dists[i];
+        if (count > 1) {
+            if (d1 < nearDist) {
+                secondNearest = 0; secDist = nearDist;
+                nearest = 1; nearDist = d1;
+            } else {
+                secondNearest = 1; secDist = d1;
+            }
+        }
+        if (count > 2) {
+            if (d2 < nearDist) {
+                secondNearest = nearest; secDist = nearDist;
+                nearest = 2; nearDist = d2;
+            } else if (d2 < secDist) {
+                secondNearest = 2; secDist = d2;
+            }
+        }
+        if (count > 3) {
+            if (d3 < nearDist) {
+                secondNearest = nearest; secDist = nearDist;
+                nearest = 3; nearDist = d3;
+            } else if (d3 < secDist) {
+                secondNearest = 3; secDist = d3;
             }
         }
 
