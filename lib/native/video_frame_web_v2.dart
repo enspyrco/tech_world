@@ -22,30 +22,38 @@ import 'frame_source.dart';
 
 final _log = Logger('VideoFrameWebV2');
 
-/// Shared offscreen canvas for reading pixels from ImageBitmaps.
-/// Reused across captures to avoid repeated allocation.
-web.OffscreenCanvas? _offscreenCanvas;
-web.OffscreenCanvasRenderingContext2D? _offscreenCtx;
+/// Shared hidden HTMLCanvasElement for reading pixels from ImageBitmaps.
+/// Uses HTMLCanvasElement (not OffscreenCanvas) to match the proven path
+/// in canvas_capture_web.dart.
+web.HTMLCanvasElement? _pixelReadbackCanvas;
+web.CanvasRenderingContext2D? _pixelReadbackCtx;
 
 /// Convert an [web.ImageBitmap] to a [ui.Image] via getImageData +
 /// decodeImageFromPixels. This bypasses CanvasKit's broken
 /// createImageFromImageBitmap (Skia issue 14637) which renders black.
 Future<ui.Image> _imageBitmapToUiImage(web.ImageBitmap bitmap, int w, int h) {
-  // Resize offscreen canvas if needed.
-  if (_offscreenCanvas == null ||
-      _offscreenCanvas!.width != w ||
-      _offscreenCanvas!.height != h) {
-    _offscreenCanvas = web.OffscreenCanvas(w, h);
-    _offscreenCtx = _offscreenCanvas!.getContext('2d')!
-        as web.OffscreenCanvasRenderingContext2D;
+  // Resize canvas if needed.
+  if (_pixelReadbackCanvas == null ||
+      _pixelReadbackCanvas!.width != w ||
+      _pixelReadbackCanvas!.height != h) {
+    _pixelReadbackCanvas?.remove();
+    _pixelReadbackCanvas =
+        web.document.createElement('canvas') as web.HTMLCanvasElement;
+    _pixelReadbackCanvas!.width = w;
+    _pixelReadbackCanvas!.height = h;
+    // Hidden — no visual output needed.
+    _pixelReadbackCanvas!.style.display = 'none';
+    web.document.body?.appendChild(_pixelReadbackCanvas!);
+    _pixelReadbackCtx = _pixelReadbackCanvas!.getContext('2d')!
+        as web.CanvasRenderingContext2D;
   }
 
   // Draw bitmap → read raw RGBA pixels.
-  _offscreenCtx!.clearRect(0, 0, w, h);
-  _offscreenCtx!.drawImage(bitmap as web.CanvasImageSource, 0, 0);
+  _pixelReadbackCtx!.clearRect(0, 0, w, h);
+  _pixelReadbackCtx!.drawImage(bitmap as web.CanvasImageSource, 0, 0);
   bitmap.close();
 
-  final imageData = _offscreenCtx!.getImageData(0, 0, w, h);
+  final imageData = _pixelReadbackCtx!.getImageData(0, 0, w, h);
   final clamped = imageData.data.toDart;
   final rgbaBytes = clamped.buffer.asUint8List(
     clamped.offsetInBytes,
