@@ -82,7 +82,7 @@ class VideoBubbleComponent extends PositionComponent {
   // Shader support
   ui.FragmentShader? _shader;
   double _time = 0;
-  double _glowIntensity = 0.5;
+  double _glowIntensity = 0.0;
   Color _glowColor = Colors.green;
   double _speakingLevel = 0.0;
 
