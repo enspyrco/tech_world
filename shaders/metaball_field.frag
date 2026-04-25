@@ -28,7 +28,7 @@ void main() {
 
     float r2 = u_bubble_radius * u_bubble_radius;
     float field = 0.0;
-    float min_dist = 1e6;  // track closest bubble distance
+    float min_d2 = 1e12;  // track closest bubble (squared distance)
 
     // Accumulate metaball field: r² / (d² + ε)
     // The +1.0 prevents division by zero and softens the center.
@@ -36,7 +36,7 @@ void main() {
         vec2 delta = p - b;                       \
         float d2 = dot(delta, delta);             \
         field += r2 / (d2 + 1.0);                 \
-        min_dist = min(min_dist, sqrt(d2));        \
+        min_d2 = min(min_d2, d2);                  \
     }
 
     if (u_count > 0.5) BALL(u_b0)
@@ -69,7 +69,7 @@ void main() {
     // any individual bubble circle. It gets a subtle translucent fill
     // so the connection between players is visible.
     float inside_merged = smoothstep(threshold, threshold + 0.05, field);
-    float inside_circle = step(min_dist, u_bubble_radius * 0.95);
+    float inside_circle = step(min_d2, u_bubble_radius * u_bubble_radius * 0.9025);
     float bridge = inside_merged * (1.0 - inside_circle);
 
     // ── Animation ─────────────────────────────────────────
