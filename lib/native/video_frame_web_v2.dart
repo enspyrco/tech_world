@@ -12,8 +12,8 @@
 
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'dart:ui_web' as ui_web;
 
 import 'package:logging/logging.dart';
 import 'package:web/web.dart' as web;
@@ -21,6 +21,48 @@ import 'package:web/web.dart' as web;
 import 'frame_source.dart';
 
 final _log = Logger('VideoFrameWebV2');
+
+/// Shared offscreen canvas for reading pixels from ImageBitmaps.
+/// Reused across captures to avoid repeated allocation.
+web.OffscreenCanvas? _offscreenCanvas;
+web.OffscreenCanvasRenderingContext2D? _offscreenCtx;
+
+/// Convert an [web.ImageBitmap] to a [ui.Image] via getImageData +
+/// decodeImageFromPixels. This bypasses CanvasKit's broken
+/// createImageFromImageBitmap (Skia issue 14637) which renders black.
+Future<ui.Image> _imageBitmapToUiImage(web.ImageBitmap bitmap, int w, int h) {
+  // Resize offscreen canvas if needed.
+  if (_offscreenCanvas == null ||
+      _offscreenCanvas!.width != w ||
+      _offscreenCanvas!.height != h) {
+    _offscreenCanvas = web.OffscreenCanvas(w, h);
+    _offscreenCtx = _offscreenCanvas!.getContext('2d')!
+        as web.OffscreenCanvasRenderingContext2D;
+  }
+
+  // Draw bitmap → read raw RGBA pixels.
+  _offscreenCtx!.clearRect(0, 0, w, h);
+  _offscreenCtx!.drawImage(bitmap as web.CanvasImageSource, 0, 0);
+  bitmap.close();
+
+  final imageData = _offscreenCtx!.getImageData(0, 0, w, h);
+  final clamped = imageData.data.toDart;
+  final rgbaBytes = clamped.buffer.asUint8List(
+    clamped.offsetInBytes,
+    clamped.lengthInBytes,
+  );
+
+  // decodeImageFromPixels uses SkImage.MakeRasterData — the working path.
+  final completer = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    Uint8List.fromList(rgbaBytes),
+    w,
+    h,
+    ui.PixelFormat.rgba8888,
+    completer.complete,
+  );
+  return completer.future;
+}
 
 /// JS interop for MediaStreamTrackProcessor (not yet in package:web)
 @JS('MediaStreamTrackProcessor')
@@ -333,17 +375,9 @@ class DirectTrackCapture {
       // Bail out if disposed during the awaits above
       if (!_isCapturing) return;
 
-      // Convert to Flutter ui.Image. Close ImageBitmap on error to prevent
-      // GPU memory leak.
-      ui.Image newFrame;
-      try {
-        newFrame = await ui_web.createImageFromImageBitmap(
-          imageBitmap as JSAny,
-        );
-      } catch (_) {
-        imageBitmap.close();
-        rethrow;
-      }
+      // Convert to ui.Image via offscreen canvas + decodeImageFromPixels.
+      // createImageFromImageBitmap renders black (Skia issue 14637).
+      final newFrame = await _imageBitmapToUiImage(imageBitmap, _width, _height);
 
       // Swap frames
       final oldFrame = _currentFrame;
@@ -747,17 +781,9 @@ class VideoElementCapture implements FrameSource {
 
       final imageBitmap = await imageBitmapPromise.toDart;
 
-      // Convert to Flutter ui.Image. Close ImageBitmap in finally to prevent
-      // GPU memory leak if createImageFromImageBitmap throws.
-      ui.Image newFrame;
-      try {
-        newFrame = await ui_web.createImageFromImageBitmap(
-          imageBitmap as JSAny,
-        );
-      } catch (_) {
-        imageBitmap.close();
-        rethrow;
-      }
+      // Convert to ui.Image via offscreen canvas + decodeImageFromPixels.
+      // createImageFromImageBitmap renders black (Skia issue 14637).
+      final newFrame = await _imageBitmapToUiImage(imageBitmap, _width, _height);
 
       // Swap frames
       final oldFrame = _currentFrame;
