@@ -56,22 +56,22 @@ vec4 sampleVideo(int idx, vec2 fragPos) {
     if (idx == 0) {
         uv = videoUV(fragPos, u_b0, u_vid0);
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-            return vec4(0.0);
+            return vec4(u_glow_color * 0.3, 1.0);
         return texture(u_video0, uv);
     } else if (idx == 1) {
         uv = videoUV(fragPos, u_b1, u_vid1);
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-            return vec4(0.0);
+            return vec4(u_glow_color * 0.3, 1.0);
         return texture(u_video1, uv);
     } else if (idx == 2) {
         uv = videoUV(fragPos, u_b2, u_vid2);
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-            return vec4(0.0);
+            return vec4(u_glow_color * 0.3, 1.0);
         return texture(u_video2, uv);
     } else {
         uv = videoUV(fragPos, u_b3, u_vid3);
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-            return vec4(0.0);
+            return vec4(u_glow_color * 0.3, 1.0);
         return texture(u_video3, uv);
     }
 }

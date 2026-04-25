@@ -723,7 +723,8 @@ class TechWorld extends World with TapCallbacks {
           final overlap = _bubbleDiameter - dist;
           final direction = delta.normalized();
           // Force proportional to overlap, scaled by dt for frame-independence.
-          final push = direction * (overlap * 0.5);
+          final clampedDt = min(dt, 0.05);
+          final push = direction * (overlap * 0.5 * clampedDt / 0.016);
           forces[entries[i].key] =
               (forces[entries[i].key] ?? Vector2.zero()) + push;
           forces[entries[j].key] =
