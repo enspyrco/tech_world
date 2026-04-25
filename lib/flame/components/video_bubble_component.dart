@@ -1,4 +1,4 @@
-import 'dart:math' show pi, sin, sqrt;
+import 'dart:math' show cos, pi, sin, sqrt;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -97,6 +97,13 @@ class VideoBubbleComponent extends PositionComponent {
   static const double _breathAmount = 0.025; // ±2.5% scale
   static const double _breathSpeed = 2.0; // cycles per second (radians)
 
+  // Voice ripple — number of wave lobes around the circle
+  static const int _rippleLobes = 8;
+  // Max ripple displacement in pixels at full speaking volume
+  static const double _rippleAmplitude = 4.0;
+  // Smoothed audio level (lerped toward raw audioLevel each frame)
+  double _smoothedAudioLevel = 0.0;
+
   // Track stats for debugging
   int _framesCaptured = 0;
   int _framesDropped = 0;
@@ -185,6 +192,13 @@ class VideoBubbleComponent extends PositionComponent {
         _initializeCapture();
       }
     }
+
+    // Poll audio level from the LiveKit participant each frame.
+    // Smooth with lerp to avoid jitter from the raw VAD signal.
+    final rawLevel = participant.audioLevel;
+    _smoothedAudioLevel +=
+        (rawLevel - _smoothedAudioLevel) * (dt * 12.0).clamp(0.0, 1.0);
+    _speakingLevel = _smoothedAudioLevel;
 
     // Check for new frames
     _checkForNewFrame();
@@ -629,9 +643,7 @@ class VideoBubbleComponent extends PositionComponent {
       );
 
       canvas.save();
-      final clipPath = Path()
-        ..addOval(Rect.fromCircle(center: center, radius: radius));
-      canvas.clipPath(clipPath);
+      canvas.clipPath(_buildBubblePath(center, radius));
 
       final srcRect = Rect.fromLTWH(
         0,
@@ -708,7 +720,7 @@ class VideoBubbleComponent extends PositionComponent {
         ..color = _currentFrame != null ? _glowColor : Colors.white
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
-      canvas.drawCircle(center, radius, borderPaint);
+      canvas.drawPath(_buildBubblePath(center, radius), borderPaint);
     }
 
     if (_opacity < 1.0) {
@@ -829,6 +841,40 @@ class VideoBubbleComponent extends PositionComponent {
       ),
     );
     textPainter.dispose();
+  }
+
+  /// Build a circular path whose radius undulates when someone is speaking.
+  ///
+  /// When [_speakingLevel] is 0 the path is a perfect circle.
+  /// As audio level rises, sinusoidal lobes appear around the edge,
+  /// animated over time so the ripple *moves*.
+  Path _buildBubblePath(Offset center, double radius) {
+    if (_speakingLevel < 0.01) {
+      // No audio — fast path, plain circle.
+      return Path()..addOval(Rect.fromCircle(center: center, radius: radius));
+    }
+
+    final path = Path();
+    // 64 segments is smooth enough for a ~32px radius circle.
+    const segments = 64;
+    final amplitude = _rippleAmplitude * _speakingLevel;
+
+    for (int i = 0; i <= segments; i++) {
+      final angle = (i / segments) * 2.0 * pi;
+      // Two wave frequencies for organic feel.
+      final wave1 = sin(angle * _rippleLobes + _time * 6.0) * amplitude;
+      final wave2 = sin(angle * (_rippleLobes + 3) - _time * 4.0) * amplitude * 0.4;
+      final r = radius + wave1 + wave2;
+      final x = center.dx + cos(angle) * r;
+      final y = center.dy + sin(angle) * r;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    path.close();
+    return path;
   }
 
   String _getInitial() {
