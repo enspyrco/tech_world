@@ -1,0 +1,23 @@
+{
+  "name": "@enspyrco/pw",
+  "version": "0.1.0",
+  "description": "Playwright workflow tool for Tech World browser automation",
+  "type": "module",
+  "bin": {
+    "pw": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "commander": "^13.0.0",
+    "dotenv": "^16.4.0",
+    "playwright": "^1.52.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
