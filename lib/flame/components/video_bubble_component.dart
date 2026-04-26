@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
+import 'package:dart_webrtc/dart_webrtc.dart' show MediaStreamTrackWeb;
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
@@ -240,22 +241,22 @@ class VideoBubbleComponent extends PositionComponent {
     // ignore: avoid_print
         print('[DIAG] $displayName: initializing (isRemote=$isRemote, trackId=${mediaStreamTrack.id})');
 
-    dynamic jsTrack;
-    try {
-      jsTrack = (mediaStreamTrack as dynamic).jsTrack;
+    // Get the underlying web.MediaStreamTrack via typed cast.
+    // Dynamic dispatch ((track as dynamic).jsTrack) fails in WASM builds.
+    if (mediaStreamTrack is! MediaStreamTrackWeb) {
       // ignore: avoid_print
-        print('[DIAG] $displayName: got jsTrack, readyState=${(jsTrack as dynamic).readyState}, muted=${(jsTrack as dynamic).muted}');
-    } catch (e) {
-      // ignore: avoid_print
-        print('[DIAG] $displayName: jsTrack FAILED: $e');
+      print('[DIAG] $displayName: mediaStreamTrack is ${mediaStreamTrack.runtimeType}, not MediaStreamTrackWeb');
       return;
     }
+    final jsTrack = mediaStreamTrack.jsTrack;
+    // ignore: avoid_print
+    print('[DIAG] $displayName: got jsTrack (isRemote=$isRemote)');
 
     // Use DirectTrackCapture (MediaStreamTrackProcessor) for ALL tracks.
     _initializeLocalWebCapture(jsTrack, track);
   }
 
-  void _initializeLocalWebCapture(dynamic jsTrack, VideoTrack track) {
+  void _initializeLocalWebCapture(Object jsTrack, VideoTrack track) {
     final supported = direct_capture.isMediaStreamTrackProcessorSupported;
     // ignore: avoid_print
         print('[DIAG] $displayName: MediaStreamTrackProcessor supported=$supported');
@@ -288,12 +289,12 @@ class VideoBubbleComponent extends PositionComponent {
   ///
   /// Creates a hidden video element and attaches the track's MediaStream to it.
   /// This is more reliable than RTCVideoRenderer for capturing frames.
-  void _initializeRemoteWebCapture(dynamic jsTrack, VideoTrack track) {
+  void _initializeRemoteWebCapture(Object jsTrack, VideoTrack track) {
     _initializeRemoteWebCaptureAsync(jsTrack, track);
   }
 
   Future<void> _initializeRemoteWebCaptureAsync(
-      dynamic jsTrack, VideoTrack track) async {
+      Object jsTrack, VideoTrack track) async {
     try {
       _videoTrack = track;
 
