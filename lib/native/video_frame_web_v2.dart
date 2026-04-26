@@ -32,18 +32,15 @@ web.CanvasRenderingContext2D? _pixelReadbackCtx;
 /// decodeImageFromPixels. This bypasses CanvasKit's broken
 /// createImageFromImageBitmap (Skia issue 14637) which renders black.
 Future<ui.Image> _imageBitmapToUiImage(web.ImageBitmap bitmap, int w, int h) {
-  // Resize canvas if needed.
+  // Resize canvas if needed. NOT appended to DOM — just used in memory
+  // for pixel readback, matching canvas_capture_web.dart's pattern.
   if (_pixelReadbackCanvas == null ||
       _pixelReadbackCanvas!.width != w ||
       _pixelReadbackCanvas!.height != h) {
-    _pixelReadbackCanvas?.remove();
     _pixelReadbackCanvas =
         web.document.createElement('canvas') as web.HTMLCanvasElement;
     _pixelReadbackCanvas!.width = w;
     _pixelReadbackCanvas!.height = h;
-    // Hidden — no visual output needed.
-    _pixelReadbackCanvas!.style.display = 'none';
-    web.document.body?.appendChild(_pixelReadbackCanvas!);
     _pixelReadbackCtx = _pixelReadbackCanvas!.getContext('2d')!
         as web.CanvasRenderingContext2D;
   }
