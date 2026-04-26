@@ -230,50 +230,53 @@ class VideoBubbleComponent extends PositionComponent {
   void _initializeWebCapture() {
     final track = _getVideoTrack();
     if (track == null) {
-      _log.fine('No video track found for $displayName');
+      // ignore: avoid_print
+        print('[DIAG] $displayName: no video track found');
       return;
     }
 
-    // Get the underlying MediaStreamTrack
     final mediaStreamTrack = track.mediaStreamTrack;
     final isRemote = participant is! LocalParticipant;
-    _log.fine('Initializing for $displayName (isRemote=$isRemote)');
+    // ignore: avoid_print
+        print('[DIAG] $displayName: initializing (isRemote=$isRemote, trackId=${mediaStreamTrack.id})');
 
-    // Get the JS MediaStreamTrack
     dynamic jsTrack;
     try {
       jsTrack = (mediaStreamTrack as dynamic).jsTrack;
+      // ignore: avoid_print
+        print('[DIAG] $displayName: got jsTrack, readyState=${(jsTrack as dynamic).readyState}, muted=${(jsTrack as dynamic).muted}');
     } catch (e) {
-      _log.warning('Could not get jsTrack', e);
+      // ignore: avoid_print
+        print('[DIAG] $displayName: jsTrack FAILED: $e');
       return;
     }
 
     // Use DirectTrackCapture (MediaStreamTrackProcessor) for ALL tracks.
-    // VideoElementCapture never worked on web due to Skia issue 14637.
     _initializeLocalWebCapture(jsTrack, track);
   }
 
-  /// Initialize capture for local tracks using MediaStreamTrackProcessor.
-  ///
-  /// Local tracks produce frames immediately, so we can use the faster
-  /// MediaStreamTrackProcessor approach without any waiting.
   void _initializeLocalWebCapture(dynamic jsTrack, VideoTrack track) {
-    if (!direct_capture.isMediaStreamTrackProcessorSupported) {
-      _log.fine(
-          'MediaStreamTrackProcessor not supported, using VideoElement for local');
-      // Fall back to VideoElementCapture even for local
+    final supported = direct_capture.isMediaStreamTrackProcessorSupported;
+    // ignore: avoid_print
+        print('[DIAG] $displayName: MediaStreamTrackProcessor supported=$supported');
+
+    if (!supported) {
+      // ignore: avoid_print
+        print('[DIAG] $displayName: falling back to VideoElementCapture');
       _initializeRemoteWebCapture(jsTrack, track);
       return;
     }
 
     final capture = direct_capture.DirectTrackCapture.create(jsTrack);
     if (capture == null) {
-      _log.warning('Failed to create DirectTrackCapture for $displayName');
+      // ignore: avoid_print
+        print('[DIAG] $displayName: DirectTrackCapture.create RETURNED NULL');
       _captureInitializing = false;
       return;
     }
 
-    _log.fine('DirectTrackCapture created for local track $displayName');
+    // ignore: avoid_print
+        print('[DIAG] $displayName: DirectTrackCapture created, starting capture');
     _webCapture = capture;
     _videoTrack = track;
     capture.startCapture();
