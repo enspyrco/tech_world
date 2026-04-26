@@ -753,8 +753,14 @@ class VideoElementCapture implements FrameSource {
       _width = videoWidth;
       _height = videoHeight;
 
-      // Draw video element directly to an offscreen canvas, then read pixels.
-      // This mirrors canvas_capture_web.dart exactly — no ImageBitmap needed.
+      // Create ImageBitmap from video (this works — original code did it).
+      // Then draw bitmap to canvas for pixel readback. We can't draw
+      // HTMLVideoElement directly because the CanvasImageSource cast
+      // may fail at runtime in package:web.
+      final imageBitmap = await web.window
+          .createImageBitmap(_videoElement as web.ImageBitmapSource)
+          .toDart;
+
       if (_readbackCanvas == null ||
           _readbackCanvas!.width != _width ||
           _readbackCanvas!.height != _height) {
@@ -766,8 +772,8 @@ class VideoElementCapture implements FrameSource {
             as web.CanvasRenderingContext2D;
       }
 
-      _readbackCtx!.drawImage(
-          _videoElement as web.CanvasImageSource, 0, 0);
+      _readbackCtx!.drawImage(imageBitmap as web.CanvasImageSource, 0, 0);
+      imageBitmap.close();
 
       final imageData =
           _readbackCtx!.getImageData(0, 0, _width, _height);
