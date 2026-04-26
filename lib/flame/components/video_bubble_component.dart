@@ -248,14 +248,9 @@ class VideoBubbleComponent extends PositionComponent {
       return;
     }
 
-    // HYBRID APPROACH:
-    // - Local tracks: Use MediaStreamTrackProcessor (fast, no DOM)
-    // - Remote tracks: Use HTMLVideoElement (handles buffering/decoding internally)
-    if (isRemote) {
-      _initializeRemoteWebCapture(jsTrack, track);
-    } else {
-      _initializeLocalWebCapture(jsTrack, track);
-    }
+    // Use DirectTrackCapture (MediaStreamTrackProcessor) for ALL tracks.
+    // VideoElementCapture never worked on web due to Skia issue 14637.
+    _initializeLocalWebCapture(jsTrack, track);
   }
 
   /// Initialize capture for local tracks using MediaStreamTrackProcessor.
