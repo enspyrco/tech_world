@@ -294,10 +294,15 @@ class DirectTrackCapture {
 
     try {
       // Read the next frame from the stream
+      if (_frameNumber == 0) {
+        // ignore: avoid_print
+        print('[DIAG] DirectTrackCapture: awaiting first read()...');
+      }
       final result = await _reader!.read().toDart;
 
       if (result.done) {
-        _log.info('DirectTrackCapture: Stream ended');
+        // ignore: avoid_print
+        print('[DIAG] DirectTrackCapture: stream ended (done=true)');
         _isCapturing = false;
         _frameInFlight = false;
         return;
@@ -305,6 +310,8 @@ class DirectTrackCapture {
 
       final videoFrame = result.value as VideoFrame?;
       if (videoFrame == null) {
+        // ignore: avoid_print
+        print('[DIAG] DirectTrackCapture: read() returned null frame');
         _frameInFlight = false;
         return;
       }
@@ -312,6 +319,11 @@ class DirectTrackCapture {
       // Update dimensions
       _width = videoFrame.displayWidth;
       _height = videoFrame.displayHeight;
+
+      if (_frameNumber == 0) {
+        // ignore: avoid_print
+        print('[DIAG] DirectTrackCapture: first VideoFrame ${_width}x$_height');
+      }
 
       if (_width == 0 || _height == 0) {
         videoFrame.close();
@@ -363,12 +375,16 @@ class DirectTrackCapture {
       _frameNumber++;
 
       if (_frameNumber == 1) {
-        _log.info(
-            'DirectTrackCapture: First frame captured! ${_width}x$_height');
+        // ignore: avoid_print
+        print('[DIAG] DirectTrackCapture: FIRST FRAME RENDERED ${_width}x$_height');
       }
 
       oldFrame?.dispose();
     } catch (e, stackTrace) {
+      if (_frameNumber == 0) {
+        // ignore: avoid_print
+        print('[DIAG] DirectTrackCapture: capture ERROR: $e');
+      }
       _log.warning('DirectTrackCapture: Frame capture error: $e', e, stackTrace);
     } finally {
       _frameInFlight = false;
