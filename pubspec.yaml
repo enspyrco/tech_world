@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   livekit_client: ^2.5.1
+  dart_webrtc: ^1.6.0 # MediaStreamTrackWeb typed access to jsTrack
   flutter_webrtc: ^1.2.0 # Required for controls.dart
   shared_preferences: ^2.2.3 # currently used by livekit code
   flame: ^1.18.0
