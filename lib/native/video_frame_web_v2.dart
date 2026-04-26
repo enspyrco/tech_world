@@ -12,7 +12,6 @@
 
 import 'dart:async';
 import 'dart:js_interop';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:logging/logging.dart';
@@ -21,53 +20,6 @@ import 'package:web/web.dart' as web;
 import 'frame_source.dart';
 
 final _log = Logger('VideoFrameWebV2');
-
-/// Shared hidden HTMLCanvasElement for reading pixels from ImageBitmaps.
-/// Uses HTMLCanvasElement (not OffscreenCanvas) to match the proven path
-/// in canvas_capture_web.dart.
-web.HTMLCanvasElement? _pixelReadbackCanvas;
-web.CanvasRenderingContext2D? _pixelReadbackCtx;
-
-/// Convert an [web.ImageBitmap] to a [ui.Image] via getImageData +
-/// decodeImageFromPixels. This bypasses CanvasKit's broken
-/// createImageFromImageBitmap (Skia issue 14637) which renders black.
-Future<ui.Image> _imageBitmapToUiImage(web.ImageBitmap bitmap, int w, int h) {
-  // Resize canvas if needed. NOT appended to DOM — just used in memory
-  // for pixel readback, matching canvas_capture_web.dart's pattern.
-  if (_pixelReadbackCanvas == null ||
-      _pixelReadbackCanvas!.width != w ||
-      _pixelReadbackCanvas!.height != h) {
-    _pixelReadbackCanvas =
-        web.document.createElement('canvas') as web.HTMLCanvasElement;
-    _pixelReadbackCanvas!.width = w;
-    _pixelReadbackCanvas!.height = h;
-    _pixelReadbackCtx = _pixelReadbackCanvas!.getContext('2d')!
-        as web.CanvasRenderingContext2D;
-  }
-
-  // Draw bitmap → read raw RGBA pixels.
-  _pixelReadbackCtx!.clearRect(0, 0, w, h);
-  _pixelReadbackCtx!.drawImage(bitmap as web.CanvasImageSource, 0, 0);
-  bitmap.close();
-
-  final imageData = _pixelReadbackCtx!.getImageData(0, 0, w, h);
-  final clamped = imageData.data.toDart;
-  final rgbaBytes = clamped.buffer.asUint8List(
-    clamped.offsetInBytes,
-    clamped.lengthInBytes,
-  );
-
-  // decodeImageFromPixels uses SkImage.MakeRasterData — the working path.
-  final completer = Completer<ui.Image>();
-  ui.decodeImageFromPixels(
-    Uint8List.fromList(rgbaBytes),
-    w,
-    h,
-    ui.PixelFormat.rgba8888,
-    completer.complete,
-  );
-  return completer.future;
-}
 
 /// JS interop for MediaStreamTrackProcessor (not yet in package:web)
 @JS('MediaStreamTrackProcessor')
@@ -127,6 +79,8 @@ class DirectTrackCapture {
   int _height = 0;
   Timer? _captureTimer;
   bool _frameInFlight = false;
+  web.HTMLCanvasElement? _readbackCanvas;
+  web.CanvasRenderingContext2D? _readbackCtx;
 
   /// Completer for pending unmute wait (used to cancel if disposed early)
   static Completer<bool>? _pendingUnmute;
@@ -365,24 +319,42 @@ class DirectTrackCapture {
         return;
       }
 
-      // Convert VideoFrame to ImageBitmap, then to ui.Image
-      // VideoFrame is an ImageBitmapSource
-      final imageBitmapPromise = web.window.createImageBitmap(
-        videoFrame as web.ImageBitmapSource,
-      );
+      // Draw VideoFrame directly to offscreen canvas, read pixels, decode.
+      // Mirrors canvas_capture_web.dart — no ImageBitmap, no createImageFromImageBitmap.
+      if (_readbackCanvas == null ||
+          _readbackCanvas!.width != _width ||
+          _readbackCanvas!.height != _height) {
+        _readbackCanvas =
+            web.document.createElement('canvas') as web.HTMLCanvasElement;
+        _readbackCanvas!.width = _width;
+        _readbackCanvas!.height = _height;
+        _readbackCtx = _readbackCanvas!.getContext('2d')!
+            as web.CanvasRenderingContext2D;
+      }
 
-      final imageBitmap = await imageBitmapPromise.toDart;
-
-      // IMPORTANT: Close the VideoFrame immediately after creating ImageBitmap
-      // to release the underlying video decoder resources
+      _readbackCtx!.drawImage(videoFrame as web.CanvasImageSource, 0, 0);
+      // Close VideoFrame immediately to release video decoder resources.
       videoFrame.close();
 
-      // Bail out if disposed during the awaits above
       if (!_isCapturing) return;
 
-      // Convert to ui.Image via offscreen canvas + decodeImageFromPixels.
-      // createImageFromImageBitmap renders black (Skia issue 14637).
-      final newFrame = await _imageBitmapToUiImage(imageBitmap, _width, _height);
+      final imageData =
+          _readbackCtx!.getImageData(0, 0, _width, _height);
+      final clamped = imageData.data.toDart;
+      final rgbaBytes = clamped.buffer.asUint8List(
+        clamped.offsetInBytes,
+        clamped.lengthInBytes,
+      );
+
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        rgbaBytes,
+        _width,
+        _height,
+        ui.PixelFormat.rgba8888,
+        completer.complete,
+      );
+      final newFrame = await completer.future;
 
       // Swap frames
       final oldFrame = _currentFrame;
@@ -451,6 +423,9 @@ class VideoElementCapture implements FrameSource {
   Timer? _captureTimer;
   bool _frameInFlight = false;
   bool _videoReady = false;
+  // Offscreen canvas for pixel readback (not in DOM).
+  web.HTMLCanvasElement? _readbackCanvas;
+  web.CanvasRenderingContext2D? _readbackCtx;
   JSFunction? _jsLoadedMetadata;
 
   /// Create a capture instance from a MediaStream (preferred) or MediaStreamTrack.
@@ -778,17 +753,39 @@ class VideoElementCapture implements FrameSource {
       _width = videoWidth;
       _height = videoHeight;
 
-      // Use createImageBitmap to capture the current frame
-      // This is GPU-efficient and doesn't require a canvas
-      final imageBitmapPromise = web.window.createImageBitmap(
-        _videoElement as web.ImageBitmapSource,
+      // Draw video element directly to an offscreen canvas, then read pixels.
+      // This mirrors canvas_capture_web.dart exactly — no ImageBitmap needed.
+      if (_readbackCanvas == null ||
+          _readbackCanvas!.width != _width ||
+          _readbackCanvas!.height != _height) {
+        _readbackCanvas =
+            web.document.createElement('canvas') as web.HTMLCanvasElement;
+        _readbackCanvas!.width = _width;
+        _readbackCanvas!.height = _height;
+        _readbackCtx = _readbackCanvas!.getContext('2d')!
+            as web.CanvasRenderingContext2D;
+      }
+
+      _readbackCtx!.drawImage(
+          _videoElement as web.CanvasImageSource, 0, 0);
+
+      final imageData =
+          _readbackCtx!.getImageData(0, 0, _width, _height);
+      final clamped = imageData.data.toDart;
+      final rgbaBytes = clamped.buffer.asUint8List(
+        clamped.offsetInBytes,
+        clamped.lengthInBytes,
       );
 
-      final imageBitmap = await imageBitmapPromise.toDart;
-
-      // Convert to ui.Image via offscreen canvas + decodeImageFromPixels.
-      // createImageFromImageBitmap renders black (Skia issue 14637).
-      final newFrame = await _imageBitmapToUiImage(imageBitmap, _width, _height);
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(
+        rgbaBytes,
+        _width,
+        _height,
+        ui.PixelFormat.rgba8888,
+        completer.complete,
+      );
+      final newFrame = await completer.future;
 
       // Swap frames
       final oldFrame = _currentFrame;
