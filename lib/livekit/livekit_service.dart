@@ -233,11 +233,18 @@ class LiveKitService {
       // Create room with options
       _room = Room(
         roomOptions: const RoomOptions(
-          adaptiveStream: true,
-          dynacast: true,
+          // Adaptive streaming requires LiveKit's VideoTrackRenderer widget
+          // to signal "I'm rendering this track." We render via Flame canvas,
+          // so the SDK never signals demand and the SFU stops forwarding.
+          adaptiveStream: false,
+          dynacast: false,
           defaultCameraCaptureOptions: CameraCaptureOptions(
             maxFrameRate: 30,
             params: VideoParametersPresets.h540_169,
+          ),
+          defaultVideoPublishOptions: VideoPublishOptions(
+            simulcast: false,
+            videoCodec: 'vp8',
           ),
           defaultAudioCaptureOptions: AudioCaptureOptions(
             noiseSuppression: true,
