@@ -177,8 +177,8 @@ class DirectTrackCapture {
       return null;
     }
 
-    final webTrack = track as web.MediaStreamTrack;
     try {
+      final webTrack = track as web.MediaStreamTrack;
       final processor = MediaStreamTrackProcessor(
         MediaStreamTrackProcessorInit(track: webTrack),
       );
@@ -208,7 +208,13 @@ class DirectTrackCapture {
       return null;
     }
 
-    final webTrack = track as web.MediaStreamTrack;
+    final web.MediaStreamTrack webTrack;
+    try {
+      webTrack = track as web.MediaStreamTrack;
+    } catch (e) {
+      _log.severe('DirectTrackCapture: expected MediaStreamTrack, got ${track.runtimeType}');
+      return null;
+    }
 
     // Check if track is muted (common for remote tracks)
     if (_isTrackMuted(webTrack)) {
@@ -227,7 +233,7 @@ class DirectTrackCapture {
     }
 
     // Now create the processor (track should have frames)
-    return create(webTrack);
+    return create(track);
   }
 
   /// Whether a new frame is available.
