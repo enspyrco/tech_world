@@ -57,8 +57,12 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
     super.initState();
 
     final timestamp = DateTime.now().millisecondsSinceEpoch;
+    // `wireName` (snake_case) keeps the file path stable across refactors
+    // of the Dart identifier; interpolating `widget.challenge.id` directly
+    // would yield `CodeChallengeId.helloDart_<ts>.dart` because Dart's
+    // enum `toString()` returns the type-prefixed form.
     _fileUri =
-        '${LspConstants.fileBasePath}/${widget.challenge.id}_$timestamp.dart';
+        '${LspConstants.fileBasePath}/${widget.challenge.id.wireName}_$timestamp.dart';
 
     LspSocketConfig? lspConfig;
     try {

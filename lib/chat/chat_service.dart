@@ -322,7 +322,12 @@ class ChatService {
   /// timeout or error. The caller can inspect fields like `challengeResult`.
   ///
   /// Optional [metadata] fields are merged into the published JSON payload
-  /// (e.g. `{'challengeId': 'fizzbuzz'}` for challenge evaluations).
+  /// (e.g. `{'promptChallengeId': 'evocation_fizzbuzz'}` for cast
+  /// evaluations). All values must be JSON-serializable — the
+  /// `Map<String, dynamic>` signature accepts anything at compile time,
+  /// but typed enums and other non-primitives must be converted to their
+  /// wire form (e.g. `PromptChallengeId.evocationFizzbuzz.wireName`)
+  /// before being put into this map.
   ///
   /// Reserved keys (`type`, `id`, `text`, `senderName`, `timestamp`) are
   /// silently stripped from [metadata] to prevent protocol corruption.

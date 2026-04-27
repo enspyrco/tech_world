@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
+import 'package:tech_world/prompt/prompt_challenge.dart';
 
 void main() {
   group('CodeChallengeId', () {
@@ -37,35 +38,18 @@ void main() {
   group('CodeChallengeId disjoint from PromptChallengeId wire format', () {
     // The two enum namespaces share Firestore's `completedChallenges`
     // array. Disjoint wire names are what makes that safe.
+    //
+    // Source-of-truth-driven: pulls the prompt wire forms straight from
+    // `PromptChallengeId.values`, so a future addition on either side
+    // that introduces a collision fails the build automatically.
     test('no CodeChallengeId.wireName equals a PromptChallengeId.wireName',
         () {
-      // Hard-coded against the prompt-side wire forms to avoid an import
-      // cycle between editor and prompt modules. If a collision is
-      // introduced, this test fails loudly and we revisit the design.
-      const promptWireForms = {
-        'evocation_fizzbuzz',
-        'evocation_countdown',
-        'evocation_diamond',
-        'divination_color',
-        'divination_extract',
-        'divination_pattern',
-        'transmutation_bullets',
-        'transmutation_table',
-        'transmutation_json',
-        'illusion_pirate',
-        'illusion_child',
-        'illusion_dual',
-        'enchantment_brevity',
-        'enchantment_formal',
-        'enchantment_contradict',
-        'conjuration_glorp',
-        'conjuration_pattern',
-        'conjuration_language',
-      };
+      final promptWireForms =
+          PromptChallengeId.values.map((e) => e.wireName).toSet();
       for (final id in CodeChallengeId.values) {
         expect(promptWireForms.contains(id.wireName), isFalse,
-            reason: 'CodeChallengeId.${id.name} wireName collides with '
-                'a PromptChallengeId wireName');
+            reason: 'CodeChallengeId.${id.name} wireName=${id.wireName} '
+                'collides with a PromptChallengeId wireName');
       }
     });
   });
