@@ -3,7 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:ui' as ui;
 
 import 'package:flame/game.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart'
@@ -35,6 +35,10 @@ import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/widgets/screen_share_overlay.dart';
 import 'package:tech_world/progress/progress_service.dart';
+import 'package:tech_world/spellbook/cast_effects.dart';
+import 'package:tech_world/spellbook/spellbook_panel.dart';
+import 'package:tech_world/spellbook/spellbook_service.dart';
+import 'package:tech_world/spellbook/word_of_power.dart' show arcaneColor;
 import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
@@ -97,6 +101,8 @@ class _MyAppState extends State<MyApp> {
   ChatService? _chatService;
   ProximityService? _proximityService;
   ProgressService? _progressService;
+  SpellbookService? _spellbookService;
+  final ValueNotifier<bool> _spellbookOpen = ValueNotifier<bool>(false);
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
   final ValueNotifier<String?> _activeDmPeer = ValueNotifier<String?>(null);
@@ -138,6 +144,8 @@ class _MyAppState extends State<MyApp> {
   void dispose() {
     _authSubscription?.cancel();
     _wireStates?.dispose();
+    _spellbookOpen.dispose();
+    _spellbookService?.dispose();
     super.dispose();
   }
 
@@ -205,6 +213,10 @@ class _MyAppState extends State<MyApp> {
       _progressService?.dispose();
       _progressService = null;
       Locator.remove<ProgressService>();
+      _spellbookService?.dispose();
+      _spellbookService = null;
+      Locator.remove<SpellbookService>();
+      _spellbookOpen.value = false;
       _roomService = null;
       _myRooms = null;
       Locator.remove<RoomService>();
@@ -248,6 +260,15 @@ class _MyAppState extends State<MyApp> {
       }
       Locator.add<ProgressService>(_progressService!);
       locate<TechWorld>().refreshTerminalStates();
+
+      // Load spellbook (words of power earned by completing prompt challenges).
+      _spellbookService = SpellbookService(uid: user.id);
+      try {
+        await _spellbookService!.loadSpellbook();
+      } catch (e) {
+        _log.warning('Failed to load spellbook for uid ${user.id}: $e', e);
+      }
+      Locator.add<SpellbookService>(_spellbookService!);
 
       // Register RoomService for the lobby.
       _roomService = RoomService();
@@ -1093,11 +1114,22 @@ class _MyAppState extends State<MyApp> {
                     return ValueListenableBuilder<bool>(
                       valueListenable: _chatCollapsed,
                       builder: (context, chatCollapsed, child) {
+                    return ValueListenableBuilder<bool>(
+                      valueListenable: _spellbookOpen,
+                      builder: (context, spellbookOpen, _) {
                     final techWorld = locate<TechWorld>();
+                    // The spellbook panel only renders when no challenge is
+                    // active — see the overlay's gating below — so the
+                    // toolbar should only shift for the spellbook in that
+                    // same window.
+                    final spellbookVisible = spellbookOpen &&
+                        techWorld.activePromptChallenge.value == null;
                     // Toolbar offset depends on what's showing in the side panel
                     final double toolbarRight;
                     if (techWorld.mapEditorActive.value) {
                       toolbarRight = (constraints.maxWidth >= 800 ? 480 : 360) + 16;
+                    } else if (spellbookVisible) {
+                      toolbarRight = constraints.maxWidth >= 800 ? 400 : 320;
                     } else if (chatCollapsed) {
                       toolbarRight = 64;
                     } else {
@@ -1148,6 +1180,12 @@ class _MyAppState extends State<MyApp> {
                               ),
                             ],
                             const SizedBox(width: 8),
+                            _SpellbookButton(
+                              open: _spellbookOpen,
+                              activePromptChallenge:
+                                  techWorld.activePromptChallenge,
+                            ),
+                            const SizedBox(width: 8),
                             AuthMenu(
                               displayName: _currentDisplayName.isNotEmpty
                                   ? _currentDisplayName
@@ -1159,6 +1197,8 @@ class _MyAppState extends State<MyApp> {
                           ],
                         ),
                       ),
+                    );
+                      },
                     );
                       },
                     );
@@ -1230,12 +1270,22 @@ class _MyAppState extends State<MyApp> {
 
                             // Only mark completed when bot confirms pass
                             if (response?['challengeResult'] == 'pass') {
-                              try {
-                                await Locator.maybeLocate<ProgressService>()
-                                    ?.markChallengeCompleted(challenge.id);
-                              } catch (e) {
-                                _log.warning('Failed to persist completion: $e', e);
-                                // Rollback already handled by ProgressService.
+                              final progress =
+                                  Locator.maybeLocate<ProgressService>();
+                              if (progress == null) {
+                                _log.warning(
+                                    'ProgressService unavailable; '
+                                    'challenge ${challenge.id} not '
+                                    'marked completed');
+                              } else {
+                                try {
+                                  await progress.markChallengeCompleted(
+                                      challenge.id);
+                                } catch (e) {
+                                  _log.warning(
+                                      'Failed to persist completion: $e', e);
+                                  // Rollback already handled by ProgressService.
+                                }
                               }
                               techWorld.refreshTerminalStates();
                             }
@@ -1292,8 +1342,18 @@ class _MyAppState extends State<MyApp> {
                                   await engine.evaluate(challenge, prompt);
                               final (_, castResult) = result;
 
-                              // If passed, unlock linked doors.
+                              // Persistent side-effects of a successful cast:
+                              // grant the word of power, then mark the
+                              // challenge completed. See applyCastSuccessEffects
+                              // for the rationale on ordering.
                               if (castResult.passed) {
+                                await applyCastSuccessEffects(
+                                  challengeId: challenge.id,
+                                  spellbook: Locator
+                                      .maybeLocate<SpellbookService>(),
+                                  progress: Locator
+                                      .maybeLocate<ProgressService>(),
+                                );
                                 final doors = techWorld
                                     .doorsForChallenge(challenge.id);
                                 for (final door in doors) {
@@ -1309,6 +1369,38 @@ class _MyAppState extends State<MyApp> {
                     );
                   },
                 ),
+                // Spellbook side panel — toggled by the toolbar button.
+                // Hidden while a prompt challenge is active so the two
+                // right-aligned panels never collide; reappears when the
+                // challenge closes if `_spellbookOpen` is still true.
+                if (_spellbookService != null)
+                  ValueListenableBuilder<String?>(
+                    valueListenable:
+                        locate<TechWorld>().activePromptChallenge,
+                    builder: (context, activeChallenge, _) {
+                      if (activeChallenge != null) {
+                        return const SizedBox.shrink();
+                      }
+                      return ValueListenableBuilder<bool>(
+                        valueListenable: _spellbookOpen,
+                        builder: (context, open, _) {
+                          if (!open) return const SizedBox.shrink();
+                          return Positioned(
+                            top: 60,
+                            right: 0,
+                            bottom: 0,
+                            width: MediaQuery.of(context).size.width >= 800
+                                ? 400
+                                : 320,
+                            child: SpellbookPanel(
+                              service: _spellbookService!,
+                              onClose: () => _spellbookOpen.value = false,
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
                 // Screen share floating panels
                 if (_liveKitService != null)
                   ScreenShareOverlay(liveKitService: _liveKitService!),
@@ -1356,6 +1448,57 @@ class _MyAppState extends State<MyApp> {
 }
 
 /// Toggle button for entering/exiting map editor mode.
+/// Toolbar toggle for the [SpellbookPanel] side panel.
+///
+/// Disabled (and visually dimmed) while a prompt challenge is active so the
+/// player can't toggle a panel that's hidden anyway by the same gating in
+/// the spellbook overlay above.
+class _SpellbookButton extends StatelessWidget {
+  const _SpellbookButton({
+    required this.open,
+    required this.activePromptChallenge,
+  });
+
+  final ValueNotifier<bool> open;
+  final ValueListenable<String?> activePromptChallenge;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: activePromptChallenge,
+      builder: (context, activeChallenge, _) {
+        final disabled = activeChallenge != null;
+        return ValueListenableBuilder<bool>(
+          valueListenable: open,
+          builder: (context, isOpen, _) {
+            return IconButton(
+              onPressed: disabled ? null : () => open.value = !isOpen,
+              icon: Icon(
+                Icons.auto_stories,
+                color: disabled
+                    ? Colors.white24
+                    : (isOpen ? arcaneColor : Colors.white70),
+                size: 20,
+              ),
+              tooltip: disabled
+                  ? 'Spellbook unavailable while casting'
+                  : (isOpen ? 'Close spellbook' : 'Open spellbook'),
+              style: IconButton.styleFrom(
+                backgroundColor: isOpen && !disabled
+                    ? arcaneColor.withValues(alpha: 0.2)
+                    : Colors.black54,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
 class _MapEditorButton extends StatelessWidget {
   const _MapEditorButton({
     required this.mapEditorState,
