@@ -29,6 +29,7 @@ import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/prompt/chat_evaluation_engine.dart';
 import 'package:tech_world/prompt/predefined_prompt_challenges.dart';
+import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/prompt/prompt_challenge_panel.dart';
 import 'package:tech_world/prompt/spell_slot_service.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
@@ -1219,7 +1220,7 @@ class _MyAppState extends State<MyApp> {
                         TerminalMode.code) {
                       return const SizedBox.shrink();
                     }
-                    return ValueListenableBuilder<String?>(
+                    return ValueListenableBuilder<CodeChallengeId?>(
                       valueListenable: techWorld.activeChallenge,
                       builder: (context, challengeId, _) {
                         if (challengeId == null) {
@@ -1231,7 +1232,7 @@ class _MyAppState extends State<MyApp> {
                         );
                         final isCompleted = Locator.maybeLocate<
                                     ProgressService>()
-                                ?.isChallengeCompleted(challenge.id) ??
+                                ?.isChallengeCompleted(challenge.id.wireName) ??
                             false;
                         return _CodeEditorModal(
                           challenge: challenge,
@@ -1245,7 +1246,7 @@ class _MyAppState extends State<MyApp> {
                             final terminalPos =
                                 techWorld.activeTerminalPosition.value;
                             return chatService.requestHelp(
-                              challengeId: challenge.id,
+                              challengeId: challenge.id.wireName,
                               challengeTitle: challenge.title,
                               challengeDescription: challenge.description,
                               code: code,
@@ -1265,7 +1266,7 @@ class _MyAppState extends State<MyApp> {
                             final response = await chatService.sendMessage(
                               'Please review my "${challenge.title}" '
                               'solution:\n\n```dart\n$code\n```',
-                              metadata: {'challengeId': challenge.id},
+                              metadata: {'challengeId': challenge.id.wireName},
                             );
 
                             // Only mark completed when bot confirms pass
@@ -1275,12 +1276,12 @@ class _MyAppState extends State<MyApp> {
                               if (progress == null) {
                                 _log.warning(
                                     'ProgressService unavailable; '
-                                    'challenge ${challenge.id} not '
+                                    'challenge ${challenge.id.wireName} not '
                                     'marked completed');
                               } else {
                                 try {
                                   await progress.markChallengeCompleted(
-                                      challenge.id);
+                                      challenge.id.wireName);
                                 } catch (e) {
                                   _log.warning(
                                       'Failed to persist completion: $e', e);
@@ -1309,7 +1310,7 @@ class _MyAppState extends State<MyApp> {
                         TerminalMode.prompt) {
                       return const SizedBox.shrink();
                     }
-                    return ValueListenableBuilder<String?>(
+                    return ValueListenableBuilder<PromptChallengeId?>(
                       valueListenable: techWorld.activePromptChallenge,
                       builder: (context, challengeId, _) {
                         if (challengeId == null) {
@@ -1374,7 +1375,7 @@ class _MyAppState extends State<MyApp> {
                 // right-aligned panels never collide; reappears when the
                 // challenge closes if `_spellbookOpen` is still true.
                 if (_spellbookService != null)
-                  ValueListenableBuilder<String?>(
+                  ValueListenableBuilder<PromptChallengeId?>(
                     valueListenable:
                         locate<TechWorld>().activePromptChallenge,
                     builder: (context, activeChallenge, _) {
@@ -1460,11 +1461,11 @@ class _SpellbookButton extends StatelessWidget {
   });
 
   final ValueNotifier<bool> open;
-  final ValueListenable<String?> activePromptChallenge;
+  final ValueListenable<PromptChallengeId?> activePromptChallenge;
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<String?>(
+    return ValueListenableBuilder<PromptChallengeId?>(
       valueListenable: activePromptChallenge,
       builder: (context, activeChallenge, _) {
         final disabled = activeChallenge != null;

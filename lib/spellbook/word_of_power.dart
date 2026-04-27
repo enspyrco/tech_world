@@ -1,4 +1,5 @@
 import 'package:flutter/painting.dart' show Color;
+import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/prompt/spell_school.dart';
 
 /// Single source of truth for the spellbook accent colour. Used by the
@@ -122,10 +123,12 @@ class WordOfPower {
   /// Grammatical role — see [WordRole].
   final WordRole role;
 
-  /// The [PromptChallenge.id] that earns this word. Stays stringly-typed
-  /// because challenges live in another module — see CLAUDE.md follow-up
-  /// to extract a `ChallengeId` enum across the codebase.
-  final String challengeId;
+  /// The [PromptChallenge.id] that earns this word. Strongly-typed —
+  /// the bijection between `WordId` and `PromptChallengeId` is now
+  /// largely a compile-time fact (uniqueness within each enum, no
+  /// typos), with a single length-equality test enforcing the cross-
+  /// module count match.
+  final PromptChallengeId challengeId;
 
   /// Convenience pass-through to [WordIdDisplay.displayName].
   String get displayName => id.displayName;

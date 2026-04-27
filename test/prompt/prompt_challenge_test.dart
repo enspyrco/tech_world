@@ -75,7 +75,7 @@ void main() {
   group('PromptChallenge', () {
     test('creates with all required fields', () {
       const challenge = PromptChallenge(
-        id: 'test_challenge',
+        id: PromptChallengeId.evocationFizzbuzz,
         title: 'Test Challenge',
         description: 'A test challenge description.',
         school: SpellSchool.evocation,
@@ -86,7 +86,7 @@ void main() {
         tier: EvaluationTier.deterministic,
       );
 
-      expect(challenge.id, equals('test_challenge'));
+      expect(challenge.id, equals(PromptChallengeId.evocationFizzbuzz));
       expect(challenge.title, equals('Test Challenge'));
       expect(challenge.description, equals('A test challenge description.'));
       expect(challenge.school, equals(SpellSchool.evocation));
@@ -102,7 +102,7 @@ void main() {
 
     test('is const-constructible', () {
       const challenge = PromptChallenge(
-        id: 'const_test',
+        id: PromptChallengeId.conjurationLanguage,
         title: 'Const',
         description: 'Const desc',
         school: SpellSchool.conjuration,
@@ -113,12 +113,12 @@ void main() {
         tier: EvaluationTier.behavioral,
       );
 
-      expect(challenge.id, equals('const_test'));
+      expect(challenge.id, equals(PromptChallengeId.conjurationLanguage));
     });
 
     test('reuses Difficulty enum from editor/challenge.dart', () {
       const challenge = PromptChallenge(
-        id: 'difficulty_test',
+        id: PromptChallengeId.illusionChild,
         title: 'Difficulty',
         description: 'Tests difficulty reuse',
         school: SpellSchool.illusion,

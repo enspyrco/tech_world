@@ -9,29 +9,24 @@ void main() {
       expect(allPromptChallenges.length, equals(18));
     });
 
-    test('all challenges have non-empty required fields', () {
+    // `id` non-empty + uniqueness are now compile-time facts of
+    // `enum PromptChallengeId` — no runtime check needed.
+    test('all challenges have non-empty text fields', () {
       for (final challenge in allPromptChallenges) {
-        expect(challenge.id, isNotEmpty,
-            reason: '${challenge.title} should have a non-empty id');
         expect(challenge.title, isNotEmpty,
-            reason: '${challenge.id} should have a non-empty title');
+            reason: '${challenge.id.name} should have a non-empty title');
         expect(challenge.description, isNotEmpty,
-            reason: '${challenge.id} should have a non-empty description');
+            reason: '${challenge.id.name} should have a non-empty description');
         expect(challenge.generationSystemPrompt, isNotEmpty,
             reason:
-                '${challenge.id} should have a non-empty generationSystemPrompt');
+                '${challenge.id.name} should have a non-empty generationSystemPrompt');
         expect(challenge.evaluationCriteria, isNotEmpty,
             reason:
-                '${challenge.id} should have non-empty evaluationCriteria');
+                '${challenge.id.name} should have non-empty evaluationCriteria');
         expect(challenge.evaluationPrompt, isNotEmpty,
             reason:
-                '${challenge.id} should have a non-empty evaluationPrompt');
+                '${challenge.id.name} should have a non-empty evaluationPrompt');
       }
-    });
-
-    test('all challenges have unique ids', () {
-      final ids = allPromptChallenges.map((c) => c.id).toSet();
-      expect(ids.length, equals(allPromptChallenges.length));
     });
 
     test('all challenges have unique titles', () {
@@ -77,15 +72,16 @@ void main() {
       expect(difficulties.length, equals(3));
     });
 
-    test('challenge ids follow naming convention', () {
+    test('challenge wireName starts with the school name', () {
+      // The naming-convention regex (^[a-z]+_[a-z]+$) is now enforced at
+      // the wireName layer — verified once per id by
+      // `prompt_challenge_id_test.dart`. What stays repo-specific is the
+      // semantic link "wire form starts with school".
       for (final challenge in allPromptChallenges) {
-        expect(challenge.id, matches(RegExp(r'^[a-z]+_[a-z]+$')),
+        expect(challenge.id.wireName, startsWith(challenge.school.name),
             reason:
-                '${challenge.id} should follow school_name convention');
-        // Verify the id starts with the school name.
-        expect(challenge.id, startsWith(challenge.school.name),
-            reason: '${challenge.id} should start with school name '
-                '${challenge.school.name}');
+                '${challenge.id.name} wireName=${challenge.id.wireName} '
+                'should start with school name ${challenge.school.name}');
       }
     });
 
