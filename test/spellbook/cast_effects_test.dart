@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/spellbook/cast_effects.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
+import 'package:tech_world/spellbook/word_of_power.dart';
 
 void main() {
   late FakeFirebaseFirestore fakeFirestore;
@@ -39,7 +40,7 @@ void main() {
         progress: progress,
       );
 
-      expect(spellbook.hasWord('ignis'), isTrue);
+      expect(spellbook.hasWord(WordId.ignis), isTrue);
       expect(progress.isChallengeCompleted('evocation_fizzbuzz'), isTrue);
 
       // And both writes survived the Firestore round-trip.
@@ -103,7 +104,7 @@ void main() {
         spellbook: spellbook,
         progress: null,
       );
-      expect(spellbook.hasWord('ignis'), isTrue);
+      expect(spellbook.hasWord(WordId.ignis), isTrue);
     });
 
     test('both null is a no-op (no throw)', () async {

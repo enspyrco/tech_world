@@ -26,6 +26,25 @@ flutter analyze --fatal-infos                   # static analysis (CI requiremen
 git config core.hooksPath .githooks   # pre-commit runs flutter analyze
 ```
 
+## Design Standards
+
+### Stringly-typing is a smell
+
+Closed sets of identifiers — words of power, schools, elements, avatars, room types, terminal modes — should be `enum` or `sealed class`, not `String`. Strings only appear at boundaries (Firestore on-disk format, STT transcripts, network payloads) and parse via `Type.parse(String)` at the seam.
+
+Why: Dart's exhaustive `switch` over enums catches every consumer of a closed set the moment it grows. The bijection between two const sets reduces to one length assertion. Typos can't compile.
+
+When you arrive in this codebase: sweep `lib/` for `String` fields whose values are drawn from a closed set. Each one is a refactoring opportunity. Examples already done: `WordId` (the spellbook). Examples still pending: `ChallengeId` (challenges live in `lib/prompt/`), `AvatarId`, `MapId`, `TilesetId`, `RoomType`. Don't refactor speculatively — refactor when you're already touching the code for another reason.
+
+### Use Dart 3 features
+
+- **Switch expressions** (`switch (x) => ...,`) over switch statements when the body is `return X;` per arm.
+- **Pattern matching** for tuple destructuring: `switch ((a, b)) { (X, Y) || (Y, X) => ... }` — perfect for order-independent lookups (Phase 3 spell algebra).
+- **Sealed classes** for closed hierarchies where enum is too flat (e.g. cast results: `sealed class CastResult` → `Pass`, `Fail`, `Pending`).
+- **Records** for ad-hoc tuples (`(Position, Velocity)`) instead of `Map<String, dynamic>`.
+
+When reading legacy Dart-2-shaped code: don't refactor for its own sake, but if you're already changing the file, modernize.
+
 ## Architecture
 
 ### Service Locator

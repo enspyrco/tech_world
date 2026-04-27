@@ -2,6 +2,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/prompt/spell_school.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
+import 'package:tech_world/spellbook/word_of_power.dart';
 
 void main() {
   late FakeFirebaseFirestore fakeFirestore;
@@ -22,12 +23,13 @@ void main() {
       final service = createService();
       await service.loadSpellbook();
 
-      expect(service.hasWord('ignis'), isFalse);
+      expect(service.hasWord(WordId.ignis), isFalse);
       expect(service.count, 0);
       expect(service.learnedWordIds, isEmpty);
     });
 
-    test('loads existing learned words from Firestore', () async {
+    test('loads existing learned words from Firestore wire format',
+        () async {
       await fakeFirestore.collection('users').doc('test-user').set({
         'learnedWords': ['ignis', 'lumen'],
       });
@@ -35,23 +37,40 @@ void main() {
       final service = createService();
       await service.loadSpellbook();
 
-      expect(service.hasWord('ignis'), isTrue);
-      expect(service.hasWord('lumen'), isTrue);
-      expect(service.hasWord('forma'), isFalse);
+      expect(service.hasWord(WordId.ignis), isTrue);
+      expect(service.hasWord(WordId.lumen), isTrue);
+      expect(service.hasWord(WordId.forma), isFalse);
       expect(service.count, 2);
     });
 
-    test('learnWord persists to Firestore and updates local cache', () async {
+    test('skips unknown wire-format strings on load (forward-compat)',
+        () async {
+      await fakeFirestore.collection('users').doc('test-user').set({
+        'learnedWords': ['ignis', 'a_word_from_the_future', 'lumen'],
+      });
+
       final service = createService();
       await service.loadSpellbook();
 
-      await service.learnWord('ignis');
+      // Known words load; unknown one is skipped without throwing.
+      expect(service.hasWord(WordId.ignis), isTrue);
+      expect(service.hasWord(WordId.lumen), isTrue);
+      expect(service.count, 2);
+    });
 
-      expect(service.hasWord('ignis'), isTrue);
+    test('learnWord persists to Firestore (wire-format string) and updates '
+        'local cache', () async {
+      final service = createService();
+      await service.loadSpellbook();
+
+      await service.learnWord(WordId.ignis);
+
+      expect(service.hasWord(WordId.ignis), isTrue);
       expect(service.count, 1);
 
       final doc =
           await fakeFirestore.collection('users').doc('test-user').get();
+      // Wire format is the enum identifier, not the typed value.
       expect(doc.data()?['learnedWords'], contains('ignis'));
     });
 
@@ -59,8 +78,8 @@ void main() {
       final service = createService();
       await service.loadSpellbook();
 
-      await service.learnWord('ignis');
-      await service.learnWord('ignis');
+      await service.learnWord(WordId.ignis);
+      await service.learnWord(WordId.ignis);
 
       expect(service.count, 1);
 
@@ -70,30 +89,19 @@ void main() {
       expect(words.where((w) => w == 'ignis').length, 1);
     });
 
-    test('learnWord rejects unknown word ids', () async {
-      final service = createService();
-      await service.loadSpellbook();
-
-      expect(
-        () => service.learnWord('not-a-real-word'),
-        throwsA(isA<ArgumentError>()),
-      );
-      expect(service.count, 0);
-    });
-
     test('learnedWords stream emits on changes', () async {
       final service = createService();
       await service.loadSpellbook();
 
-      final events = <Set<String>>[];
+      final events = <Set<WordId>>[];
       service.learnedWords.listen(events.add);
 
-      await service.learnWord('ignis');
-      await service.learnWord('lumen');
+      await service.learnWord(WordId.ignis);
+      await service.learnWord(WordId.lumen);
 
       expect(events.length, 2);
-      expect(events[0], {'ignis'});
-      expect(events[1], {'ignis', 'lumen'});
+      expect(events[0], {WordId.ignis});
+      expect(events[1], {WordId.ignis, WordId.lumen});
     });
 
     test('wordsBySchool groups learned words correctly', () async {
@@ -123,16 +131,15 @@ void main() {
     });
 
     test('learned words persist across service instances', () async {
-      // Round-trip: learn, dispose, reload.
       final first = createService();
       await first.loadSpellbook();
-      await first.learnWord('ignis');
+      await first.learnWord(WordId.ignis);
       first.dispose();
 
       final second = createService();
       await second.loadSpellbook();
 
-      expect(second.hasWord('ignis'), isTrue);
+      expect(second.hasWord(WordId.ignis), isTrue);
       expect(second.count, 1);
       second.dispose();
     });
@@ -154,8 +161,8 @@ void main() {
       await serviceA.loadSpellbook();
       await serviceB.loadSpellbook();
 
-      expect(serviceA.hasWord('ignis'), isTrue);
-      expect(serviceB.hasWord('ignis'), isFalse);
+      expect(serviceA.hasWord(WordId.ignis), isTrue);
+      expect(serviceB.hasWord(WordId.ignis), isFalse);
 
       serviceA.dispose();
       serviceB.dispose();

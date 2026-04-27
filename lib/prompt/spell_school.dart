@@ -24,20 +24,12 @@ enum SpellSchool {
 
 extension SpellSchoolDisplay on SpellSchool {
   /// Title-case label for UI rendering (e.g. `'Evocation'`).
-  String get label {
-    switch (this) {
-      case SpellSchool.evocation:
-        return 'Evocation';
-      case SpellSchool.divination:
-        return 'Divination';
-      case SpellSchool.transmutation:
-        return 'Transmutation';
-      case SpellSchool.illusion:
-        return 'Illusion';
-      case SpellSchool.enchantment:
-        return 'Enchantment';
-      case SpellSchool.conjuration:
-        return 'Conjuration';
-    }
-  }
+  String get label => switch (this) {
+        SpellSchool.evocation => 'Evocation',
+        SpellSchool.divination => 'Divination',
+        SpellSchool.transmutation => 'Transmutation',
+        SpellSchool.illusion => 'Illusion',
+        SpellSchool.enchantment => 'Enchantment',
+        SpellSchool.conjuration => 'Conjuration',
+      };
 }
