@@ -32,13 +32,13 @@ Future<void> applyCastSuccessEffects({
   final word = challengeToWord[challengeId];
   if (word != null) {
     if (spellbook == null) {
-      _log.warning('SpellbookService unavailable; word ${word.id} not '
+      _log.warning('SpellbookService unavailable; word ${word.id.name} not '
           'granted for challenge ${challengeId.wireName}');
     } else {
       try {
         await spellbook.learnWord(word.id);
       } catch (e) {
-        _log.warning('Failed to learn word ${word.id}: $e', e);
+        _log.warning('Failed to learn word ${word.id.name}: $e', e);
       }
     }
   }
