@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
-import 'package:dart_webrtc/dart_webrtc.dart' show MediaStreamTrackWeb;
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
@@ -241,14 +240,15 @@ class VideoBubbleComponent extends PositionComponent {
     // ignore: avoid_print
         print('[DIAG] $displayName: initializing (isRemote=$isRemote, trackId=${mediaStreamTrack.id})');
 
-    // Get the underlying web.MediaStreamTrack via typed cast.
-    // Dynamic dispatch ((track as dynamic).jsTrack) fails in WASM builds.
-    if (mediaStreamTrack is! MediaStreamTrackWeb) {
+    // Get the underlying JS MediaStreamTrack via the conditional import helper.
+    // This avoids importing dart_webrtc directly (which pulls in dart:js_interop
+    // and breaks native tests).
+    final jsTrack = direct_capture.getJsTrack(mediaStreamTrack);
+    if (jsTrack == null) {
       // ignore: avoid_print
-      print('[DIAG] $displayName: mediaStreamTrack is ${mediaStreamTrack.runtimeType}, not MediaStreamTrackWeb');
+      print('[DIAG] $displayName: mediaStreamTrack is ${mediaStreamTrack.runtimeType}, cannot extract JS track');
       return;
     }
-    final jsTrack = mediaStreamTrack.jsTrack;
     // ignore: avoid_print
     print('[DIAG] $displayName: got jsTrack (isRemote=$isRemote)');
 
