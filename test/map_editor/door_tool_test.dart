@@ -5,6 +5,7 @@ import 'package:tech_world/flame/maps/door_data.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/maps/tile_map_format.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
+import 'package:tech_world/prompt/prompt_challenge.dart';
 
 void main() {
   group('Door tool', () {
@@ -91,7 +92,7 @@ void main() {
         doors: [
           DoorData(
             position: const Point(5, 5),
-            requiredChallengeIds: ['fizzbuzz'],
+            requiredChallengeIds: const [PromptChallengeId.evocationFizzbuzz],
           ),
         ],
       );
@@ -99,7 +100,8 @@ void main() {
       state.loadFromGameMap(map);
 
       expect(state.isDoorAt(5, 5), isTrue);
-      expect(state.doorAt(5, 5)!.requiredChallengeIds, ['fizzbuzz']);
+      expect(state.doorAt(5, 5)!.requiredChallengeIds,
+          [PromptChallengeId.evocationFizzbuzz]);
     });
   });
 
@@ -113,7 +115,7 @@ void main() {
         doors: [
           DoorData(
             position: const Point(5, 10),
-            requiredChallengeIds: ['hello_dart'],
+            requiredChallengeIds: const [PromptChallengeId.evocationFizzbuzz],
           ),
           DoorData(position: const Point(6, 10)),
         ],
@@ -125,7 +127,8 @@ void main() {
       final restored = TileMapFormat.fromJson(json);
       expect(restored.doors, hasLength(2));
       expect(restored.doors[0].position, const Point(5, 10));
-      expect(restored.doors[0].requiredChallengeIds, ['hello_dart']);
+      expect(restored.doors[0].requiredChallengeIds,
+          [PromptChallengeId.evocationFizzbuzz]);
       expect(restored.doors[1].position, const Point(6, 10));
       expect(restored.doors[1].requiredChallengeIds, isEmpty);
     });

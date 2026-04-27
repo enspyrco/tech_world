@@ -34,7 +34,30 @@ Closed sets of identifiers — words of power, schools, elements, avatars, room 
 
 Why: Dart's exhaustive `switch` over enums catches every consumer of a closed set the moment it grows. The bijection between two const sets reduces to one length assertion. Typos can't compile.
 
-When you arrive in this codebase: sweep `lib/` for `String` fields whose values are drawn from a closed set. Each one is a refactoring opportunity. Examples already done: `WordId` (the spellbook). Examples still pending: `ChallengeId` (challenges live in `lib/prompt/`), `AvatarId`, `MapId`, `TilesetId`, `RoomType`. Don't refactor speculatively — refactor when you're already touching the code for another reason.
+When you arrive in this codebase: sweep `lib/` for `String` fields whose values are drawn from a closed set. Each one is a refactoring opportunity. Examples already done:
+
+- `WordId` (the spellbook 18 — `lib/spellbook/word_of_power.dart`).
+- `PromptChallengeId` (the 18 prompt challenges — `lib/prompt/prompt_challenge.dart`).
+- `CodeChallengeId` (the 23 code-editor challenges — `lib/editor/challenge.dart`).
+
+Examples still pending: `AvatarId`, `MapId`, `TilesetId`, `RoomType`. Don't refactor speculatively — refactor when you're already touching the code for another reason.
+
+When the wire format is multi-word (snake_case), use the **enhanced enum** form so the in-language identifier stays camelCase but the `wireName` is preserved verbatim:
+
+```dart
+enum PromptChallengeId {
+  evocationFizzbuzz('evocation_fizzbuzz'),
+  // …
+  ;
+  const PromptChallengeId(this.wireName);
+  final String wireName;
+  static PromptChallengeId? parse(String wire) { /* … */ }
+}
+```
+
+`enum.name` only matches the wire when each value is a single token — for everything else, store the wire form explicitly.
+
+When two typed-id namespaces share the same persistence boundary (here: `ProgressService.completedChallenges` mixes `CodeChallengeId.wireName` and `PromptChallengeId.wireName` in one Firestore array), keep wire forms **disjoint by construction** and pin the disjointness with a runtime test (see `test/editor/code_challenge_id_test.dart`).
 
 ### Use Dart 3 features
 

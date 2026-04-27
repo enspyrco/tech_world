@@ -6,8 +6,10 @@ import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/prompt/spell_school.dart';
 
 void main() {
+  // Use a real PromptChallengeId — the in-language identifier is now
+  // typed, so the test must commit to one of the 18 closed-set values.
   const testChallenge = PromptChallenge(
-    id: 'test',
+    id: PromptChallengeId.evocationFizzbuzz,
     title: 'Test',
     description: 'Test challenge',
     school: SpellSchool.evocation,

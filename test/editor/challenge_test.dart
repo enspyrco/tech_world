@@ -6,13 +6,13 @@ void main() {
   group('Challenge', () {
     test('creates challenge with required fields', () {
       const challenge = Challenge(
-        id: 'test',
+        id: CodeChallengeId.helloDart,
         title: 'Test Challenge',
         description: 'A test description.',
         starterCode: 'void main() {}',
       );
 
-      expect(challenge.id, equals('test'));
+      expect(challenge.id, equals(CodeChallengeId.helloDart));
       expect(challenge.title, equals('Test Challenge'));
       expect(challenge.description, equals('A test description.'));
       expect(challenge.starterCode, equals('void main() {}'));
@@ -20,7 +20,7 @@ void main() {
 
     test('defaults to beginner difficulty', () {
       const challenge = Challenge(
-        id: 'test',
+        id: CodeChallengeId.helloDart,
         title: 'Test',
         description: 'Desc',
         starterCode: '',
@@ -31,7 +31,7 @@ void main() {
 
     test('accepts explicit difficulty', () {
       const challenge = Challenge(
-        id: 'test',
+        id: CodeChallengeId.helloDart,
         title: 'Test',
         description: 'Desc',
         starterCode: '',
@@ -43,13 +43,13 @@ void main() {
 
     test('is const-constructible', () {
       const challenge = Challenge(
-        id: 'const_test',
+        id: CodeChallengeId.fizzbuzz,
         title: 'Const',
         description: 'Const desc',
         starterCode: '',
       );
 
-      expect(challenge.id, equals('const_test'));
+      expect(challenge.id, equals(CodeChallengeId.fizzbuzz));
     });
   });
 
@@ -94,22 +94,21 @@ void main() {
       expect(allChallenges, contains(fizzbuzz));
     });
 
-    test('all challenges have non-empty fields', () {
+    // `id` non-empty + uniqueness are now compile-time facts of
+    // `enum CodeChallengeId` — no runtime check needed (per
+    // tests-as-types: when the type system can express the constraint,
+    // delete the runtime test).
+    test('all challenges have non-empty title/description/starterCode', () {
       for (final challenge in allChallenges) {
-        expect(challenge.id, isNotEmpty,
-            reason: '${challenge.title} should have a non-empty id');
         expect(challenge.title, isNotEmpty,
-            reason: '${challenge.id} should have a non-empty title');
+            reason:
+                '${challenge.id.name} should have a non-empty title');
         expect(challenge.description, isNotEmpty,
-            reason: '${challenge.id} should have a non-empty description');
+            reason:
+                '${challenge.id.name} should have a non-empty description');
         expect(challenge.starterCode, isNotEmpty,
-            reason: '${challenge.id} should have non-empty starter code');
+            reason: '${challenge.id.name} should have non-empty starter code');
       }
-    });
-
-    test('all challenges have unique ids', () {
-      final ids = allChallenges.map((c) => c.id).toSet();
-      expect(ids.length, equals(allChallenges.length));
     });
 
     test('all challenges have unique titles', () {

@@ -4,6 +4,7 @@ import 'package:logging/logging.dart';
 
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
+import 'package:tech_world/prompt/prompt_challenge.dart';
 
 import 'door_data.dart';
 import 'game_map.dart';
@@ -99,17 +100,23 @@ final wizardsTower = GameMap(
     // D0: Exit the Antechamber — prove you can instruct precisely.
     DoorData(
       position: const Point(24, 36),
-      requiredChallengeIds: ['evocation_fizzbuzz'],
+      requiredChallengeIds: const [PromptChallengeId.evocationFizzbuzz],
     ),
     // D1: Exit the Great Hall — master basics of both schools.
     DoorData(
       position: const Point(24, 25),
-      requiredChallengeIds: ['evocation_countdown', 'divination_color'],
+      requiredChallengeIds: const [
+        PromptChallengeId.evocationCountdown,
+        PromptChallengeId.divinationColor,
+      ],
     ),
     // D2: Enter the Sanctum — intermediate mastery required.
     DoorData(
       position: const Point(24, 15),
-      requiredChallengeIds: ['evocation_diamond', 'divination_extract'],
+      requiredChallengeIds: const [
+        PromptChallengeId.evocationDiamond,
+        PromptChallengeId.divinationExtract,
+      ],
     ),
   ],
   walls: _wizardsTowerWalls(),

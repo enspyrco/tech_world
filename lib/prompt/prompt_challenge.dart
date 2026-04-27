@@ -1,6 +1,65 @@
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/prompt/spell_school.dart';
 
+/// The closed set of prompt-engineering challenges a player can ever earn
+/// a word from.
+///
+/// `PromptChallengeId` is the **domain type** for prompt challenges across
+/// the spellbook, doors, and cast-effects pipeline. Strings only appear at
+/// boundaries — Firestore on-disk format, network metadata, future STT —
+/// and parse via [PromptChallengeId.parse]. Internally everything operates
+/// on `PromptChallengeId`, so the compiler enforces what would otherwise
+/// be runtime invariants:
+///
+///  * Typos can't refer to a non-existent challenge — they won't compile.
+///  * Switch expressions over `PromptChallengeId` must be exhaustive —
+///    adding the 19th challenge fails the build at every site that hasn't
+///    handled it.
+///  * The bijection with [WordId] reduces to a length assertion.
+///
+/// Wire format: each value owns its [wireName] (e.g.
+/// `PromptChallengeId.evocationFizzbuzz.wireName == 'evocation_fizzbuzz'`).
+/// Existing Firestore data parses unchanged. We can't use `enum.name`
+/// directly because Dart's `constant_identifier_names` lint rejects
+/// snake_case on enum values.
+enum PromptChallengeId {
+  evocationFizzbuzz('evocation_fizzbuzz'),
+  evocationCountdown('evocation_countdown'),
+  evocationDiamond('evocation_diamond'),
+  divinationColor('divination_color'),
+  divinationExtract('divination_extract'),
+  divinationPattern('divination_pattern'),
+  transmutationBullets('transmutation_bullets'),
+  transmutationTable('transmutation_table'),
+  transmutationJson('transmutation_json'),
+  illusionPirate('illusion_pirate'),
+  illusionChild('illusion_child'),
+  illusionDual('illusion_dual'),
+  enchantmentBrevity('enchantment_brevity'),
+  enchantmentFormal('enchantment_formal'),
+  enchantmentContradict('enchantment_contradict'),
+  conjurationGlorp('conjuration_glorp'),
+  conjurationPattern('conjuration_pattern'),
+  conjurationLanguage('conjuration_language');
+
+  const PromptChallengeId(this.wireName);
+
+  /// On-disk / wire identifier. Stable across refactors of the Dart
+  /// identifier — this is what Firestore stores.
+  final String wireName;
+
+  /// Parse a wire-format string into a [PromptChallengeId], or `null` if
+  /// unknown. Use at boundaries (Firestore reads, network metadata) and
+  /// decide what to do with `null` at the call site (typically log + skip
+  /// for forward-compat with future challenges).
+  static PromptChallengeId? parse(String wire) {
+    for (final c in PromptChallengeId.values) {
+      if (c.wireName == wire) return c;
+    }
+    return null;
+  }
+}
+
 /// How a challenge's output is evaluated — determines whether we use
 /// programmatic checks, an LLM judge, or both.
 enum EvaluationTier {
@@ -37,8 +96,8 @@ class PromptChallenge {
     required this.tier,
   });
 
-  /// Unique identifier for this challenge.
-  final String id;
+  /// Strongly-typed identifier — see [PromptChallengeId].
+  final PromptChallengeId id;
 
   /// Display title shown to the player.
   final String title;

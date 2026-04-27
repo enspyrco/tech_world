@@ -1,5 +1,6 @@
 import 'package:logging/logging.dart';
 import 'package:tech_world/progress/progress_service.dart';
+import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/spellbook/predefined_words.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
 
@@ -24,30 +25,30 @@ final _log = Logger('CastEffects');
 /// callback that follows in the UI should still run regardless of
 /// persistence outcome.
 Future<void> applyCastSuccessEffects({
-  required String challengeId,
+  required PromptChallengeId challengeId,
   required SpellbookService? spellbook,
   required ProgressService? progress,
 }) async {
   final word = challengeToWord[challengeId];
   if (word != null) {
     if (spellbook == null) {
-      _log.warning('SpellbookService unavailable; word ${word.id} not '
-          'granted for challenge $challengeId');
+      _log.warning('SpellbookService unavailable; word ${word.id.name} not '
+          'granted for challenge ${challengeId.wireName}');
     } else {
       try {
         await spellbook.learnWord(word.id);
       } catch (e) {
-        _log.warning('Failed to learn word ${word.id}: $e', e);
+        _log.warning('Failed to learn word ${word.id.name}: $e', e);
       }
     }
   }
 
   if (progress == null) {
-    _log.warning('ProgressService unavailable; challenge $challengeId '
-        'not marked completed');
+    _log.warning('ProgressService unavailable; challenge '
+        '${challengeId.wireName} not marked completed');
   } else {
     try {
-      await progress.markChallengeCompleted(challengeId);
+      await progress.markChallengeCompleted(challengeId.wireName);
     } catch (e) {
       _log.warning('Failed to persist completion: $e', e);
     }

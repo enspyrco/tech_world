@@ -127,10 +127,11 @@ class TechWorld extends World with TapCallbacks {
   static const double _mergeThreshold = 96.0; // 1.5× bubble diameter
 
   /// Notifier for active code challenge ID. Null means no editor open.
-  final ValueNotifier<String?> activeChallenge = ValueNotifier(null);
+  final ValueNotifier<CodeChallengeId?> activeChallenge = ValueNotifier(null);
 
   /// Notifier for active prompt challenge ID. Null means no prompt panel open.
-  final ValueNotifier<String?> activePromptChallenge = ValueNotifier(null);
+  final ValueNotifier<PromptChallengeId?> activePromptChallenge =
+      ValueNotifier(null);
 
   /// Grid position of the terminal the player is currently interacting with.
   /// Null when no editor is open.
@@ -315,10 +316,14 @@ class TechWorld extends World with TapCallbacks {
     _pathComponent?.setGridFromEditor(editor);
   }
 
-  /// Check if a challenge is completed via the [ProgressService].
-  bool _isChallengeCompleted(String challengeId) {
+  /// Check if a code challenge is completed via the [ProgressService].
+  ///
+  /// Converts the typed [CodeChallengeId] to its [CodeChallengeId.wireName]
+  /// at the [ProgressService] boundary — the service stores both code and
+  /// prompt completions in a single Firestore array keyed by wire form.
+  bool _isCodeChallengeCompleted(CodeChallengeId challengeId) {
     return Locator.maybeLocate<ProgressService>()
-            ?.isChallengeCompleted(challengeId) ??
+            ?.isChallengeCompleted(challengeId.wireName) ??
         false;
   }
 
@@ -329,7 +334,7 @@ class TechWorld extends World with TapCallbacks {
     for (var i = 0; i < _terminalComponents.length; i++) {
       final challengeIndex = i % allChallenges.length;
       _terminalComponents[i].isCompleted =
-          _isChallengeCompleted(allChallenges[challengeIndex].id);
+          _isCodeChallengeCompleted(allChallenges[challengeIndex].id);
     }
   }
 
@@ -1497,7 +1502,7 @@ class TechWorld extends World with TapCallbacks {
       if (map.terminalMode == TerminalMode.code) {
         final challengeIndex = i % allChallenges.length;
         challenge = allChallenges[challengeIndex];
-        isCompleted = _isChallengeCompleted(challenge.id);
+        isCompleted = _isCodeChallengeCompleted(challenge.id);
       } else {
         challenge = null;
         isCompleted = false;
@@ -1837,10 +1842,11 @@ class TechWorld extends World with TapCallbacks {
       activeChallenge.value = challenge.id;
       activeTerminalPosition.value = terminalPos;
 
-      // Notify the bot that we opened a terminal editor.
+      // Notify the bot that we opened a terminal editor. The LiveKit
+      // metadata payload is wire-format, so convert at the boundary.
       _liveKitService?.publishTerminalActivity(
         action: 'open',
-        challengeId: challenge.id,
+        challengeId: challenge.id.wireName,
         challengeTitle: challenge.title,
         challengeDescription: challenge.description,
         terminalX: terminalPos.x,
@@ -1904,8 +1910,8 @@ class TechWorld extends World with TapCallbacks {
     _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
   }
 
-  /// Find all doors that require a specific challenge to be completed.
-  List<DoorData> doorsForChallenge(String challengeId) {
+  /// Find all doors that require a specific prompt challenge to be completed.
+  List<DoorData> doorsForChallenge(PromptChallengeId challengeId) {
     return currentMap.value.doors
         .where((d) => d.requiredChallengeIds.contains(challengeId) && !d.isUnlocked)
         .toList();

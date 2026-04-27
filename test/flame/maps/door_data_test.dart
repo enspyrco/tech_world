@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/maps/door_data.dart';
+import 'package:tech_world/prompt/prompt_challenge.dart';
 
 void main() {
   group('DoorData', () {
@@ -14,16 +15,19 @@ void main() {
       expect(json.containsKey('challenges'), isFalse);
     });
 
-    test('serializes to JSON with challenges', () {
+    test('serializes to JSON with challenges (uses wireName)', () {
       final door = DoorData(
         position: const Point(3, 7),
-        requiredChallengeIds: ['fizzbuzz', 'palindrome'],
+        requiredChallengeIds: const [
+          PromptChallengeId.evocationFizzbuzz,
+          PromptChallengeId.divinationColor,
+        ],
       );
       final json = door.toJson();
 
       expect(json['x'], 3);
       expect(json['y'], 7);
-      expect(json['challenges'], ['fizzbuzz', 'palindrome']);
+      expect(json['challenges'], ['evocation_fizzbuzz', 'divination_color']);
     });
 
     test('deserializes from JSON without challenges', () {
@@ -38,17 +42,20 @@ void main() {
       final door = DoorData.fromJson({
         'x': 3,
         'y': 7,
-        'challenges': ['fizzbuzz', 'palindrome'],
+        'challenges': ['evocation_fizzbuzz', 'divination_color'],
       });
 
       expect(door.position, const Point(3, 7));
-      expect(door.requiredChallengeIds, ['fizzbuzz', 'palindrome']);
+      expect(door.requiredChallengeIds, [
+        PromptChallengeId.evocationFizzbuzz,
+        PromptChallengeId.divinationColor,
+      ]);
     });
 
     test('round-trips through JSON', () {
       final original = DoorData(
         position: const Point(12, 24),
-        requiredChallengeIds: ['hello_dart'],
+        requiredChallengeIds: const [PromptChallengeId.evocationDiamond],
       );
       final restored = DoorData.fromJson(original.toJson());
 
@@ -59,18 +66,32 @@ void main() {
       );
     });
 
+    test('silently skips unknown challenge wire forms (forward-compat)', () {
+      // An older client opens a save written by a newer one. The unknown
+      // challenge name shouldn't break door loading.
+      final door = DoorData.fromJson({
+        'x': 1,
+        'y': 1,
+        'challenges': ['evocation_fizzbuzz', 'future_challenge_xyz'],
+      });
+
+      expect(door.requiredChallengeIds, [
+        PromptChallengeId.evocationFizzbuzz,
+      ]);
+    });
+
     test('equality works', () {
       final a = DoorData(
         position: const Point(1, 2),
-        requiredChallengeIds: ['a'],
+        requiredChallengeIds: const [PromptChallengeId.evocationFizzbuzz],
       );
       final b = DoorData(
         position: const Point(1, 2),
-        requiredChallengeIds: ['a'],
+        requiredChallengeIds: const [PromptChallengeId.evocationFizzbuzz],
       );
       final c = DoorData(
         position: const Point(3, 4),
-        requiredChallengeIds: ['a'],
+        requiredChallengeIds: const [PromptChallengeId.evocationFizzbuzz],
       );
 
       expect(a, equals(b));

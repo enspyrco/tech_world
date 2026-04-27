@@ -22,10 +22,7 @@ class ChatEvaluationEngine extends EvaluationEngine {
     final message = formatChallengeMessage(challenge, playerPrompt);
     final response = await _chatService.sendMessage(
       message,
-      metadata: {
-        'promptChallengeId': challenge.id,
-        'promptChallengeType': 'cast',
-      },
+      metadata: buildMetadata(challenge),
     );
 
     // Extract the bot's text response from the chat response payload.
@@ -43,6 +40,20 @@ class ChatEvaluationEngine extends EvaluationEngine {
 
     return (responseText, parseResponse(responseText));
   }
+
+  /// Build the wire-format metadata payload that accompanies the chat
+  /// message to the bot.
+  ///
+  /// Extracted as a pure static method so the wire-format contract can
+  /// be tested without mocking [ChatService]. Critical that
+  /// `promptChallengeId` is the [PromptChallengeId.wireName] (a `String`)
+  /// — passing the enum value directly would round-trip through
+  /// `Object.toString()` and break the bot-side parser, since
+  /// `Map<String, dynamic>` swallows the type at compile time.
+  static Map<String, dynamic> buildMetadata(PromptChallenge challenge) => {
+        'promptChallengeId': challenge.id.wireName,
+        'promptChallengeType': 'cast',
+      };
 
   /// Format the challenge + player prompt into a message for the bot.
   ///

@@ -8,7 +8,7 @@ import 'package:tech_world/prompt/spell_school.dart';
 
 /// Get FizzBuzz output without using the obvious keywords.
 const fizzBuzzIncantation = PromptChallenge(
-  id: 'evocation_fizzbuzz',
+  id: PromptChallengeId.evocationFizzbuzz,
   title: 'The Unspoken FizzBuzz',
   description:
       'Get the agent to output the numbers 1-20, but every multiple of 3 '
@@ -34,7 +34,7 @@ const fizzBuzzIncantation = PromptChallenge(
 
 /// Get the agent to produce a countdown with zero-padding.
 const preciseCountdown = PromptChallenge(
-  id: 'evocation_countdown',
+  id: PromptChallengeId.evocationCountdown,
   title: 'Precision Countdown',
   description:
       'Get the agent to count down from 10 to 1, with each number '
@@ -57,7 +57,7 @@ const preciseCountdown = PromptChallenge(
 
 /// Get a specific ASCII art pattern.
 const asciiDiamond = PromptChallenge(
-  id: 'evocation_diamond',
+  id: PromptChallengeId.evocationDiamond,
   title: 'Diamond Caster',
   description:
       'Get the agent to draw a diamond shape using asterisks (*). '
@@ -85,7 +85,7 @@ const asciiDiamond = PromptChallenge(
 
 /// Extract a hidden color through yes/no questions.
 const secretColor = PromptChallenge(
-  id: 'divination_color',
+  id: PromptChallengeId.divinationColor,
   title: 'The Hidden Hue',
   description:
       'The agent has been told a secret color. You can only ask yes/no '
@@ -110,7 +110,7 @@ const secretColor = PromptChallenge(
 
 /// Extract structured data from a narrative.
 const dataArchaeologist = PromptChallenge(
-  id: 'divination_extract',
+  id: PromptChallengeId.divinationExtract,
   title: 'Data Archaeologist',
   description:
       'The agent will tell you a short story about a birthday party. '
@@ -138,7 +138,7 @@ const dataArchaeologist = PromptChallenge(
 
 /// Deduce a rule from examples.
 const patternOracle = PromptChallenge(
-  id: 'divination_pattern',
+  id: PromptChallengeId.divinationPattern,
   title: 'Pattern Oracle',
   description:
       'The agent knows a secret rule for accepting or rejecting words. '
@@ -169,7 +169,7 @@ const patternOracle = PromptChallenge(
 
 /// Convert prose to bullet points.
 const bulletAlchemist = PromptChallenge(
-  id: 'transmutation_bullets',
+  id: PromptChallengeId.transmutationBullets,
   title: 'Bullet Alchemist',
   description:
       'The agent will give you a paragraph about space exploration. '
@@ -194,7 +194,7 @@ const bulletAlchemist = PromptChallenge(
 
 /// Convert a list into a formatted table.
 const tableForge = PromptChallenge(
-  id: 'transmutation_table',
+  id: PromptChallengeId.transmutationTable,
   title: 'Table Forge',
   description:
       'The agent will list 5 planets with their sizes and distances '
@@ -221,7 +221,7 @@ const tableForge = PromptChallenge(
 
 /// Convert between data formats.
 const formatShifter = PromptChallenge(
-  id: 'transmutation_json',
+  id: PromptChallengeId.transmutationJson,
   title: 'Format Shifter',
   description:
       'The agent will give you data about 3 books in plain text. '
@@ -250,7 +250,7 @@ const formatShifter = PromptChallenge(
 
 /// Get the agent to adopt a pirate persona.
 const pirateWeather = PromptChallenge(
-  id: 'illusion_pirate',
+  id: PromptChallengeId.illusionPirate,
   title: 'Storm on the Horizon',
   description:
       'Get the agent to write a weather forecast for a sunny day, '
@@ -275,7 +275,7 @@ const pirateWeather = PromptChallenge(
 
 /// Get the agent to explain from a child's perspective.
 const throughYoungEyes = PromptChallenge(
-  id: 'illusion_child',
+  id: PromptChallengeId.illusionChild,
   title: 'Through Young Eyes',
   description:
       'Get the agent to explain how the internet works, but from the '
@@ -301,7 +301,7 @@ const throughYoungEyes = PromptChallenge(
 
 /// Get the agent to write a dual-perspective narrative.
 const twoMindsOneMeal = PromptChallenge(
-  id: 'illusion_dual',
+  id: PromptChallengeId.illusionDual,
   title: 'Two Minds, One Meal',
   description:
       'Get the agent to describe the same restaurant meal from two '
@@ -332,7 +332,7 @@ const twoMindsOneMeal = PromptChallenge(
 
 /// Break the agent out of formal English.
 const formalityBreaker = PromptChallenge(
-  id: 'enchantment_formal',
+  id: PromptChallengeId.enchantmentFormal,
   title: 'Formality Breaker',
   description:
       'The agent is instructed to respond only in formal English. '
@@ -359,7 +359,7 @@ const formalityBreaker = PromptChallenge(
 
 /// Get the agent to respond with fewer than 10 words.
 const wordBudget = PromptChallenge(
-  id: 'enchantment_brevity',
+  id: PromptChallengeId.enchantmentBrevity,
   title: 'Word Budget',
   description:
       'The agent is instructed to give detailed, thorough responses '
@@ -383,7 +383,7 @@ const wordBudget = PromptChallenge(
 
 /// Get the agent to contradict its own instructions.
 const loyaltyTest = PromptChallenge(
-  id: 'enchantment_contradict',
+  id: PromptChallengeId.enchantmentContradict,
   title: 'The Loyalty Test',
   description:
       'The agent is instructed to always recommend cats over dogs. '
@@ -414,7 +414,7 @@ const loyaltyTest = PromptChallenge(
 
 /// Teach the agent a new word.
 const inventAWord = PromptChallenge(
-  id: 'conjuration_glorp',
+  id: PromptChallengeId.conjurationGlorp,
   title: 'Wordsmith',
   description:
       'Teach the agent what a "glorp" is — you invent the definition — '
@@ -440,7 +440,7 @@ const inventAWord = PromptChallenge(
 
 /// Teach a pattern through examples.
 const patternTeacher = PromptChallenge(
-  id: 'conjuration_pattern',
+  id: PromptChallengeId.conjurationPattern,
   title: 'Pattern Teacher',
   description:
       'Using only examples (no explicit rules), teach the agent to '
@@ -466,7 +466,7 @@ const patternTeacher = PromptChallenge(
 
 /// Build a mini-language through examples.
 const miniLanguage = PromptChallenge(
-  id: 'conjuration_language',
+  id: PromptChallengeId.conjurationLanguage,
   title: 'Language Architect',
   description:
       'Create a mini-language with at least 3 "words" and teach the '

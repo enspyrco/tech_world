@@ -1,3 +1,4 @@
+import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/prompt/spell_school.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
 
@@ -17,7 +18,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.fire,
     intensity: 1,
     role: WordRole.substance,
-    challengeId: 'evocation_fizzbuzz',
+    challengeId: PromptChallengeId.evocationFizzbuzz,
   ),
   WordOfPower(
     id: WordId.tempus,
@@ -26,7 +27,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.fire,
     intensity: 1,
     role: WordRole.substance,
-    challengeId: 'evocation_countdown',
+    challengeId: PromptChallengeId.evocationCountdown,
   ),
   WordOfPower(
     id: WordId.crystallum,
@@ -35,7 +36,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.fire,
     intensity: 2,
     role: WordRole.substance,
-    challengeId: 'evocation_diamond',
+    challengeId: PromptChallengeId.evocationDiamond,
   ),
 
   // Divination — water
@@ -46,7 +47,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.water,
     intensity: 1,
     role: WordRole.substance,
-    challengeId: 'divination_color',
+    challengeId: PromptChallengeId.divinationColor,
   ),
   WordOfPower(
     id: WordId.verum,
@@ -55,7 +56,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.water,
     intensity: 2,
     role: WordRole.modifier,
-    challengeId: 'divination_extract',
+    challengeId: PromptChallengeId.divinationExtract,
   ),
   WordOfPower(
     id: WordId.oraculum,
@@ -64,7 +65,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.water,
     intensity: 3,
     role: WordRole.substance,
-    challengeId: 'divination_pattern',
+    challengeId: PromptChallengeId.divinationPattern,
   ),
 
   // Transmutation — earth
@@ -75,7 +76,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.earth,
     intensity: 1,
     role: WordRole.substance,
-    challengeId: 'transmutation_bullets',
+    challengeId: PromptChallengeId.transmutationBullets,
   ),
   WordOfPower(
     id: WordId.structura,
@@ -84,7 +85,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.earth,
     intensity: 2,
     role: WordRole.substance,
-    challengeId: 'transmutation_table',
+    challengeId: PromptChallengeId.transmutationTable,
   ),
   WordOfPower(
     id: WordId.muta,
@@ -93,7 +94,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.earth,
     intensity: 2,
     role: WordRole.action,
-    challengeId: 'transmutation_json',
+    challengeId: PromptChallengeId.transmutationJson,
   ),
 
   // Illusion — air
@@ -104,7 +105,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.air,
     intensity: 1,
     role: WordRole.substance,
-    challengeId: 'illusion_pirate',
+    challengeId: PromptChallengeId.illusionPirate,
   ),
   WordOfPower(
     id: WordId.speculum,
@@ -113,7 +114,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.air,
     intensity: 2,
     role: WordRole.substance,
-    challengeId: 'illusion_child',
+    challengeId: PromptChallengeId.illusionChild,
   ),
   WordOfPower(
     id: WordId.phantasma,
@@ -122,7 +123,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.air,
     intensity: 3,
     role: WordRole.substance,
-    challengeId: 'illusion_dual',
+    challengeId: PromptChallengeId.illusionDual,
   ),
 
   // Enchantment — spirit
@@ -133,7 +134,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.spirit,
     intensity: 1,
     role: WordRole.substance,
-    challengeId: 'enchantment_brevity',
+    challengeId: PromptChallengeId.enchantmentBrevity,
   ),
   WordOfPower(
     id: WordId.libera,
@@ -142,7 +143,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.spirit,
     intensity: 2,
     role: WordRole.action,
-    challengeId: 'enchantment_formal',
+    challengeId: PromptChallengeId.enchantmentFormal,
   ),
   WordOfPower(
     id: WordId.dominus,
@@ -151,7 +152,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.spirit,
     intensity: 3,
     role: WordRole.substance,
-    challengeId: 'enchantment_contradict',
+    challengeId: PromptChallengeId.enchantmentContradict,
   ),
 
   // Conjuration — void
@@ -162,7 +163,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.void_,
     intensity: 1,
     role: WordRole.action,
-    challengeId: 'conjuration_glorp',
+    challengeId: PromptChallengeId.conjurationGlorp,
   ),
   WordOfPower(
     id: WordId.exemplar,
@@ -171,7 +172,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.void_,
     intensity: 2,
     role: WordRole.substance,
-    challengeId: 'conjuration_pattern',
+    challengeId: PromptChallengeId.conjurationPattern,
   ),
   WordOfPower(
     id: WordId.lexicon,
@@ -180,7 +181,7 @@ const allWords = <WordOfPower>[
     element: SpellElement.void_,
     intensity: 3,
     role: WordRole.substance,
-    challengeId: 'conjuration_language',
+    challengeId: PromptChallengeId.conjurationLanguage,
   ),
 ];
 
@@ -190,9 +191,11 @@ final wordById = <WordId, WordOfPower>{
   for (final w in allWords) w.id: w,
 };
 
-/// Lookup: challenge id (still stringly-typed, lives outside the
-/// spellbook module) → [WordOfPower].
-final challengeToWord = <String, WordOfPower>{
+/// Lookup: [PromptChallengeId] → [WordOfPower]. Total over
+/// `PromptChallengeId.values` because the bijection is enforced at
+/// compile time by the type system, plus the construction-time
+/// uniqueness of [allWords] entries.
+final challengeToWord = <PromptChallengeId, WordOfPower>{
   for (final w in allWords) w.challengeId: w,
 };
 

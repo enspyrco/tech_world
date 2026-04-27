@@ -5,7 +5,7 @@ import 'challenge.dart';
 // ---------------------------------------------------------------------------
 
 const helloDart = Challenge(
-  id: 'hello_dart',
+  id: CodeChallengeId.helloDart,
   title: 'Hello Dart',
 
   description: 'Write a function that returns a greeting string.\n'
@@ -22,7 +22,7 @@ void main() {
 );
 
 const sumList = Challenge(
-  id: 'sum_list',
+  id: CodeChallengeId.sumList,
   title: 'Sum a List',
 
   description: 'Write a function that returns the sum of all integers '
@@ -40,7 +40,7 @@ void main() {
 );
 
 const fizzbuzz = Challenge(
-  id: 'fizzbuzz',
+  id: CodeChallengeId.fizzbuzz,
   title: 'FizzBuzz',
 
   description: 'Write a function that returns a list of strings from 1 to n.\n'
@@ -60,7 +60,7 @@ void main() {
 );
 
 const stringReversal = Challenge(
-  id: 'string_reversal',
+  id: CodeChallengeId.stringReversal,
   title: 'String Reversal',
 
   description: 'Write a function that reverses a string.\n'
@@ -79,7 +79,7 @@ void main() {
 );
 
 const evenNumbers = Challenge(
-  id: 'even_numbers',
+  id: CodeChallengeId.evenNumbers,
   title: 'Even Numbers',
 
   description: 'Write a function that takes a list of integers and returns '
@@ -100,7 +100,7 @@ void main() {
 );
 
 const palindromeCheck = Challenge(
-  id: 'palindrome_check',
+  id: CodeChallengeId.palindromeCheck,
   title: 'Palindrome Check',
 
   description: 'Write a function that checks whether a string is a palindrome.\n'
@@ -121,7 +121,7 @@ void main() {
 );
 
 const wordCounter = Challenge(
-  id: 'word_counter',
+  id: CodeChallengeId.wordCounter,
   title: 'Word Counter',
 
   description: 'Write a function that counts the number of words in a string.\n'
@@ -142,7 +142,7 @@ void main() {
 );
 
 const temperatureConverter = Challenge(
-  id: 'temperature_converter',
+  id: CodeChallengeId.temperatureConverter,
   title: 'Temperature Converter',
 
   description: 'Write a function that converts a temperature from Celsius '
@@ -164,7 +164,7 @@ void main() {
 );
 
 const findMaximum = Challenge(
-  id: 'find_maximum',
+  id: CodeChallengeId.findMaximum,
   title: 'Find Maximum',
 
   description: 'Write a function that finds the largest number in a list '
@@ -185,7 +185,7 @@ void main() {
 );
 
 const removeDuplicates = Challenge(
-  id: 'remove_duplicates',
+  id: CodeChallengeId.removeDuplicates,
   title: 'Remove Duplicates',
 
   description: 'Write a function that removes duplicate items from a list, '
@@ -209,7 +209,7 @@ void main() {
 // ---------------------------------------------------------------------------
 
 const binarySearch = Challenge(
-  id: 'binary_search',
+  id: CodeChallengeId.binarySearch,
   title: 'Binary Search',
   difficulty: Difficulty.intermediate,
   description: 'Implement binary search on a sorted list of integers.\n'
@@ -232,7 +232,7 @@ void main() {
 );
 
 const fibonacciSequence = Challenge(
-  id: 'fibonacci_sequence',
+  id: CodeChallengeId.fibonacciSequence,
   title: 'Fibonacci Sequence',
   difficulty: Difficulty.intermediate,
   description: 'Write a function that generates the first n numbers of the '
@@ -254,7 +254,7 @@ void main() {
 );
 
 const caesarCipher = Challenge(
-  id: 'caesar_cipher',
+  id: CodeChallengeId.caesarCipher,
   title: 'Caesar Cipher',
   difficulty: Difficulty.intermediate,
   description: 'Implement a Caesar cipher that shifts each letter by a '
@@ -276,7 +276,7 @@ void main() {
 );
 
 const anagramChecker = Challenge(
-  id: 'anagram_checker',
+  id: CodeChallengeId.anagramChecker,
   title: 'Anagram Checker',
   difficulty: Difficulty.intermediate,
   description: 'Write a function that checks whether two strings are anagrams '
@@ -299,7 +299,7 @@ void main() {
 );
 
 const flattenList = Challenge(
-  id: 'flatten_list',
+  id: CodeChallengeId.flattenList,
   title: 'Flatten List',
   difficulty: Difficulty.intermediate,
   description: 'Write a function that flattens a nested list of integers '
@@ -322,7 +322,7 @@ void main() {
 );
 
 const matrixSum = Challenge(
-  id: 'matrix_sum',
+  id: CodeChallengeId.matrixSum,
   title: 'Matrix Sum',
   difficulty: Difficulty.intermediate,
   description: 'Write a function that computes the sum of all elements in '
@@ -352,7 +352,7 @@ void main() {
 );
 
 const bracketMatching = Challenge(
-  id: 'bracket_matching',
+  id: CodeChallengeId.bracketMatching,
   title: 'Bracket Matching',
   difficulty: Difficulty.intermediate,
   description: 'Write a function that checks whether a string of brackets '
@@ -381,7 +381,7 @@ void main() {
 // ---------------------------------------------------------------------------
 
 const mergeSort = Challenge(
-  id: 'merge_sort',
+  id: CodeChallengeId.mergeSort,
   title: 'Merge Sort',
   difficulty: Difficulty.advanced,
   description: 'Implement the merge sort algorithm.\n'
@@ -407,7 +407,7 @@ void main() {
 );
 
 const stackImplementation = Challenge(
-  id: 'stack_implementation',
+  id: CodeChallengeId.stackImplementation,
   title: 'Stack Implementation',
   difficulty: Difficulty.advanced,
   description: 'Implement a generic Stack data structure with the following '
@@ -459,7 +459,7 @@ void main() {
 );
 
 const romanNumerals = Challenge(
-  id: 'roman_numerals',
+  id: CodeChallengeId.romanNumerals,
   title: 'Roman Numerals',
   difficulty: Difficulty.advanced,
   description: 'Write a function that converts a positive integer to its '
@@ -486,7 +486,7 @@ void main() {
 );
 
 const runLengthEncoding = Challenge(
-  id: 'run_length_encoding',
+  id: CodeChallengeId.runLengthEncoding,
   title: 'Run Length Encoding',
   difficulty: Difficulty.advanced,
   description: 'Implement run-length encoding (RLE) compression and '
@@ -520,7 +520,7 @@ void main() {
 );
 
 const longestCommonSubsequence = Challenge(
-  id: 'longest_common_subsequence',
+  id: CodeChallengeId.longestCommonSubsequence,
   title: 'Longest Common Subsequence',
   difficulty: Difficulty.advanced,
   description: 'Write a function that finds the longest common subsequence '
@@ -545,7 +545,7 @@ void main() {
 );
 
 const asyncDataPipeline = Challenge(
-  id: 'async_data_pipeline',
+  id: CodeChallengeId.asyncDataPipeline,
   title: 'Async Data Pipeline',
   difficulty: Difficulty.advanced,
   description: 'Build an asynchronous data pipeline that chains Future '
