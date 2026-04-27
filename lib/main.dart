@@ -35,6 +35,9 @@ import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/widgets/screen_share_overlay.dart';
 import 'package:tech_world/progress/progress_service.dart';
+import 'package:tech_world/spellbook/predefined_words.dart';
+import 'package:tech_world/spellbook/spellbook_panel.dart';
+import 'package:tech_world/spellbook/spellbook_service.dart';
 import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
@@ -97,6 +100,8 @@ class _MyAppState extends State<MyApp> {
   ChatService? _chatService;
   ProximityService? _proximityService;
   ProgressService? _progressService;
+  SpellbookService? _spellbookService;
+  final ValueNotifier<bool> _spellbookOpen = ValueNotifier<bool>(false);
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
   final ValueNotifier<String?> _activeDmPeer = ValueNotifier<String?>(null);
@@ -138,6 +143,8 @@ class _MyAppState extends State<MyApp> {
   void dispose() {
     _authSubscription?.cancel();
     _wireStates?.dispose();
+    _spellbookOpen.dispose();
+    _spellbookService?.dispose();
     super.dispose();
   }
 
@@ -205,6 +212,10 @@ class _MyAppState extends State<MyApp> {
       _progressService?.dispose();
       _progressService = null;
       Locator.remove<ProgressService>();
+      _spellbookService?.dispose();
+      _spellbookService = null;
+      Locator.remove<SpellbookService>();
+      _spellbookOpen.value = false;
       _roomService = null;
       _myRooms = null;
       Locator.remove<RoomService>();
@@ -248,6 +259,15 @@ class _MyAppState extends State<MyApp> {
       }
       Locator.add<ProgressService>(_progressService!);
       locate<TechWorld>().refreshTerminalStates();
+
+      // Load spellbook (words of power earned by completing prompt challenges).
+      _spellbookService = SpellbookService(uid: user.id);
+      try {
+        await _spellbookService!.loadSpellbook();
+      } catch (e) {
+        _log.warning('Failed to load spellbook: $e', e);
+      }
+      Locator.add<SpellbookService>(_spellbookService!);
 
       // Register RoomService for the lobby.
       _roomService = RoomService();
@@ -1148,6 +1168,8 @@ class _MyAppState extends State<MyApp> {
                               ),
                             ],
                             const SizedBox(width: 8),
+                            _SpellbookButton(open: _spellbookOpen),
+                            const SizedBox(width: 8),
                             AuthMenu(
                               displayName: _currentDisplayName.isNotEmpty
                                   ? _currentDisplayName
@@ -1292,8 +1314,29 @@ class _MyAppState extends State<MyApp> {
                                   await engine.evaluate(challenge, prompt);
                               final (_, castResult) = result;
 
-                              // If passed, unlock linked doors.
+                              // If passed, persist progress, learn the word
+                              // of power, and unlock linked doors.
                               if (castResult.passed) {
+                                try {
+                                  await Locator
+                                          .maybeLocate<ProgressService>()
+                                      ?.markChallengeCompleted(challenge.id);
+                                } catch (e) {
+                                  _log.warning(
+                                      'Failed to persist completion: $e', e);
+                                }
+                                final word = challengeToWord[challenge.id];
+                                if (word != null) {
+                                  try {
+                                    await Locator
+                                            .maybeLocate<SpellbookService>()
+                                        ?.learnWord(word.id);
+                                  } catch (e) {
+                                    _log.warning(
+                                        'Failed to learn word ${word.id}: $e',
+                                        e);
+                                  }
+                                }
                                 final doors = techWorld
                                     .doorsForChallenge(challenge.id);
                                 for (final door in doors) {
@@ -1309,6 +1352,26 @@ class _MyAppState extends State<MyApp> {
                     );
                   },
                 ),
+                // Spellbook side panel — toggled by the toolbar button.
+                if (_spellbookService != null)
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _spellbookOpen,
+                    builder: (context, open, _) {
+                      if (!open) return const SizedBox.shrink();
+                      return Positioned(
+                        top: 60,
+                        right: 0,
+                        bottom: 0,
+                        width: MediaQuery.of(context).size.width >= 800
+                            ? 400
+                            : 320,
+                        child: SpellbookPanel(
+                          service: _spellbookService!,
+                          onClose: () => _spellbookOpen.value = false,
+                        ),
+                      );
+                    },
+                  ),
                 // Screen share floating panels
                 if (_liveKitService != null)
                   ScreenShareOverlay(liveKitService: _liveKitService!),
@@ -1356,6 +1419,41 @@ class _MyAppState extends State<MyApp> {
 }
 
 /// Toggle button for entering/exiting map editor mode.
+/// Toolbar toggle for the [SpellbookPanel] side panel.
+class _SpellbookButton extends StatelessWidget {
+  const _SpellbookButton({required this.open});
+
+  final ValueNotifier<bool> open;
+
+  static const _arcaneColor = Color(0xFFAA44FF);
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: open,
+      builder: (context, isOpen, _) {
+        return IconButton(
+          onPressed: () => open.value = !isOpen,
+          icon: Icon(
+            Icons.auto_stories,
+            color: isOpen ? _arcaneColor : Colors.white70,
+            size: 20,
+          ),
+          tooltip: isOpen ? 'Close spellbook' : 'Open spellbook',
+          style: IconButton.styleFrom(
+            backgroundColor: isOpen
+                ? _arcaneColor.withValues(alpha: 0.2)
+                : Colors.black54,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _MapEditorButton extends StatelessWidget {
   const _MapEditorButton({
     required this.mapEditorState,
