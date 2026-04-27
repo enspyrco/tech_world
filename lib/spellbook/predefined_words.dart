@@ -5,12 +5,13 @@ import 'package:tech_world/spellbook/word_of_power.dart';
 ///
 /// Each [PromptChallenge] in `predefined_prompt_challenges.dart` earns
 /// exactly one word here. The mapping is bijective — see
-/// [predefined_words_test.dart].
+/// [predefined_words_test.dart] (the bijection collapses to a single
+/// length assertion now that `id` is a [WordId] enum: uniqueness is
+/// guaranteed by the type system).
 const allWords = <WordOfPower>[
   // Evocation — fire
   WordOfPower(
-    id: 'ignis',
-    displayName: 'IGNIS',
+    id: WordId.ignis,
     meaning: 'fire',
     school: SpellSchool.evocation,
     element: SpellElement.fire,
@@ -19,8 +20,7 @@ const allWords = <WordOfPower>[
     challengeId: 'evocation_fizzbuzz',
   ),
   WordOfPower(
-    id: 'tempus',
-    displayName: 'TEMPUS',
+    id: WordId.tempus,
     meaning: 'time',
     school: SpellSchool.evocation,
     element: SpellElement.fire,
@@ -29,8 +29,7 @@ const allWords = <WordOfPower>[
     challengeId: 'evocation_countdown',
   ),
   WordOfPower(
-    id: 'crystallum',
-    displayName: 'CRYSTALLUM',
+    id: WordId.crystallum,
     meaning: 'crystal',
     school: SpellSchool.evocation,
     element: SpellElement.fire,
@@ -41,8 +40,7 @@ const allWords = <WordOfPower>[
 
   // Divination — water
   WordOfPower(
-    id: 'lumen',
-    displayName: 'LUMEN',
+    id: WordId.lumen,
     meaning: 'light',
     school: SpellSchool.divination,
     element: SpellElement.water,
@@ -51,8 +49,7 @@ const allWords = <WordOfPower>[
     challengeId: 'divination_color',
   ),
   WordOfPower(
-    id: 'verum',
-    displayName: 'VERUM',
+    id: WordId.verum,
     meaning: 'truth',
     school: SpellSchool.divination,
     element: SpellElement.water,
@@ -61,8 +58,7 @@ const allWords = <WordOfPower>[
     challengeId: 'divination_extract',
   ),
   WordOfPower(
-    id: 'oraculum',
-    displayName: 'ORACULUM',
+    id: WordId.oraculum,
     meaning: 'oracle',
     school: SpellSchool.divination,
     element: SpellElement.water,
@@ -73,8 +69,7 @@ const allWords = <WordOfPower>[
 
   // Transmutation — earth
   WordOfPower(
-    id: 'forma',
-    displayName: 'FORMA',
+    id: WordId.forma,
     meaning: 'shape',
     school: SpellSchool.transmutation,
     element: SpellElement.earth,
@@ -83,8 +78,7 @@ const allWords = <WordOfPower>[
     challengeId: 'transmutation_bullets',
   ),
   WordOfPower(
-    id: 'structura',
-    displayName: 'STRUCTURA',
+    id: WordId.structura,
     meaning: 'structure',
     school: SpellSchool.transmutation,
     element: SpellElement.earth,
@@ -93,8 +87,7 @@ const allWords = <WordOfPower>[
     challengeId: 'transmutation_table',
   ),
   WordOfPower(
-    id: 'muta',
-    displayName: 'MUTA',
+    id: WordId.muta,
     meaning: 'change',
     school: SpellSchool.transmutation,
     element: SpellElement.earth,
@@ -105,8 +98,7 @@ const allWords = <WordOfPower>[
 
   // Illusion — air
   WordOfPower(
-    id: 'umbra',
-    displayName: 'UMBRA',
+    id: WordId.umbra,
     meaning: 'shadow',
     school: SpellSchool.illusion,
     element: SpellElement.air,
@@ -115,8 +107,7 @@ const allWords = <WordOfPower>[
     challengeId: 'illusion_pirate',
   ),
   WordOfPower(
-    id: 'speculum',
-    displayName: 'SPECULUM',
+    id: WordId.speculum,
     meaning: 'mirror',
     school: SpellSchool.illusion,
     element: SpellElement.air,
@@ -125,8 +116,7 @@ const allWords = <WordOfPower>[
     challengeId: 'illusion_child',
   ),
   WordOfPower(
-    id: 'phantasma',
-    displayName: 'PHANTASMA',
+    id: WordId.phantasma,
     meaning: 'phantom',
     school: SpellSchool.illusion,
     element: SpellElement.air,
@@ -137,8 +127,7 @@ const allWords = <WordOfPower>[
 
   // Enchantment — spirit
   WordOfPower(
-    id: 'vinculum',
-    displayName: 'VINCULUM',
+    id: WordId.vinculum,
     meaning: 'bond',
     school: SpellSchool.enchantment,
     element: SpellElement.spirit,
@@ -147,8 +136,7 @@ const allWords = <WordOfPower>[
     challengeId: 'enchantment_brevity',
   ),
   WordOfPower(
-    id: 'libera',
-    displayName: 'LIBERA',
+    id: WordId.libera,
     meaning: 'freedom',
     school: SpellSchool.enchantment,
     element: SpellElement.spirit,
@@ -157,8 +145,7 @@ const allWords = <WordOfPower>[
     challengeId: 'enchantment_formal',
   ),
   WordOfPower(
-    id: 'dominus',
-    displayName: 'DOMINUS',
+    id: WordId.dominus,
     meaning: 'mastery',
     school: SpellSchool.enchantment,
     element: SpellElement.spirit,
@@ -169,8 +156,7 @@ const allWords = <WordOfPower>[
 
   // Conjuration — void
   WordOfPower(
-    id: 'genesis',
-    displayName: 'GENESIS',
+    id: WordId.genesis,
     meaning: 'creation',
     school: SpellSchool.conjuration,
     element: SpellElement.void_,
@@ -179,8 +165,7 @@ const allWords = <WordOfPower>[
     challengeId: 'conjuration_glorp',
   ),
   WordOfPower(
-    id: 'exemplar',
-    displayName: 'EXEMPLAR',
+    id: WordId.exemplar,
     meaning: 'pattern',
     school: SpellSchool.conjuration,
     element: SpellElement.void_,
@@ -189,8 +174,7 @@ const allWords = <WordOfPower>[
     challengeId: 'conjuration_pattern',
   ),
   WordOfPower(
-    id: 'lexicon',
-    displayName: 'LEXICON',
+    id: WordId.lexicon,
     meaning: 'language',
     school: SpellSchool.conjuration,
     element: SpellElement.void_,
@@ -200,12 +184,14 @@ const allWords = <WordOfPower>[
   ),
 ];
 
-/// Lookup: word id → [WordOfPower]. O(1) at call sites.
-final wordById = <String, WordOfPower>{
+/// Lookup: [WordId] → [WordOfPower]. Total over `WordId.values` because
+/// the bijection is enforced at compile time by the enum itself.
+final wordById = <WordId, WordOfPower>{
   for (final w in allWords) w.id: w,
 };
 
-/// Lookup: challenge id → [WordOfPower]. Earned on challenge completion.
+/// Lookup: challenge id (still stringly-typed, lives outside the
+/// spellbook module) → [WordOfPower].
 final challengeToWord = <String, WordOfPower>{
   for (final w in allWords) w.challengeId: w,
 };

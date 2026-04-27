@@ -10,9 +10,14 @@ final _log = Logger('SpellbookService');
 
 /// Tracks which words of power a player has learned.
 ///
-/// Persists to Firestore in `users/{uid}` as a `learnedWords` array.
-/// Mirrors [ProgressService] — local [Set] cache for synchronous reads,
-/// optimistic update with rollback on Firestore failure.
+/// Persists to Firestore in `users/{uid}` as a `learnedWords` array of
+/// strings (the wire format). Internally everything operates on
+/// strongly-typed [WordId] values — strings only appear at the
+/// Firestore boundary in [loadSpellbook] (parse via [WordId.parse]) and
+/// [learnWord] (serialize via `wordId.name`).
+///
+/// Mirrors `ProgressService`'s shape — local cache for synchronous
+/// reads, optimistic update with rollback on Firestore failure.
 class SpellbookService {
   SpellbookService({
     required String uid,
@@ -24,29 +29,30 @@ class SpellbookService {
   final String _uid;
   final CollectionReference<Map<String, dynamic>> _collection;
 
-  final Set<String> _learned = {};
-  final StreamController<Set<String>> _controller =
-      StreamController<Set<String>>.broadcast();
+  final Set<WordId> _learned = {};
+  final StreamController<Set<WordId>> _controller =
+      StreamController<Set<WordId>>.broadcast();
 
-  /// Memoized [wordsBySchool] result — invalidated whenever [_learned] changes.
+  /// Memoized [wordsBySchool] result — invalidated by [_invalidate]
+  /// whenever [_learned] changes.
   Map<SpellSchool, List<WordOfPower>>? _cachedGroups;
 
   /// Stream of learned word ids, emits after each change.
-  Stream<Set<String>> get learnedWords => _controller.stream;
+  Stream<Set<WordId>> get learnedWords => _controller.stream;
 
   /// Synchronous snapshot of learned word ids (unmodifiable).
-  Set<String> get learnedWordIds => Set.unmodifiable(_learned);
+  Set<WordId> get learnedWordIds => Set.unmodifiable(_learned);
 
   /// Number of distinct words learned.
   int get count => _learned.length;
 
   /// Sync check against the local cache.
-  bool hasWord(String wordId) => _learned.contains(wordId);
+  bool hasWord(WordId word) => _learned.contains(word);
 
   /// Learned [WordOfPower] grouped by school. Every school is present,
   /// even if its list is empty — UI can render full schema without
-  /// null-checks. Memoized; the cache is invalidated by [_invalidate]
-  /// whenever the learned set changes.
+  /// null-checks. Memoized; the cache is invalidated whenever the
+  /// learned set changes.
   Map<SpellSchool, List<WordOfPower>> get wordsBySchool {
     final cached = _cachedGroups;
     if (cached != null) return cached;
@@ -54,14 +60,17 @@ class SpellbookService {
       for (final s in SpellSchool.values) s: <WordOfPower>[],
     };
     for (final id in _learned) {
-      final word = wordById[id];
-      if (word != null) groups[word.school]!.add(word);
+      // wordById is total over WordId.values, so the lookup never fails.
+      final word = wordById[id]!;
+      groups[word.school]!.add(word);
     }
-    // Stable ordering inside each school: by intensity then id.
+    // Stable ordering inside each school: by intensity then enum index.
     for (final list in groups.values) {
       list.sort((a, b) {
         final byIntensity = a.intensity.compareTo(b.intensity);
-        return byIntensity != 0 ? byIntensity : a.id.compareTo(b.id);
+        return byIntensity != 0
+            ? byIntensity
+            : a.id.index.compareTo(b.id.index);
       });
     }
     return _cachedGroups = groups;
@@ -70,12 +79,26 @@ class SpellbookService {
   void _invalidate() => _cachedGroups = null;
 
   /// Load the user's learned words from Firestore.
+  ///
+  /// Wire-format strings that don't match any [WordId] are logged and
+  /// skipped — protects against forward incompatibility (admin tools,
+  /// future words written by a newer client) without crashing the load.
   Future<void> loadSpellbook() async {
     try {
       final doc = await _collection.doc(_uid).get();
       final data = doc.data();
       if (data != null && data['learnedWords'] is List) {
-        _learned.addAll(List<String>.from(data['learnedWords']));
+        for (final raw in List<dynamic>.from(data['learnedWords'])) {
+          if (raw is! String) continue;
+          final word = WordId.parse(raw);
+          if (word == null) {
+            _log.warning(
+                'SpellbookService: ignoring unknown wire-format word "$raw" '
+                'for uid $_uid');
+            continue;
+          }
+          _learned.add(word);
+        }
         _invalidate();
       }
     } on FirebaseException catch (e) {
@@ -84,28 +107,24 @@ class SpellbookService {
     }
   }
 
-  /// Mark a word as learned. Optimistic local update then Firestore write
-  /// with [FieldValue.arrayUnion] for idempotency. Throws [ArgumentError]
-  /// if [wordId] is not a known word.
-  Future<void> learnWord(String wordId) async {
-    if (!wordById.containsKey(wordId)) {
-      throw ArgumentError.value(wordId, 'wordId', 'unknown word');
-    }
-    if (_learned.contains(wordId)) return;
+  /// Mark a word as learned. Optimistic local update then Firestore
+  /// write with [FieldValue.arrayUnion] for idempotency.
+  Future<void> learnWord(WordId word) async {
+    if (_learned.contains(word)) return;
 
-    _learned.add(wordId);
+    _learned.add(word);
     _invalidate();
     _controller.add(Set.unmodifiable(_learned));
 
     try {
       await _collection.doc(_uid).set(
         {
-          'learnedWords': FieldValue.arrayUnion([wordId]),
+          'learnedWords': FieldValue.arrayUnion([word.name]),
         },
         SetOptions(merge: true),
       );
     } on FirebaseException catch (e) {
-      _learned.remove(wordId);
+      _learned.remove(word);
       _invalidate();
       _controller.add(Set.unmodifiable(_learned));
       _log.warning('SpellbookService: failed to persist learnWord', e);

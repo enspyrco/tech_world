@@ -5,6 +5,59 @@ import 'package:tech_world/prompt/spell_school.dart';
 /// spellbook panel, the toolbar toggle button, and any future spell VFX.
 const arcaneColor = Color(0xFFAA44FF);
 
+/// The closed set of words a player can ever learn.
+///
+/// `WordId` is the **domain type** for words throughout the codebase.
+/// Strings only appear at boundaries — Firestore on-disk format and STT
+/// transcripts — and parse via [WordId.parse]. Internally everything
+/// (services, UI, tests, the algebra in Phase 3) operates on `WordId`,
+/// so the compiler enforces what would otherwise be runtime invariants:
+///
+/// * No typo can refer to a non-existent word — it won't compile.
+/// * Switch expressions over `WordId` must be exhaustive — adding a 19th
+///   word in a later phase fails the build at every site that hasn't
+///   handled it.
+/// * The bijection with [allPromptChallenges] reduces from a dozen tests
+///   to one length assertion.
+///
+/// On-disk format: `WordId.ignis.name` → `'ignis'` (the enum identifier
+/// is the wire format). Existing Firestore data parses unchanged.
+enum WordId {
+  ignis,
+  tempus,
+  crystallum,
+  lumen,
+  verum,
+  oraculum,
+  forma,
+  structura,
+  muta,
+  umbra,
+  speculum,
+  phantasma,
+  vinculum,
+  libera,
+  dominus,
+  genesis,
+  exemplar,
+  lexicon;
+
+  /// Parse a wire-format string into a `WordId`, or `null` if unknown.
+  /// Use at boundaries (Firestore reads, STT results) and decide what to
+  /// do with `null` at the call site.
+  static WordId? parse(String wire) {
+    for (final w in WordId.values) {
+      if (w.name == wire) return w;
+    }
+    return null;
+  }
+}
+
+extension WordIdDisplay on WordId {
+  /// Uppercase incantation form, e.g. `WordId.ignis.displayName == 'IGNIS'`.
+  String get displayName => name.toUpperCase();
+}
+
 /// Elemental affinity of a word — drives visual treatment and (later) algebra.
 ///
 /// Six elements correspond 1:1 with the six [SpellSchool]s:
@@ -43,7 +96,6 @@ enum WordRole {
 class WordOfPower {
   const WordOfPower({
     required this.id,
-    required this.displayName,
     required this.meaning,
     required this.school,
     required this.element,
@@ -52,12 +104,8 @@ class WordOfPower {
     required this.challengeId,
   });
 
-  /// Lowercase canonical id, e.g. `'ignis'`. Used as Firestore array entry,
-  /// map key, and STT match target.
-  final String id;
-
-  /// Uppercase incantation form, e.g. `'IGNIS'`. Display + speech prompt.
-  final String displayName;
+  /// Strongly-typed identifier — see [WordId].
+  final WordId id;
 
   /// Plain-English gloss, e.g. `'fire'`.
   final String meaning;
@@ -74,9 +122,14 @@ class WordOfPower {
   /// Grammatical role — see [WordRole].
   final WordRole role;
 
-  /// The [PromptChallenge.id] that earns this word.
+  /// The [PromptChallenge.id] that earns this word. Stays stringly-typed
+  /// because challenges live in another module — see CLAUDE.md follow-up
+  /// to extract a `ChallengeId` enum across the codebase.
   final String challengeId;
 
+  /// Convenience pass-through to [WordIdDisplay.displayName].
+  String get displayName => id.displayName;
+
   @override
-  String toString() => 'WordOfPower($id)';
+  String toString() => 'WordOfPower(${id.name})';
 }

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
+import 'package:tech_world/spellbook/word_of_power.dart';
 
 // Cloud Firestore types are sealed; mocking them is a legitimate test-only
 // use case that the analyzer doesn't have a more specific exemption for.
@@ -47,16 +48,16 @@ void main() {
     expect(service.count, 0);
 
     // Capture stream emissions to confirm we see add then remove.
-    final events = <Set<String>>[];
+    final events = <Set<WordId>>[];
     service.learnedWords.listen(events.add);
 
     await expectLater(
-      () => service.learnWord('ignis'),
+      () => service.learnWord(WordId.ignis),
       throwsA(isA<FirebaseException>()),
     );
 
     // Cache rolled back to empty.
-    expect(service.hasWord('ignis'), isFalse);
+    expect(service.hasWord(WordId.ignis), isFalse);
     expect(service.count, 0);
 
     // Drain the broadcast-stream microtask queue so the rollback emission
@@ -65,8 +66,8 @@ void main() {
 
     // Stream saw the optimistic add followed by the rollback.
     expect(events.length, 2);
-    expect(events[0], {'ignis'});
-    expect(events[1], <String>{});
+    expect(events[0], {WordId.ignis});
+    expect(events[1], <WordId>{});
 
     service.dispose();
   });

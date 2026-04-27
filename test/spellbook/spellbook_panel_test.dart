@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/prompt/spell_school.dart';
 import 'package:tech_world/spellbook/spellbook_panel.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
+import 'package:tech_world/spellbook/word_of_power.dart';
 
 void main() {
   Future<void> pumpPanel(
@@ -100,7 +101,7 @@ void main() {
       expect(find.text('0 / 18 words known'), findsOneWidget);
       expect(find.text('IGNIS'), findsNothing);
 
-      await service.learnWord('ignis');
+      await service.learnWord(WordId.ignis);
       await tester.pump();
 
       expect(find.text('1 / 18 words known'), findsOneWidget);

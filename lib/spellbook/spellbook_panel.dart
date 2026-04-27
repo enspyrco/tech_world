@@ -29,7 +29,7 @@ class SpellbookPanel extends StatelessWidget {
         children: [
           _Header(onClose: onClose),
           Expanded(
-            child: StreamBuilder<Set<String>>(
+            child: StreamBuilder<Set<WordId>>(
               stream: service.learnedWords,
               initialData: service.learnedWordIds,
               builder: (context, _) {
@@ -217,19 +217,11 @@ class _WordChip extends StatelessWidget {
   }
 }
 
-Color _elementColor(SpellElement element) {
-  switch (element) {
-    case SpellElement.fire:
-      return const Color(0xFFFF7043);
-    case SpellElement.water:
-      return const Color(0xFF42A5F5);
-    case SpellElement.earth:
-      return const Color(0xFF8D6E63);
-    case SpellElement.air:
-      return const Color(0xFFB39DDB);
-    case SpellElement.spirit:
-      return const Color(0xFFEEE8AA);
-    case SpellElement.void_:
-      return const Color(0xFFAA44FF);
-  }
-}
+Color _elementColor(SpellElement element) => switch (element) {
+      SpellElement.fire => const Color(0xFFFF7043),
+      SpellElement.water => const Color(0xFF42A5F5),
+      SpellElement.earth => const Color(0xFF8D6E63),
+      SpellElement.air => const Color(0xFFB39DDB),
+      SpellElement.spirit => const Color(0xFFEEE8AA),
+      SpellElement.void_ => const Color(0xFFAA44FF),
+    };
