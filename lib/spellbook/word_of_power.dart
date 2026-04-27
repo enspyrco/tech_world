@@ -1,4 +1,9 @@
+import 'package:flutter/painting.dart' show Color;
 import 'package:tech_world/prompt/spell_school.dart';
+
+/// Single source of truth for the spellbook accent colour. Used by the
+/// spellbook panel, the toolbar toggle button, and any future spell VFX.
+const arcaneColor = Color(0xFFAA44FF);
 
 /// Elemental affinity of a word — drives visual treatment and (later) algebra.
 ///

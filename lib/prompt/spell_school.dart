@@ -21,3 +21,23 @@ enum SpellSchool {
   /// Few-shot and example-based creation — teaching by showing.
   conjuration,
 }
+
+extension SpellSchoolDisplay on SpellSchool {
+  /// Title-case label for UI rendering (e.g. `'Evocation'`).
+  String get label {
+    switch (this) {
+      case SpellSchool.evocation:
+        return 'Evocation';
+      case SpellSchool.divination:
+        return 'Divination';
+      case SpellSchool.transmutation:
+        return 'Transmutation';
+      case SpellSchool.illusion:
+        return 'Illusion';
+      case SpellSchool.enchantment:
+        return 'Enchantment';
+      case SpellSchool.conjuration:
+        return 'Conjuration';
+    }
+  }
+}

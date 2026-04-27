@@ -28,6 +28,9 @@ class SpellbookService {
   final StreamController<Set<String>> _controller =
       StreamController<Set<String>>.broadcast();
 
+  /// Memoized [wordsBySchool] result — invalidated whenever [_learned] changes.
+  Map<SpellSchool, List<WordOfPower>>? _cachedGroups;
+
   /// Stream of learned word ids, emits after each change.
   Stream<Set<String>> get learnedWords => _controller.stream;
 
@@ -42,8 +45,11 @@ class SpellbookService {
 
   /// Learned [WordOfPower] grouped by school. Every school is present,
   /// even if its list is empty — UI can render full schema without
-  /// null-checks.
+  /// null-checks. Memoized; the cache is invalidated by [_invalidate]
+  /// whenever the learned set changes.
   Map<SpellSchool, List<WordOfPower>> get wordsBySchool {
+    final cached = _cachedGroups;
+    if (cached != null) return cached;
     final groups = <SpellSchool, List<WordOfPower>>{
       for (final s in SpellSchool.values) s: <WordOfPower>[],
     };
@@ -58,8 +64,10 @@ class SpellbookService {
         return byIntensity != 0 ? byIntensity : a.id.compareTo(b.id);
       });
     }
-    return groups;
+    return _cachedGroups = groups;
   }
+
+  void _invalidate() => _cachedGroups = null;
 
   /// Load the user's learned words from Firestore.
   Future<void> loadSpellbook() async {
@@ -68,6 +76,7 @@ class SpellbookService {
       final data = doc.data();
       if (data != null && data['learnedWords'] is List) {
         _learned.addAll(List<String>.from(data['learnedWords']));
+        _invalidate();
       }
     } on FirebaseException catch (e) {
       _log.warning('SpellbookService: failed to load spellbook', e);
@@ -85,6 +94,7 @@ class SpellbookService {
     if (_learned.contains(wordId)) return;
 
     _learned.add(wordId);
+    _invalidate();
     _controller.add(Set.unmodifiable(_learned));
 
     try {
@@ -96,6 +106,7 @@ class SpellbookService {
       );
     } on FirebaseException catch (e) {
       _learned.remove(wordId);
+      _invalidate();
       _controller.add(Set.unmodifiable(_learned));
       _log.warning('SpellbookService: failed to persist learnWord', e);
       rethrow;

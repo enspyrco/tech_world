@@ -19,7 +19,6 @@ class SpellbookPanel extends StatelessWidget {
   final VoidCallback onClose;
 
   static const _bgColor = Color(0xEE0A0814);
-  static const _arcaneColor = Color(0xFFAA44FF);
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +78,7 @@ class _Header extends StatelessWidget {
       child: Row(
         children: [
           const Icon(Icons.auto_stories,
-              color: SpellbookPanel._arcaneColor, size: 22),
+              color: arcaneColor, size: 22),
           const SizedBox(width: 8),
           const Text(
             'Spellbook',
@@ -148,7 +147,7 @@ class _SchoolSection extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                _schoolLabel(school),
+                school.label,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 14,
@@ -215,23 +214,6 @@ class _WordChip extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-String _schoolLabel(SpellSchool school) {
-  switch (school) {
-    case SpellSchool.evocation:
-      return 'Evocation';
-    case SpellSchool.divination:
-      return 'Divination';
-    case SpellSchool.transmutation:
-      return 'Transmutation';
-    case SpellSchool.illusion:
-      return 'Illusion';
-    case SpellSchool.enchantment:
-      return 'Enchantment';
-    case SpellSchool.conjuration:
-      return 'Conjuration';
   }
 }
 

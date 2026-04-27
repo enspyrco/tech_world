@@ -4,6 +4,7 @@ import 'package:tech_world/prompt/cast_result.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/prompt/spell_school.dart';
 import 'package:tech_world/prompt/spell_slot_service.dart';
+import 'package:tech_world/spellbook/word_of_power.dart' show arcaneColor;
 
 /// Panel for crafting and casting prompt spells.
 ///
@@ -39,7 +40,6 @@ class _PromptChallengePanelState extends State<PromptChallengePanel> {
   String? _agentResponse;
   CastResult? _lastResult;
 
-  static const _arcaneColor = Color(0xFFAA44FF);
   static const _successColor = Color(0xFF44AA44);
   static const _failColor = Color(0xFFDD4444);
 
@@ -183,7 +183,7 @@ class _PromptChallengePanelState extends State<PromptChallengePanel> {
               Text(
                 'Regenerating...',
                 style: TextStyle(
-                  color: _arcaneColor.withValues(alpha: 0.7),
+                  color: arcaneColor.withValues(alpha: 0.7),
                   fontSize: 11,
                   fontStyle: FontStyle.italic,
                 ),
@@ -201,13 +201,13 @@ class _PromptChallengePanelState extends State<PromptChallengePanel> {
       height: 14,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: filled ? _arcaneColor : const Color(0xFF333355),
+        color: filled ? arcaneColor : const Color(0xFF333355),
         border: Border.all(
-          color: filled ? _arcaneColor : const Color(0xFF555577),
+          color: filled ? arcaneColor : const Color(0xFF555577),
           width: 1.5,
         ),
         boxShadow: filled
-            ? [BoxShadow(color: _arcaneColor.withValues(alpha: 0.4), blurRadius: 6)]
+            ? [BoxShadow(color: arcaneColor.withValues(alpha: 0.4), blurRadius: 6)]
             : null,
       ),
     );
@@ -230,15 +230,15 @@ class _PromptChallengePanelState extends State<PromptChallengePanel> {
         fillColor: const Color(0xFF12121F),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: _arcaneColor.withValues(alpha: 0.3)),
+          borderSide: BorderSide(color: arcaneColor.withValues(alpha: 0.3)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: _arcaneColor.withValues(alpha: 0.3)),
+          borderSide: BorderSide(color: arcaneColor.withValues(alpha: 0.3)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: _arcaneColor),
+          borderSide: const BorderSide(color: arcaneColor),
         ),
       ),
     );
@@ -254,7 +254,7 @@ class _PromptChallengePanelState extends State<PromptChallengePanel> {
       child: ElevatedButton(
         onPressed: canCast ? _onCast : null,
         style: ElevatedButton.styleFrom(
-          backgroundColor: _arcaneColor,
+          backgroundColor: arcaneColor,
           disabledBackgroundColor: const Color(0xFF333355),
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -385,19 +385,19 @@ class _PromptChallengePanelState extends State<PromptChallengePanel> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: _arcaneColor.withValues(alpha: 0.2),
+        color: arcaneColor.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _arcaneColor.withValues(alpha: 0.4)),
+        border: Border.all(color: arcaneColor.withValues(alpha: 0.4)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: _arcaneColor, size: 14),
+          Icon(icon, color: arcaneColor, size: 14),
           const SizedBox(width: 4),
           Text(
             label,
             style: const TextStyle(
-              color: _arcaneColor,
+              color: arcaneColor,
               fontSize: 11,
               fontWeight: FontWeight.w500,
             ),
