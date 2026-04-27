@@ -8,6 +8,9 @@ import 'dart:ui' as ui;
 /// Always returns false on non-web platforms.
 bool get isMediaStreamTrackProcessorSupported => false;
 
+/// Always returns null on non-web platforms.
+Object? getJsTrack(Object mediaStreamTrack) => null;
+
 /// Stub DirectTrackCapture that does nothing on non-web platforms.
 class DirectTrackCapture {
   DirectTrackCapture._();

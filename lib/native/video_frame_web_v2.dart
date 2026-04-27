@@ -15,9 +15,26 @@ import 'dart:js_interop';
 import 'dart:ui' as ui;
 
 import 'package:logging/logging.dart';
+// dart_webrtc doesn't conditionally export MediaStreamTrackWeb, so
+// importing the barrel pulls in dart:js_interop and breaks native tests.
+// This file is web-only (conditional import in direct_track_capture.dart).
+// ignore: implementation_imports
+import 'package:dart_webrtc/src/media_stream_track_impl.dart';
 import 'package:web/web.dart' as web;
 
 import 'frame_source.dart';
+
+/// Extract the underlying JS MediaStreamTrack from a flutter_webrtc track.
+///
+/// Returns the `web.MediaStreamTrack` (a JSObject) if the track is a
+/// `MediaStreamTrackWeb`, or null otherwise. This keeps the `dart_webrtc`
+/// import inside the web-only file so native code never loads it.
+Object? getJsTrack(Object mediaStreamTrack) {
+  if (mediaStreamTrack is MediaStreamTrackWeb) {
+    return mediaStreamTrack.jsTrack;
+  }
+  return null;
+}
 
 final _log = Logger('VideoFrameWebV2');
 
