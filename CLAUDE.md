@@ -148,21 +148,40 @@ All world-level components use the grid row (y index) as their Flame `priority`,
 
 ### Video Bubble Component (In-Game Video Rendering)
 
-Renders LiveKit video feeds as circular bubbles inside the Flame game world using zero-copy FFI frame capture.
+Renders LiveKit video feeds as circular bubbles inside the Flame game world.
 
-**Architecture:**
+**Architecture (per platform):**
 
 ```
-LiveKit VideoTrack → Native RTCVideoRenderer → Shared Memory Buffer → Dart FFI → ui.Image → Flame Canvas
+macOS:  LiveKit VideoTrack → RTCVideoRenderer → FFI shared memory → BGRA→RGBA → ui.Image
+Web:    LiveKit VideoTrack → MediaStreamTrackProcessor → VideoFrame → drawImage to canvas → getImageData → decodeImageFromPixels → ui.Image
+Web DF: Three.js iframe canvas → CanvasCapture → drawImage to canvas → getImageData → decodeImageFromPixels → ui.Image
 ```
 
 **Key Files:**
 
 - `lib/flame/components/video_bubble_component.dart` — Flame component rendering video as circular bubble
-- `lib/native/video_frame_ffi.dart` — Dart FFI bindings for native frame capture
-- `macos/Runner/VideoFrameCapture.h` / `.m` — Native Objective-C implementation
+- `lib/native/video_frame_ffi.dart` — Dart FFI bindings for native frame capture (macOS)
+- `lib/native/video_frame_web_v2.dart` — Web frame capture: `DirectTrackCapture` (MediaStreamTrackProcessor) for all tracks
+- `lib/native/canvas_capture_web.dart` — Web frame capture for Dreamfinder's 3D avatar iframe
+- `lib/flame/components/bubble_field_component.dart` — Metaball glow field shader (additive blend between nearby bubbles)
+- `lib/flame/components/merged_video_bubble_component.dart` — Merged video rendering via GLSL Voronoi shader (when bubbles are close)
+- `shaders/metaball_field.frag` — Metaball energy field GLSL shader
+- `shaders/merged_video_bubble.frag` — Multi-texture video merge GLSL shader
 
-**Platform Support:** macOS uses FFI capture, web uses ImageBitmap, other platforms show placeholder with initial.
+**CRITICAL — WASM Compatibility:**
+- **NEVER use `dynamic` dispatch to access JS interop properties.** `(track as dynamic).jsTrack` compiles but fails silently in WASM. Always use typed casts: `(track as MediaStreamTrackWeb).jsTrack`.
+- **NEVER use `createImageFromImageBitmap`** — renders black due to Skia issue 14637. Use `decodeImageFromPixels` (SkImage.MakeRasterData path) instead.
+- **NEVER use array initializers or dynamic loop bounds in GLSL** — CanvasKit's WebGL compiler rejects them. Use explicit `if` branches.
+- Remote tracks start **muted**. Use `DirectTrackCapture.createAsync()` (not `.create()`) for remote tracks — it waits for the track to unmute before creating the MediaStreamTrackProcessor.
+
+**Bubble visual effects (PRs #287–#291):**
+- Breathing animation (±2.5% sinusoidal scale pulsing)
+- Radial glow (gold for Dreamfinder, configurable per-bubble)
+- Voice ripples (border undulates with `participant.audioLevel`)
+- Physics repulsion (bubbles push apart, don't overlap)
+- Metaball merge field (glow bridges between nearby bubbles)
+- Merged video rendering (video content flows into single organic blob when close)
 
 **Bubble lifecycle:** When a remote participant joins, a `PlayerBubbleComponent` placeholder is created. When `TrackSubscribedEvent` fires, it's upgraded to `VideoBubbleComponent`. `ProximityVideoOverlay` provides a Flutter widget alternative using LiveKit's native `VideoTrackRenderer`.
 
@@ -325,7 +344,10 @@ static const _serverUrl = 'wss://livekit.imagineering.cc';
 
 - Caddy handles TLS termination, Redis on port 6389 for agent dispatch
 - Token generation via Firebase Cloud Function (credentials must match server)
-- Config in `imagineering-infra/livekit/` (SOPS encrypted secrets)
+- Config at `/home/nick/apps/livekit/livekit.yaml` on OCI VPS
+- TURN: UDP 3478 + TLS 5349 (cert from Caddy, mounted at `/certs/` in container)
+- **iptables on OCI**: Rules added for UDP 3478, 7882-7892, 30000-40000 and TCP 5349, 7881. Without these, only Tailscale connections work (OCI's default iptables REJECT blocks all non-listed ports).
+- Container runs in `--network host` mode with config + certs bind-mounted
 
 ## TODO
 

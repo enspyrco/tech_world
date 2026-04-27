@@ -13,11 +13,11 @@ class DirectTrackCapture {
   DirectTrackCapture._();
 
   /// Always returns null on non-web platforms.
-  static DirectTrackCapture? create(dynamic track) => null;
+  static DirectTrackCapture? create(Object track) => null;
 
   /// Always returns null on non-web platforms (async version).
   static Future<DirectTrackCapture?> createAsync(
-    dynamic track, {
+    Object track, {
     Duration timeout = const Duration(seconds: 5),
     Duration initialDelay = const Duration(milliseconds: 500),
   }) async => null;
@@ -66,13 +66,13 @@ class VideoElementCapture {
   final bool ownsElement = true;
 
   /// Always returns null on non-web platforms.
-  static VideoElementCapture? create(dynamic track) => null;
+  static VideoElementCapture? create(Object track) => null;
 
   /// Always returns null on non-web platforms.
-  static Future<VideoElementCapture?> createFromStream(dynamic stream, dynamic track) async => null;
+  static Future<VideoElementCapture?> createFromStream(Object? stream, Object? track) async => null;
 
   /// Always returns null on non-web platforms.
-  static VideoElementCapture? createFromVideoElement(dynamic videoElement) => null;
+  static VideoElementCapture? createFromVideoElement(Object videoElement) => null;
 
   /// Always returns null on non-web platforms.
   static VideoElementCapture? findAndCapture() => null;

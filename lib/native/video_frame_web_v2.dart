@@ -88,15 +88,10 @@ class DirectTrackCapture {
   /// Check if a MediaStreamTrack is currently muted.
   ///
   /// Remote WebRTC tracks start muted until RTP packets arrive.
+  /// Uses the typed `web.MediaStreamTrack.muted` getter directly —
+  /// NEVER `(track as dynamic).muted` which silently fails in dart2wasm.
   static bool _isTrackMuted(web.MediaStreamTrack track) {
-    try {
-      // Access the 'muted' property via dynamic cast
-      final muted = (track as dynamic).muted as bool?;
-      return muted ?? false;
-    } catch (e) {
-      _log.warning('DirectTrackCapture: Could not check muted state: $e', e);
-      return false;
-    }
+    return track.muted;
   }
 
   /// Wait for the track to unmute, with timeout.
@@ -176,17 +171,18 @@ class DirectTrackCapture {
   /// Prefer [createAsync] for remote tracks.
   ///
   /// Returns null if MediaStreamTrackProcessor is not supported.
-  static DirectTrackCapture? create(web.MediaStreamTrack track) {
+  static DirectTrackCapture? create(Object track) {
     if (!isMediaStreamTrackProcessorSupported) {
       _log.warning('DirectTrackCapture: MediaStreamTrackProcessor not supported');
       return null;
     }
 
     try {
+      final webTrack = track as web.MediaStreamTrack;
       final processor = MediaStreamTrackProcessor(
-        MediaStreamTrackProcessorInit(track: track),
+        MediaStreamTrackProcessorInit(track: webTrack),
       );
-      _log.info('DirectTrackCapture: Created processor for track ${track.id}');
+      _log.info('DirectTrackCapture: Created processor for track ${webTrack.id}');
       return DirectTrackCapture._(processor);
     } catch (e) {
       _log.severe('DirectTrackCapture: Failed to create processor: $e', e);
@@ -203,7 +199,7 @@ class DirectTrackCapture {
   /// - Track failed to unmute within timeout
   /// - Creation was cancelled via [cancelPendingUnmute]
   static Future<DirectTrackCapture?> createAsync(
-    web.MediaStreamTrack track, {
+    Object track, {
     Duration timeout = const Duration(seconds: 5),
     Duration initialDelay = const Duration(milliseconds: 500),
   }) async {
@@ -212,10 +208,18 @@ class DirectTrackCapture {
       return null;
     }
 
+    final web.MediaStreamTrack webTrack;
+    try {
+      webTrack = track as web.MediaStreamTrack;
+    } catch (e) {
+      _log.severe('DirectTrackCapture: expected MediaStreamTrack, got ${track.runtimeType}');
+      return null;
+    }
+
     // Check if track is muted (common for remote tracks)
-    if (_isTrackMuted(track)) {
+    if (_isTrackMuted(webTrack)) {
       _log.info('DirectTrackCapture: Track muted, waiting for unmute...');
-      final unmuted = await _waitForUnmute(track, timeout);
+      final unmuted = await _waitForUnmute(webTrack, timeout);
       if (!unmuted) {
         _log.warning('DirectTrackCapture: Failed to unmute within timeout');
         return null;
@@ -759,7 +763,7 @@ class VideoElementCapture implements FrameSource {
       _log.fine('VideoElementCapture: Stream has ${tracks.length} video tracks');
       if (tracks.length > 0) {
         final track = tracks.toDart[0];
-        _log.fine('VideoElementCapture: Track enabled=${track.enabled}, readyState=${track.readyState}, muted=${(track as dynamic).muted}');
+        _log.fine('VideoElementCapture: Track enabled=${track.enabled}, readyState=${track.readyState}, muted=${track.muted}');
       }
     }
 
