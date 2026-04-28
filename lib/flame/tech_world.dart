@@ -115,6 +115,21 @@ class TechWorld extends World with TapCallbacks {
   final ValueNotifier<Point<int>> playerGridPosition =
       ValueNotifier(defaultMap.spawnPoint);
 
+  /// Closest still-locked door within [_doorProximityThreshold] grid
+  /// squares (Chebyshev) of the player, or `null` if none. Drives the
+  /// voice-cast mic FAB — the UI shows the cast affordance only when
+  /// the player is near a door they could plausibly try to open.
+  ///
+  /// Updated when the player moves (in [_updatePlayerBubbles]) and
+  /// when a door unlocks (in [unlockDoor]) so the FAB hides
+  /// immediately the door swings.
+  final ValueNotifier<DoorData?> nearbyLockedDoor = ValueNotifier(null);
+
+  /// Chebyshev radius for the door-proximity affordance. Two squares
+  /// gives the player time to see the FAB appear *as they walk up*,
+  /// not after they've stopped.
+  static const int _doorProximityThreshold = 2;
+
   // LiveKit integration for video bubbles
   LiveKitService? _liveKitService;
   ui.FragmentProgram? _shaderProgram; // Keep reference for creating new shaders
@@ -403,6 +418,7 @@ class TechWorld extends World with TapCallbacks {
     }
     _lastPlayerGridPosition = playerGrid;
     playerGridPosition.value = playerGrid;
+    _recomputeNearbyLockedDoor();
 
     // Check each other player for proximity
     final nearbyPlayerIds = <String>{};
@@ -1897,6 +1913,10 @@ class TechWorld extends World with TapCallbacks {
     // Remove the barrier at the door position so the player can walk through.
     _barriersComponent.removeBarrierAt(door.position);
 
+    // The unlocked door must drop out of the proximity signal — otherwise
+    // the mic FAB lingers over an open doorway.
+    _recomputeNearbyLockedDoor();
+
     // Broadcast to other players.
     _liveKitService?.publishJson(
       {
@@ -1908,6 +1928,34 @@ class TechWorld extends World with TapCallbacks {
     );
 
     _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
+  }
+
+  /// Recompute [nearbyLockedDoor] given the current player position and
+  /// the doors on the current map. Picks the closest still-locked door
+  /// within [_doorProximityThreshold]; emits `null` if none qualify.
+  ///
+  /// Cheap (linear scan over a handful of doors) and idempotent — the
+  /// notifier only fires if the value actually changed, so listeners
+  /// don't see spurious rebuilds when the player walks within the
+  /// threshold without crossing a door boundary.
+  void _recomputeNearbyLockedDoor() {
+    final playerGrid = _userPlayerComponent.miniGridPosition;
+    DoorData? closest;
+    int closestDistance = _doorProximityThreshold + 1;
+    for (final door in currentMap.value.doors) {
+      if (door.isUnlocked) continue;
+      final d = max(
+        (door.position.x - playerGrid.x).abs(),
+        (door.position.y - playerGrid.y).abs(),
+      );
+      if (d <= _doorProximityThreshold && d < closestDistance) {
+        closestDistance = d;
+        closest = door;
+      }
+    }
+    if (!identical(nearbyLockedDoor.value, closest)) {
+      nearbyLockedDoor.value = closest;
+    }
   }
 
   /// Find all doors that require a specific prompt challenge to be completed.
@@ -2026,6 +2074,7 @@ class TechWorld extends World with TapCallbacks {
     activeTerminalPosition.dispose();
     mapEditorActive.dispose();
     currentMap.dispose();
+    nearbyLockedDoor.dispose();
     disconnectFromLiveKit();
   }
 }

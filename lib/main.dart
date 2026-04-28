@@ -36,7 +36,11 @@ import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/widgets/screen_share_overlay.dart';
 import 'package:tech_world/progress/progress_service.dart';
+import 'package:tech_world/services/stt_service.dart';
 import 'package:tech_world/spellbook/cast_effects.dart';
+import 'package:tech_world/spellbook/oracle_service.dart';
+import 'package:tech_world/spellbook/speech_cast_overlay.dart';
+import 'package:tech_world/spellbook/speech_cast_service.dart';
 import 'package:tech_world/spellbook/spellbook_panel.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
 import 'package:tech_world/spellbook/word_of_power.dart' show arcaneColor;
@@ -103,6 +107,8 @@ class _MyAppState extends State<MyApp> {
   ProximityService? _proximityService;
   ProgressService? _progressService;
   SpellbookService? _spellbookService;
+  SttService? _sttService;
+  SpeechCastService? _speechCastService;
   final ValueNotifier<bool> _spellbookOpen = ValueNotifier<bool>(false);
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
@@ -217,6 +223,9 @@ class _MyAppState extends State<MyApp> {
       _spellbookService?.dispose();
       _spellbookService = null;
       Locator.remove<SpellbookService>();
+      _speechCastService = null;
+      _sttService?.dispose();
+      _sttService = null;
       _spellbookOpen.value = false;
       _roomService = null;
       _myRooms = null;
@@ -270,6 +279,17 @@ class _MyAppState extends State<MyApp> {
         _log.warning('Failed to load spellbook for uid ${user.id}: $e', e);
       }
       Locator.add<SpellbookService>(_spellbookService!);
+
+      // Voice-cast wiring — SttService is platform-conditional (web only).
+      // SpeechCastService combines STT + the cast pipeline into a single
+      // entry-point for the SpeechCastOverlay widget. OracleService is
+      // constructed lazily when LiveKit is connected (per-room).
+      _sttService = SttService();
+      _speechCastService = SpeechCastService(
+        stt: _sttService!,
+        spellbook: _spellbookService,
+        progress: _progressService,
+      );
 
       // Register RoomService for the lobby.
       _roomService = RoomService();
@@ -1402,6 +1422,20 @@ class _MyAppState extends State<MyApp> {
                       );
                     },
                   ),
+                // Voice-cast affordance — proximity-gated mic FAB at
+                // bottom-centre. Visible only when the player is near a
+                // locked door and STT is supported (web). Constructs the
+                // OracleService inline; it's stateless beyond per-request
+                // correlation so a fresh instance per build is fine.
+                if (_liveKitService != null && _speechCastService != null)
+                  SpeechCastOverlay(
+                    nearbyLockedDoor: locate<TechWorld>().nearbyLockedDoor,
+                    speechCast: _speechCastService!,
+                    oracle: OracleService(liveKit: _liveKitService!),
+                    onCastSuccess: (door) =>
+                        locate<TechWorld>().unlockDoor(door),
+                  ),
+
                 // Screen share floating panels
                 if (_liveKitService != null)
                   ScreenShareOverlay(liveKitService: _liveKitService!),
