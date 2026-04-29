@@ -202,6 +202,21 @@ class _SpeechCastOverlayState extends State<SpeechCastOverlay> {
   }
 }
 
+/// Visual state of the mic FAB. Drives icon, background colour, and the
+/// `AnimatedSwitcher` key — each state must crossfade to a different
+/// icon when transitioning.
+enum _MicState {
+  idle,
+  listening,
+  resolving;
+
+  static _MicState resolve({required bool listening, required bool resolving}) {
+    if (listening) return _MicState.listening;
+    if (resolving) return _MicState.resolving;
+    return _MicState.idle;
+  }
+}
+
 class _MicButton extends StatelessWidget {
   const _MicButton({
     required this.listening,
@@ -215,16 +230,27 @@ class _MicButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = listening
-        ? Colors.redAccent.shade400
-        : (resolving ? Colors.grey.shade500 : arcaneColor);
+    final state = _MicState.resolve(listening: listening, resolving: resolving);
+    final (bg, icon, tooltip) = switch (state) {
+      _MicState.listening => (
+          Colors.redAccent.shade400,
+          Icons.stop_rounded,
+          'Listening… speak the word, or tap to cancel',
+        ),
+      _MicState.resolving => (
+          Colors.grey.shade500,
+          Icons.hourglass_top_rounded,
+          'Casting…',
+        ),
+      _MicState.idle => (
+          arcaneColor,
+          Icons.mic_rounded,
+          'Speak a word of power',
+        ),
+    };
 
     return Tooltip(
-      message: listening
-          ? 'Listening… speak the word, or tap to cancel'
-          : (resolving
-              ? 'Casting…'
-              : 'Speak a word of power'),
+      message: tooltip,
       child: FloatingActionButton(
         onPressed: resolving && !listening ? null : onTap,
         backgroundColor: bg,
@@ -232,12 +258,8 @@ class _MicButton extends StatelessWidget {
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
           child: Icon(
-            listening
-                ? Icons.stop_rounded
-                : (resolving ? Icons.hourglass_top_rounded : Icons.mic_rounded),
-            key: ValueKey<int>(listening
-                ? 1
-                : (resolving ? 2 : 0)),
+            icon,
+            key: ValueKey<_MicState>(state),
             color: Colors.white,
             size: 28,
           ),
@@ -255,6 +277,14 @@ class _FlashBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Pick text colour by background luminance so the banner stays
+    // readable if a future caller passes a light [color] (e.g. a Phase 3
+    // school accent that's pastel rather than the saturated v1 set).
+    final textColor =
+        ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+            ? Colors.white
+            : Colors.black87;
+
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 480),
       child: Material(
@@ -266,8 +296,8 @@ class _FlashBanner extends StatelessWidget {
           child: Text(
             text,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: textColor,
               fontSize: 15,
               fontWeight: FontWeight.w500,
               letterSpacing: 0.2,
