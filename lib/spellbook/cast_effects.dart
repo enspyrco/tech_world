@@ -1,8 +1,10 @@
 import 'package:logging/logging.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
+import 'package:tech_world/spellbook/cast_result.dart';
 import 'package:tech_world/spellbook/predefined_words.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
+import 'package:tech_world/spellbook/word_of_power.dart';
 
 final _log = Logger('CastEffects');
 
@@ -53,4 +55,42 @@ Future<void> applyCastSuccessEffects({
       _log.warning('Failed to persist completion: $e', e);
     }
   }
+}
+
+/// Voice-cast orchestrator: classify the transcript and, on a
+/// [CastPass], apply the same persistent side-effects as the
+/// prompt-cast path ([applyCastSuccessEffects]). Negative outcomes
+/// (NoMatch / NotLearned / WrongDoor) write nothing — by design,
+/// because aiming a learned word at the wrong door must not silently
+/// satisfy progression.
+///
+/// `spellbook` may be null (race against sign-in) — every cast then
+/// classifies as [CastNotLearned] (or [CastNoMatch]) which is the
+/// correct degraded behaviour: nothing unlocks until the spellbook
+/// loads.
+///
+/// The UI consumer is expected to switch on the returned [CastResult]
+/// and render feedback accordingly (success effects on [CastPass],
+/// flavor on [CastNoMatch], hint on [CastNotLearned] / [CastWrongDoor]).
+Future<CastResult> performCast({
+  required String? transcript,
+  required List<PromptChallengeId> doorRequiredChallenges,
+  required SpellbookService? spellbook,
+  required ProgressService? progress,
+}) async {
+  final result = classifyCast(
+    transcript: transcript,
+    learnedWords: spellbook?.learnedWordIds ?? const <WordId>{},
+    doorRequiredChallenges: doorRequiredChallenges,
+  );
+
+  if (result is CastPass) {
+    await applyCastSuccessEffects(
+      challengeId: result.challengeId,
+      spellbook: spellbook,
+      progress: progress,
+    );
+  }
+
+  return result;
 }
