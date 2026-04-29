@@ -60,6 +60,31 @@ class _SpeechCastOverlayState extends State<SpeechCastOverlay> {
   bool _resolving = false;
   int _flashSeq = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    widget.nearbyLockedDoor.addListener(_onProximityChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.nearbyLockedDoor.removeListener(_onProximityChanged);
+    super.dispose();
+  }
+
+  /// Cancel an in-flight STT listen when the player walks away from the
+  /// door — the FAB hides, but the browser SpeechRecognition session
+  /// would otherwise sit hot for 60+s eating the mic until it timed out
+  /// or the player said something irrelevant. Mid-cast (post-listen,
+  /// pre-flash) drops are left alone — the cast pipeline must run to
+  /// completion so the player sees the result of what they said.
+  void _onProximityChanged() {
+    if (widget.nearbyLockedDoor.value == null &&
+        widget.speechCast.listening.value) {
+      widget.speechCast.cancel();
+    }
+  }
+
   Future<void> _onTapMic(DoorData door) async {
     // Tap-to-cancel — if we're already listening, the second tap stops STT.
     if (widget.speechCast.listening.value) {

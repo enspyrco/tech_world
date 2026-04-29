@@ -109,6 +109,12 @@ class _MyAppState extends State<MyApp> {
   SpellbookService? _spellbookService;
   SttService? _sttService;
   SpeechCastService? _speechCastService;
+  /// Cached per-room: lazily created on first build that has both
+  /// LiveKit and the speech-cast service available, cleared in
+  /// [_leaveRoom] alongside [_liveKitService]. Caching lets the
+  /// service's `_seq` request counter actually disambiguate microsecond
+  /// collisions instead of starting at 0 on every Stack rebuild.
+  OracleService? _oracleService;
   final ValueNotifier<bool> _spellbookOpen = ValueNotifier<bool>(false);
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
@@ -544,6 +550,7 @@ class _MyAppState extends State<MyApp> {
     _chatMessageRepository = null;
     _proximityService = null;
     _liveKitService = null;
+    _oracleService = null;
     _activeDmPeer.value = null;
     _liveKitConnectionFailed = false;
     _connectionFailureMessage = null;
@@ -1424,14 +1431,15 @@ class _MyAppState extends State<MyApp> {
                   ),
                 // Voice-cast affordance — proximity-gated mic FAB at
                 // bottom-centre. Visible only when the player is near a
-                // locked door and STT is supported (web). Constructs the
-                // OracleService inline; it's stateless beyond per-request
-                // correlation so a fresh instance per build is fine.
+                // locked door and STT is supported (web). The
+                // OracleService is cached for the LiveKit session so its
+                // request-sequence counter is meaningful across rebuilds.
                 if (_liveKitService != null && _speechCastService != null)
                   SpeechCastOverlay(
                     nearbyLockedDoor: locate<TechWorld>().nearbyLockedDoor,
                     speechCast: _speechCastService!,
-                    oracle: OracleService(liveKit: _liveKitService!),
+                    oracle: _oracleService ??=
+                        OracleService(liveKit: _liveKitService!),
                     onCastSuccess: (door) =>
                         locate<TechWorld>().unlockDoor(door),
                   ),

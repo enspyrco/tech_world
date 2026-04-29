@@ -87,6 +87,14 @@ class OracleService {
 
   /// Generic request — returns the bot's `text` field, or [fallback]
   /// on timeout / parse-failure / disconnect. Never throws.
+  ///
+  /// **[context] is a wire payload — values must be JSON-encodable
+  /// primitives only** (`String` / `num` / `bool` / `null` / `List` /
+  /// `Map`). Enums passed directly leak as `Type.value` instead of the
+  /// wire form (the analyzer can't see through `Map<String, dynamic>`).
+  /// See `feedback_dynamic_interpolation_blindspot.md` for the full
+  /// rationale and the two-axis regression-test pattern that pins the
+  /// shape on the consumer side.
   Future<String> _request({
     required String kind,
     required Map<String, dynamic> context,

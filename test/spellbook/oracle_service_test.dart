@@ -163,7 +163,18 @@ void main() {
 /// Test double for [LiveKitService] — captures publish calls and exposes
 /// a controllable `dataReceived` stream so tests can synthesize bot
 /// replies. Pattern matches the `FakeLiveKitService` used in
-/// `test/chat/chat_service_test.dart` etc.
+/// `test/chat/chat_service_test.dart` and `test/map_editor/map_sync_service_test.dart`.
+///
+/// The `noSuchMethod` fallback is intentional and load-bearing: Dart
+/// requires every member of [LiveKitService] to be implemented when
+/// using `implements`, but [OracleService] only exercises
+/// [dataReceived] and [publishJson], so stubbing every other member
+/// would be dead code. The trade-off is that any future
+/// [LiveKitService] method [OracleService] starts to call will silently
+/// no-op here and the test will pass against a broken consumer — the
+/// guard against that is keeping the surface [OracleService] uses
+/// minimal (currently exactly two methods) and refreshing this test
+/// when that surface grows.
 class _FakeLiveKit implements LiveKitService {
   final List<_PublishedMessage> published = [];
   bool publishWillThrow = false;
