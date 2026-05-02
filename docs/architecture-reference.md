@@ -114,16 +114,19 @@ Browser (Flutter web)
 
 ## Agent Dispatch
 
-The bot uses the `@livekit/agents` SDK to register as a worker with the self-hosted LiveKit server. LiveKit dispatches the bot to rooms via **token-based dispatch**: the Firebase Cloud Function (`retrieveLiveKitToken`) embeds a `RoomAgentDispatch` in every user's access token.
+The bot runs as a Docker container (`tw-clawd`) on OCI VPS (`149.118.69.221`) and uses the `@livekit/agents` SDK to register as a worker with the self-hosted LiveKit server. LiveKit dispatches the bot to rooms via **token-based dispatch**: the Firebase Cloud Function (`retrieveLiveKitToken`) embeds a `RoomAgentDispatch` in every user's access token.
 
-**Why token-based dispatch?** LiveKit's automatic dispatch only fires for *new* rooms. The `tech-world` room has a 5-minute `empty_timeout`, so if users sign out and back in quickly, the room persists and automatic dispatch never triggers.
+**Why token-based dispatch?** LiveKit's automatic dispatch only fires for *new* rooms. Rooms (named by Firestore doc ID) have a 5-minute `empty_timeout`, so if users sign out and back in quickly, the room persists and automatic dispatch never triggers.
+
+**Deployment**: bots ship via `~/git/orgs/imagineering/imagineering-infra/scripts/deploy-to.sh 149.118.69.221 tech-world-bots`. Source lives in the sibling repo `tech_world_bot/`. Cloud Run was tried briefly and abandoned — ignore any stale references to `gcloud` / Cloud Run anywhere in the codebase.
 
 **If the bot disappears:** Check these in order:
-1. `pm2 logs tech-world-bot` — Is the worker registered? Look for `"registered worker"`.
-2. Room exists? Use LiveKit API: `POST /twirp/livekit.RoomService/ListRooms`
-3. Dispatch happening? Look for `"received job request"` and `"[Bot] Connected to room"` in logs.
-4. If worker registers but no dispatch, check `npm outdated @livekit/agents`.
-5. Manual dispatch (emergency): `POST /twirp/livekit.AgentDispatchService/CreateDispatch {"room": "tech-world"}`
+1. `ssh nick@149.118.69.221 docker logs --tail 100 tw-clawd` — Is the worker registered? Look for `"registered worker"`.
+2. `ssh nick@149.118.69.221 docker ps | grep tw-` — Is the container actually up? (Siblings: `tw-gremlin`, `tw-dreamfinder`.)
+3. Room exists? Use LiveKit API: `POST /twirp/livekit.RoomService/ListRooms`
+4. Dispatch happening? Look for `"received job request"` and `"[Bot] Connected to room"` in the container logs.
+5. If worker registers but no dispatch, check `npm outdated @livekit/agents` in `tech_world_bot/`.
+6. Manual dispatch (emergency): `POST /twirp/livekit.AgentDispatchService/CreateDispatch {"room": "<firestore-doc-id>"}`
 
 ## Bot Presence Indicator
 
