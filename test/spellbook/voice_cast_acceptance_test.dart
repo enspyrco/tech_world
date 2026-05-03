@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/spellbook/cast_effects.dart';
-import 'package:tech_world/spellbook/cast_result.dart';
+import 'package:tech_world/spellbook/door_cast_result.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
 
@@ -11,7 +11,7 @@ import 'package:tech_world/spellbook/word_of_power.dart';
 ///
 /// Exercises the full voice-cast pipeline at the seam Phase 2 actually
 /// uses: a transcript (whatever produced it) plus the door's required
-/// challenges plus the player's spellbook → typed [CastResult] +
+/// challenges plus the player's spellbook → typed [DoorCastResult] +
 /// persistent side-effects on success. The STT layer is a separate
 /// concern — this test never goes through [SttService] because the
 /// behaviour we care about is "what happens given a transcript", not
@@ -63,34 +63,34 @@ void main() {
       expect(result, isA<CastPass>());
     });
 
-    test('unparseable transcript → CastNoMatch with original text', () {
+    test('unparseable transcript → DoorCastNoMatch with original text', () {
       final result = classifyCast(
         transcript: 'blarghnonsense',
         learnedWords: const {},
         doorRequiredChallenges: const [PromptChallengeId.evocationFizzbuzz],
       );
-      expect(result, isA<CastNoMatch>());
-      expect((result as CastNoMatch).transcript, 'blarghnonsense');
+      expect(result, isA<DoorCastNoMatch>());
+      expect((result as DoorCastNoMatch).transcript, 'blarghnonsense');
     });
 
-    test('null transcript (STT silent / cancelled) → CastNoMatch(null)', () {
+    test('null transcript (STT silent / cancelled) → DoorCastNoMatch(null)', () {
       final result = classifyCast(
         transcript: null,
         learnedWords: const {},
         doorRequiredChallenges: const [PromptChallengeId.evocationFizzbuzz],
       );
-      expect(result, isA<CastNoMatch>());
-      expect((result as CastNoMatch).transcript, isNull);
+      expect(result, isA<DoorCastNoMatch>());
+      expect((result as DoorCastNoMatch).transcript, isNull);
     });
 
-    test('valid word but not learned yet → CastNotLearned', () {
+    test('valid word but not learned yet → DoorCastNotLearned', () {
       final result = classifyCast(
         transcript: 'ignis',
         learnedWords: const {}, // empty spellbook
         doorRequiredChallenges: const [PromptChallengeId.evocationFizzbuzz],
       );
-      expect(result, isA<CastNotLearned>());
-      expect((result as CastNotLearned).wordId, WordId.ignis);
+      expect(result, isA<DoorCastNotLearned>());
+      expect((result as DoorCastNotLearned).wordId, WordId.ignis);
     });
 
     test('learned word but wrong door → CastWrongDoor', () {
@@ -116,7 +116,7 @@ void main() {
         learnedWords: const {},
         doorRequiredChallenges: const [PromptChallengeId.divinationColor],
       );
-      expect(result, isA<CastNotLearned>());
+      expect(result, isA<DoorCastNotLearned>());
     });
   });
 
@@ -166,7 +166,7 @@ void main() {
         progress: progress,
       );
 
-      expect(result, isA<CastNotLearned>());
+      expect(result, isA<DoorCastNotLearned>());
       expect(progress.isChallengeCompleted('evocation_fizzbuzz'), isFalse);
       expect(spellbook.hasWord(WordId.ignis), isFalse);
     });
@@ -199,7 +199,7 @@ void main() {
         progress: progress,
       );
 
-      expect(result, isA<CastNoMatch>());
+      expect(result, isA<DoorCastNoMatch>());
       expect(progress.isChallengeCompleted('evocation_fizzbuzz'), isFalse);
     });
 
@@ -232,8 +232,8 @@ void main() {
         progress: progress,
       );
 
-      expect(result, isA<CastNoMatch>());
-      expect((result as CastNoMatch).transcript, isNull);
+      expect(result, isA<DoorCastNoMatch>());
+      expect((result as DoorCastNoMatch).transcript, isNull);
       expect(progress.isChallengeCompleted('evocation_fizzbuzz'), isFalse);
     });
 

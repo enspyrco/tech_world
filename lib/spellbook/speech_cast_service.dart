@@ -4,7 +4,7 @@ import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/services/stt_service.dart';
 import 'package:tech_world/spellbook/cast_effects.dart';
-import 'package:tech_world/spellbook/cast_result.dart';
+import 'package:tech_world/spellbook/door_cast_result.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
 
 final _log = Logger('SpeechCastService');
@@ -47,18 +47,21 @@ class SpeechCastService {
   /// [doorRequiredChallenges]. Listens once via STT, classifies the
   /// transcript, and applies side-effects on success.
   ///
-  /// Returns the typed [CastResult] for the UI to switch on. Never
-  /// throws — STT failures surface as [CastNoMatch] with a `null`
+  /// Returns the typed [DoorCastResult] for the UI to switch on. Never
+  /// throws — STT failures surface as [DoorCastNoMatch] with a `null`
   /// transcript.
-  Future<CastResult> castAt({
+  Future<DoorCastResult> castAt({
     required List<PromptChallengeId> doorRequiredChallenges,
   }) async {
     _log.fine('castAt: requesting STT transcript');
-    final transcript = await _stt.listen();
-    _log.fine('castAt: transcript = ${transcript ?? "(null)"}');
+    final result = await _stt.listen();
+    _log.fine('castAt: $result');
 
+    // Door-cast (Phase 2) doesn't use confidence — only the transcript.
+    // Phase 3's free-cast path will consume `result.confidence` directly
+    // via the spell-algebra lattice.
     return performCast(
-      transcript: transcript,
+      transcript: result.transcript,
       doorRequiredChallenges: doorRequiredChallenges,
       spellbook: _spellbook,
       progress: _progress,

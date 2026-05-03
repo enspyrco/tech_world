@@ -118,8 +118,9 @@ class _ChatPanelState extends State<ChatPanel>
     }
 
     final result = await _sttService.listen();
-    if (result != null && result.isNotEmpty) {
-      _textController.text = result;
+    final transcript = result.transcript;
+    if (transcript != null && transcript.isNotEmpty) {
+      _textController.text = transcript;
       _sendMessage();
     }
   }

@@ -1,7 +1,7 @@
 import 'package:logging/logging.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
-import 'package:tech_world/spellbook/cast_result.dart';
+import 'package:tech_world/spellbook/door_cast_result.dart';
 import 'package:tech_world/spellbook/predefined_words.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
@@ -57,7 +57,7 @@ Future<void> applyCastSuccessEffects({
   }
 }
 
-/// Voice-cast orchestrator: classify the transcript and, on a
+/// Door-cast orchestrator: classify the transcript and, on a
 /// [CastPass], apply the same persistent side-effects as the
 /// prompt-cast path ([applyCastSuccessEffects]). Negative outcomes
 /// (NoMatch / NotLearned / WrongDoor) write nothing — by design,
@@ -65,14 +65,16 @@ Future<void> applyCastSuccessEffects({
 /// satisfy progression.
 ///
 /// `spellbook` may be null (race against sign-in) — every cast then
-/// classifies as [CastNotLearned] (or [CastNoMatch]) which is the
-/// correct degraded behaviour: nothing unlocks until the spellbook
+/// classifies as [DoorCastNotLearned] (or [DoorCastNoMatch]) which is
+/// the correct degraded behaviour: nothing unlocks until the spellbook
 /// loads.
 ///
-/// The UI consumer is expected to switch on the returned [CastResult]
+/// The UI consumer is expected to switch on the returned [DoorCastResult]
 /// and render feedback accordingly (success effects on [CastPass],
-/// flavor on [CastNoMatch], hint on [CastNotLearned] / [CastWrongDoor]).
-Future<CastResult> performCast({
+/// flavor on [DoorCastNoMatch], hint on [DoorCastNotLearned] /
+/// [CastWrongDoor]). Free-cast outcomes ([FreeCastResult]) cannot reach
+/// this path — the type system prevents it.
+Future<DoorCastResult> performCast({
   required String? transcript,
   required List<PromptChallengeId> doorRequiredChallenges,
   required SpellbookService? spellbook,
