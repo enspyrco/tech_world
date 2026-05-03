@@ -31,8 +31,16 @@ enum SpellEffectType {
 /// pattern used by [PromptChallengeId] / [CodeChallengeId] is overkill
 /// here because effect ids aren't drawn from a closed enum — novel
 /// oracle-interpreted effects mint fresh ids at runtime.
+///
+/// The constructor rejects empty strings — every effect must have a
+/// non-empty stable id, and the assertion catches both bad construction
+/// and PR-2 Firestore hydration of malformed network input.
 class SpellEffectId {
-  const SpellEffectId(this.value);
+  SpellEffectId(this.value) {
+    if (value.isEmpty) {
+      throw const FormatException('SpellEffectId cannot be empty');
+    }
+  }
 
   /// The wire-form / canonical string — `'blazing_sight'`,
   /// `'oracle_truth'`, etc.

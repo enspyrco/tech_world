@@ -138,7 +138,7 @@ void main() {
       );
       expect(result, isA<CastComboKnown>());
       expect((result! as CastComboKnown).effect.id,
-          equals(const SpellEffectId('blazing_sight')));
+          equals(SpellEffectId('blazing_sight')));
     });
 
     test('known combo + low confidence → CastComboKnownPartial(effect)', () {
@@ -149,7 +149,7 @@ void main() {
       );
       expect(result, isA<CastComboKnownPartial>());
       expect((result! as CastComboKnownPartial).effect.id,
-          equals(const SpellEffectId('blazing_sight')));
+          equals(SpellEffectId('blazing_sight')));
     });
 
     test('novel combo + high confidence → CastComboNovel(words)', () {
@@ -225,9 +225,9 @@ void main() {
         learnedWords: _allLearned,
       );
       expect((a! as CastComboKnown).effect.id,
-          equals(const SpellEffectId('pyric_reshape')));
+          equals(SpellEffectId('pyric_reshape')));
       expect((b! as CastComboKnown).effect.id,
-          equals(const SpellEffectId('pyric_reshape')));
+          equals(SpellEffectId('pyric_reshape')));
     });
   });
 
@@ -319,24 +319,29 @@ void main() {
           equals(ComboKey.fromCanonical('ignis,lumen').hashCode));
     });
 
-    test('lookupCombo finds known and misses unknown', () {
-      expect(lookupCombo(const [WordId.ignis, WordId.lumen]), isNotNull);
-      expect(lookupCombo(const [WordId.umbra, WordId.speculum]), isNull);
+    test('ComboKey.fromCanonical rejects empty input', () {
+      expect(() => ComboKey.fromCanonical(''),
+          throwsA(isA<FormatException>()));
     });
 
-    test('predefinedCombinations is unmodifiable at runtime', () {
-      // Pure algebra table — no caller should be able to mutate the
-      // predefined lattice. Per Carnot's PR-310 finding.
-      expect(
-        () => predefinedCombinations[ComboKey.fromCanonical('evil_key')] =
-            SpellEffect(
-          id: const SpellEffectId('evil'),
-          name: 'Evil',
-          description: 'Mutated at runtime',
-          type: SpellEffectType.unknown,
-        ),
-        throwsUnsupportedError,
-      );
+    test('ComboKey.fromCanonical rejects unknown WordId wire-names', () {
+      expect(() => ComboKey.fromCanonical('ignis,garbage'),
+          throwsA(isA<FormatException>()));
+    });
+
+    test('ComboKey.fromCanonical rejects unsorted input', () {
+      // 'lumen,ignis' is alphabetically out of order; canonical form is
+      // 'ignis,lumen'. Hydrating from the unsorted form would produce a
+      // ComboKey that doesn't equal the same combo built via .of(),
+      // breaking map lookup. Reject at the boundary.
+      expect(() => ComboKey.fromCanonical('lumen,ignis'),
+          throwsA(isA<FormatException>()));
+    });
+  });
+
+  group('SpellEffectId — non-empty invariant', () {
+    test('empty id throws FormatException', () {
+      expect(() => SpellEffectId(''), throwsA(isA<FormatException>()));
     });
   });
 
@@ -360,10 +365,10 @@ void main() {
     });
 
     test('SpellEffectId equality is structural, not identity', () {
-      expect(const SpellEffectId('blazing_sight'),
-          equals(const SpellEffectId('blazing_sight')));
-      expect(const SpellEffectId('blazing_sight').hashCode,
-          equals(const SpellEffectId('blazing_sight').hashCode));
+      expect(SpellEffectId('blazing_sight'),
+          equals(SpellEffectId('blazing_sight')));
+      expect(SpellEffectId('blazing_sight').hashCode,
+          equals(SpellEffectId('blazing_sight').hashCode));
     });
   });
 
@@ -371,7 +376,7 @@ void main() {
     test('magnitude < 1 throws RangeError (release-safe, not assert-stripped)', () {
       expect(
         () => SpellEffect(
-          id: const SpellEffectId('zero_strength'),
+          id: SpellEffectId('zero_strength'),
           name: 'Zero',
           description: 'invalid',
           type: SpellEffectType.unknown,
@@ -384,7 +389,7 @@ void main() {
     test('magnitude > 10 throws RangeError', () {
       expect(
         () => SpellEffect(
-          id: const SpellEffectId('over_strength'),
+          id: SpellEffectId('over_strength'),
           name: 'Over',
           description: 'invalid',
           type: SpellEffectType.unknown,

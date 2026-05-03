@@ -31,13 +31,37 @@ class ComboKey {
   /// via the [ComboKey.fromCanonical] escape hatch.
   final String value;
 
-  /// Escape hatch for hydrating a [ComboKey] from a previously-stored
-  /// canonical string (e.g. Firestore cache key in PR 2). Caller asserts
-  /// the string was produced by [ComboKey.of] in this codebase; no
-  /// validation is performed because no canonicalisation rule the
-  /// constructor could check would distinguish a legitimate persisted
-  /// key from a hand-built one.
-  const ComboKey.fromCanonical(this.value);
+  /// Hydrate a [ComboKey] from a previously-stored canonical string
+  /// (e.g. Firestore cache key in PR 2). **Validating** — rejects:
+  /// * empty input
+  /// * tokens that don't parse to a [WordId.name]
+  /// * tokens that aren't in canonical sorted order
+  ///
+  /// Throws [FormatException] on any of the above. Carnot's PR-310
+  /// finding: a non-validating hydration path makes the brand
+  /// forgeable at runtime (`ComboKey.fromCanonical(userInput)`); the
+  /// validation here makes the type-level claim actually true.
+  factory ComboKey.fromCanonical(String canonical) {
+    if (canonical.isEmpty) {
+      throw const FormatException('combo key cannot be empty');
+    }
+    final parts = canonical.split(',');
+    final wordNames = WordId.values.map((w) => w.name).toSet();
+    for (final part in parts) {
+      if (!wordNames.contains(part)) {
+        throw FormatException(
+            'combo key contains unknown WordId wire-name', part);
+      }
+    }
+    final canonicalSorted = (List<String>.of(parts)..sort()).join(',');
+    if (canonicalSorted != canonical) {
+      throw FormatException(
+          'combo key not in canonical sorted order (expected '
+          '"$canonicalSorted")',
+          canonical);
+    }
+    return ComboKey._(canonical);
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -54,35 +78,35 @@ class ComboKey {
 /// Kept private so the public surface is unmodifiable — see below.
 final Map<ComboKey, SpellEffect> _rawCombinations = <ComboKey, SpellEffect>{
   ComboKey.of(const [WordId.ignis, WordId.lumen]): SpellEffect(
-    id: const SpellEffectId('blazing_sight'),
+    id: SpellEffectId('blazing_sight'),
     name: 'Blazing Sight',
     description: 'Burning vision pierces shadows.',
     type: SpellEffectType.illumination,
     magnitude: 6,
   ),
   ComboKey.of(const [WordId.tempus, WordId.libera]): SpellEffect(
-    id: const SpellEffectId('time_unbound'),
+    id: SpellEffectId('time_unbound'),
     name: 'Time Unbound',
     description: 'Movement freed from the moment.',
     type: SpellEffectType.passage,
     magnitude: 7,
   ),
   ComboKey.of(const [WordId.crystallum, WordId.vinculum]): SpellEffect(
-    id: const SpellEffectId('crystal_ward'),
+    id: SpellEffectId('crystal_ward'),
     name: 'Crystal Ward',
     description: 'A faceted shell hardens around the caster.',
     type: SpellEffectType.protection,
     magnitude: 5,
   ),
   ComboKey.of(const [WordId.verum, WordId.oraculum]): SpellEffect(
-    id: const SpellEffectId('oracle_truth'),
+    id: SpellEffectId('oracle_truth'),
     name: "Oracle's Truth",
     description: 'The veil between question and answer thins.',
     type: SpellEffectType.revelation,
     magnitude: 6,
   ),
   ComboKey.of(const [WordId.ignis, WordId.muta, WordId.forma]): SpellEffect(
-    id: const SpellEffectId('pyric_reshape'),
+    id: SpellEffectId('pyric_reshape'),
     name: 'Pyric Reshape',
     description: 'Fire-spoken matter flows into a new mould.',
     type: SpellEffectType.fireBurst,
