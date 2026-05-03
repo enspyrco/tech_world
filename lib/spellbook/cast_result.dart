@@ -1,5 +1,6 @@
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/spellbook/predefined_words.dart';
+import 'package:tech_world/spellbook/spell_effect.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
 
 /// Outcome of a voice-cast attempt.
@@ -68,6 +69,51 @@ final class CastWrongDoor extends CastResult {
   /// Challenges this door actually requires. Exposed so the UI can
   /// hint ("this door wants a [school] word") without re-querying.
   final List<PromptChallengeId> expectedChallenges;
+}
+
+// -- Phase 3: combo cast outcomes (the 2x2 confidence lattice) ---------------
+//
+// The four cells of `{known, novel} x {high, low confidence}`. The fifth
+// "below noise floor" outcome is signalled by `classifyComboCast` returning
+// `null` rather than a CastResult variant — sub-noise utterances aren't
+// casts at all and the UI shows nothing.
+
+/// A combo of learned words matched a [predefinedCombinations] entry and
+/// the utterance confidence was high (`>= castHighConfidenceBoundary`).
+/// The full effect plays.
+final class CastComboKnown extends CastResult {
+  const CastComboKnown(this.effect);
+
+  /// The matched effect — drives VFX selection at full magnitude.
+  final SpellEffect effect;
+}
+
+/// A known combo cast at low confidence (`>= castNoiseFloor` but
+/// `< castHighConfidenceBoundary`). The effect plays but visibly
+/// wavers — half-strength visual variant. Cue to the player to speak
+/// more clearly without punishing the attempt.
+final class CastComboKnownPartial extends CastResult {
+  const CastComboKnownPartial(this.effect);
+
+  /// The matched effect — same selection as full strength, halved
+  /// magnitude at render time.
+  final SpellEffect effect;
+}
+
+/// A combo of learned words that doesn't match any predefined entry,
+/// cast at high confidence. The oracle channel will be asked to
+/// interpret these words; the returned text + improvised effect comes
+/// back asynchronously via `OracleService.interpretCombo`.
+///
+/// Below the high-confidence boundary, novel combos fall through to
+/// [CastNoMatch] instead — we don't spend an oracle round-trip on a
+/// likely mishear.
+final class CastComboNovel extends CastResult {
+  const CastComboNovel(this.words);
+
+  /// Input order preserved — the oracle prompt may want to riff on
+  /// the order the words were spoken (semantic vs. alphabetic).
+  final List<WordId> words;
 }
 
 /// Classify a voice-cast attempt. Pure — no I/O, no side effects.
