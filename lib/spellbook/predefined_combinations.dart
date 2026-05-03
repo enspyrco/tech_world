@@ -18,7 +18,7 @@ import 'package:tech_world/spellbook/word_of_power.dart';
 /// keeps the key stable across enum reorderings — a reorder of
 /// `WordId.values` won't break Firestore-cached novel combos when
 /// those land in PR 2.
-class ComboKey {
+final class ComboKey {
   /// Private — use [ComboKey.of].
   const ComboKey._(this.value);
 

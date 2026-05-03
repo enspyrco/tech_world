@@ -33,8 +33,9 @@ enum SpellEffectType {
 /// oracle-interpreted effects mint fresh ids at runtime.
 ///
 /// The constructor rejects empty strings — every effect must have a
-/// non-empty stable id, and the assertion catches both bad construction
-/// and PR-2 Firestore hydration of malformed network input.
+/// non-empty stable id, and the [FormatException] thrown catches both
+/// bad construction and PR-2 Firestore hydration of malformed network
+/// input.
 class SpellEffectId {
   SpellEffectId(this.value) {
     if (value.isEmpty) {
