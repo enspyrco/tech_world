@@ -4,7 +4,7 @@ import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/services/stt_service.dart';
 import 'package:tech_world/spellbook/cast_effects.dart';
-import 'package:tech_world/spellbook/cast_result.dart';
+import 'package:tech_world/spellbook/door_cast_result.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
 
 final _log = Logger('SpeechCastService');
@@ -47,10 +47,10 @@ class SpeechCastService {
   /// [doorRequiredChallenges]. Listens once via STT, classifies the
   /// transcript, and applies side-effects on success.
   ///
-  /// Returns the typed [CastResult] for the UI to switch on. Never
-  /// throws — STT failures surface as [CastNoMatch] with a `null`
+  /// Returns the typed [DoorCastResult] for the UI to switch on. Never
+  /// throws — STT failures surface as [DoorCastNoMatch] with a `null`
   /// transcript.
-  Future<CastResult> castAt({
+  Future<DoorCastResult> castAt({
     required List<PromptChallengeId> doorRequiredChallenges,
   }) async {
     _log.fine('castAt: requesting STT transcript');

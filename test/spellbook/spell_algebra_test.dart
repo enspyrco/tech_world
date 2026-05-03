@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tech_world/spellbook/cast_result.dart';
+import 'package:tech_world/spellbook/free_cast_result.dart';
 import 'package:tech_world/spellbook/predefined_combinations.dart';
 import 'package:tech_world/spellbook/spell_algebra.dart';
 import 'package:tech_world/spellbook/spell_effect.dart';
@@ -61,37 +61,37 @@ void main() {
           reason: 'castNoiseFloor is inclusive — exactly 0.3 must cast');
     });
 
-    test('null transcript at confident level → CastNoMatch(null)', () {
+    test('null transcript at confident level → FreeCastNoMatch(null)', () {
       final result = classifyFreeCast(
         transcript: null,
         confidence: 0.9,
         learnedWords: _allLearned,
       );
-      expect(result, isA<CastNoMatch>());
-      expect((result! as CastNoMatch).transcript, isNull);
+      expect(result, isA<FreeCastNoMatch>());
+      expect((result! as FreeCastNoMatch).transcript, isNull);
     });
 
-    test('transcript with no recognised words → CastNoMatch(transcript)', () {
+    test('transcript with no recognised words → FreeCastNoMatch(transcript)', () {
       final result = classifyFreeCast(
         transcript: 'and the of',
         confidence: 0.9,
         learnedWords: _allLearned,
       );
-      expect(result, isA<CastNoMatch>());
-      expect((result! as CastNoMatch).transcript, equals('and the of'));
+      expect(result, isA<FreeCastNoMatch>());
+      expect((result! as FreeCastNoMatch).transcript, equals('and the of'));
     });
 
     test('any unknown token in a multi-word cast rejects the whole cast', () {
       // Hardened against the "ignis garbage lumen" silent-cherry-pick
       // failure mode: even one unrecognised token short-circuits to
-      // CastNoMatch, rather than dropping the unknown and casting the
+      // FreeCastNoMatch, rather than dropping the unknown and casting the
       // recognisable subset.
       final result = classifyFreeCast(
         transcript: 'ignis garbage lumen',
         confidence: 0.9,
         learnedWords: _allLearned,
       );
-      expect(result, isA<CastNoMatch>());
+      expect(result, isA<FreeCastNoMatch>());
     });
 
     test('punctuation around words is stripped (clean utterances pass)', () {
@@ -107,25 +107,25 @@ void main() {
   });
 
   group('classifyFreeCast — un-learned words', () {
-    test('first un-learned word in combo → CastNotLearned(that word)', () {
+    test('first un-learned word in combo → FreeCastNotLearned(that word)', () {
       final result = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: 0.9,
         learnedWords: const {WordId.ignis}, // lumen NOT learned
       );
-      expect(result, isA<CastNotLearned>());
-      expect((result! as CastNotLearned).wordId, equals(WordId.lumen));
+      expect(result, isA<FreeCastNotLearned>());
+      expect((result! as FreeCastNotLearned).wordId, equals(WordId.lumen));
     });
 
     test('un-learned word check happens before combo lookup', () {
       // ignis+lumen IS a known combo, but if lumen isn't learned the
-      // result must be CastNotLearned, not CastComboKnown.
+      // result must be FreeCastNotLearned, not CastComboKnown.
       final result = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: 0.95,
         learnedWords: const {WordId.ignis},
       );
-      expect(result, isA<CastNotLearned>());
+      expect(result, isA<FreeCastNotLearned>());
     });
   });
 
@@ -164,13 +164,13 @@ void main() {
           equals([WordId.umbra, WordId.speculum]));
     });
 
-    test('novel combo + low confidence → CastNoMatch (fail-cheap)', () {
+    test('novel combo + low confidence → FreeCastNoMatch (fail-cheap)', () {
       final result = classifyFreeCast(
         transcript: 'umbra speculum',
         confidence: 0.5,
         learnedWords: _allLearned,
       );
-      expect(result, isA<CastNoMatch>(),
+      expect(result, isA<FreeCastNoMatch>(),
           reason: 'low-conf novel falls back rather than spending an '
               'oracle call on a likely mishear');
     });
@@ -275,7 +275,7 @@ void main() {
         confidence: 0.9,
         learnedWords: _allLearned,
       );
-      expect(result, isA<CastNoMatch>());
+      expect(result, isA<FreeCastNoMatch>());
     });
   });
 
@@ -359,7 +359,7 @@ void main() {
   });
 
   group('SpellEffect — magnitude invariant', () {
-    test('magnitude < 1 throws assertion error in debug mode', () {
+    test('magnitude < 1 throws RangeError (release-safe, not assert-stripped)', () {
       expect(
         () => SpellEffect(
           id: const SpellEffectId('zero_strength'),
@@ -368,11 +368,11 @@ void main() {
           type: SpellEffectType.unknown,
           magnitude: 0,
         ),
-        throwsA(isA<AssertionError>()),
+        throwsA(isA<RangeError>()),
       );
     });
 
-    test('magnitude > 10 throws assertion error in debug mode', () {
+    test('magnitude > 10 throws RangeError', () {
       expect(
         () => SpellEffect(
           id: const SpellEffectId('over_strength'),
@@ -381,8 +381,27 @@ void main() {
           type: SpellEffectType.unknown,
           magnitude: 11,
         ),
-        throwsA(isA<AssertionError>()),
+        throwsA(isA<RangeError>()),
       );
+    });
+  });
+
+  group('CastComboNovel.words — unmodifiable', () {
+    test('mutating the words list throws (defends against consumer leaks)', () {
+      final mutable = [WordId.umbra, WordId.speculum];
+      final result = CastComboNovel(mutable);
+      expect(() => result.words.add(WordId.ignis),
+          throwsA(isA<UnsupportedError>()));
+    });
+
+    test('mutating the original list does not affect the result', () {
+      // Pin defensive-copy semantics — if the constructor only stored a
+      // reference to the input list, mutating it after construction
+      // would leak through. List.unmodifiable copies.
+      final mutable = [WordId.umbra, WordId.speculum];
+      final result = CastComboNovel(mutable);
+      mutable.add(WordId.ignis);
+      expect(result.words.length, equals(2));
     });
   });
 }

@@ -37,7 +37,7 @@ class SttService {
   /// browser's confidence score for the utterance.
   ///
   /// Returns `(null, null)` if cancelled, unsupported, or error. The
-  /// confidence axis is consumed by [classifyComboCast] in
+  /// confidence axis is consumed by [classifyFreeCast] in
   /// `lib/spellbook/spell_algebra.dart` to drive the 2x2 cast lattice
   /// (Phase 3) — door-cast (Phase 2) ignores it.
   ///

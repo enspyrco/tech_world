@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/flame/maps/door_data.dart';
-import 'package:tech_world/spellbook/cast_result.dart';
+import 'package:tech_world/spellbook/door_cast_result.dart';
 import 'package:tech_world/spellbook/oracle_service.dart';
 import 'package:tech_world/spellbook/predefined_words.dart';
 import 'package:tech_world/spellbook/speech_cast_service.dart';
@@ -17,13 +17,13 @@ import 'package:tech_world/spellbook/word_of_power.dart';
 ///
 /// 2. A **flash message** above the FAB that renders the result of the
 ///    most recent cast — success line on [CastPass], oracle-generated
-///    flavor on [CastNoMatch], hint text on [CastNotLearned] /
+///    flavor on [DoorCastNoMatch], hint text on [DoorCastNotLearned] /
 ///    [CastWrongDoor]. Auto-dismisses after [_flashDuration].
 ///
 /// The overlay never owns the world's door state — on success it calls
 /// [onCastSuccess] and the world handles the visual unlock + LiveKit
 /// broadcast. Persistence (spellbook + progress) has already happened
-/// inside `performCast` by the time a [CastResult] arrives here.
+/// inside `performCast` by the time a [DoorCastResult] arrives here.
 class SpeechCastOverlay extends StatefulWidget {
   const SpeechCastOverlay({
     super.key,
@@ -41,7 +41,7 @@ class SpeechCastOverlay extends StatefulWidget {
   /// notifier for the FAB pulse.
   final SpeechCastService speechCast;
 
-  /// Bot-mediated flavor channel. Asked for a fresh line on [CastNoMatch].
+  /// Bot-mediated flavor channel. Asked for a fresh line on [DoorCastNoMatch].
   final OracleService oracle;
 
   /// Called with the door that was opened on a successful cast — the
@@ -104,10 +104,13 @@ class _SpeechCastOverlayState extends State<SpeechCastOverlay> {
     }
   }
 
-  Future<void> _renderFeedback(CastResult result, DoorData door) async {
+  Future<void> _renderFeedback(DoorCastResult result, DoorData door) async {
     String text;
     Color color;
 
+    // Exhaustive over DoorCastResult only — the type system guarantees
+    // free-cast variants (CastComboKnown, etc.) cannot reach this method,
+    // so no `UnsupportedError` fallthrough is needed.
     switch (result) {
       case CastPass(:final challengeId):
         // Persistence (spellbook + progress) already ran inside
@@ -119,23 +122,15 @@ class _SpeechCastOverlayState extends State<SpeechCastOverlay> {
         final word = challengeToWord[challengeId]!;
         text = '${word.id.displayName} — the door yields.';
         color = arcaneColor;
-      case CastNotLearned(:final wordId):
+      case DoorCastNotLearned(:final wordId):
         text = 'You have not learned ${wordId.displayName} yet.';
         color = Colors.orange.shade700;
       case CastWrongDoor():
         text = 'The door is unmoved.';
         color = Colors.blueGrey.shade700;
-      case CastNoMatch(:final transcript):
+      case DoorCastNoMatch(:final transcript):
         text = await widget.oracle.flavorForNoMatch(transcript: transcript);
         color = Colors.indigo.shade700;
-      case CastComboKnown() || CastComboKnownPartial() || CastComboNovel():
-        // Invariant: this overlay only consumes door-cast outputs
-        // (`classifyCast` — single-word, door-aware). Free-cast outcomes
-        // (`classifyFreeCast`'s combo variants) belong to a different
-        // routing path. If a combo result reaches here the wiring has
-        // crossed — fail loud rather than silently swallow.
-        throw UnsupportedError(
-            'Combo cast result reached door overlay: $result');
     }
 
     _showFlash(text, color);

@@ -59,14 +59,23 @@ class SpellEffectId {
 /// a [SpellEffect] inside a [CastComboKnown] / [CastComboKnownPartial]
 /// variant; the UI / VFX layer maps that to particles, sound, etc.
 class SpellEffect {
+  /// Throws [RangeError] when [magnitude] falls outside `[1, 10]`.
+  /// Use a throwing constructor rather than `assert` because asserts
+  /// are stripped in release builds — oracle-interpreted novel effects
+  /// (PR 2) construct `SpellEffect` at runtime from network input, so
+  /// the invariant must hold in release mode too.
   SpellEffect({
     required this.id,
     required this.name,
     required this.description,
     required this.type,
     this.magnitude = 5,
-  }) : assert(magnitude >= 1 && magnitude <= 10,
-            'magnitude must be in [1, 10]; got $magnitude');
+  }) {
+    if (magnitude < 1 || magnitude > 10) {
+      throw RangeError.range(magnitude, 1, 10, 'magnitude',
+          'SpellEffect magnitude must be in [1, 10]');
+    }
+  }
 
   /// Stable identifier. Branded as [SpellEffectId] so it can't be
   /// confused with raw strings (e.g. `WordId.name` values) at the
