@@ -129,10 +129,11 @@ class _SpeechCastOverlayState extends State<SpeechCastOverlay> {
         text = await widget.oracle.flavorForNoMatch(transcript: transcript);
         color = Colors.indigo.shade700;
       case CastComboKnown() || CastComboKnownPartial() || CastComboNovel():
-        // Door-cast goes through classifyCast (single-word, door-aware).
-        // Combo variants come from classifyComboCast and are routed by a
-        // different overlay (Phase 3 PR 2). If one reaches this point the
-        // door / free-cast routing has crossed wires — fail loud.
+        // Invariant: this overlay only consumes door-cast outputs
+        // (`classifyCast` — single-word, door-aware). Free-cast outcomes
+        // (`classifyFreeCast`'s combo variants) belong to a different
+        // routing path. If a combo result reaches here the wiring has
+        // crossed — fail loud rather than silently swallow.
         throw UnsupportedError(
             'Combo cast result reached door overlay: $result');
     }

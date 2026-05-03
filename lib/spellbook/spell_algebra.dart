@@ -15,8 +15,12 @@ const double castNoiseFloor = 0.3;
 /// "words swirl..." flavor without spending an oracle round-trip.
 const double castHighConfidenceBoundary = 0.7;
 
-/// Classify a multi-word voice cast against the 2x2 confidence lattice.
-/// Pure — no I/O, no side effects.
+/// Classify a free-form voice cast (one or more learned words) against
+/// the 2x2 confidence lattice. Pure — no I/O, no side effects.
+///
+/// "Free" because the call has no door / progression context: any
+/// number of learned words (including a single word) flows through the
+/// same lattice. Door-cast (Phase 2) uses `classifyCast` instead.
 ///
 /// ## The lattice
 ///
@@ -32,10 +36,17 @@ const double castHighConfidenceBoundary = 0.7;
 ///
 /// ## Decision order
 ///
-/// 1. confidence below [castNoiseFloor] → `null` (noise, not a cast).
+/// 1. confidence is non-finite (`NaN` / infinity) or below
+///    [castNoiseFloor] → `null` (noise, not a cast). The `isFinite`
+///    check matters because `NaN < x` is always `false` in Dart, so a
+///    bare comparison would let `NaN` through as low-confidence.
 /// 2. transcript is `null` → [CastNoMatch] (mic was silent).
-/// 3. tokenize on whitespace; non-[WordId] tokens are ignored (filler
-///    like "and", "the"). If zero recognised tokens → [CastNoMatch].
+/// 3. tokenize on whitespace; strip surrounding punctuation that STT
+///    engines occasionally emit (`'ignis,'` → `'ignis'`). Any token
+///    that isn't a known [WordId] → [CastNoMatch] (the magic doesn't
+///    recognise what was said; fail-cheap rather than silently
+///    cherry-pick the recognisable subset and risk casting an
+///    unintended combo).
 /// 4. Any token is a [WordId] the player hasn't earned →
 ///    [CastNotLearned] (first un-learned word). Eager — we don't
 ///    interpret combos containing un-learned words.
@@ -47,21 +58,26 @@ const double castHighConfidenceBoundary = 0.7;
 /// `confidence == null` (e.g. from the stub STT on non-web platforms)
 /// is treated as zero — fail-safe; non-web platforms can't currently
 /// cast at all, and the noise-floor check is the gate.
-CastResult? classifyComboCast({
+CastResult? classifyFreeCast({
   required String? transcript,
   required double? confidence,
   required Set<WordId> learnedWords,
 }) {
   final conf = confidence ?? 0.0;
-  if (conf < castNoiseFloor) return null;
+  if (!conf.isFinite || conf < castNoiseFloor) return null;
   if (transcript == null) return const CastNoMatch(null);
 
   final tokens = transcript.toLowerCase().trim().split(RegExp(r'\s+'));
   final wordIds = <WordId>[];
   for (final t in tokens) {
     if (t.isEmpty) continue;
-    final w = WordId.parse(t);
-    if (w != null) wordIds.add(w);
+    // STT engines occasionally emit trailing/leading punctuation
+    // (`"ignis."`); strip it so a clean utterance never fails on cosmetics.
+    final clean = t.replaceAll(RegExp(r'[.,!?;:]'), '');
+    if (clean.isEmpty) continue;
+    final w = WordId.parse(clean);
+    if (w == null) return CastNoMatch(transcript);
+    wordIds.add(w);
   }
 
   if (wordIds.isEmpty) return CastNoMatch(transcript);

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/spellbook/cast_result.dart';
 import 'package:tech_world/spellbook/predefined_combinations.dart';
 import 'package:tech_world/spellbook/spell_algebra.dart';
+import 'package:tech_world/spellbook/spell_effect.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
 
 /// Convenience: every WordId is "learned" — most algebra tests don't
@@ -9,9 +10,9 @@ import 'package:tech_world/spellbook/word_of_power.dart';
 final _allLearned = WordId.values.toSet();
 
 void main() {
-  group('classifyComboCast — confidence gates', () {
+  group('classifyFreeCast — confidence gates', () {
     test('confidence below noise floor returns null (silence)', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: castNoiseFloor - 0.01,
         learnedWords: _allLearned,
@@ -21,7 +22,7 @@ void main() {
     });
 
     test('null confidence treated as zero (fail-safe) returns null', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'ignis',
         confidence: null,
         learnedWords: _allLearned,
@@ -29,8 +30,29 @@ void main() {
       expect(result, isNull);
     });
 
+    test('NaN confidence rejected (Dart NaN comparisons are always false)', () {
+      // Without an explicit isFinite check, `NaN < castNoiseFloor` is false,
+      // which would let NaN slip past the noise gate and be classified as
+      // low-confidence. Explicit guard keeps NaN out of the lattice.
+      final result = classifyFreeCast(
+        transcript: 'ignis',
+        confidence: double.nan,
+        learnedWords: _allLearned,
+      );
+      expect(result, isNull);
+    });
+
+    test('infinity confidence rejected (also non-finite)', () {
+      final result = classifyFreeCast(
+        transcript: 'ignis',
+        confidence: double.infinity,
+        learnedWords: _allLearned,
+      );
+      expect(result, isNull);
+    });
+
     test('confidence at noise floor (0.3) is the lowest accepted cast', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'ignis',
         confidence: castNoiseFloor,
         learnedWords: _allLearned,
@@ -40,7 +62,7 @@ void main() {
     });
 
     test('null transcript at confident level → CastNoMatch(null)', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: null,
         confidence: 0.9,
         learnedWords: _allLearned,
@@ -50,7 +72,7 @@ void main() {
     });
 
     test('transcript with no recognised words → CastNoMatch(transcript)', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'and the of',
         confidence: 0.9,
         learnedWords: _allLearned,
@@ -58,11 +80,35 @@ void main() {
       expect(result, isA<CastNoMatch>());
       expect((result! as CastNoMatch).transcript, equals('and the of'));
     });
+
+    test('any unknown token in a multi-word cast rejects the whole cast', () {
+      // Hardened against the "ignis garbage lumen" silent-cherry-pick
+      // failure mode: even one unrecognised token short-circuits to
+      // CastNoMatch, rather than dropping the unknown and casting the
+      // recognisable subset.
+      final result = classifyFreeCast(
+        transcript: 'ignis garbage lumen',
+        confidence: 0.9,
+        learnedWords: _allLearned,
+      );
+      expect(result, isA<CastNoMatch>());
+    });
+
+    test('punctuation around words is stripped (clean utterances pass)', () {
+      // STT engines sometimes emit "ignis." or "ignis," — punctuation is
+      // a cosmetic artifact, not a meaning shift; strip and parse.
+      final result = classifyFreeCast(
+        transcript: 'ignis.',
+        confidence: 0.9,
+        learnedWords: _allLearned,
+      );
+      expect(result, isA<CastComboNovel>());
+    });
   });
 
-  group('classifyComboCast — un-learned words', () {
+  group('classifyFreeCast — un-learned words', () {
     test('first un-learned word in combo → CastNotLearned(that word)', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: 0.9,
         learnedWords: const {WordId.ignis}, // lumen NOT learned
@@ -74,7 +120,7 @@ void main() {
     test('un-learned word check happens before combo lookup', () {
       // ignis+lumen IS a known combo, but if lumen isn't learned the
       // result must be CastNotLearned, not CastComboKnown.
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: 0.95,
         learnedWords: const {WordId.ignis},
@@ -83,31 +129,32 @@ void main() {
     });
   });
 
-  group('classifyComboCast — 2x2 lattice', () {
+  group('classifyFreeCast — 2x2 lattice', () {
     test('known combo + high confidence → CastComboKnown(effect)', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: 0.9,
         learnedWords: _allLearned,
       );
       expect(result, isA<CastComboKnown>());
-      expect((result! as CastComboKnown).effect.id, equals('blazing_sight'));
+      expect((result! as CastComboKnown).effect.id,
+          equals(const SpellEffectId('blazing_sight')));
     });
 
     test('known combo + low confidence → CastComboKnownPartial(effect)', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: 0.5, // between noise floor and high boundary
         learnedWords: _allLearned,
       );
       expect(result, isA<CastComboKnownPartial>());
       expect((result! as CastComboKnownPartial).effect.id,
-          equals('blazing_sight'));
+          equals(const SpellEffectId('blazing_sight')));
     });
 
     test('novel combo + high confidence → CastComboNovel(words)', () {
       // umbra + speculum is not in predefinedCombinations.
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'umbra speculum',
         confidence: 0.9,
         learnedWords: _allLearned,
@@ -118,7 +165,7 @@ void main() {
     });
 
     test('novel combo + low confidence → CastNoMatch (fail-cheap)', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'umbra speculum',
         confidence: 0.5,
         learnedWords: _allLearned,
@@ -129,7 +176,7 @@ void main() {
     });
 
     test('high-confidence boundary (0.7) is inclusive of "high"', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: castHighConfidenceBoundary,
         learnedWords: _allLearned,
@@ -139,7 +186,7 @@ void main() {
     });
 
     test('just below boundary stays low-conf', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: castHighConfidenceBoundary - 0.0001,
         learnedWords: _allLearned,
@@ -148,14 +195,14 @@ void main() {
     });
   });
 
-  group('classifyComboCast — order independence', () {
+  group('classifyFreeCast — order independence', () {
     test('"ignis lumen" and "lumen ignis" hit the same combo', () {
-      final a = classifyComboCast(
+      final a = classifyFreeCast(
         transcript: 'ignis lumen',
         confidence: 0.9,
         learnedWords: _allLearned,
       );
-      final b = classifyComboCast(
+      final b = classifyFreeCast(
         transcript: 'lumen ignis',
         confidence: 0.9,
         learnedWords: _allLearned,
@@ -167,26 +214,28 @@ void main() {
     });
 
     test('three-word combo is order-independent', () {
-      final a = classifyComboCast(
+      final a = classifyFreeCast(
         transcript: 'ignis muta forma',
         confidence: 0.9,
         learnedWords: _allLearned,
       );
-      final b = classifyComboCast(
+      final b = classifyFreeCast(
         transcript: 'forma ignis muta',
         confidence: 0.9,
         learnedWords: _allLearned,
       );
-      expect((a! as CastComboKnown).effect.id, equals('pyric_reshape'));
-      expect((b! as CastComboKnown).effect.id, equals('pyric_reshape'));
+      expect((a! as CastComboKnown).effect.id,
+          equals(const SpellEffectId('pyric_reshape')));
+      expect((b! as CastComboKnown).effect.id,
+          equals(const SpellEffectId('pyric_reshape')));
     });
   });
 
-  group('classifyComboCast — single-word combos', () {
+  group('classifyFreeCast — single-word combos', () {
     test('single learned word with no predefined combo → CastComboNovel', () {
       // A single word that isn't a "combo" by itself just goes through
       // the same lattice. Phase 2's door-cast path is separate.
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'umbra',
         confidence: 0.9,
         learnedWords: _allLearned,
@@ -195,9 +244,9 @@ void main() {
     });
   });
 
-  group('classifyComboCast — transcript normalisation', () {
+  group('classifyFreeCast — transcript normalisation', () {
     test('mixed case transcript still matches', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: 'IGNIS Lumen',
         confidence: 0.9,
         learnedWords: _allLearned,
@@ -206,7 +255,7 @@ void main() {
     });
 
     test('extra whitespace tolerated', () {
-      final result = classifyComboCast(
+      final result = classifyFreeCast(
         transcript: '  ignis    lumen  ',
         confidence: 0.9,
         learnedWords: _allLearned,
@@ -214,13 +263,19 @@ void main() {
       expect(result, isA<CastComboKnown>());
     });
 
-    test('filler words ignored, real words still find combo', () {
-      final result = classifyComboCast(
+    test('filler word "and" between real words rejects the whole cast', () {
+      // Earlier design ignored unrecognised tokens (treating "and" as a
+      // filler). Carnot flagged: "ignis garbage lumen" silently casting
+      // ignis+lumen is a real failure mode. Tightened to reject any
+      // unknown token, including would-be fillers — players speak the
+      // words back-to-back; if STT inserted "and" the player should
+      // know the cast didn't take.
+      final result = classifyFreeCast(
         transcript: 'ignis and lumen',
         confidence: 0.9,
         learnedWords: _allLearned,
       );
-      expect(result, isA<CastComboKnown>());
+      expect(result, isA<CastNoMatch>());
     });
   });
 
@@ -239,7 +294,7 @@ void main() {
       for (final effect in predefinedCombinations.values) {
         expect(effect.name, isNotEmpty);
         expect(effect.description, isNotEmpty);
-        expect(effect.id, isNotEmpty);
+        expect(effect.id.value, isNotEmpty);
       }
     });
 
@@ -260,19 +315,74 @@ void main() {
       expect(lookupCombo(const [WordId.ignis, WordId.lumen]), isNotNull);
       expect(lookupCombo(const [WordId.umbra, WordId.speculum]), isNull);
     });
+
+    test('predefinedCombinations is unmodifiable at runtime', () {
+      // Pure algebra table — no caller should be able to mutate the
+      // predefined lattice. Per Carnot's Set-A finding.
+      expect(
+        () => predefinedCombinations['evil_key'] = SpellEffect(
+          id: const SpellEffectId('evil'),
+          name: 'Evil',
+          description: 'Mutated at runtime',
+          type: SpellEffectType.unknown,
+        ),
+        throwsUnsupportedError,
+      );
+    });
   });
 
   group('SpellEffect — disjoint id namespace', () {
-    test('SpellEffect.id values do not collide with WordId.name values', () {
-      // Critical for the Firestore cache (PR 2): SpellEffect ids and
-      // WordId wire-names share a string namespace if a future writer
-      // dumps both into the same array. Pin disjointness now.
+    test('SpellEffectId is type-distinct from WordId.name strings', () {
+      // The branded SpellEffectId type prevents accidental mixing with
+      // raw WordId.name strings at compile time. The earlier
+      // string-collision regression test is now redundant, but we keep
+      // a runtime assertion that the wrapped String values also don't
+      // collide — the Firestore on-disk format is still String, and a
+      // future writer that round-trips through `id.value` could still
+      // collide if the namespaces drifted.
       final wordNames = WordId.values.map((w) => w.name).toSet();
       for (final effect in predefinedCombinations.values) {
-        expect(wordNames.contains(effect.id), isFalse,
-            reason: 'SpellEffect id "${effect.id}" collides with a WordId '
-                'wire-name — disambiguate before they share a namespace');
+        expect(wordNames.contains(effect.id.value), isFalse,
+            reason:
+                'SpellEffectId.value "${effect.id.value}" collides with a '
+                'WordId wire-name — disambiguate before they share a '
+                'persistence boundary');
       }
+    });
+
+    test('SpellEffectId equality is structural, not identity', () {
+      expect(const SpellEffectId('blazing_sight'),
+          equals(const SpellEffectId('blazing_sight')));
+      expect(const SpellEffectId('blazing_sight').hashCode,
+          equals(const SpellEffectId('blazing_sight').hashCode));
+    });
+  });
+
+  group('SpellEffect — magnitude invariant', () {
+    test('magnitude < 1 throws assertion error in debug mode', () {
+      expect(
+        () => SpellEffect(
+          id: const SpellEffectId('zero_strength'),
+          name: 'Zero',
+          description: 'invalid',
+          type: SpellEffectType.unknown,
+          magnitude: 0,
+        ),
+        throwsA(isA<AssertionError>()),
+      );
+    });
+
+    test('magnitude > 10 throws assertion error in debug mode', () {
+      expect(
+        () => SpellEffect(
+          id: const SpellEffectId('over_strength'),
+          name: 'Over',
+          description: 'invalid',
+          type: SpellEffectType.unknown,
+          magnitude: 11,
+        ),
+        throwsA(isA<AssertionError>()),
+      );
     });
   });
 }
