@@ -282,10 +282,11 @@ void main() {
   group('predefinedCombinations integrity', () {
     test('every key parses back to a list of valid WordIds', () {
       for (final key in predefinedCombinations.keys) {
-        final parts = key.split(',');
+        final parts = key.value.split(',');
         for (final part in parts) {
           expect(WordId.parse(part), isNotNull,
-              reason: 'combo key "$key" contains unknown wire-name "$part"');
+              reason: 'combo key "${key.value}" contains unknown '
+                  'wire-name "$part"');
         }
       }
     });
@@ -304,11 +305,18 @@ void main() {
           reason: 'duplicate id collides on Firestore cache key (PR 2)');
     });
 
-    test('comboKey is order-independent', () {
-      expect(comboKey(const [WordId.ignis, WordId.lumen]),
-          equals(comboKey(const [WordId.lumen, WordId.ignis])));
-      expect(comboKey(const [WordId.ignis, WordId.muta, WordId.forma]),
-          equals(comboKey(const [WordId.forma, WordId.muta, WordId.ignis])));
+    test('ComboKey.of is order-independent', () {
+      expect(ComboKey.of(const [WordId.ignis, WordId.lumen]),
+          equals(ComboKey.of(const [WordId.lumen, WordId.ignis])));
+      expect(ComboKey.of(const [WordId.ignis, WordId.muta, WordId.forma]),
+          equals(ComboKey.of(const [WordId.forma, WordId.muta, WordId.ignis])));
+    });
+
+    test('ComboKey equality is structural', () {
+      expect(ComboKey.of(const [WordId.ignis, WordId.lumen]),
+          equals(ComboKey.fromCanonical('ignis,lumen')));
+      expect(ComboKey.of(const [WordId.ignis, WordId.lumen]).hashCode,
+          equals(ComboKey.fromCanonical('ignis,lumen').hashCode));
     });
 
     test('lookupCombo finds known and misses unknown', () {
@@ -318,9 +326,10 @@ void main() {
 
     test('predefinedCombinations is unmodifiable at runtime', () {
       // Pure algebra table — no caller should be able to mutate the
-      // predefined lattice. Per Carnot's Set-A finding.
+      // predefined lattice. Per Carnot's PR-310 finding.
       expect(
-        () => predefinedCombinations['evil_key'] = SpellEffect(
+        () => predefinedCombinations[ComboKey.fromCanonical('evil_key')] =
+            SpellEffect(
           id: const SpellEffectId('evil'),
           name: 'Evil',
           description: 'Mutated at runtime',

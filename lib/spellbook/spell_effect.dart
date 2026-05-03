@@ -91,9 +91,10 @@ class SpellEffect {
   /// Visual category — drives particle / shader selection.
   final SpellEffectType type;
 
-  /// 1–10 (enforced by constructor assert). Determines visual scale
-  /// (particle count, glow radius) and later, gameplay magnitude.
-  /// Half-strength casts visually halve this.
+  /// 1–10 (enforced by the constructor — out-of-range values throw
+  /// [RangeError], release-safe). Determines visual scale (particle
+  /// count, glow radius) and later, gameplay magnitude. Half-strength
+  /// casts visually halve this.
   final int magnitude;
 
   @override

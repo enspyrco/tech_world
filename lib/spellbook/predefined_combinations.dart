@@ -2,49 +2,86 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:tech_world/spellbook/spell_effect.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
 
-/// Canonical lookup key for a combo: words sorted by their wire name,
-/// joined with commas. Order-independent by construction — `(IGNIS, LUMEN)`
-/// and `(LUMEN, IGNIS)` produce the same key.
+/// Branded canonical key for a combo lookup. Constructed only via the
+/// [ComboKey.of] factory which sorts the input words by their wire
+/// name and joins with commas — order-independent by construction
+/// (`(IGNIS, LUMEN)` and `(LUMEN, IGNIS)` produce the same key).
+///
+/// Brand exists to prevent the failure mode Carnot flagged in PR #310:
+/// callers indexing the predefined map with hand-built `String` keys
+/// like `'ignis,lumen'` that bypass the canonicalisation invariant
+/// (e.g. an unsorted key, or one drawn from arbitrary user input).
+/// Forcing all keys through [ComboKey.of] makes the invariant
+/// unforgeable at the type level.
 ///
 /// Sorting on `WordId.name` (the wire form) rather than `WordId.index`
 /// keeps the key stable across enum reorderings — a reorder of
-/// `WordId.values` won't break Firestore-cached novel combos when those
-/// land in PR 2.
-String comboKey(List<WordId> words) =>
-    (words.map((w) => w.name).toList()..sort()).join(',');
+/// `WordId.values` won't break Firestore-cached novel combos when
+/// those land in PR 2.
+class ComboKey {
+  /// Private — use [ComboKey.of].
+  const ComboKey._(this.value);
 
-/// Internal mutable map used to construct [_predefinedCombinations].
+  /// Build a canonical key from a list of [WordId]s. Order-independent.
+  factory ComboKey.of(List<WordId> words) =>
+      ComboKey._((words.map((w) => w.name).toList()..sort()).join(','));
+
+  /// The underlying canonical string. Exposed for Firestore persistence
+  /// (PR 2 cache); should not be parsed back into a [ComboKey] except
+  /// via the [ComboKey.fromCanonical] escape hatch.
+  final String value;
+
+  /// Escape hatch for hydrating a [ComboKey] from a previously-stored
+  /// canonical string (e.g. Firestore cache key in PR 2). Caller asserts
+  /// the string was produced by [ComboKey.of] in this codebase; no
+  /// validation is performed because no canonicalisation rule the
+  /// constructor could check would distinguish a legitimate persisted
+  /// key from a hand-built one.
+  const ComboKey.fromCanonical(this.value);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) || other is ComboKey && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+
+  @override
+  String toString() => 'ComboKey($value)';
+}
+
+/// Internal mutable map used to construct [predefinedCombinations].
 /// Kept private so the public surface is unmodifiable — see below.
-final Map<String, SpellEffect> _rawCombinations = <String, SpellEffect>{
-  comboKey(const [WordId.ignis, WordId.lumen]): SpellEffect(
+final Map<ComboKey, SpellEffect> _rawCombinations = <ComboKey, SpellEffect>{
+  ComboKey.of(const [WordId.ignis, WordId.lumen]): SpellEffect(
     id: const SpellEffectId('blazing_sight'),
     name: 'Blazing Sight',
     description: 'Burning vision pierces shadows.',
     type: SpellEffectType.illumination,
     magnitude: 6,
   ),
-  comboKey(const [WordId.tempus, WordId.libera]): SpellEffect(
+  ComboKey.of(const [WordId.tempus, WordId.libera]): SpellEffect(
     id: const SpellEffectId('time_unbound'),
     name: 'Time Unbound',
     description: 'Movement freed from the moment.',
     type: SpellEffectType.passage,
     magnitude: 7,
   ),
-  comboKey(const [WordId.crystallum, WordId.vinculum]): SpellEffect(
+  ComboKey.of(const [WordId.crystallum, WordId.vinculum]): SpellEffect(
     id: const SpellEffectId('crystal_ward'),
     name: 'Crystal Ward',
     description: 'A faceted shell hardens around the caster.',
     type: SpellEffectType.protection,
     magnitude: 5,
   ),
-  comboKey(const [WordId.verum, WordId.oraculum]): SpellEffect(
+  ComboKey.of(const [WordId.verum, WordId.oraculum]): SpellEffect(
     id: const SpellEffectId('oracle_truth'),
     name: "Oracle's Truth",
     description: 'The veil between question and answer thins.',
     type: SpellEffectType.revelation,
     magnitude: 6,
   ),
-  comboKey(const [WordId.ignis, WordId.muta, WordId.forma]): SpellEffect(
+  ComboKey.of(const [WordId.ignis, WordId.muta, WordId.forma]): SpellEffect(
     id: const SpellEffectId('pyric_reshape'),
     name: 'Pyric Reshape',
     description: 'Fire-spoken matter flows into a new mould.',
@@ -53,27 +90,22 @@ final Map<String, SpellEffect> _rawCombinations = <String, SpellEffect>{
   ),
 };
 
-/// Hand-crafted combo → effect map, **private** by design — exposing
-/// the map publicly leaks the canonicalisation invariant via raw
-/// strings (a caller could `_predefinedCombinations['ignis,lumen']`
-/// without going through [comboKey] and silently miss). Tests reach
-/// in via `@visibleForTesting`; runtime callers go through
-/// [lookupCombo] or [combinationsCount].
+/// Hand-crafted combo → effect map, keyed by the branded [ComboKey] so
+/// callers can't bypass the canonicalisation invariant by indexing with
+/// a hand-built string. `@visibleForTesting` marks this as a test-only
+/// inspection surface; runtime callers go through [lookupCombo].
 ///
 /// Phase 3 PR 1 ships with five combos. More in PR 3 (playtest the
 /// lattice with a small set first; novel combos via oracle
 /// interpretation cover the gap).
 ///
-/// Keyed by [comboKey] so order of utterance doesn't matter — saying
-/// "lumen ignis" finds the same combo as "ignis lumen".
-///
 /// Wrapped in [Map.unmodifiable] so the predefined lattice can't be
 /// mutated at runtime — every combo addition must go through source code.
 @visibleForTesting
-final Map<String, SpellEffect> predefinedCombinations =
-    Map<String, SpellEffect>.unmodifiable(_rawCombinations);
+final Map<ComboKey, SpellEffect> predefinedCombinations =
+    Map<ComboKey, SpellEffect>.unmodifiable(_rawCombinations);
 
-/// Look up a combo by its constituent words, ignoring order.
-/// Returns `null` if no predefined combination matches.
+/// Look up a combo by its constituent words, ignoring order. Returns
+/// `null` if no predefined combination matches.
 SpellEffect? lookupCombo(List<WordId> words) =>
-    predefinedCombinations[comboKey(words)];
+    predefinedCombinations[ComboKey.of(words)];
