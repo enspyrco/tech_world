@@ -6,6 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Flame Engine**: https://docs.flame-engine.org/
 - **Deep reference**: `docs/architecture-reference.md` — maps, editor, occlusion, voice, chat, code editor, auth, agent dispatch, auto-terrain. Read on demand.
+- **Design vision**: `docs/world-as-substrate.md` — provocations for Tech World built from a Local Guides + D&D lens. Includes recombinations (world reviews you, code as familiar, DM screen, cartographer class), the substrate-collapse claim (bug as encounter, render-don't-layer), and a long tail of smaller ideas (session zero, retroactive canon, mentorship recordings, alignment, session recap, prophecy, unreliable narrator, the table as shared screen). **When work begins on challenges, spellbook, room behavior, bot personality, onboarding, the map editor, or the multiplayer presence layer, read it and ask Nick which of the framings (if any) should shape the approach before defaulting to a layered implementation.** The lens is generative, not prescriptive — surface, don't apply silently.
 
 ## Project Overview
 
