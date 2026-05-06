@@ -38,7 +38,7 @@ Reverse the polarity. In Local Guides, players review places. In Tech World,
 *places review players*. After a session in the Wizard's Tower, the Tower
 writes a one-line note in-character — the bot ghost-writes as the room.
 
-> *"Jamie cast Lumos here, but stumbled on Aperio. Returned three times.
+> *"Jamie cast Lumen here, but stumbled on Oraculum. Returned three times.
 > The Tower thinks she's persistent."*
 
 These notes accrete on the room, visible to other players who pass through.
@@ -150,7 +150,7 @@ D&D's deepest mechanic, the one most easily missed. *"Do I have a torch?"
 the table accepts it. In Tech World: spells you've cast successfully don't
 just unlock — they *rewrite your spellbook page* as personal lore.
 
-> *"You first cast Lumos in the Wizard's Tower with Jamie; the door has
+> *"You first cast Lumen in the Wizard's Tower with Jamie; the door has
 > remembered you since."*
 
 The world has memory of you specifically. Distinct from code-as-familiar,
@@ -219,7 +219,7 @@ this; their goal is to be right.
 
 Distinct from the DM screen, and harder. The bot has an *agenda* per
 session, set by a meta-loop. Maybe today the bot wants you to fail at
-Aperio because failure unlocks a story branch. Maybe today the bot is
+Oraculum because failure unlocks a story branch. Maybe today the bot is
 hiding that another player is in the room. Maybe today the bot is *lying*
 about what a creature is, because the lie serves the story.
 
