@@ -705,7 +705,13 @@ class DataChannelMessage {
   Map<String, dynamic>? get json {
     try {
       return jsonDecode(utf8.decode(data)) as Map<String, dynamic>;
-    } catch (_) {
+    } catch (e) {
+      final preview = utf8.decode(data, allowMalformed: true);
+      debugPrint(
+        'DataChannelMessage: JSON parse failed '
+        '(topic: $topic, error: $e, '
+        'data: ${preview.length > 200 ? preview.substring(0, 200) : preview})',
+      );
       return null;
     }
   }
