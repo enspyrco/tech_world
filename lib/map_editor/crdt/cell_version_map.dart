@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:tech_world/map_editor/crdt/map_edit_op.dart';
 
 /// Last-Writer-Wins conflict resolution for the map editor CRDT.
@@ -68,13 +69,24 @@ class CellVersionMap {
   }
 
   /// Deserialize versions from sync protocol.
+  ///
+  /// Entries whose layer name is unrecognized (e.g. from a newer protocol
+  /// version) are silently skipped with a debug log, so that older clients
+  /// remain functional after a protocol upgrade.
   void loadFromJson(Map<String, dynamic> json) {
     _versions.clear();
     for (final entry in json.entries) {
       final parts = entry.key.split(',');
       final x = int.parse(parts[0]);
       final y = int.parse(parts[1]);
-      final layer = OpLayer.values.byName(parts[2]);
+      final layer = OpLayer.tryParse(parts[2]);
+      if (layer == null) {
+        debugPrint(
+          'CellVersionMap.loadFromJson: skipping entry with unknown '
+          'layer "${parts[2]}"',
+        );
+        continue;
+      }
       final value = entry.value as List<dynamic>;
       _versions[(x, y, layer)] = (value[0] as int, value[1] as String);
     }
