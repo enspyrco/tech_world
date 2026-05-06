@@ -528,6 +528,9 @@ class _MyAppState extends State<MyApp> {
   Future<void> _leaveRoom() async {
     if (_currentRoom == null) return;
 
+    // Reset bot status so stale state (e.g. thinking) doesn't carry over.
+    botStatusNotifier.value = BotStatus.absent;
+
     // Exit editor mode if active (before tearing down services).
     final techWorld = locate<TechWorld>();
     if (techWorld.mapEditorActive.value) {
