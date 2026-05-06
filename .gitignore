@@ -111,5 +111,15 @@ coverage/
 tool/pw/node_modules/
 tool/pw/dist/
 
-# FVM Version Cache
+# FVM — cache dir and version pin (don't commit version pins)
 .fvm/
+.fvmrc
+
+# Local working docs
+plan.md
+
+# VS Code settings (machine-local)
+.vscode/
+
+# Dreamfinder avatar symlinks (local absolute paths — not portable)
+web/avatar/

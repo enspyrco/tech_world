@@ -69,6 +69,18 @@ When two typed-id namespaces share the same persistence boundary (here: `Progres
 
 When reading legacy Dart-2-shaped code: don't refactor for its own sake, but if you're already changing the file, modernize.
 
+### The world is the listener
+
+In Tech World, **the world listens — not the player**. Casting is triggered by *being in a place that is listening to you*, not by tapping a button to enter "casting mode."
+
+**The rule:** The trigger for any spell / magic affordance must live in a world entity (door, runestone), never in the player's UI. No FAB, no push-to-talk, no wake phrase, no mode-switch.
+
+**Why it matters:** Tech World casting is a public, witnessed act. Other players should see it happen. A FAB makes each player cast privately. A runestone makes one player walk across the room, speak, and everyone turns to watch. The second is the game.
+
+**Always-on local STT** is the natural shape: runs continuously on the local mic stream, but cast-resolution only fires when a world listener is in range. Out-of-range transcripts are discarded (LiveKit voice chat is on its own track — unaffected).
+
+**What this rules out:** Any persistent cast-anywhere button, push-to-talk casting, wake phrases ("cast ignis"), or "free-cast anywhere" without a runestone. If a feature seems to need one of these, the answer is a new kind of world listener instead.
+
 ## Architecture
 
 ### Service Locator
