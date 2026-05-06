@@ -15,7 +15,7 @@ void main() {
       );
 
       final json = op.toJson();
-      final decoded = MapEditOp.fromJson(json, playerId: 'alice', counter: 5);
+      final decoded = MapEditOp.fromJson(json, playerId: 'alice', counter: 5)!;
 
       expect(decoded.x, 10);
       expect(decoded.y, 20);
@@ -36,7 +36,7 @@ void main() {
       );
 
       final json = op.toJson();
-      final decoded = MapEditOp.fromJson(json, playerId: 'bob', counter: 3);
+      final decoded = MapEditOp.fromJson(json, playerId: 'bob', counter: 3)!;
 
       expect(decoded.layer, OpLayer.floor);
       expect(decoded.oldValue, isNull);
@@ -79,6 +79,22 @@ void main() {
       expect(inv.y, 2);
       expect(inv.oldValue, 'barrier');
       expect(inv.newValue, isNull);
+    });
+
+    test('fromJson returns null for unrecognized layer', () {
+      final json = <String, dynamic>{
+        'x': 3,
+        'y': 4,
+        'layer': 'lighting', // hypothetical future layer
+        'new': 'dim',
+      };
+      final result = MapEditOp.fromJson(json, playerId: 'alice', counter: 1);
+      expect(result, isNull);
+    });
+
+    test('OpLayer.tryParse returns null for unknown name', () {
+      expect(OpLayer.tryParse('unknown'), isNull);
+      expect(OpLayer.tryParse('floor'), OpLayer.floor);
     });
 
     test('equality considers all fields', () {
@@ -153,6 +169,24 @@ void main() {
       expect(decoded.ops.length, 2);
       expect(decoded.ops[0].layer, OpLayer.structure);
       expect(decoded.ops[1].layer, OpLayer.floor);
+    });
+
+    test('fromJson skips ops with unrecognized layer', () {
+      final json = <String, dynamic>{
+        'type': 'edit',
+        'playerId': 'alice',
+        'counter': 7,
+        'ops': [
+          {'x': 0, 'y': 0, 'layer': 'structure', 'new': 'barrier'},
+          {'x': 1, 'y': 0, 'layer': 'lighting', 'new': 'dim'}, // unknown
+          {'x': 2, 'y': 0, 'layer': 'floor'},
+        ],
+      };
+      final batch = MapEditBatch.fromJson(json);
+      // The unknown 'lighting' op is dropped; the other two are kept.
+      expect(batch.ops.length, 2);
+      expect(batch.ops[0].layer, OpLayer.structure);
+      expect(batch.ops[1].layer, OpLayer.floor);
     });
 
     test('inverse reverses ops order and swaps values', () {
