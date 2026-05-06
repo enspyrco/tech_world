@@ -24,15 +24,20 @@ An educational multiplayer 2D virtual world where players solve coding challenge
 - **Save / load / delete** — Persist custom maps to Firestore, browse them in the lobby
 - **Procedural generation** — Generate maps using BSP dungeon, recursive-backtracker maze, or cellular-automata cave algorithms
 
+### Spellbook & Voice Casting
+- **18 words of power** — A closed vocabulary of spells (`lumen`, `ignis`, `tempus`, `oraculum` …) that players speak aloud or type to interact with the game world
+- **Voice spellcasting** — Browser Speech-to-Text captures speech; a `{known, novel} × {high, low}` confidence lattice classifies each cast; doors open, effects fire, or the oracle is invoked depending on the result. Web only.
+- **Prompt challenges** — 18 conversational challenges solved through spellcasting, not code; sealed `DoorCastResult` / `FreeCastResult` types enforce routing at compile time
+
 ### Coding & AI
 - **23 coding challenges** — Beginner (10), Intermediate (7), and Advanced (6) tiers with LSP-powered code completion and hover docs
-- **AI tutor (Clawd)** — Claude-powered bot that reviews code submissions and answers questions
-- **Voice input/output** — Browser Speech-to-Text and Text-to-Speech for hands-free interaction with Clawd (web only)
+- **AI tutor (Clawd)** — Claude-powered bot that reviews code, answers questions, and serves as the game's spell oracle — interpreting cast intent and routing novel combinations
+- **Oracle channel** — Generic `oracle-request` / `oracle-response` LiveKit topics with a `kind` discriminator; spell interpretation and future AI features share the same channel
 
 ## Prerequisites
 
 - Flutter SDK ^3.6.0
-- Firebase project configured (Auth, Hosting, Cloud Functions)
+- Firebase project configured (Auth, Firestore, Storage, Cloud Functions)
 
 ## Setup
 
