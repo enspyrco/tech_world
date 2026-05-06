@@ -2071,10 +2071,13 @@ class TechWorld extends World with TapCallbacks {
   void dispose() {
     _authStateChangesSubscription?.cancel();
     activeChallenge.dispose();
+    activePromptChallenge.dispose();
     activeTerminalPosition.dispose();
     mapEditorActive.dispose();
     currentMap.dispose();
     nearbyLockedDoor.dispose();
+    playerGridPosition.dispose();
+    gameReady.dispose();
     disconnectFromLiveKit();
   }
 }
