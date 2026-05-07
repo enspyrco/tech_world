@@ -54,7 +54,13 @@ class ChatService {
 
   /// Submissions queued for retry after bot disconnect during evaluation.
   /// Keyed by challengeId so only the latest attempt per challenge is kept.
-  final Map<String, Map<String, dynamic>> _pendingRetries = {};
+  /// Stores the text + metadata needed to reconstruct a [sendMessage] call,
+  /// plus a retry counter (max [_maxRetries]).
+  final Map<String, ({String text, Map<String, dynamic>? metadata, int attempts})>
+      _pendingRetries = {};
+
+  /// Maximum number of retry attempts before dropping a submission.
+  static const _maxRetries = 2;
 
   /// Prevents duplicate messages. Capped at [_maxSeenIds] entries; when
   /// exceeded, the oldest half is removed. Uses [LinkedHashSet] to preserve
@@ -436,8 +442,18 @@ class ChatService {
           if (botStatusNotifier.value == BotStatus.absent) {
             final challengeId = metadata?['challengeId'] as String?;
             if (challengeId != null) {
-              _pendingRetries[challengeId] = payload;
-              _log.info('Queued retry for challenge $challengeId');
+              // Preserve existing attempt count if re-queuing, otherwise
+              // start at 0. The counter is incremented in
+              // retryPendingSubmissions when the retry is actually sent.
+              final existing = _pendingRetries[challengeId];
+              final attempts = existing?.attempts ?? 0;
+              _pendingRetries[challengeId] = (
+                text: text,
+                metadata: metadata,
+                attempts: attempts,
+              );
+              _log.info('Queued retry for challenge $challengeId '
+                  '(attempt $attempts)');
             }
             _messages.add(ChatMessage(
               text: "Clawd disconnected \u2014 your submission will be "
@@ -474,33 +490,38 @@ class ChatService {
   /// Re-send all submissions that were queued while Clawd was disconnected.
   ///
   /// Called automatically when bot transitions from [BotStatus.absent] to
-  /// [BotStatus.idle]. Each queued payload is re-published with a fresh ID
-  /// and timestamp. The retry map is cleared regardless of outcome — if the
-  /// bot disconnects again, the new timeout will re-queue.
+  /// [BotStatus.idle]. Each queued submission is sent through [sendMessage]
+  /// which provides proper timeout handling. After [_maxRetries] attempts a
+  /// submission is dropped with a user-visible message.
   void retryPendingSubmissions() {
     if (_pendingRetries.isEmpty) return;
 
     _log.info('Retrying ${_pendingRetries.length} queued submission(s)');
 
     // Snapshot and clear so re-entrant timeouts can re-queue safely.
-    final retries = Map<String, Map<String, dynamic>>.from(_pendingRetries);
+    final retries = Map<String,
+        ({String text, Map<String, dynamic>? metadata, int attempts})>.from(
+        _pendingRetries);
     _pendingRetries.clear();
 
     for (final entry in retries.entries) {
       final challengeId = entry.key;
-      final original = entry.value;
+      final (:text, :metadata, :attempts) = entry.value;
 
-      // Fresh ID + timestamp for the retry.
-      final retryId = DateTime.now().millisecondsSinceEpoch.toString();
-      _markSeen(retryId);
+      if (attempts >= _maxRetries) {
+        _log.warning('Dropping submission for challenge $challengeId '
+            'after $_maxRetries retries');
+        _messages.add(ChatMessage(
+          text: 'Submission could not be delivered after multiple attempts.',
+          senderName: 'System',
+          isBot: true,
+        ));
+        _messagesController.add(List.from(_messages));
+        continue;
+      }
 
-      final retryPayload = {
-        ...original,
-        'id': retryId,
-        'timestamp': DateTime.now().toIso8601String(),
-      };
-
-      _log.info('Retrying submission for challenge $challengeId');
+      _log.info('Retrying submission for challenge $challengeId '
+          '(attempt ${attempts + 1}/$_maxRetries)');
 
       _messages.add(ChatMessage(
         text: 'Clawd is back \u2014 retrying your submission\u2026',
@@ -509,26 +530,20 @@ class ChatService {
       ));
       _messagesController.add(List.from(_messages));
 
-      // Set up a new completer so the response can be correlated.
-      final completer = Completer<Map<String, dynamic>?>();
-      _pendingMessages[retryId] = completer;
+      // Pre-populate the retry entry with incremented attempt count so that
+      // if sendMessage times out and re-queues, the new entry carries the
+      // incremented count.
+      _pendingRetries[challengeId] = (
+        text: text,
+        metadata: metadata,
+        attempts: attempts + 1,
+      );
 
-      botStatusNotifier.value = BotStatus.thinking;
-
-      unawaited(_liveKitService.publishJson(
-        retryPayload,
-        topic: 'chat',
-      ));
-
-      unawaited(_dreamfinderClient?.sendEvent(
-        topic: GameEventTopic.chat,
-        roomName: _liveKitService.roomName,
-        senderId: _liveKitService.userId,
-        senderName: _liveKitService.displayName,
-        payload: retryPayload,
-      ));
+      // Route through sendMessage for proper timeout + completer handling.
+      unawaited(sendMessage(text, metadata: metadata));
     }
   }
+
 
   /// Send a private direct message to another user.
   ///
@@ -839,6 +854,7 @@ class ChatService {
     _helpResponseSubscription?.cancel();
     _botJoinedSubscription?.cancel();
     _botLeftSubscription?.cancel();
+    _pendingRetries.clear();
     _messagesController.close();
     _conversationsController.close();
     for (final controller in _dmStreamControllers.values) {
