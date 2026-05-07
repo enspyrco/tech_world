@@ -1176,10 +1176,14 @@ class TechWorld extends World with TapCallbacks {
         _botCharacterComponents[heartbeat.playerId]?.position = targetPosition;
       } else if (!isBotIdentity(heartbeat.playerId)) {
         if (!_otherPlayerComponentsMap.containsKey(heartbeat.playerId)) {
+          final participant =
+              _liveKitService!.getParticipant(heartbeat.playerId);
           final playerComponent = PlayerComponent(
             position: targetPosition,
             id: heartbeat.playerId,
-            displayName: heartbeat.playerId,
+            displayName: participant != null && participant.name.isNotEmpty
+                ? participant.name
+                : heartbeat.playerId,
           );
           _otherPlayerComponentsMap[heartbeat.playerId] = playerComponent;
           add(playerComponent);
