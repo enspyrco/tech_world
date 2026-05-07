@@ -6,6 +6,8 @@ import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
+
+Future<void> pumpEventQueue() => Future<void>.delayed(Duration.zero);
 void main() {
   group('TechWorld auth state handling', () {
     late StreamController<AuthUser> authController;
@@ -26,12 +28,12 @@ void main() {
       // First sign in
       final user1 = AuthUser(id: 'user1', displayName: 'User 1');
       authController.add(user1);
-      await Future.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
 
       // Sign out
       final signedOut = SignedOutUser(id: 'user1', displayName: 'User 1');
       authController.add(signedOut);
-      await Future.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
 
       // The internal _liveKitService should be null now
       // We can't access it directly, but we can verify by signing in again
@@ -47,7 +49,7 @@ void main() {
 
       final user2 = AuthUser(id: 'user2', displayName: 'User 2');
       authController.add(user2);
-      await Future.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
 
       // If the bug exists, TechWorld would still hold the old service reference
       // and _connectToLiveKit would return early without setting up subscriptions.
@@ -68,13 +70,13 @@ void main() {
       // Sign in
       final user1 = AuthUser(id: 'user1', displayName: 'User 1');
       authController.add(user1);
-      await Future.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
 
       // Sign out
       Locator.remove<LiveKitService>();
       service1.dispose();
       authController.add(SignedOutUser(id: 'user1', displayName: 'User 1'));
-      await Future.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
 
       // Create second service (simulates what main.dart does on re-sign-in)
       final service2 = LiveKitService(
@@ -87,7 +89,7 @@ void main() {
       // Sign in again
       final user2 = AuthUser(id: 'user2', displayName: 'User 2');
       authController.add(user2);
-      await Future.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
 
       // Verify we can interact with the new service
       // (this would fail if TechWorld held onto the old disposed service)
@@ -108,13 +110,13 @@ void main() {
 
         // Sign in
         authController.add(AuthUser(id: 'user$i', displayName: 'User $i'));
-        await Future.delayed(const Duration(milliseconds: 30));
+        await pumpEventQueue();
 
         // Sign out
         Locator.remove<LiveKitService>();
         service.dispose();
         authController.add(SignedOutUser(id: 'user$i', displayName: 'User $i'));
-        await Future.delayed(const Duration(milliseconds: 30));
+        await pumpEventQueue();
       }
 
       // Final sign in should work
@@ -126,7 +128,7 @@ void main() {
       Locator.add<LiveKitService>(finalService);
 
       authController.add(AuthUser(id: 'final', displayName: 'Final User'));
-      await Future.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
 
       expect(finalService.userId, equals('final'));
       finalService.dispose();
@@ -135,7 +137,7 @@ void main() {
     test('PlaceholderUser does not trigger connection', () async {
       // Send placeholder (initial state)
       authController.add(PlaceholderUser());
-      await Future.delayed(const Duration(milliseconds: 50));
+      await pumpEventQueue();
 
       // No service should be accessed because PlaceholderUser is ignored
       // This should not throw even without a service registered
