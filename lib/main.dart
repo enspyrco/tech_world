@@ -127,6 +127,15 @@ class _MyAppState extends State<MyApp> {
   StreamSubscription<String?>? _connectionLostSubscription;
   bool _isReconnecting = false;
 
+  /// Re-entrancy guard: true while [_joinRoom] is running its async wires.
+  /// Prevents double-tap on a room card from launching two concurrent joins.
+  bool _isJoining = false;
+
+  /// Deferred leave: set by [_leaveRoom] when called while [_isJoining] is
+  /// true.  [_joinRoom]'s finally block checks this and calls [_leaveRoom]
+  /// so that dispose happens after in-flight wire operations complete.
+  bool _pendingLeave = false;
+
   /// Wire-state tracker for the current join operation's circuit-board overlay.
   WireStates? _wireStates;
 
@@ -317,8 +326,15 @@ class _MyAppState extends State<MyApp> {
   /// Tileset prefetch, LiveKit connection, and game engine init all run
   /// concurrently. The overlay fades out when every wire completes.
   Future<void> _joinRoom(RoomData room) async {
+    if (_isJoining) return; // Re-entrancy guard: join already in progress.
+    _isJoining = true;
+    _pendingLeave = false;
+
     final userId = _currentUserId;
-    if (userId == null) return;
+    if (userId == null) {
+      _isJoining = false;
+      return;
+    }
 
     final techWorld = locate<TechWorld>();
     final wires = WireStates();
@@ -441,6 +457,12 @@ class _MyAppState extends State<MyApp> {
       // tear down and return to the lobby so the user isn't stuck.
       _log.severe('Room join failed unexpectedly', e);
       await _leaveRoom();
+    } finally {
+      _isJoining = false;
+      if (_pendingLeave) {
+        _pendingLeave = false;
+        await _leaveRoom();
+      }
     }
   }
 
@@ -525,6 +547,13 @@ class _MyAppState extends State<MyApp> {
   /// producers (ChatService → ProximityService → LiveKitService).
   Future<void> _leaveRoom() async {
     if (_currentRoom == null) return;
+
+    // If a join is still in-flight, defer the leave so we don't dispose
+    // services that running wire operations still reference.
+    if (_isJoining) {
+      _pendingLeave = true;
+      return;
+    }
 
     // Reset bot status so stale state (e.g. thinking) doesn't carry over.
     botStatusNotifier.value = BotStatus.absent;
