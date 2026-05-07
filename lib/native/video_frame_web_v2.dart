@@ -99,8 +99,11 @@ class DirectTrackCapture {
   web.HTMLCanvasElement? _readbackCanvas;
   web.CanvasRenderingContext2D? _readbackCtx;
 
-  /// Completer for pending unmute wait (used to cancel if disposed early)
-  static Completer<bool>? _pendingUnmute;
+  /// Completer for pending unmute wait (used to cancel if disposed early).
+  ///
+  /// Instance field so that multiple [DirectTrackCapture] objects waiting for
+  /// unmute don't overwrite each other's completers.
+  Completer<bool>? _pendingUnmute;
 
   /// Check if a MediaStreamTrack is currently muted.
   ///
@@ -114,7 +117,7 @@ class DirectTrackCapture {
   /// Wait for the track to unmute, with timeout.
   ///
   /// Returns true if the track unmuted, false if timed out or cancelled.
-  static Future<bool> _waitForUnmute(
+  Future<bool> _waitForUnmute(
     web.MediaStreamTrack track,
     Duration timeout,
   ) async {
@@ -175,7 +178,7 @@ class DirectTrackCapture {
   /// Cancel any pending unmute wait.
   ///
   /// Call this if the component is disposed while waiting for unmute.
-  static void cancelPendingUnmute() {
+  void cancelPendingUnmute() {
     if (_pendingUnmute != null && !_pendingUnmute!.isCompleted) {
       _log.fine('DirectTrackCapture: Cancelling pending unmute wait');
       _pendingUnmute!.complete(false);
@@ -211,10 +214,16 @@ class DirectTrackCapture {
   ///
   /// This is the preferred method for remote tracks which start muted.
   ///
+  /// When the track is muted, the [DirectTrackCapture] instance is created
+  /// eagerly (before unmute) so its [cancelPendingUnmute] method can be used
+  /// by callers that already hold the instance via [create]. Note: callers
+  /// awaiting this factory cannot cancel via [cancelPendingUnmute] because
+  /// the instance is not externally visible until the future resolves.
+  ///
   /// Returns null if:
   /// - MediaStreamTrackProcessor is not supported
   /// - Track failed to unmute within timeout
-  /// - Creation was cancelled via [cancelPendingUnmute]
+  /// - Track cast to MediaStreamTrack fails
   static Future<DirectTrackCapture?> createAsync(
     Object track, {
     Duration timeout = const Duration(seconds: 5),
@@ -236,15 +245,25 @@ class DirectTrackCapture {
     // Check if track is muted (common for remote tracks)
     if (_isTrackMuted(webTrack)) {
       _log.info('DirectTrackCapture: Track muted, waiting for unmute...');
-      final unmuted = await _waitForUnmute(webTrack, timeout);
+
+      // Create the processor now so callers can cancel via cancelPendingUnmute()
+      // on the returned instance. MediaStreamTrackProcessor wraps the track
+      // reference and won't produce frames until the track unmutes — that is
+      // handled by waiting below before startCapture() is ever called.
+      final instance = create(track);
+      if (instance == null) return null;
+
+      final unmuted = await instance._waitForUnmute(webTrack, timeout);
       if (!unmuted) {
         _log.warning('DirectTrackCapture: Failed to unmute within timeout');
+        instance.dispose();
         return null;
       }
       _log.info('DirectTrackCapture: Track unmuted, proceeding with capture');
+      return instance;
     } else {
-      // Even if not muted, remote tracks may need time for decoder to produce frames
-      // Add a small delay to let the video decoder start producing frames
+      // Even if not muted, remote tracks may need time for decoder to produce frames.
+      // Add a small delay to let the video decoder start producing frames.
       _log.fine('DirectTrackCapture: Track not muted, waiting ${initialDelay.inMilliseconds}ms for decoder...');
       await Future.delayed(initialDelay);
     }
