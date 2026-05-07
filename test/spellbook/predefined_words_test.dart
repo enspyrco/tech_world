@@ -96,9 +96,23 @@ void main() {
       expect(WordId.parse('IGNIS'), isNull); // case-sensitive on wire
     });
 
-    // Removed: `displayName == name.toUpperCase()` — that test pinned the
-    // current implementation rather than the user-visible contract. The
-    // contract (display strings render correctly in the spellbook UI) is
-    // covered by the spellbook_panel widget tests.
+    test('displayName is non-empty uppercase for every WordId '
+        '(incantation contract)', () {
+      // The spellbook panel and speech-cast overlay both render this
+      // string. The widget tests in spellbook_panel_test.dart only
+      // exercise IGNIS — they would not catch a per-value regression
+      // (e.g. a special case that returns the lowercase `name` for some
+      // particular WordId). This pins the *contract* — uppercase
+      // incantation form, non-empty — for every value, without locking
+      // the implementation to `name.toUpperCase()` (so a future
+      // localization or pronunciation pass can change how it's computed
+      // without breaking this test).
+      for (final id in WordId.values) {
+        expect(id.displayName, isNotEmpty,
+            reason: '${id.name} displayName must not be empty');
+        expect(id.displayName, equals(id.displayName.toUpperCase()),
+            reason: '${id.name} displayName must be all uppercase');
+      }
+    });
   });
 }

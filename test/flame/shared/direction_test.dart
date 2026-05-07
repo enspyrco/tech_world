@@ -76,4 +76,34 @@ void main() {
       }
     });
   });
+
+  group('screen-coordinate semantics', () {
+    // The bijection tests above prove Direction and directionFromTuple are
+    // mutually consistent — but a coordinated inversion (flip every offsetY
+    // sign AND swap the corresponding map keys) would pass every test in
+    // the groups above. These four anchors pin the convention to Flame's
+    // screen coordinates (y grows downward), so an inversion would have to
+    // either mismatch the bijection (caught above) or violate "up means
+    // smaller y" (caught here). Without them, an internally-consistent
+    // inverted world would ship silently.
+    test('Direction.up moves toward smaller y', () {
+      expect(Direction.up.offsetY, lessThan(0));
+      expect(Direction.up.offsetX, equals(0));
+    });
+
+    test('Direction.down moves toward larger y', () {
+      expect(Direction.down.offsetY, greaterThan(0));
+      expect(Direction.down.offsetX, equals(0));
+    });
+
+    test('Direction.right moves toward larger x', () {
+      expect(Direction.right.offsetX, greaterThan(0));
+      expect(Direction.right.offsetY, equals(0));
+    });
+
+    test('Direction.left moves toward smaller x', () {
+      expect(Direction.left.offsetX, lessThan(0));
+      expect(Direction.left.offsetY, equals(0));
+    });
+  });
 }
