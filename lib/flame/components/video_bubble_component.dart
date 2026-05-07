@@ -85,6 +85,7 @@ class VideoBubbleComponent extends PositionComponent {
 
   bool _captureInitialized = false;
   bool _captureInitializing = false; // Prevent duplicate async init attempts
+  bool _asyncInitInFlight = false; // Guard async remote capture init (outlives _captureInitializing)
 
   // Shader support
   ui.FragmentShader? _shader;
@@ -209,6 +210,7 @@ class VideoBubbleComponent extends PositionComponent {
     if (_captureInitializing) {
       return; // Already initializing, don't start another
     }
+    if (_asyncInitInFlight) return; // Async remote init still running
 
     _captureRetryCount++;
     _captureInitializing = true;
@@ -290,6 +292,7 @@ class VideoBubbleComponent extends PositionComponent {
   /// Creates a hidden video element and attaches the track's MediaStream to it.
   /// This is more reliable than RTCVideoRenderer for capturing frames.
   void _initializeRemoteWebCapture(Object jsTrack, VideoTrack track) {
+    _asyncInitInFlight = true;
     _initializeRemoteWebCaptureAsync(jsTrack, track);
   }
 
@@ -320,6 +323,8 @@ class VideoBubbleComponent extends PositionComponent {
     } catch (e, stack) {
       _log.warning('Error initializing remote capture: $e\nStack: $stack');
       _captureInitializing = false;
+    } finally {
+      _asyncInitInFlight = false;
     }
   }
 
