@@ -115,6 +115,9 @@ tool/pw/dist/
 .fvm/
 .fvmrc
 
+# Stale Firebase Functions dir (real functions live in tech_world_firebase_functions sibling repo)
+functions/
+
 # Local working docs
 plan.md
 
