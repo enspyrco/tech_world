@@ -29,7 +29,7 @@ void main() {
         expect(
           directionFromTuple[unitTuple],
           dir,
-          reason: 'Direction.${dir.name} offsets ${unitTuple} '
+          reason: 'Direction.${dir.name} offsets $unitTuple '
               'do not round-trip through directionFromTuple',
         );
       }
