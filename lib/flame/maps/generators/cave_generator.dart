@@ -21,8 +21,24 @@ GameMap generateCave({required int seed, required GeneratorConfig config}) {
     _smooth(grid);
   }
 
-  final region = largestOpenRegion(grid);
+  var region = largestOpenRegion(grid);
   removeDisconnectedRegions(grid, region);
+
+  if (region.isEmpty) {
+    // Degenerate config produced all walls — carve a small safe zone.
+    final cx = gridSize ~/ 2;
+    final cy = gridSize ~/ 2;
+    for (var dy = -1; dy <= 1; dy++) {
+      for (var dx = -1; dx <= 1; dx++) {
+        grid[cy + dy][cx + dx] = false; // false = open
+      }
+    }
+    region = {
+      for (var dy = -1; dy <= 1; dy++)
+        for (var dx = -1; dx <= 1; dx++) Point(cx + dx, cy + dy),
+    };
+  }
+
   final spawn = findSpawnPoint(grid, region);
 
   final layers = buildTileLayers(grid, floorTileIndex: floorTileBrownEarth);

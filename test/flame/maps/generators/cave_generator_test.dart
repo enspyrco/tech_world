@@ -110,6 +110,22 @@ void main() {
       expect(map.objectLayer!.isEmpty, isFalse);
     });
 
+    test('degenerate caveFillChance=1.0 does not spawn inside a wall', () {
+      // fillChance=1.0 + many smoothing passes fills the grid with walls.
+      // The guard must carve a safe zone so spawn is not on a barrier.
+      final map = generateMap(
+        algorithm: MapAlgorithm.cave,
+        config: const GeneratorConfig(
+          seed: 42,
+          caveFillChance: 1.0,
+          caveSmoothingIterations: 20,
+        ),
+      );
+      final barrierSet = map.barriers.toSet();
+      expect(barrierSet.contains(map.spawnPoint), isFalse,
+          reason: 'spawn must not be inside a wall for degenerate fill config');
+    });
+
     test('10 seeds without invariant violations', () {
       for (var seed = 0; seed < 10; seed++) {
         final map = generateMap(
