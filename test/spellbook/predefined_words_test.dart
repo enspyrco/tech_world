@@ -31,16 +31,15 @@ void main() {
       }
     });
 
-    test('|allWords| == |WordId.values| == |allPromptChallenges|', () {
-      expect(allWords.length, WordId.values.length);
-      expect(allWords.length, allPromptChallenges.length);
-    });
-
-    test('wordById is total over WordId.values', () {
-      for (final id in WordId.values) {
-        expect(wordById[id], isNotNull,
-            reason: 'wordById missing entry for $id');
-      }
+    test('wordById has no silent duplicate-id collisions', () {
+      // Catches: two WordOfPower instances accidentally sharing a WordId,
+      // which would silently overwrite in the map literal and leave one
+      // word unreachable. Cardinality (|values| == |allWords|) follows
+      // from the two bijection tests above; this is the one extra failure
+      // mode they don't cover.
+      expect(wordById.length, WordId.values.length,
+          reason: 'wordById is missing entries — a duplicate id in '
+              'allWords would collapse two entries into one');
     });
 
     test('intensity is 1, 2, or 3', () {
@@ -97,9 +96,22 @@ void main() {
       expect(WordId.parse('IGNIS'), isNull); // case-sensitive on wire
     });
 
-    test('displayName is uppercase of name', () {
+    test('displayName is non-empty uppercase for every WordId '
+        '(incantation contract)', () {
+      // The spellbook panel and speech-cast overlay both render this
+      // string. The widget tests in spellbook_panel_test.dart only
+      // exercise IGNIS — they would not catch a per-value regression
+      // (e.g. a special case that returns the lowercase `name` for some
+      // particular WordId). This pins the *contract* — uppercase
+      // incantation form, non-empty — for every value, without locking
+      // the implementation to `name.toUpperCase()` (so a future
+      // localization or pronunciation pass can change how it's computed
+      // without breaking this test).
       for (final id in WordId.values) {
-        expect(id.displayName, id.name.toUpperCase());
+        expect(id.displayName, isNotEmpty,
+            reason: '${id.name} displayName must not be empty');
+        expect(id.displayName, equals(id.displayName.toUpperCase()),
+            reason: '${id.name} displayName must be all uppercase');
       }
     });
   });

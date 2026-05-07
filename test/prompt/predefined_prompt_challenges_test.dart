@@ -5,9 +5,10 @@ import 'package:tech_world/prompt/spell_school.dart';
 
 void main() {
   group('Predefined Prompt Challenges', () {
-    test('has 18 total challenges', () {
-      expect(allPromptChallenges.length, equals(18));
-    });
+    // Removed: `has 18 total challenges`. That assertion has to be edited
+    // by hand on every legitimate addition — it's a rolling
+    // implementation-lock, not an invariant. Cross-collection cardinality
+    // is pinned by the bijection test in prompt_challenge_id_test.dart.
 
     // `id` non-empty + uniqueness are now compile-time facts of
     // `enum PromptChallengeId` — no runtime check needed.
@@ -40,15 +41,9 @@ void main() {
       expect(schools, equals(SpellSchool.values.toSet()));
     });
 
-    test('each school has at least 2 challenges', () {
-      for (final school in SpellSchool.values) {
-        final count =
-            allPromptChallenges.where((c) => c.school == school).length;
-        expect(count, greaterThanOrEqualTo(2),
-            reason: '${school.name} should have at least 2 challenges, '
-                'found $count');
-      }
-    });
+    // Removed: `each school has at least 2 challenges` — strictly weaker
+    // than `each school has exactly 3` below; cannot fail without that
+    // also failing.
 
     test('each school has exactly 3 challenges', () {
       for (final school in SpellSchool.values) {
