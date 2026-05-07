@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 
+
+Future<void> pumpEventQueue() => Future<void>.delayed(Duration.zero);
 void main() {
   group('Service lifecycle', () {
     group('LiveKitService connect/disconnect/reconnect', () {
@@ -61,7 +63,7 @@ void main() {
 
         // Start first connection (will hang on token retrieval).
         unawaited(hangingService.connect());
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         // Second call should return immediately.
         final result = await hangingService.connect();

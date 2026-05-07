@@ -90,7 +90,8 @@ Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthSer
 ### Key Classes
 
 - **`TechWorldGame`** — extends `FlameGame`, wraps `TechWorld` world component
-- **`TechWorld`** — extends `World`, manages all game components, subscribes to LiveKit events
+- **`TechWorld`** — extends `World`, manages game components, subscribes to LiveKit events, delegates bubble lifecycle to `BubbleManager`
+- **`BubbleManager`** — plain Dart class (not a Component) owning all proximity bubble state: creation/removal, physics repulsion, metaball field, merged video, audio enable/disable, shader loading, Dreamfinder avatar bridge. Receives `addComponent` callback to add to the World.
 
 ### Communication (All via LiveKit)
 

@@ -24,6 +24,8 @@ import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
+
+Future<void> pumpEventQueue() => Future<void>.delayed(Duration.zero);
 void main() {
   group('ChatService', () {
     late FakeLiveKitService fakeLiveKit;
@@ -57,7 +59,7 @@ void main() {
       unawaited(chatService.sendMessage('Hello bot'));
 
       // Give it time to process
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       expect(chatService.currentMessages.length, equals(1));
       expect(chatService.currentMessages.first.text, equals('Hello bot'));
@@ -68,7 +70,7 @@ void main() {
       fakeLiveKit.connected = true;
 
       unawaited(chatService.sendMessage('Test message'));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       expect(fakeLiveKit.publishedMessages.length, equals(1));
 
@@ -89,7 +91,7 @@ void main() {
       fakeLiveKit.connected = true;
 
       unawaited(chatService.sendMessage('Hello'));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       expect(botStatusNotifier.value, equals(BotStatus.thinking));
     });
@@ -98,7 +100,7 @@ void main() {
       fakeLiveKit.connected = true;
 
       unawaited(chatService.sendMessage('Hello'));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Simulate bot response
       final messageId = fakeLiveKit.publishedMessages.first['payload']['id'];
@@ -107,7 +109,7 @@ void main() {
         'messageId': messageId,
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       expect(chatService.currentMessages.length, equals(2));
       expect(chatService.currentMessages.last.text, equals('Hello human!'));
@@ -118,7 +120,7 @@ void main() {
       fakeLiveKit.connected = true;
 
       unawaited(chatService.sendMessage('Hello'));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       final messageId = fakeLiveKit.publishedMessages.first['payload']['id'];
       fakeLiveKit.simulateResponse({
@@ -126,7 +128,7 @@ void main() {
         'messageId': messageId,
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       expect(botStatusNotifier.value, equals(BotStatus.idle));
     });
@@ -151,7 +153,7 @@ void main() {
       chatService.messages.listen(messages.add);
 
       unawaited(chatService.sendMessage('Test'));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       expect(messages.length, greaterThan(0));
       expect(messages.last.first.text, equals('Test'));
@@ -161,12 +163,12 @@ void main() {
       fakeLiveKit.connected = true;
 
       unawaited(chatService.sendMessage('Hello'));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Send invalid response (not JSON)
       fakeLiveKit.simulateInvalidResponse('not json at all');
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Should only have user message, no bot response
       expect(chatService.currentMessages.length, equals(1));
@@ -177,7 +179,7 @@ void main() {
       fakeLiveKit.connected = true;
 
       unawaited(chatService.sendMessage('Hello'));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       final messageId = fakeLiveKit.publishedMessages.first['payload']['id'];
       // Response missing 'text' field
@@ -186,7 +188,7 @@ void main() {
         'notText': 'wrong field',
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Should only have user message
       expect(chatService.currentMessages.length, equals(1));
@@ -196,14 +198,14 @@ void main() {
       fakeLiveKit.connected = true;
 
       unawaited(chatService.sendMessage('Hello'));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Response without messageId - should still add message
       fakeLiveKit.simulateResponse({
         'text': 'Response without ID',
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       expect(chatService.currentMessages.length, equals(2));
       expect(chatService.currentMessages.last.text, equals('Response without ID'));
@@ -213,14 +215,14 @@ void main() {
       fakeLiveKit.connected = true;
 
       unawaited(chatService.sendMessage('Hello'));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Send message with wrong topic
       fakeLiveKit.simulateMessageWithTopic('other-topic', {
         'text': 'Should be ignored',
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Should only have user message
       expect(chatService.currentMessages.length, equals(1));
@@ -231,7 +233,7 @@ void main() {
 
       // Should not throw after dispose
       fakeLiveKit.simulateResponse({'text': 'After dispose'});
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
     });
 
     test('deduplicates messages with same id', () async {
@@ -243,7 +245,7 @@ void main() {
         'id': 'msg-123',
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // First message should be added
       expect(chatService.currentMessages.length, equals(1));
@@ -254,7 +256,7 @@ void main() {
         'id': 'msg-123',
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Should still be only 1 message (duplicate filtered)
       expect(chatService.currentMessages.length, equals(1));
@@ -270,7 +272,7 @@ void main() {
         'senderName': 'Other User',
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       expect(chatService.currentMessages.length, equals(1));
       expect(chatService.currentMessages.first.text, equals('Hello from another user'));
@@ -289,7 +291,7 @@ void main() {
         'senderName': 'Test User',
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Should be ignored (we add our own messages locally)
       expect(chatService.currentMessages, isEmpty);
@@ -305,7 +307,7 @@ void main() {
         // No senderName field
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       expect(chatService.currentMessages.length, equals(1));
       // Should use senderId as fallback
@@ -319,7 +321,7 @@ void main() {
       final sendFuture = chatService.sendMessage('Hello');
 
       // Give it time to publish the message
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Get the message ID that was published
       final messageId = fakeLiveKit.publishedMessages.first['payload']['id'];
@@ -347,7 +349,7 @@ void main() {
         'messageId': 'non-existent-id',
       });
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Should still add the message (it's a valid response)
       expect(chatService.currentMessages.length, equals(1));
@@ -357,7 +359,7 @@ void main() {
       fakeLiveKit.connected = true;
 
       final sendFuture = chatService.sendMessage('Check my code');
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       final messageId = fakeLiveKit.publishedMessages.first['payload']['id'];
       fakeLiveKit.simulateResponse({
@@ -382,7 +384,7 @@ void main() {
         'My solution',
         metadata: {'challengeId': 'hello_dart'},
       ));
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       final payload =
           fakeLiveKit.publishedMessages.first['payload'] as Map<String, dynamic>;
@@ -403,7 +405,7 @@ void main() {
       // when no response arrives but we manually trigger timeout
       // behavior, the method returns null.
 
-      await Future.delayed(const Duration(milliseconds: 10));
+      await pumpEventQueue();
 
       // Simulate a timeout by completing the message without a response
       // (we can't easily test 30s timeout, but we can verify null on disconnect)
@@ -432,7 +434,7 @@ void main() {
         fakeLiveKit.connected = true;
 
         await chatService.sendDm('peer-uid', 'Hey there!', peerDisplayName: 'Peer');
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         expect(fakeLiveKit.publishedMessages.length, equals(1));
 
@@ -452,7 +454,7 @@ void main() {
         fakeLiveKit.connected = true;
 
         await chatService.sendDm('peer-uid', 'Hello', peerDisplayName: 'Peer');
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         final expectedConvId = Conversation.conversationIdFor(
           'test-user-id',
@@ -476,7 +478,7 @@ void main() {
           'senderId': 'alice-uid',
         });
 
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         final expectedConvId = Conversation.conversationIdFor(
           'test-user-id',
@@ -496,7 +498,7 @@ void main() {
           'senderId': 'alice-uid',
         });
 
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         final expectedConvId = Conversation.conversationIdFor(
           'test-user-id',
@@ -518,7 +520,7 @@ void main() {
           'senderId': 'alice-uid',
         });
 
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         final expectedConvId = Conversation.conversationIdFor(
           'test-user-id',
@@ -543,7 +545,7 @@ void main() {
           'senderName': 'Alice',
           'senderId': 'alice-uid',
         });
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         // DM from Bob
         fakeLiveKit.simulateDm('bob-uid', {
@@ -552,7 +554,7 @@ void main() {
           'senderName': 'Bob',
           'senderId': 'bob-uid',
         });
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         expect(chatService.totalUnreadNotifier.value, equals(2));
       });
@@ -562,7 +564,7 @@ void main() {
 
         await chatService.sendDm('peer-uid', 'First', peerDisplayName: 'Peer');
         await chatService.sendDm('peer-uid', 'Second', peerDisplayName: 'Peer');
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         final expectedConvId = Conversation.conversationIdFor(
           'test-user-id',
@@ -615,7 +617,7 @@ void main() {
           'senderId': 'alice-uid',
         });
 
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         expect(dmMsgs.length, greaterThan(0));
         expect(dmMsgs.last.first.text, equals('Hello via DM'));
@@ -635,7 +637,7 @@ void main() {
           'senderId': 'alice-uid',
         });
 
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         expect(convSnapshots.length, greaterThan(0));
         expect(convSnapshots.last.length, greaterThanOrEqualTo(2)); // group + DM
@@ -646,7 +648,7 @@ void main() {
 
         // First send a DM to the bot to create the conversation
         await chatService.sendDm('bot-claude', 'Help me', peerDisplayName: 'Clawd');
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         // Simulate bot DM response
         fakeLiveKit.simulateDmResponse('bot-claude', {
@@ -655,7 +657,7 @@ void main() {
           'senderName': 'Clawd',
           'senderId': 'bot-claude',
         });
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         final expectedConvId = Conversation.conversationIdFor(
           'test-user-id',
@@ -741,7 +743,7 @@ void main() {
         fakeLiveKit.connected = true;
         botStatusNotifier.value = BotStatus.idle;
         unawaited(service.sendMessage('Hello after failed history'));
-        await Future.delayed(const Duration(milliseconds: 10));
+        await pumpEventQueue();
 
         expect(service.currentMessages.length, equals(1));
         expect(service.currentMessages.first.text,

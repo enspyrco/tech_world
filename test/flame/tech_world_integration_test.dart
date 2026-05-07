@@ -36,6 +36,8 @@ class TestGameWithMockImages extends TechWorldGame {
   }
 }
 
+
+Future<void> pumpEventQueue() => Future<void>.delayed(Duration.zero);
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -184,7 +186,7 @@ void main() {
         ));
 
         // Allow async processing
-        await Future.delayed(const Duration(milliseconds: 50));
+        await pumpEventQueue();
 
         // Player ID should be updated
         expect(world.localPlayerId, equals('test-user-123'));
@@ -225,11 +227,11 @@ void main() {
           id: 'user-1',
           displayName: 'User One',
         ));
-        await Future.delayed(const Duration(milliseconds: 50));
+        await pumpEventQueue();
 
         // Then sign out
         authController.add(SignedOutUser(id: 'user-1', displayName: 'User One'));
-        await Future.delayed(const Duration(milliseconds: 50));
+        await pumpEventQueue();
 
         // Should handle gracefully
         expect(world.isMounted, isTrue);
