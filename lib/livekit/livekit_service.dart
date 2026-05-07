@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:flame/components.dart';
+import 'package:flame/components.dart' hide Timer;
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
@@ -131,6 +132,20 @@ class LiveKitService {
       })
       .where((path) => path != null)
       .cast<PlayerPath>();
+
+  /// Stream of position heartbeat messages from other participants.
+  ///
+  /// Heartbeats carry a single grid position with reliable delivery,
+  /// correcting stale positions caused by dropped unreliable path updates.
+  Stream<PositionHeartbeat> get positionHeartbeatReceived => dataReceived
+      .where((msg) => msg.topic == 'position-heartbeat')
+      .map((msg) {
+        final json = msg.json;
+        if (json == null) return null;
+        return PositionHeartbeat.tryParse(json);
+      })
+      .where((hb) => hb != null)
+      .cast<PositionHeartbeat>();
 
   /// Stream that fires when a bot requests map info.
   ///
@@ -320,6 +335,7 @@ class LiveKitService {
     }
 
     _log.info('Disconnecting from LiveKit...');
+    stopPositionHeartbeat();
 
     await _room!.disconnect();
     await _listener?.dispose();
@@ -490,6 +506,47 @@ class LiveKitService {
     );
   }
 
+  Timer? _heartbeatTimer;
+
+  /// Last grid position sent via heartbeat, used to avoid duplicate sends.
+  Point<int>? _lastHeartbeatPosition;
+
+  /// Start the periodic position heartbeat.
+  ///
+  /// Sends the current grid position reliably every 2 seconds so that
+  /// dropped unreliable path updates don't leave remote players frozen.
+  /// Call [stopPositionHeartbeat] on disconnect or dispose.
+  void startPositionHeartbeat(Point<int> Function() currentPosition) {
+    stopPositionHeartbeat();
+    _heartbeatTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) {
+        if (_connectionState != _ConnectionState.connected) return;
+        final pos = currentPosition();
+        // Skip if position hasn't changed since last heartbeat.
+        if (_lastHeartbeatPosition == pos) return;
+        _lastHeartbeatPosition = pos;
+        publishJson(
+          {
+            'playerId': userId,
+            'x': pos.x,
+            'y': pos.y,
+            'type': 'heartbeat',
+          },
+          topic: 'position-heartbeat',
+          reliable: true,
+        );
+      },
+    );
+  }
+
+  /// Stop the periodic position heartbeat.
+  void stopPositionHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _lastHeartbeatPosition = null;
+  }
+
   /// Publish a terminal-activity event to the bot.
   ///
   /// Notifies `bot-claude` when the local player opens or closes the code
@@ -634,6 +691,7 @@ class LiveKitService {
       ..on<RoomDisconnectedEvent>((event) {
         _log.warning('Room disconnected: ${event.reason}');
         _connectionState = _ConnectionState.disconnected;
+        stopPositionHeartbeat();
         // Clean up resources left dangling by the unexpected disconnect.
         // Note: _listener.dispose() is intentionally not awaited here — this
         // is a synchronous event callback and the dispose is fire-and-forget.
@@ -754,5 +812,32 @@ class AvatarUpdate {
       avatarId: avatarId ?? '',
       spriteAsset: spriteAsset,
     );
+  }
+}
+
+/// A reliable position heartbeat from another participant.
+///
+/// Carries a single grid position with reliable delivery to correct stale
+/// positions caused by dropped unreliable path updates.
+class PositionHeartbeat {
+  const PositionHeartbeat({
+    required this.playerId,
+    required this.x,
+    required this.y,
+  });
+
+  final String playerId;
+  final int x;
+  final int y;
+
+  /// Try to parse a [PositionHeartbeat] from a JSON map. Returns null if
+  /// required fields are missing or have wrong types.
+  static PositionHeartbeat? tryParse(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final playerId = json['playerId'] as String?;
+    final x = json['x'] as int?;
+    final y = json['y'] as int?;
+    if (playerId == null || x == null || y == null) return null;
+    return PositionHeartbeat(playerId: playerId, x: x, y: y);
   }
 }

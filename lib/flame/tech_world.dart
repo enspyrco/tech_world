@@ -362,6 +362,7 @@ class TechWorld extends World with TapCallbacks {
       _trackUnsubscribedSubscription;
   StreamSubscription<LocalTrackPublication>? _localTrackPublishedSubscription;
   StreamSubscription<PlayerPath>? _liveKitPositionSubscription;
+  StreamSubscription<PositionHeartbeat>? _positionHeartbeatSubscription;
   StreamSubscription<RemoteParticipant>? _participantJoinedSubscription;
   StreamSubscription<RemoteParticipant>? _participantLeftSubscription;
   StreamSubscription<AvatarUpdate>? _avatarSubscription;
@@ -369,6 +370,7 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<String?>? _connectionLostSubscription;
   StreamSubscription<void>? _mapInfoRequestedSubscription;
   StreamSubscription<DataChannelMessage>? _speechTranscriptSubscription;
+  StreamSubscription<DataChannelMessage>? _doorUnlockSubscription;
   InfraHealthService? _infraHealthService;
 
   // Avatar tracking — stores updates for players not yet created
@@ -883,7 +885,7 @@ class TechWorld extends World with TapCallbacks {
       _shaderProgram =
           await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
     } catch (e) {
-      // Shader loading failed - video bubbles will render without effects
+      _log.warning('Video bubble shader failed to load', e);
     }
   }
 
@@ -1160,6 +1162,44 @@ class TechWorld extends World with TapCallbacks {
       }
     });
 
+    // Subscribe to reliable position heartbeats that correct stale positions.
+    _positionHeartbeatSubscription =
+        _liveKitService!.positionHeartbeatReceived.listen((heartbeat) {
+      if (heartbeat.playerId == userId) return;
+
+      final targetPosition = Vector2(
+        heartbeat.x.toDouble() * gridSquareSize,
+        heartbeat.y.toDouble() * gridSquareSize,
+      );
+
+      if (_botCharacterComponents.containsKey(heartbeat.playerId)) {
+        _botCharacterComponents[heartbeat.playerId]?.position = targetPosition;
+      } else if (!isBotIdentity(heartbeat.playerId)) {
+        if (!_otherPlayerComponentsMap.containsKey(heartbeat.playerId)) {
+          final participant =
+              _liveKitService!.getParticipant(heartbeat.playerId);
+          final playerComponent = PlayerComponent(
+            position: targetPosition,
+            id: heartbeat.playerId,
+            displayName: participant != null && participant.name.isNotEmpty
+                ? participant.name
+                : heartbeat.playerId,
+          );
+          _otherPlayerComponentsMap[heartbeat.playerId] = playerComponent;
+          add(playerComponent);
+        } else {
+          _otherPlayerComponentsMap[heartbeat.playerId]?.position =
+              targetPosition;
+        }
+      }
+    });
+
+    // Start the periodic reliable heartbeat so other players can correct
+    // stale positions caused by dropped unreliable path updates.
+    _liveKitService!.startPositionHeartbeat(
+      () => playerGridPosition.value,
+    );
+
     // Subscribe to avatar updates from other players
     _avatarSubscription =
         _liveKitService!.avatarReceived.listen(_handleAvatarUpdate);
@@ -1235,6 +1275,12 @@ class TechWorld extends World with TapCallbacks {
     _speechTranscriptSubscription = _liveKitService!.dataReceived
         .where((msg) => msg.topic == 'speech-transcript')
         .listen(_handleSpeechTranscript);
+
+    // Subscribe to door-unlock events from other players so doors they
+    // unlock become passable locally (barrier removed, proximity updated).
+    _doorUnlockSubscription = _liveKitService!.dataReceived
+        .where((msg) => msg.topic == 'door-unlock')
+        .listen(_handleRemoteDoorUnlock);
 
     // Infrastructure health monitoring.
     _infraHealthService = InfraHealthService(
@@ -1930,6 +1976,36 @@ class TechWorld extends World with TapCallbacks {
     _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
   }
 
+  /// Handle a door-unlock message from another player.
+  ///
+  /// Looks up the [DoorData] at the given coordinates, marks it unlocked,
+  /// removes the barrier so the local player can walk through, and
+  /// recomputes the nearby-locked-door signal in case the player is
+  /// standing next to the just-unlocked door.
+  void _handleRemoteDoorUnlock(DataChannelMessage msg) {
+    final json = msg.json;
+    if (json == null) return;
+
+    final doorX = json['doorX'] as int?;
+    final doorY = json['doorY'] as int?;
+    if (doorX == null || doorY == null) return;
+
+    final target = Point(doorX, doorY);
+    DoorData? door;
+    for (final d in currentMap.value.doors) {
+      if (d.position == target) {
+        door = d;
+        break;
+      }
+    }
+    if (door == null || door.isUnlocked) return;
+
+    door.isUnlocked = true;
+    _barriersComponent.removeBarrierAt(door.position);
+    _recomputeNearbyLockedDoor();
+    _log.info('Remote door unlock at ($doorX, $doorY)');
+  }
+
   /// Recompute [nearbyLockedDoor] given the current player position and
   /// the doors on the current map. Picks the closest still-locked door
   /// within [_doorProximityThreshold]; emits `null` if none qualify.
@@ -2003,6 +2079,8 @@ class TechWorld extends World with TapCallbacks {
     _localTrackPublishedSubscription = null;
     _liveKitPositionSubscription?.cancel();
     _liveKitPositionSubscription = null;
+    _positionHeartbeatSubscription?.cancel();
+    _positionHeartbeatSubscription = null;
     _participantJoinedSubscription?.cancel();
     _participantJoinedSubscription = null;
     _participantLeftSubscription?.cancel();
@@ -2017,6 +2095,8 @@ class TechWorld extends World with TapCallbacks {
     _mapInfoRequestedSubscription = null;
     _speechTranscriptSubscription?.cancel();
     _speechTranscriptSubscription = null;
+    _doorUnlockSubscription?.cancel();
+    _doorUnlockSubscription = null;
 
     // Dispose infrastructure health monitoring.
     _infraHealthService?.dispose();
@@ -2070,11 +2150,14 @@ class TechWorld extends World with TapCallbacks {
 
   void dispose() {
     _authStateChangesSubscription?.cancel();
+    disconnectFromLiveKit();
     activeChallenge.dispose();
+    activePromptChallenge.dispose();
     activeTerminalPosition.dispose();
     mapEditorActive.dispose();
     currentMap.dispose();
     nearbyLockedDoor.dispose();
-    disconnectFromLiveKit();
+    playerGridPosition.dispose();
+    gameReady.dispose();
   }
 }

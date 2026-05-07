@@ -362,21 +362,38 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _handleSubmit,
-                  icon: const Icon(Icons.send, size: 16),
-                  label: const Text('Submit to Clawd'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _clawdOrange,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                  ),
+                ValueListenableBuilder<BotStatus>(
+                  valueListenable: botStatusNotifier,
+                  builder: (context, botStatus, _) {
+                    final enabled = botStatus != BotStatus.absent;
+                    final button = ElevatedButton.icon(
+                      onPressed: enabled ? _handleSubmit : null,
+                      icon: const Icon(Icons.send, size: 16),
+                      label: const Text('Submit to Clawd'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _clawdOrange,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor:
+                            _clawdOrange.withValues(alpha: 0.3),
+                        disabledForegroundColor:
+                            Colors.white.withValues(alpha: 0.5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                      ),
+                    );
+                    if (!enabled) {
+                      return Tooltip(
+                        message: 'Clawd is offline',
+                        child: button,
+                      );
+                    }
+                    return button;
+                  },
                 ),
               ],
             ),
