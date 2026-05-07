@@ -123,6 +123,20 @@ void main() {
   });
 
   group('serialization', () {
+    test('loadFromJson skips entries with unknown layer', () {
+      final json = <String, dynamic>{
+        '1,2,structure': [3, 'alice'],
+        '3,4,lighting': [5, 'bob'], // unknown future layer
+        '5,6,floor': [7, 'charlie'],
+      };
+      vmap.loadFromJson(json);
+
+      // Known layers are loaded; unknown 'lighting' is silently skipped.
+      expect(vmap.versionAt(1, 2, OpLayer.structure), (3, 'alice'));
+      expect(vmap.versionAt(5, 6, OpLayer.floor), (7, 'charlie'));
+      expect(vmap.length, 2);
+    });
+
     test('toJson/loadFromJson round-trip', () {
       const op1 = MapEditOp(
         playerId: 'alice',

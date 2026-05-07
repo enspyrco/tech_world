@@ -1,7 +1,25 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 
 /// Which layer a map edit operation targets.
-enum OpLayer { structure, floor, objects, terrain, walls }
+enum OpLayer {
+  structure,
+  floor,
+  objects,
+  terrain,
+  walls;
+
+  /// Returns the matching [OpLayer], or `null` if [name] is unrecognized.
+  ///
+  /// Use this at protocol boundaries instead of [EnumByName.byName] to avoid
+  /// crashing when a future protocol version introduces a new layer value.
+  static OpLayer? tryParse(String name) {
+    for (final layer in values) {
+      if (layer.name == name) return layer;
+    }
+    return null;
+  }
+}
 
 /// A single cell edit in the map editor CRDT.
 ///
@@ -53,16 +71,27 @@ class MapEditOp {
   }
 
   /// Deserialize from JSON (as sent over data channel).
-  factory MapEditOp.fromJson(Map<String, dynamic> json, {
+  ///
+  /// Returns `null` if the `layer` field names an unrecognized layer (e.g. one
+  /// introduced by a newer protocol version). Callers should skip null results
+  /// rather than crashing, so that old clients remain functional after a
+  /// protocol upgrade.
+  static MapEditOp? fromJson(Map<String, dynamic> json, {
     required String playerId,
     required int counter,
   }) {
+    final layerName = json['layer'] as String;
+    final layer = OpLayer.tryParse(layerName);
+    if (layer == null) {
+      debugPrint('MapEditOp.fromJson: skipping op with unknown layer "$layerName"');
+      return null;
+    }
     return MapEditOp(
       playerId: playerId,
       counter: counter,
       x: json['x'] as int,
       y: json['y'] as int,
-      layer: OpLayer.values.byName(json['layer'] as String),
+      layer: layer,
       oldValue: json['old'],
       newValue: json['new'],
     );
@@ -129,6 +158,10 @@ class MapEditBatch {
   }
 
   /// Deserialize from a JSON map (data channel format).
+  ///
+  /// Ops with unrecognized layer names are silently skipped (see
+  /// [MapEditOp.fromJson]), so a batch from a newer client may produce fewer
+  /// ops than it contained on the wire.
   factory MapEditBatch.fromJson(Map<String, dynamic> json) {
     final playerId = json['playerId'] as String;
     final counter = json['counter'] as int;
@@ -142,6 +175,7 @@ class MapEditBatch {
                 playerId: playerId,
                 counter: counter,
               ))
+          .whereType<MapEditOp>()
           .toList(),
     );
   }

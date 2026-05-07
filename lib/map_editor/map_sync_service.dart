@@ -576,6 +576,7 @@ class MapSyncService {
 
     if (msg.topic == _editTopic) {
       final batch = MapEditBatch.fromJson(json);
+      if (batch.ops.isEmpty) return;
       if (_isSyncing) {
         _syncBuffer.add(batch);
       } else {
@@ -924,7 +925,11 @@ class MapSyncService {
   }
 
   TileType _tileTypeFromName(String name) {
-    return TileType.values.byName(name);
+    for (final type in TileType.values) {
+      if (type.name == name) return type;
+    }
+    debugPrint('_tileTypeFromName: unknown TileType "$name", defaulting to open');
+    return TileType.open;
   }
 
   /// Dispose subscriptions and resources.
