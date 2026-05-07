@@ -91,6 +91,7 @@ Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthSer
 
 - **`TechWorldGame`** — extends `FlameGame`, wraps `TechWorld` world component
 - **`TechWorld`** — extends `World`, manages all game components, subscribes to LiveKit events
+- **`RoomSession`** — `lib/rooms/room_session.dart`, encapsulates room-scoped service lifecycle (LiveKit, Chat, Proximity, Oracle). Static `create()` factory, `connect()`, `enableMedia()`, `leave()`. Owned by `_MyAppState` as `_session: RoomSession?`
 
 ### Communication (All via LiveKit)
 
