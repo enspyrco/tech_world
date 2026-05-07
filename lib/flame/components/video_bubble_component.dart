@@ -110,6 +110,9 @@ class VideoBubbleComponent extends PositionComponent {
   DateTime? _lastFrameTime;
   final Duration _minFrameInterval = const Duration(milliseconds: 50);
 
+  // Guard against concurrent async frame decodes
+  bool _nativeFrameInFlight = false;
+
   // Retry tracking for capture initialization
   int _captureRetryCount = 0;
   static const int _maxCaptureRetries = 10;
@@ -450,8 +453,8 @@ class VideoBubbleComponent extends PositionComponent {
   }
 
   Future<void> _processNativeFrame() async {
-    if (_capture == null) return;
-
+    if (_capture == null || _nativeFrameInFlight) return;
+    _nativeFrameInFlight = true;
     try {
       final width = _capture!.width;
       final height = _capture!.height;
@@ -468,11 +471,13 @@ class VideoBubbleComponent extends PositionComponent {
         return;
       }
 
+      // Convert BGRA to RGBA before releasing the shared buffer.
+      // markConsumed() must come AFTER the byte copy so the ObjC producer
+      // cannot overwrite pixels while _bgraToRgba is still reading them.
+      final rgbaBytes = _bgraToRgba(bgraBytes);
+
       // Mark the frame as consumed so native can write the next one
       _capture!.markConsumed();
-
-      // Convert BGRA to RGBA for ui.Image
-      final rgbaBytes = _bgraToRgba(bgraBytes);
 
       // Decode to ui.Image
       final image = await _decodeRgbaImage(rgbaBytes, width, height);
@@ -488,6 +493,8 @@ class VideoBubbleComponent extends PositionComponent {
       }
     } catch (e) {
       _framesDropped++;
+    } finally {
+      _nativeFrameInFlight = false;
     }
   }
 
