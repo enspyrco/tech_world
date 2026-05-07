@@ -883,7 +883,7 @@ class TechWorld extends World with TapCallbacks {
       _shaderProgram =
           await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
     } catch (e) {
-      // Shader loading failed - video bubbles will render without effects
+      _log.warning('Video bubble shader failed to load', e);
     }
   }
 
