@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:ui' as ui;
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:flutter/material.dart';
@@ -125,6 +126,7 @@ class _MyAppState extends State<MyApp> {
   String? _connectionFailureMessage;
   StreamSubscription<AuthUser>? _authSubscription;
   StreamSubscription<String?>? _connectionLostSubscription;
+  StreamSubscription<DocumentSnapshot>? _roomDeletionSubscription;
   bool _isReconnecting = false;
 
   /// Wire-state tracker for the current join operation's circuit-board overlay.
@@ -339,6 +341,10 @@ class _MyAppState extends State<MyApp> {
       _showJoinOverlay = true;
     });
 
+    // Listen for room deletion so players return to the lobby if the
+    // owner deletes the room while they are inside it.
+    _listenForRoomDeletion(room.id);
+
     try {
       // Wire A: prefetch tileset bytes into cache (parallel with engine init).
       wires.start(Wire.tilesets);
@@ -534,7 +540,10 @@ class _MyAppState extends State<MyApp> {
       await techWorld.exitEditorMode();
     }
 
-    // Cancel connection-loss subscription before tearing down services.
+    // Cancel room-deletion and connection-loss subscriptions before
+    // tearing down services.
+    _roomDeletionSubscription?.cancel();
+    _roomDeletionSubscription = null;
     _connectionLostSubscription?.cancel();
     _connectionLostSubscription = null;
     _isReconnecting = false;
@@ -564,6 +573,31 @@ class _MyAppState extends State<MyApp> {
     _showJoinOverlay = false;
 
     setState(() {});
+  }
+
+  /// Listen to the Firestore room document for deletion.
+  ///
+  /// If the owner deletes the room while other players are inside it,
+  /// the snapshot will report `!exists` and we navigate back to the lobby.
+  void _listenForRoomDeletion(String roomId) {
+    _roomDeletionSubscription?.cancel();
+    _roomDeletionSubscription = FirebaseFirestore.instance
+        .collection('rooms')
+        .doc(roomId)
+        .snapshots()
+        .listen((snapshot) {
+      if (!snapshot.exists && _currentRoom != null) {
+        _log.info('Room $roomId was deleted — returning to lobby');
+        _leaveRoom();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This room has been deleted by its owner.'),
+            ),
+          );
+        }
+      }
+    });
   }
 
   /// Subscribe to [LiveKitService.connectionLost] for auto-reconnection.
