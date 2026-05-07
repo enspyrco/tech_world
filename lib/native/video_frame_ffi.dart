@@ -13,7 +13,8 @@ import 'package:ffi/ffi.dart';
 /// operations will return null/no-op.
 
 /// Whether the current platform supports FFI video capture.
-final bool _isSupported = Platform.isMacOS;
+/// Starts as true on macOS; set to false if native symbols are missing.
+bool _isSupported = Platform.isMacOS;
 
 // Lazy-load the native library to avoid crashes on unsupported platforms
 DynamicLibrary? _nativeLib;
@@ -91,20 +92,25 @@ void _ensureFunctionsLoaded() {
   final lib = _getNativeLib();
   if (lib == null) return;
 
-  _create ??= lib.lookupFunction<_VideoFrameCaptureCreateNative,
-      _VideoFrameCaptureCreate>('video_frame_capture_create');
-  _getBuffer ??= lib.lookupFunction<_VideoFrameCaptureGetBufferNative,
-      _VideoFrameCaptureGetBuffer>('video_frame_capture_get_buffer');
-  _markConsumed ??= lib.lookupFunction<_VideoFrameCaptureMarkConsumedNative,
-      _VideoFrameCaptureMarkConsumed>('video_frame_capture_mark_consumed');
-  _isActive ??= lib.lookupFunction<_VideoFrameCaptureIsActiveNative,
-      _VideoFrameCaptureIsActive>('video_frame_capture_is_active');
-  _destroy ??= lib.lookupFunction<_VideoFrameCaptureDestroyNative,
-      _VideoFrameCaptureDestroy>('video_frame_capture_destroy');
-  _listTracks ??= lib.lookupFunction<_VideoFrameCaptureListTracksNative,
-      _VideoFrameCaptureListTracks>('video_frame_capture_list_tracks');
-  _init ??= lib.lookupFunction<_VideoFrameCaptureInitNative,
-      _VideoFrameCaptureInit>('video_frame_capture_init');
+  try {
+    _create ??= lib.lookupFunction<_VideoFrameCaptureCreateNative,
+        _VideoFrameCaptureCreate>('video_frame_capture_create');
+    _getBuffer ??= lib.lookupFunction<_VideoFrameCaptureGetBufferNative,
+        _VideoFrameCaptureGetBuffer>('video_frame_capture_get_buffer');
+    _markConsumed ??= lib.lookupFunction<_VideoFrameCaptureMarkConsumedNative,
+        _VideoFrameCaptureMarkConsumed>('video_frame_capture_mark_consumed');
+    _isActive ??= lib.lookupFunction<_VideoFrameCaptureIsActiveNative,
+        _VideoFrameCaptureIsActive>('video_frame_capture_is_active');
+    _destroy ??= lib.lookupFunction<_VideoFrameCaptureDestroyNative,
+        _VideoFrameCaptureDestroy>('video_frame_capture_destroy');
+    _listTracks ??= lib.lookupFunction<_VideoFrameCaptureListTracksNative,
+        _VideoFrameCaptureListTracks>('video_frame_capture_list_tracks');
+    _init ??= lib.lookupFunction<_VideoFrameCaptureInitNative,
+        _VideoFrameCaptureInit>('video_frame_capture_init');
+  } catch (e) {
+    stderr.writeln('VideoFrameCapture: native symbols not found: $e');
+    _isSupported = false;
+  }
 }
 
 /// Video frame buffer structure matching the native C struct.

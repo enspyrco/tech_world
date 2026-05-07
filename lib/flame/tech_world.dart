@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -691,11 +692,11 @@ class TechWorld extends World with TapCallbacks {
 
       // BFS from startKey.
       final group = <String>[startKey];
-      final queue = <String>[startKey];
+      final queue = Queue<String>()..add(startKey);
       visited.add(startKey);
 
       while (queue.isNotEmpty) {
-        final current = queue.removeAt(0);
+        final current = queue.removeFirst();
         final currentCenter = bubbles[current]!.center;
 
         for (final candidateKey in keys) {

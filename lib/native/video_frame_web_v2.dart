@@ -434,6 +434,8 @@ class DirectTrackCapture {
     stopCapture();
     _currentFrame?.dispose();
     _currentFrame = null;
+    _readbackCanvas = null;
+    _readbackCtx = null;
     _log.info('DirectTrackCapture: Disposed');
   }
 }
@@ -867,6 +869,8 @@ class VideoElementCapture implements FrameSource {
     stopCapture();
     _currentFrame?.dispose();
     _currentFrame = null;
+    _readbackCanvas = null;
+    _readbackCtx = null;
 
     // Only clean up video element if we created it
     if (ownsElement) {
