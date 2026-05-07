@@ -26,7 +26,7 @@ class DirectTrackCapture {
   }) async => null;
 
   /// No-op on non-web platforms.
-  static void cancelPendingUnmute() {}
+  void cancelPendingUnmute() {}
 
   /// Always returns false.
   bool get hasNewFrame => false;
