@@ -237,7 +237,7 @@ void main() {
       expect(progress.isChallengeCompleted('evocation_fizzbuzz'), isFalse);
     });
 
-    test('multi-challenge door: speaking any one required word unlocks',
+    test('multi-challenge door: speaking a matching word passes the cast',
         () async {
       // A door listing two required challenges is satisfied per-cast —
       // the door tracks completion server-side via progress, not in
