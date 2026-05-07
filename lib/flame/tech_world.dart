@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:meta/meta.dart' show useResult;
 import 'package:flutter/material.dart' show Color, Colors, FontWeight, TextStyle;
 import 'package:logging/logging.dart';
 
@@ -1913,12 +1914,17 @@ class TechWorld extends World with TapCallbacks {
   /// before unlocking. A door with multiple requirements (e.g. D1 needs both
   /// evocationCountdown AND divinationColor) stays locked until every seal is
   /// broken.
+  @useResult
   bool unlockDoor(DoorData door) {
     // Guard: all required challenges must be completed before the door opens.
     if (door.requiredChallengeIds.isNotEmpty) {
       final progress = Locator.maybeLocate<ProgressService>();
+      if (progress == null) {
+        _log.warning('ProgressService not available — door check skipped');
+        return false;
+      }
       for (final challengeId in door.requiredChallengeIds) {
-        if (!(progress?.isChallengeCompleted(challengeId.wireName) ?? false)) {
+        if (!progress.isChallengeCompleted(challengeId.wireName)) {
           _log.info(
             'Door at (${door.position.x}, ${door.position.y}) not unlocked: '
             'challenge ${challengeId.wireName} still incomplete',

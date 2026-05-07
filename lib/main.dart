@@ -1385,7 +1385,7 @@ class _MyAppState extends State<MyApp> {
                                 final doors = techWorld
                                     .doorsForChallenge(challenge.id);
                                 for (final door in doors) {
-                                  techWorld.unlockDoor(door);
+                                  final _ = techWorld.unlockDoor(door);
                                 }
                               }
 
