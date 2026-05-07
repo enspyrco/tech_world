@@ -17,6 +17,7 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
@@ -75,12 +76,12 @@ void main() {
       expect(fakeLiveKit.publishedMessages.length, equals(1));
 
       final published = fakeLiveKit.publishedMessages.first;
-      expect(published['topic'], equals('chat'));
+      expect(published['topic'], equals(DataTopic.chat.wireName));
       // Shared chat broadcasts to all (no destinationIdentities)
       expect(published['destinationIdentities'], isNull);
 
       final payload = published['payload'] as Map<String, dynamic>;
-      expect(payload['type'], equals('chat'));
+      expect(payload['type'], equals(DataTopic.chat.wireName));
       expect(payload['text'], equals('Test message'));
       expect(payload['id'], isNotNull);
       expect(payload['senderName'], equals('Test User'));
@@ -439,7 +440,7 @@ void main() {
         expect(fakeLiveKit.publishedMessages.length, equals(1));
 
         final published = fakeLiveKit.publishedMessages.first;
-        expect(published['topic'], equals('dm'));
+        expect(published['topic'], equals(DataTopic.dm.wireName));
         expect(
           published['destinationIdentities'],
           equals(['peer-uid']),
@@ -902,7 +903,7 @@ class FakeLiveKitService implements LiveKitService {
   void simulateResponse(Map<String, dynamic> response) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: 'bot-claude',
-      topic: 'chat-response',
+      topic: DataTopic.chatResponse.wireName,
       data: utf8.encode(jsonEncode(response)),
     ));
   }
@@ -910,7 +911,7 @@ class FakeLiveKitService implements LiveKitService {
   void simulateInvalidResponse(String invalidData) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: 'bot-claude',
-      topic: 'chat-response',
+      topic: DataTopic.chatResponse.wireName,
       data: utf8.encode(invalidData),
     ));
   }
@@ -928,7 +929,7 @@ class FakeLiveKitService implements LiveKitService {
       String id, Map<String, dynamic> response) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: 'bot-claude',
-      topic: 'chat-response',
+      topic: DataTopic.chatResponse.wireName,
       data: utf8.encode(jsonEncode(response)),
     ));
   }
@@ -937,7 +938,7 @@ class FakeLiveKitService implements LiveKitService {
       String senderId, Map<String, dynamic> message) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: senderId,
-      topic: 'chat',
+      topic: DataTopic.chat.wireName,
       data: utf8.encode(jsonEncode(message)),
     ));
   }
@@ -945,7 +946,7 @@ class FakeLiveKitService implements LiveKitService {
   void simulateChatFromSelf(Map<String, dynamic> message) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: userId, // Same as our userId
-      topic: 'chat',
+      topic: DataTopic.chat.wireName,
       data: utf8.encode(jsonEncode(message)),
     ));
   }
@@ -954,7 +955,7 @@ class FakeLiveKitService implements LiveKitService {
   void simulateDm(String senderId, Map<String, dynamic> message) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: senderId,
-      topic: 'dm',
+      topic: DataTopic.dm.wireName,
       data: utf8.encode(jsonEncode(message)),
     ));
   }
@@ -964,7 +965,7 @@ class FakeLiveKitService implements LiveKitService {
       String senderId, Map<String, dynamic> message) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: senderId,
-      topic: 'dm-response',
+      topic: DataTopic.dmResponse.wireName,
       data: utf8.encode(jsonEncode(message)),
     ));
   }

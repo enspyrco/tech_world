@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
+import 'package:tech_world/livekit/data_topic.dart';
 
 final _log = Logger('DreamfinderClient');
 
@@ -16,8 +17,8 @@ final _log = Logger('DreamfinderClient');
 ///
 /// These match the LiveKit data channel topics used throughout the game.
 abstract final class GameEventTopic {
-  static const chat = 'chat';
-  static const helpRequest = 'help-request';
+  static String get chat => DataTopic.chat.wireName;
+  static String get helpRequest => DataTopic.helpRequest.wireName;
   static const playerJoin = 'player-join';
   static const playerLeave = 'player-leave';
 }
