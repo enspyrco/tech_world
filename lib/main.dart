@@ -1262,44 +1262,50 @@ class _MyAppState extends State<MyApp> {
                 if (_session != null)
                   ScreenShareOverlay(
                       liveKitService: _session!.liveKitService),
-                // Connection failure banner
+                // Connection failure banner — listens to both the failed
+                // flag and the message so reconnection text updates reactively.
                 if (_session != null)
                   ValueListenableBuilder<bool>(
                     valueListenable: _session!.connectionFailed,
                     builder: (context, failed, _) {
                       if (!failed) return const SizedBox.shrink();
-                      return Positioned(
-                        bottom: 16,
-                        left: 16,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade800,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.wifi_off,
-                                    color: Colors.white, size: 18),
-                                const SizedBox(width: 8),
-                                Text(
-                                  _session!.connectionMessage.value ??
-                                      'Video & chat unavailable — connection failed',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                  ),
+                      return ValueListenableBuilder<String?>(
+                        valueListenable: _session!.connectionMessage,
+                        builder: (context, message, _) {
+                          return Positioned(
+                            bottom: 16,
+                            left: 16,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
                                 ),
-                              ],
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade800,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.wifi_off,
+                                        color: Colors.white, size: 18),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      message ??
+                                          'Video & chat unavailable — connection failed',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       );
                     },
                   ),
