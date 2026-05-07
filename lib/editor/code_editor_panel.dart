@@ -84,7 +84,8 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
           rename: false,
         ),
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('LSP config error: $e');
       // Catches synchronous constructor errors (e.g. malformed URL).
       // Async WebSocket failures (e.g. DNS) are handled internally by
       // CodeForgeWebController — the editor falls back to plain text.
