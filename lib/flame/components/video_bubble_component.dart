@@ -31,11 +31,10 @@ final _log = Logger('VideoBubbleComponent');
 /// - Converts BGRA to RGBA and creates dart:ui.Image
 ///
 /// ### Web
-/// Uses createImageBitmap + createImageFromImageBitmap for GPU-efficient capture:
-/// - Finds the HTMLVideoElement created by flutter_webrtc
-/// - Uses requestVideoFrameCallback for frame-accurate capture
-/// - createImageBitmap provides GPU-to-GPU transfer
-/// - createImageFromImageBitmap converts to Flutter ui.Image
+/// Uses MediaStreamTrackProcessor (Chrome) or VideoElement fallback (all browsers):
+/// - DirectTrackCapture: MediaStreamTrackProcessor → VideoFrame → canvas → decodeImageFromPixels
+/// - VideoElementCapture: HTMLVideoElement → canvas → decodeImageFromPixels
+/// - Never uses createImageFromImageBitmap (Skia issue 14637)
 ///
 /// ### Other platforms
 /// Falls back to displaying a placeholder with the user's initial.
@@ -235,27 +234,23 @@ class VideoBubbleComponent extends PositionComponent {
   void _initializeWebCapture() {
     final track = _getVideoTrack();
     if (track == null) {
-      // ignore: avoid_print
-        print('[DIAG] $displayName: no video track found');
+      _log.fine('$displayName: no video track found');
       return;
     }
 
     final mediaStreamTrack = track.mediaStreamTrack;
     final isRemote = participant is! LocalParticipant;
-    // ignore: avoid_print
-        print('[DIAG] $displayName: initializing (isRemote=$isRemote, trackId=${mediaStreamTrack.id})');
+    _log.fine('$displayName: initializing (isRemote=$isRemote, trackId=${mediaStreamTrack.id})');
 
     // Get the underlying JS MediaStreamTrack via the conditional import helper.
     // This avoids importing dart_webrtc directly (which pulls in dart:js_interop
     // and breaks native tests).
     final jsTrack = direct_capture.getJsTrack(mediaStreamTrack);
     if (jsTrack == null) {
-      // ignore: avoid_print
-      print('[DIAG] $displayName: mediaStreamTrack is ${mediaStreamTrack.runtimeType}, cannot extract JS track');
+      _log.fine('$displayName: mediaStreamTrack is ${mediaStreamTrack.runtimeType}, cannot extract JS track');
       return;
     }
-    // ignore: avoid_print
-    print('[DIAG] $displayName: got jsTrack (isRemote=$isRemote)');
+    _log.fine('$displayName: got jsTrack (isRemote=$isRemote)');
 
     // Use DirectTrackCapture (MediaStreamTrackProcessor) for ALL tracks.
     _initializeLocalWebCapture(jsTrack, track);
@@ -263,26 +258,22 @@ class VideoBubbleComponent extends PositionComponent {
 
   void _initializeLocalWebCapture(Object jsTrack, VideoTrack track) {
     final supported = direct_capture.isMediaStreamTrackProcessorSupported;
-    // ignore: avoid_print
-        print('[DIAG] $displayName: MediaStreamTrackProcessor supported=$supported');
+    _log.fine('$displayName: MediaStreamTrackProcessor supported=$supported');
 
     if (!supported) {
-      // ignore: avoid_print
-        print('[DIAG] $displayName: falling back to VideoElementCapture');
+      _log.fine('$displayName: falling back to VideoElementCapture');
       _initializeRemoteWebCapture(jsTrack, track);
       return;
     }
 
     final capture = direct_capture.DirectTrackCapture.create(jsTrack);
     if (capture == null) {
-      // ignore: avoid_print
-        print('[DIAG] $displayName: DirectTrackCapture.create RETURNED NULL');
+      _log.fine('$displayName: DirectTrackCapture.create RETURNED NULL');
       _captureInitializing = false;
       return;
     }
 
-    // ignore: avoid_print
-        print('[DIAG] $displayName: DirectTrackCapture created, starting capture');
+    _log.fine('$displayName: DirectTrackCapture created, starting capture');
     _webCapture = capture;
     _videoTrack = track;
     capture.startCapture();
