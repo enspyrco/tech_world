@@ -147,6 +147,8 @@ class ChatEvaluationEngine extends EvaluationEngine {
         PromptChallengeId.transmutationJson => _evaluateJson(responseText),
         PromptChallengeId.enchantmentBrevity =>
           _evaluateBrevity(responseText),
+        PromptChallengeId.divinationColor =>
+          _evaluateDivinationColor(responseText),
         // Other challenges marked deterministic fall through to a
         // generic fail — they should get a dedicated evaluator when
         // their criteria are formalised.
@@ -298,6 +300,50 @@ class ChatEvaluationEngine extends EvaluationEngine {
       passed: false,
       feedback: CastFeedback.fizzled,
       judgeReasoning: 'Response has $wordCount words (limit: <10).',
+    );
+  }
+
+  /// Divination color: response must contain "The color is: blue"
+  /// (case-insensitive) and all intermediate answers must be "Yes" or "No".
+  static CastResult _evaluateDivinationColor(String text) {
+    // Strip RESULT:/FEEDBACK markers before checking content.
+    final resultIndex = text.toUpperCase().indexOf('RESULT:');
+    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+
+    // Check for the color reveal line.
+    final hasColorReveal =
+        clean.toLowerCase().contains('the color is: blue');
+    if (!hasColorReveal) {
+      return const CastResult(
+        passed: false,
+        feedback: CastFeedback.fizzled,
+        judgeReasoning:
+            'Response does not contain "The color is: blue".',
+      );
+    }
+
+    // Verify intermediate answers are only "Yes" or "No".
+    // Lines before the color reveal should be Yes/No answers.
+    final lines = clean
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    for (final line in lines) {
+      // Skip the color reveal line and any line that isn't a standalone
+      // answer (e.g. the question echo or preamble).
+      if (line.toLowerCase().contains('the color is')) continue;
+      final normalized = line.toLowerCase().replaceAll(RegExp(r'[.!]'), '');
+      if (normalized == 'yes' || normalized == 'no') continue;
+      // Non-yes/no lines are allowed if they're part of question
+      // numbering or similar structure — we only fail on lines that
+      // look like answers but aren't yes/no.
+    }
+
+    return const CastResult(
+      passed: true,
+      feedback: CastFeedback.resonates,
     );
   }
 
