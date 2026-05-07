@@ -1337,6 +1337,9 @@ class TechWorld extends World with TapCallbacks {
 
     // Remove the barrier at the door position so the player can walk through.
     _barriersComponent.removeBarrierAt(door.position);
+    // Invalidate the JPS pathfinding grid so the next pathfind rebuilds it
+    // without the now-removed barrier cell.
+    _pathComponent?.invalidateGrid();
 
     // The unlocked door must drop out of the proximity signal — otherwise
     // the mic FAB lingers over an open doorway.
@@ -1382,6 +1385,9 @@ class TechWorld extends World with TapCallbacks {
 
     door.isUnlocked = true;
     _barriersComponent.removeBarrierAt(door.position);
+    // Invalidate the JPS pathfinding grid so remote unlock takes effect
+    // immediately — same fix as the local path in [unlockDoor].
+    _pathComponent?.invalidateGrid();
     _recomputeNearbyLockedDoor();
     _log.info('Remote door unlock at ($doorX, $doorY)');
   }
