@@ -868,12 +868,17 @@ class PositionHeartbeat {
 
   /// Try to parse a [PositionHeartbeat] from a JSON map. Returns null if
   /// required fields are missing or have wrong types.
+  ///
+  /// Uses `is` checks rather than `as` casts so a malformed packet from
+  /// any participant returns null rather than throwing — a thrown error
+  /// inside the stream's `.map` would propagate and tear down the
+  /// heartbeat-reception stream for the rest of the session.
   static PositionHeartbeat? tryParse(Map<String, dynamic>? json) {
     if (json == null) return null;
-    final playerId = json['playerId'] as String?;
-    final x = json['x'] as int?;
-    final y = json['y'] as int?;
-    if (playerId == null || x == null || y == null) return null;
+    final playerId = json['playerId'];
+    final x = json['x'];
+    final y = json['y'];
+    if (playerId is! String || x is! int || y is! int) return null;
     return PositionHeartbeat(playerId: playerId, x: x, y: y);
   }
 }
