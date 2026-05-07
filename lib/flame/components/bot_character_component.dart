@@ -4,15 +4,16 @@ import 'dart:ui' as ui;
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flame/events.dart';
-import 'package:flame/flame.dart';
 import 'package:flutter/painting.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/tech_world_game.dart';
 
 /// A Flame component that renders the Clawd mascot as a character sprite.
 /// Unlike PlayerComponent which uses sprite sheets, this renders a static image.
 /// Tap on the bot to toggle the thinking indicator (for demo purposes).
-class BotCharacterComponent extends PositionComponent with TapCallbacks {
+class BotCharacterComponent extends PositionComponent
+    with TapCallbacks, HasGameReference<TechWorldGame> {
   BotCharacterComponent({
     required Vector2 position,
     required this.id,
@@ -79,7 +80,7 @@ class BotCharacterComponent extends PositionComponent with TapCallbacks {
   @override
   Future<void> onLoad() async {
     super.onLoad();
-    _clawdImage = await Flame.images.load(spriteAsset);
+    _clawdImage = await game.images.load(spriteAsset);
   }
 
   @override
