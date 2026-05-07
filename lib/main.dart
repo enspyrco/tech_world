@@ -398,15 +398,7 @@ class _MyAppState extends State<MyApp> {
             wires.complete(Wire.camera);
             wires.complete(Wire.chat);
             _liveKitConnectionFailed = true;
-            _connectionFailureMessage = switch (result) {
-              ConnectionResult.tokenAuthError =>
-                'Session expired — please sign in again',
-              ConnectionResult.tokenNetworkError =>
-                'Could not reach server — check your connection',
-              ConnectionResult.roomFailed =>
-                'Room connection failed — try again later',
-              _ => 'Video & chat unavailable — connection failed',
-            };
+            _connectionFailureMessage = _failureMessageFor(result);
           } else {
             wires.complete(Wire.server);
             wires.complete(Wire.camera);
@@ -503,15 +495,7 @@ class _MyAppState extends State<MyApp> {
       await _chatService!.loadHistory(roomId);
     } else if (result != ConnectionResult.alreadyConnected) {
       _liveKitConnectionFailed = true;
-      _connectionFailureMessage = switch (result) {
-        ConnectionResult.tokenAuthError =>
-          'Session expired — please sign in again',
-        ConnectionResult.tokenNetworkError =>
-          'Could not reach server — check your connection',
-        ConnectionResult.roomFailed =>
-          'Room connection failed — try again later',
-        _ => 'Video & chat unavailable — connection failed',
-      };
+      _connectionFailureMessage = _failureMessageFor(result);
     }
 
     // Apply saved avatar to game world.
@@ -519,6 +503,20 @@ class _MyAppState extends State<MyApp> {
       locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
     }
   }
+
+  /// Map a [ConnectionResult] failure code to a user-visible error message.
+  ///
+  /// Does not handle [ConnectionResult.connected] or
+  /// [ConnectionResult.alreadyConnected] — callers must guard against those
+  /// before invoking this helper.
+  String _failureMessageFor(ConnectionResult result) => switch (result) {
+    ConnectionResult.tokenAuthError =>
+      'Session expired — please sign in again',
+    ConnectionResult.tokenNetworkError =>
+      'Could not reach server — check your connection',
+    ConnectionResult.roomFailed => 'Room connection failed — try again later',
+    _ => 'Video & chat unavailable — connection failed',
+  };
 
   /// Leave the current room — disconnect LiveKit and return to lobby.
   ///
