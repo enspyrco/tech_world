@@ -135,7 +135,8 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
   @override
   void update(double dt) {
     super.update(dt);
-    priority = position.y.round() ~/ gridSquareSize;
+    priority = (position.y.round() ~/ gridSquareSize) * kPriorityStride +
+        (position.x.round().abs() % kPriorityStride);
   }
 
   // We round the player position before calculating the miniGrid position,

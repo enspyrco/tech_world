@@ -86,7 +86,8 @@ class BotCharacterComponent extends PositionComponent
   @override
   void update(double dt) {
     super.update(dt);
-    priority = position.y.round() ~/ gridSquareSize;
+    priority = (position.y.round() ~/ gridSquareSize) * kPriorityStride +
+        (position.x.round().abs() % kPriorityStride);
   }
 
   /// Returns mini grid position as Point (for proximity detection)
