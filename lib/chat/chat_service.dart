@@ -127,6 +127,14 @@ class ChatService {
     return messages.last.text;
   }
 
+  /// Generate a unique message ID using microsecond resolution.
+  ///
+  /// Microsecond timestamps make collisions astronomically unlikely even for
+  /// rapid back-to-back calls (unlike milliseconds, which can collide within
+  /// the same tick and cause silent deduplication via [_seenMessageIds]).
+  String _nextMessageId() =>
+      DateTime.now().microsecondsSinceEpoch.toString();
+
   /// Track a message ID for deduplication, trimming the oldest entries when
   /// the set exceeds [_maxSeenIds].
   void _markSeen(String id) {
@@ -360,7 +368,7 @@ class ChatService {
     }
 
     // Generate a unique message ID
-    final messageId = DateTime.now().millisecondsSinceEpoch.toString();
+    final messageId = _nextMessageId();
     _markSeen(messageId); // Mark as seen so we don't duplicate
 
     // Add user message locally
@@ -467,7 +475,7 @@ class ChatService {
       peerId,
     );
 
-    final messageId = DateTime.now().millisecondsSinceEpoch.toString();
+    final messageId = _nextMessageId();
     _markSeen(messageId);
 
     final localUid = _liveKitService.userId;
@@ -655,7 +663,7 @@ class ChatService {
       return null;
     }
 
-    final requestId = 'help-${DateTime.now().millisecondsSinceEpoch}';
+    final requestId = 'help-${DateTime.now().microsecondsSinceEpoch}';
     final completer = Completer<String?>();
     _pendingHelpRequests[requestId] = completer;
 
