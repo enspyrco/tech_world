@@ -162,12 +162,11 @@ class LiveKitService {
   Stream<String> get mapSwitchReceived => dataReceived
       .where((msg) => msg.topic == 'map-switch')
       .map((msg) {
-        final json = msg.json;
-        if (json == null) return null;
-        final senderId = json['senderId'] as String?;
-        // Ignore our own broadcasts to prevent infinite loops.
-        if (senderId == userId) return null;
-        return json['mapId'] as String?;
+        if (msg.json case {'senderId': String senderId, 'mapId': String mapId}
+            when senderId != userId) {
+          return mapId;
+        }
+        return null;
       })
       .where((mapId) => mapId != null)
       .cast<String>();
@@ -834,20 +833,21 @@ class AvatarUpdate {
   final String spriteAsset;
 
   /// Try to parse an [AvatarUpdate] from a JSON map. Returns null if required
-  /// fields are missing.
+  /// fields are missing or have wrong types.
+  ///
+  /// Uses Dart 3 map patterns so a wrong-typed value returns null rather
+  /// than throwing — a thrown error inside the stream's `.map` callback
+  /// would tear down avatar reception for the rest of the session.
   static AvatarUpdate? tryParse(Map<String, dynamic>? json) {
-    if (json == null) return null;
-    final playerId = json['playerId'] as String?;
-    final avatarId = json['avatarId'] as String?;
-    final spriteAsset = json['spriteAsset'] as String?;
-
-    if (playerId == null || spriteAsset == null) return null;
-
-    return AvatarUpdate(
-      playerId: playerId,
-      avatarId: avatarId ?? '',
-      spriteAsset: spriteAsset,
-    );
+    if (json case {'playerId': String playerId, 'spriteAsset': String spriteAsset}) {
+      final avatarId = switch (json['avatarId']) { String s => s, _ => '' };
+      return AvatarUpdate(
+        playerId: playerId,
+        avatarId: avatarId,
+        spriteAsset: spriteAsset,
+      );
+    }
+    return null;
   }
 }
 
