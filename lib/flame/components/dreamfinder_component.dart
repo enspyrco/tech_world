@@ -74,7 +74,8 @@ class DreamfinderComponent
   @override
   void update(double dt) {
     super.update(dt);
-    priority = position.y.round() ~/ gridSquareSize;
+    priority = (position.y.round() ~/ gridSquareSize) * kPriorityStride +
+        (position.x.round().abs() % kPriorityStride);
 
     // Tick the wander cooldown when idle/working and not otherwise occupied.
     if (!_isWandering && !_isGreeting && !_serverControlled &&
