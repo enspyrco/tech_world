@@ -57,6 +57,7 @@ class MapSyncService {
   bool _isSyncing = false;
   Completer<void>? _syncCompleter;
   final List<MapEditBatch> _syncBuffer = [];
+  int _snapshotClock = 0;
 
   // -------------------------------------------------------------------------
   // Public API — called by MapEditorPanel
@@ -754,8 +755,9 @@ class MapSyncService {
     final versions = json['versions'] as Map<String, dynamic>? ?? {};
     _versionMap.loadFromJson(versions);
 
-    // Advance clock.
+    // Advance clock and record snapshot cutoff for buffer flush.
     final remoteClock = json['clock'] as int? ?? 0;
+    _snapshotClock = remoteClock;
     _undoManager.advanceClock(remoteClock);
 
     _editorState.notifyRemoteChange();
@@ -769,7 +771,12 @@ class MapSyncService {
   void _flushSyncBuffer() {
     _isSyncing = false;
     for (final batch in _syncBuffer) {
-      _onRemoteEdit(batch);
+      // Edits with counters below the snapshot clock were already captured
+      // in the snapshot state. Only replay edits that are concurrent with
+      // or newer than the snapshot.
+      if (batch.counter >= _snapshotClock) {
+        _onRemoteEdit(batch);
+      }
     }
     _syncBuffer.clear();
   }
