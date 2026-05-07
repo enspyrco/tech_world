@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:convert';
 
 import 'package:flame/components.dart';
@@ -654,6 +655,16 @@ class FakeLiveKitService implements LiveKitService {
 
   @override
   Participant? getParticipant(String identity) => null;
+
+  @override
+  Stream<PositionHeartbeat> get positionHeartbeatReceived =>
+      const Stream.empty();
+
+  @override
+  void startPositionHeartbeat(Point<int> Function() currentPosition) {}
+
+  @override
+  void stopPositionHeartbeat() {}
 
   @override
   Future<void> dispose() async {
