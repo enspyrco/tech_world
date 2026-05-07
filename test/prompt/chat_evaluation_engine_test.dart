@@ -136,4 +136,204 @@ void main() {
       expect(result.feedback, CastFeedback.fizzled);
     });
   });
+
+  group('evaluateDeterministic — FizzBuzz', () {
+    test('correct FizzBuzz output passes', () {
+      final lines = <String>[];
+      for (var i = 1; i <= 20; i++) {
+        if (i % 15 == 0) {
+          lines.add('FizzBuzz');
+        } else if (i % 3 == 0) {
+          lines.add('Fizz');
+        } else if (i % 5 == 0) {
+          lines.add('Buzz');
+        } else {
+          lines.add('$i');
+        }
+      }
+      final response = lines.join('\n');
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.evocationFizzbuzz,
+        response,
+      );
+      expect(result.passed, isTrue);
+      expect(result.feedback, CastFeedback.resonates);
+    });
+
+    test('wrong line content fails', () {
+      final lines = List.generate(20, (i) => '${i + 1}');
+      // Line 3 should be "fizz" but is "3".
+      final response = lines.join('\n');
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.evocationFizzbuzz,
+        response,
+      );
+      expect(result.passed, isFalse);
+      expect(result.feedback, CastFeedback.fizzled);
+      expect(result.judgeReasoning, contains('Line 3'));
+    });
+
+    test('wrong line count fails', () {
+      const response = '1\n2\nfizz';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.evocationFizzbuzz,
+        response,
+      );
+      expect(result.passed, isFalse);
+      expect(result.judgeReasoning, contains('Expected 20 lines'));
+    });
+  });
+
+  group('evaluateDeterministic — Countdown', () {
+    test('correct zero-padded countdown passes', () {
+      const response = '10\n09\n08\n07\n06\n05\n04\n03\n02\n01';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.evocationCountdown,
+        response,
+      );
+      expect(result.passed, isTrue);
+      expect(result.feedback, CastFeedback.resonates);
+    });
+
+    test('non-padded countdown fails', () {
+      const response = '10\n9\n8\n7\n6\n5\n4\n3\n2\n1';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.evocationCountdown,
+        response,
+      );
+      expect(result.passed, isFalse);
+      expect(result.judgeReasoning, contains('expected "09"'));
+    });
+
+    test('wrong line count fails', () {
+      const response = '10\n09\n08';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.evocationCountdown,
+        response,
+      );
+      expect(result.passed, isFalse);
+      expect(result.judgeReasoning, contains('Expected 10 lines'));
+    });
+  });
+
+  group('evaluateDeterministic — JSON', () {
+    test('valid 3-object JSON passes', () {
+      const response = '''
+[
+  {"title": "The Great Gatsby", "author": "F. Scott Fitzgerald", "year": 1925},
+  {"title": "1984", "author": "George Orwell", "year": 1949},
+  {"title": "Dune", "author": "Frank Herbert", "year": 1965}
+]
+''';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.transmutationJson,
+        response,
+      );
+      expect(result.passed, isTrue);
+      expect(result.feedback, CastFeedback.resonates);
+    });
+
+    test('missing keys fails', () {
+      const response = '''
+[
+  {"title": "The Great Gatsby"},
+  {"title": "1984", "author": "George Orwell", "year": 1949},
+  {"title": "Dune", "author": "Frank Herbert", "year": 1965}
+]
+''';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.transmutationJson,
+        response,
+      );
+      expect(result.passed, isFalse);
+      expect(result.judgeReasoning, contains('missing keys'));
+    });
+
+    test('non-JSON response fails', () {
+      const response = 'Here are three books I recommend.';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.transmutationJson,
+        response,
+      );
+      expect(result.passed, isFalse);
+      expect(result.judgeReasoning, contains('No valid JSON'));
+    });
+  });
+
+  group('evaluateDeterministic — Brevity', () {
+    test('under word limit passes', () {
+      const response = 'Blue sky today.';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.enchantmentBrevity,
+        response,
+      );
+      expect(result.passed, isTrue);
+      expect(result.feedback, CastFeedback.resonates);
+    });
+
+    test('over word limit fails', () {
+      const response =
+          'This is a very long response that has more than ten words '
+          'and should definitely fail the word budget check.';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.enchantmentBrevity,
+        response,
+      );
+      expect(result.passed, isFalse);
+      expect(result.judgeReasoning, contains('words'));
+    });
+  });
+
+  group('evaluateDeterministic — Divination Color', () {
+    test('response with correct color reveal passes', () {
+      const response = 'Yes\nNo\nYes\nThe color is: blue';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.divinationColor,
+        response,
+      );
+      expect(result.passed, isTrue);
+      expect(result.feedback, CastFeedback.resonates);
+    });
+
+    test('case-insensitive color reveal passes', () {
+      const response = 'Yes\nNo\nTHE COLOR IS: BLUE';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.divinationColor,
+        response,
+      );
+      expect(result.passed, isTrue);
+    });
+
+    test('wrong color fails', () {
+      const response = 'Yes\nNo\nThe color is: red';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.divinationColor,
+        response,
+      );
+      expect(result.passed, isFalse);
+      expect(result.judgeReasoning, contains('The color is: blue'));
+    });
+
+    test('missing color reveal fails', () {
+      const response = 'Yes\nNo\nYes\nI think it might be blue.';
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.divinationColor,
+        response,
+      );
+      expect(result.passed, isFalse);
+    });
+  });
+
+  group('evaluateDeterministic — fallback', () {
+    test('unhandled deterministic challenge returns fizzled', () {
+      // Use an ID that is not deterministic but exercise the fallback.
+      final result = ChatEvaluationEngine.evaluateDeterministic(
+        PromptChallengeId.evocationDiamond,
+        'some response',
+      );
+      expect(result.passed, isFalse);
+      expect(result.feedback, CastFeedback.fizzled);
+      expect(result.judgeReasoning, contains('No local evaluator'));
+    });
+  });
 }
