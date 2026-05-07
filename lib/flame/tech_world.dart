@@ -368,6 +368,11 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<(Participant, bool)>? _speakingSubscription;
   StreamSubscription<String?>? _connectionLostSubscription;
   StreamSubscription<void>? _mapInfoRequestedSubscription;
+  StreamSubscription<String>? _mapSwitchSubscription;
+
+  /// True while processing a map switch triggered by a remote player.
+  /// Prevents re-broadcasting the same switch back to the room.
+  bool _isRemoteMapSwitch = false;
   StreamSubscription<DataChannelMessage>? _speechTranscriptSubscription;
   InfraHealthService? _infraHealthService;
 
@@ -1123,6 +1128,19 @@ class TechWorld extends World with TapCallbacks {
       _liveKitService?.publishMapInfo(currentMap.value);
     });
 
+    // Listen for map switches from other human players.
+    _mapSwitchSubscription =
+        _liveKitService!.mapSwitchReceived.listen((mapId) {
+      _log.info('Remote player switched to map "$mapId"');
+      final map = predefinedMapLookup[mapId];
+      if (map == null) {
+        _log.warning('Ignoring map-switch: unknown map ID "$mapId"');
+        return;
+      }
+      _isRemoteMapSwitch = true;
+      loadMap(map).whenComplete(() => _isRemoteMapSwitch = false);
+    });
+
     // Subscribe to position updates from other players via LiveKit
     _liveKitPositionSubscription =
         _liveKitService!.positionReceived.listen((PlayerPath path) {
@@ -1815,8 +1833,16 @@ class TechWorld extends World with TapCallbacks {
 
       currentMap.value = resolvedMap;
 
-      // Notify the bot about the new map layout
+      // Notify the bot about the new map layout.
       _liveKitService?.publishMapInfo(resolvedMap);
+
+      // Notify other human players — but only if we initiated the switch
+      // locally. When processing a remote player's map-switch message,
+      // _isRemoteMapSwitch is true and we skip the broadcast to avoid an
+      // infinite echo loop.
+      if (!_isRemoteMapSwitch) {
+        _liveKitService?.publishMapSwitch(resolvedMap.id);
+      }
 
       gameReady.value = true;
     } finally {
@@ -2015,6 +2041,8 @@ class TechWorld extends World with TapCallbacks {
     _connectionLostSubscription = null;
     _mapInfoRequestedSubscription?.cancel();
     _mapInfoRequestedSubscription = null;
+    _mapSwitchSubscription?.cancel();
+    _mapSwitchSubscription = null;
     _speechTranscriptSubscription?.cancel();
     _speechTranscriptSubscription = null;
 

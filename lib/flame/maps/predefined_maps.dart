@@ -138,7 +138,7 @@ final allMaps = [
 final defaultMap = lRoom;
 
 /// O(1) lookup of predefined maps by ID.
-final Map<String, GameMap> _predefinedMapLookup = {
+final Map<String, GameMap> predefinedMapLookup = {
   for (final m in allMaps) m.id: m,
 };
 
@@ -205,7 +205,7 @@ GameMap applyPredefinedVisualFallback(GameMap map) {
 /// Find a predefined map matching [map], by ID, name, or barrier structure.
 GameMap? _findPredefinedMatch(GameMap map) {
   // Fast path: direct ID match (for predefined maps used without Firestore).
-  final byId = _predefinedMapLookup[map.id];
+  final byId = predefinedMapLookup[map.id];
   if (byId != null) {
     _log.info('Visual fallback: matched by ID "${map.id}"');
     return byId;
