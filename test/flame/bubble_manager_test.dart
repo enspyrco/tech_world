@@ -1,0 +1,395 @@
+import 'dart:math';
+
+import 'package:flame/components.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:tech_world/flame/bubble_manager.dart';
+import 'package:tech_world/flame/components/bot_bubble_component.dart';
+import 'package:tech_world/flame/components/bot_character_component.dart';
+import 'package:tech_world/flame/components/player_bubble_component.dart';
+import 'package:tech_world/flame/components/player_component.dart';
+import 'package:tech_world/livekit/livekit_service.dart';
+
+class MockLiveKitService extends Mock implements LiveKitService {}
+
+void main() {
+  group('BubbleManager', () {
+    group('chebyshevDistance', () {
+      test('returns max of x and y difference', () {
+        expect(
+          BubbleManager.chebyshevDistance(
+              const Point(0, 0), const Point(3, 4)),
+          equals(4),
+        );
+      });
+
+      test('returns 0 for identical points', () {
+        expect(
+          BubbleManager.chebyshevDistance(
+              const Point(5, 5), const Point(5, 5)),
+          equals(0),
+        );
+      });
+
+      test('handles negative coordinates', () {
+        expect(
+          BubbleManager.chebyshevDistance(
+              const Point(-2, 3), const Point(1, 0)),
+          equals(3),
+        );
+      });
+
+      test('is symmetric', () {
+        const a = Point(1, 7);
+        const b = Point(4, 2);
+        expect(
+          BubbleManager.chebyshevDistance(a, b),
+          equals(BubbleManager.chebyshevDistance(b, a)),
+        );
+      });
+
+      test('returns x distance when y is 0', () {
+        expect(
+          BubbleManager.chebyshevDistance(
+              const Point(0, 0), const Point(7, 0)),
+          equals(7),
+        );
+      });
+
+      test('returns y distance when x is 0', () {
+        expect(
+          BubbleManager.chebyshevDistance(
+              const Point(0, 0), const Point(0, 3)),
+          equals(3),
+        );
+      });
+
+      test('adjacent diagonal is distance 1', () {
+        expect(
+          BubbleManager.chebyshevDistance(
+              const Point(0, 0), const Point(1, 1)),
+          equals(1),
+        );
+      });
+    });
+
+    group('update — bubble lifecycle', () {
+      late BubbleManager manager;
+      late PlayerComponent localPlayer;
+      late Map<String, PlayerComponent> remotePlayers;
+      late Map<String, BotCharacterComponent> bots;
+      late List<Component> addedComponents;
+
+      setUp(() {
+        addedComponents = [];
+        localPlayer = PlayerComponent(
+          position: Vector2(160, 160), // grid (5, 5) assuming 32px squares
+          id: 'local-user',
+          displayName: 'Local',
+        );
+        remotePlayers = {};
+        bots = {};
+
+        manager = BubbleManager(
+          localPlayer: localPlayer,
+          addComponent: addedComponents.add,
+          remotePlayers: remotePlayers,
+          bots: bots,
+        );
+      });
+
+      test('creates bubble for nearby remote player', () {
+        // Place remote player 3 grid squares away (within visual threshold)
+        final remote = PlayerComponent(
+          position: Vector2(256, 160), // grid (8, 5) — 3 away on x
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+
+        manager.update(0.016);
+
+        // Should create 2 bubbles: one for remote, one for local
+        expect(addedComponents.length, equals(2));
+        expect(
+          addedComponents.whereType<PlayerBubbleComponent>().length,
+          equals(2),
+        );
+      });
+
+      test('does not create bubble for distant remote player', () {
+        // Place remote player 10 grid squares away (beyond threshold)
+        final remote = PlayerComponent(
+          position: Vector2(480, 160), // grid (15, 5) — 10 away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+
+        manager.update(0.016);
+
+        expect(addedComponents, isEmpty);
+      });
+
+      test('creates bot bubble for nearby bot', () {
+        final bot = BotCharacterComponent(
+          position: Vector2(192, 160), // grid (6, 5) — 1 away
+          id: 'bot-claude',
+          displayName: 'Clawd',
+        );
+        bots['bot-claude'] = bot;
+
+        manager.update(0.016);
+
+        // Bot bubble + local player bubble
+        expect(addedComponents.length, equals(2));
+        expect(
+          addedComponents.whereType<BotBubbleComponent>().length,
+          equals(1),
+        );
+      });
+
+      test('skips proximity re-evaluation on same grid position', () {
+        final remote = PlayerComponent(
+          position: Vector2(256, 160),
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+
+        // First update creates bubbles
+        manager.update(0.016);
+        final initialCount = addedComponents.length;
+
+        // Second update at same position — no new bubbles
+        manager.update(0.016);
+        expect(addedComponents.length, equals(initialCount));
+      });
+    });
+
+    group('audio threshold', () {
+      late BubbleManager manager;
+      late MockLiveKitService mockLiveKit;
+      late PlayerComponent localPlayer;
+      late Map<String, PlayerComponent> remotePlayers;
+
+      setUp(() {
+        mockLiveKit = MockLiveKitService();
+        localPlayer = PlayerComponent(
+          position: Vector2(160, 160),
+          id: 'local-user',
+          displayName: 'Local',
+        );
+        remotePlayers = {};
+
+        manager = BubbleManager(
+          localPlayer: localPlayer,
+          addComponent: (_) {},
+          remotePlayers: remotePlayers,
+          bots: {},
+        );
+        manager.setLiveKitService(mockLiveKit);
+      });
+
+      test('enables audio within threshold', () {
+        when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
+
+        // Place player 2 squares away (at audio threshold)
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(224, 160), // 2 away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+
+        manager.update(0.016);
+
+        verify(() =>
+                mockLiveKit.setParticipantAudioEnabled('remote-1', true))
+            .called(1);
+      });
+
+      test('disables audio beyond threshold', () {
+        when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
+
+        // Place player 4 squares away (beyond audio threshold)
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(288, 160), // 4 away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+
+        manager.update(0.016);
+
+        verifyNever(() =>
+            mockLiveKit.setParticipantAudioEnabled('remote-1', true));
+      });
+    });
+
+    group('clear', () {
+      late BubbleManager manager;
+      late List<Component> addedComponents;
+      late Map<String, PlayerComponent> remotePlayers;
+
+      setUp(() {
+        addedComponents = [];
+        remotePlayers = {};
+        manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2(160, 160),
+            id: 'local-user',
+            displayName: 'Local',
+          ),
+          addComponent: addedComponents.add,
+          remotePlayers: remotePlayers,
+          bots: {},
+        );
+      });
+
+      test('removes all bubbles and resets state', () {
+        // Create some bubbles
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(192, 160),
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        manager.update(0.016);
+        expect(addedComponents, isNotEmpty);
+
+        // Clear everything
+        manager.clear();
+
+        // After clear, a new update with a different position should
+        // not carry over stale state.
+        addedComponents.clear();
+        remotePlayers.remove('remote-1');
+        manager.update(0.016);
+        expect(addedComponents, isEmpty);
+      });
+
+      test('is idempotent', () {
+        manager.clear();
+        manager.clear(); // Should not throw
+      });
+    });
+
+    group('removeBubble', () {
+      late BubbleManager manager;
+      late List<Component> addedComponents;
+      late Map<String, PlayerComponent> remotePlayers;
+
+      setUp(() {
+        addedComponents = [];
+        remotePlayers = {};
+        manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2(160, 160),
+            id: 'local-user',
+            displayName: 'Local',
+          ),
+          addComponent: addedComponents.add,
+          remotePlayers: remotePlayers,
+          bots: {},
+        );
+      });
+
+      test('no-op for non-existent player', () {
+        manager.removeBubble('nonexistent');
+        // Should not throw
+      });
+    });
+
+    group('updateSpeakingState', () {
+      test('no-op when no bubble exists', () {
+        final manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2.zero(),
+            id: 'local',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+        );
+
+        // Should not throw
+        manager.updateSpeakingState('nonexistent', true);
+      });
+    });
+
+    group('notifyTrackReady', () {
+      test('no-op when no bubble exists', () {
+        final manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2.zero(),
+            id: 'local',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+        );
+
+        // Should not throw
+        manager.notifyTrackReady('nonexistent');
+      });
+    });
+
+    group('refreshBubbleForPlayer', () {
+      test('no-op when no bubble exists for player', () {
+        final manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2.zero(),
+            id: 'local',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+        );
+
+        // Should not throw
+        manager.refreshBubbleForPlayer('nonexistent');
+      });
+    });
+
+    group('refreshLocalPlayerBubble', () {
+      test('no-op when no local bubble exists', () {
+        final manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2.zero(),
+            id: 'local',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+        );
+
+        // Should not throw
+        manager.refreshLocalPlayerBubble();
+      });
+    });
+
+    group('downgradeVideoBubble', () {
+      test('no-op when no bubble exists', () {
+        final manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2.zero(),
+            id: 'local',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+        );
+
+        // Should not throw
+        manager.downgradeVideoBubble('nonexistent');
+      });
+    });
+  });
+}
