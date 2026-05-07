@@ -469,7 +469,7 @@ class VideoElementCapture implements FrameSource {
   ///
   /// If jsStream is provided, uses it directly. Otherwise falls back to creating
   /// a MediaStream from the track.
-  static Future<VideoElementCapture?> createFromStream(dynamic jsStream, dynamic jsTrack) async {
+  static Future<VideoElementCapture?> createFromStream(Object? jsStream, Object? jsTrack) async {
     try {
       web.MediaStream? stream;
 
