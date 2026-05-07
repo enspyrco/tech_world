@@ -19,6 +19,13 @@ final _log = Logger('DreamfinderClient');
 abstract final class GameEventTopic {
   static String get chat => DataTopic.chat.wireName;
   static String get helpRequest => DataTopic.helpRequest.wireName;
+
+  /// HTTP event type strings forwarded to Dreamfinder's REST API.
+  ///
+  /// These are **not** LiveKit data-channel topics and are therefore
+  /// deliberately absent from [DataTopic]. Player join/leave events are
+  /// signalled by the LiveKit room itself and forwarded to Dreamfinder over
+  /// HTTP, so there is no corresponding wire name on the data channel.
   static const playerJoin = 'player-join';
   static const playerLeave = 'player-leave';
 }
