@@ -575,6 +575,8 @@ class TechWorld extends World with TapCallbacks {
   static const double _bubbleDiameter = 64.0;
   static const double _maxTetherDistance = 24.0;
   static const double _repulsionDamping = 0.85;
+  // Force coefficient: 0.5 (base strength) / 0.016 (60 fps reference dt).
+  static const double _repulsionForceCoefficient = 31.25;
 
   void _updateBubblePositions(double dt) {
     // 1. Set base positions from owning characters.
@@ -745,7 +747,7 @@ class TechWorld extends World with TapCallbacks {
           final direction = delta.normalized();
           // Force proportional to overlap, scaled by dt for frame-independence.
           final clampedDt = min(dt, 0.05);
-          final push = direction * (overlap * 0.5 * clampedDt / 0.016);
+          final push = direction * (overlap * _repulsionForceCoefficient * clampedDt);
           forces[entries[i].key] =
               (forces[entries[i].key] ?? Vector2.zero()) + push;
           forces[entries[j].key] =
@@ -758,7 +760,11 @@ class TechWorld extends World with TapCallbacks {
     for (final entry in entries) {
       final key = entry.key;
       var disp = _bubbleDisplacements[key] ?? Vector2.zero();
-      disp = disp * _repulsionDamping + (forces[key] ?? Vector2.zero());
+      // Damp first so accumulated drift decays before new force is applied,
+      // then add this frame's force, then cap — so even a large single-frame
+      // impulse cannot bypass the tether limit.
+      disp = disp * _repulsionDamping;
+      disp += forces[key] ?? Vector2.zero();
       if (disp.length > _maxTetherDistance) {
         disp = disp.normalized() * _maxTetherDistance;
       }
