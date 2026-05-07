@@ -369,10 +369,6 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<String?>? _connectionLostSubscription;
   StreamSubscription<void>? _mapInfoRequestedSubscription;
   StreamSubscription<String>? _mapSwitchSubscription;
-
-  /// True while processing a map switch triggered by a remote player.
-  /// Prevents re-broadcasting the same switch back to the room.
-  bool _isRemoteMapSwitch = false;
   StreamSubscription<DataChannelMessage>? _speechTranscriptSubscription;
   InfraHealthService? _infraHealthService;
 
@@ -1137,8 +1133,7 @@ class TechWorld extends World with TapCallbacks {
         _log.warning('Ignoring map-switch: unknown map ID "$mapId"');
         return;
       }
-      _isRemoteMapSwitch = true;
-      loadMap(map).whenComplete(() => _isRemoteMapSwitch = false);
+      _loadMapInternal(map);
     });
 
     // Subscribe to position updates from other players via LiveKit
@@ -1781,12 +1776,22 @@ class TechWorld extends World with TapCallbacks {
     }
   }
 
-  /// Switch to a different map at runtime.
+  /// Switch to a different map at runtime (local switch).
   ///
-  /// Guarded against concurrent calls — if a map load is already in progress,
-  /// the second call returns immediately to prevent double removal of
-  /// components.
+  /// Broadcasts the map-switch to other human players via LiveKit.
+  /// For remote switches, [_loadMapInternal] is called directly.
   Future<void> loadMap(GameMap map) async {
+    await _loadMapInternal(map, publishSwitch: true);
+  }
+
+  /// Load and switch to [map], shared by local and remote map switches.
+  ///
+  /// When [publishSwitch] is true (local switch), broadcasts the new map
+  /// ID to other human players. When false (remote switch), skips the
+  /// publish to avoid an infinite echo loop.
+  ///
+  /// Guarded against concurrent calls.
+  Future<void> _loadMapInternal(GameMap map, {bool publishSwitch = false}) async {
     // Fill in missing visual layers from predefined maps (e.g. Firestore
     // rooms created before tileset rendering was added).
     _log.info('loadMap: input "${map.name}" (id=${map.id}), '
@@ -1836,11 +1841,8 @@ class TechWorld extends World with TapCallbacks {
       // Notify the bot about the new map layout.
       _liveKitService?.publishMapInfo(resolvedMap);
 
-      // Notify other human players — but only if we initiated the switch
-      // locally. When processing a remote player's map-switch message,
-      // _isRemoteMapSwitch is true and we skip the broadcast to avoid an
-      // infinite echo loop.
-      if (!_isRemoteMapSwitch) {
+      // Notify other human players only on local switches.
+      if (publishSwitch) {
         _liveKitService?.publishMapSwitch(resolvedMap.id);
       }
 
