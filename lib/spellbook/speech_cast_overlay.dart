@@ -44,9 +44,13 @@ class SpeechCastOverlay extends StatefulWidget {
   /// Bot-mediated flavor channel. Asked for a fresh line on [DoorCastNoMatch].
   final OracleService oracle;
 
-  /// Called with the door that was opened on a successful cast — the
-  /// world uses this to flip the door's visual state and broadcast.
-  final void Function(DoorData door) onCastSuccess;
+  /// Called with the door on a successful cast — the world checks
+  /// whether ALL required challenges are complete and, if so, flips
+  /// the door's visual state and broadcasts the unlock.
+  ///
+  /// Returns `true` if the door actually opened, `false` if some
+  /// required challenges remain incomplete (partial progress).
+  final bool Function(DoorData door) onCastSuccess;
 
   @override
   State<SpeechCastOverlay> createState() => _SpeechCastOverlayState();
@@ -114,14 +118,19 @@ class _SpeechCastOverlayState extends State<SpeechCastOverlay> {
     switch (result) {
       case CastPass(:final challengeId):
         // Persistence (spellbook + progress) already ran inside
-        // performCast; this just flips the world's door visual + broadcast.
-        widget.onCastSuccess(door);
-        // challengeToWord is total over PromptChallengeId.values, so the
-        // lookup never fails for a CastPass (which carries a real
-        // challenge id from a learned word).
+        // performCast; this asks the world to unlock the door.
+        // unlockDoor returns false when the door has multiple required
+        // challenges and some are still incomplete.
+        final opened = widget.onCastSuccess(door);
         final word = challengeToWord[challengeId]!;
-        text = '${word.id.displayName} — the door yields.';
-        color = arcaneColor;
+        if (opened) {
+          text = '${word.id.displayName} — the door yields.';
+          color = arcaneColor;
+        } else {
+          text = '${word.id.displayName} — one seal broken, '
+              'but the door still holds.';
+          color = Colors.amber.shade800;
+        }
       case DoorCastNotLearned(:final wordId):
         text = 'You have not learned ${wordId.displayName} yet.';
         color = Colors.orange.shade700;

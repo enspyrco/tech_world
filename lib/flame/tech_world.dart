@@ -1903,11 +1903,31 @@ class TechWorld extends World with TapCallbacks {
     }
   }
 
-  /// Unlock a door and update its visual state.
+  /// Try to unlock a door and update its visual state.
   ///
-  /// Called when a prompt challenge is passed and the door's required
-  /// challenges are all completed. Broadcasts the unlock to other players.
-  void unlockDoor(DoorData door) {
+  /// Returns `true` if the door actually unlocked, `false` if some required
+  /// challenges are still incomplete. Callers should show partial-progress
+  /// feedback when `false` is returned.
+  ///
+  /// Checks [ProgressService] for ALL of the door's [DoorData.requiredChallengeIds]
+  /// before unlocking. A door with multiple requirements (e.g. D1 needs both
+  /// evocationCountdown AND divinationColor) stays locked until every seal is
+  /// broken.
+  bool unlockDoor(DoorData door) {
+    // Guard: all required challenges must be completed before the door opens.
+    if (door.requiredChallengeIds.isNotEmpty) {
+      final progress = Locator.maybeLocate<ProgressService>();
+      for (final challengeId in door.requiredChallengeIds) {
+        if (!(progress?.isChallengeCompleted(challengeId.wireName) ?? false)) {
+          _log.info(
+            'Door at (${door.position.x}, ${door.position.y}) not unlocked: '
+            'challenge ${challengeId.wireName} still incomplete',
+          );
+          return false;
+        }
+      }
+    }
+
     door.isUnlocked = true;
 
     // Remove the barrier at the door position so the player can walk through.
@@ -1928,6 +1948,7 @@ class TechWorld extends World with TapCallbacks {
     );
 
     _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
+    return true;
   }
 
   /// Recompute [nearbyLockedDoor] given the current player position and
