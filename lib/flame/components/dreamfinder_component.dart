@@ -309,6 +309,11 @@ class DreamfinderComponent
         current = DreamfinderState.idle;
         playing = false;
         _wanderCooldown = _postGreetingDelay;
+      } else if (_serverControlled) {
+        _serverControlled = false;
+        current = DreamfinderState.working;
+        playing = true;
+        _resetWanderCooldown();
       } else {
         current = DreamfinderState.idle;
         playing = false;
