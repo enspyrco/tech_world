@@ -154,6 +154,24 @@ class LiveKitService {
   Stream<void> get mapInfoRequested =>
       dataReceived.where((msg) => msg.topic == 'map-info-request');
 
+  /// Stream of map-switch notifications from other human players.
+  ///
+  /// Fires when another player switches maps, carrying the map ID so this
+  /// client can load the same map. Own messages (matching [userId]) and
+  /// messages from bots are excluded.
+  Stream<String> get mapSwitchReceived => dataReceived
+      .where((msg) => msg.topic == 'map-switch')
+      .map((msg) {
+        final json = msg.json;
+        if (json == null) return null;
+        final senderId = json['senderId'] as String?;
+        // Ignore our own broadcasts to prevent infinite loops.
+        if (senderId == userId) return null;
+        return json['mapId'] as String?;
+      })
+      .where((mapId) => mapId != null)
+      .cast<String>();
+
   /// Stream of avatar updates received from other participants.
   ///
   /// Filters [dataReceived] for the `avatar` topic and parses into
@@ -484,6 +502,18 @@ class LiveKitService {
       topic: 'map-info',
       destinationIdentities: allBotIdentities.toList(),
     );
+  }
+
+  /// Broadcast a map switch to other human players in the room.
+  ///
+  /// Includes [userId] so receivers can ignore their own echoes. Uses reliable
+  /// delivery because a missed map-switch leaves players on different worlds.
+  Future<void> publishMapSwitch(String mapId) async {
+    final message = {
+      'senderId': userId,
+      'mapId': mapId,
+    };
+    await publishJson(message, topic: 'map-switch');
   }
 
   /// Publish the local player's position to other participants.

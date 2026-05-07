@@ -1078,6 +1078,12 @@ class FakeLiveKitService implements LiveKitService {
   Stream<void> get mapInfoRequested => const Stream.empty();
 
   @override
+  Future<void> publishMapSwitch(String mapId) async {}
+
+  @override
+  Stream<String> get mapSwitchReceived => const Stream.empty();
+
+  @override
   Future<void> publishPosition({
     required List<Vector2> points,
     required List<Direction> directions,
