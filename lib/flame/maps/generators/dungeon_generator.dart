@@ -38,6 +38,19 @@ GameMap generateDungeon({required int seed, required GeneratorConfig config}) {
     }
   }
 
+  if (rooms.isEmpty) {
+    // No rooms placed — force one room at center.
+    // Use at least 3 so that zero/negative dungeonMinRoomSize cannot produce
+    // an uncarveable room and leave spawn on a wall.
+    final cx = gridSize ~/ 2;
+    final cy = gridSize ~/ 2;
+    final w = config.dungeonMinRoomSize.clamp(3, gridSize - 2);
+    final h = config.dungeonMinRoomSize.clamp(3, gridSize - 2);
+    final room = Rectangle(cx - w ~/ 2, cy - h ~/ 2, w, h);
+    rooms.add(room);
+    _carveRoom(grid, room);
+  }
+
   // Sort rooms by center position for consistent corridor connection.
   rooms.sort((a, b) {
     final cmp = _centerY(a).compareTo(_centerY(b));

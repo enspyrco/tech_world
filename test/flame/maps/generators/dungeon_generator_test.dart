@@ -104,6 +104,37 @@ void main() {
       expect(map.objectLayer!.isEmpty, isFalse);
     });
 
+    test('degenerate config with impossible rooms does not spawn inside a wall',
+        () {
+      // maxRooms=0 means no room placement is attempted; the guard must
+      // force-place one room at center so spawn is not on a barrier.
+      final map = generateMap(
+        algorithm: MapAlgorithm.dungeon,
+        config: const GeneratorConfig(seed: 42, dungeonMaxRooms: 0),
+      );
+      final barrierSet = map.barriers.toSet();
+      expect(barrierSet.contains(map.spawnPoint), isFalse,
+          reason: 'spawn must not be inside a wall when no rooms are placed');
+    });
+
+    test(
+        'degenerate config with zero minRoomSize and no rooms does not spawn '
+        'inside a wall', () {
+      // dungeonMinRoomSize=0 would produce a zero-size room if used directly;
+      // the guard must clamp to a minimum carve size so spawn is never on a wall.
+      final map = generateMap(
+        algorithm: MapAlgorithm.dungeon,
+        config: const GeneratorConfig(
+          seed: 42,
+          dungeonMaxRooms: 0,
+          dungeonMinRoomSize: 0,
+        ),
+      );
+      final barrierSet = map.barriers.toSet();
+      expect(barrierSet.contains(map.spawnPoint), isFalse,
+          reason: 'spawn must not be inside a wall when minRoomSize is 0');
+    });
+
     test('10 seeds without invariant violations', () {
       for (var seed = 0; seed < 10; seed++) {
         final map = generateMap(
