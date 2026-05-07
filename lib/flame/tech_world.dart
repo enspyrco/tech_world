@@ -362,6 +362,7 @@ class TechWorld extends World with TapCallbacks {
       _trackUnsubscribedSubscription;
   StreamSubscription<LocalTrackPublication>? _localTrackPublishedSubscription;
   StreamSubscription<PlayerPath>? _liveKitPositionSubscription;
+  StreamSubscription<PositionHeartbeat>? _positionHeartbeatSubscription;
   StreamSubscription<RemoteParticipant>? _participantJoinedSubscription;
   StreamSubscription<RemoteParticipant>? _participantLeftSubscription;
   StreamSubscription<AvatarUpdate>? _avatarSubscription;
@@ -1160,6 +1161,44 @@ class TechWorld extends World with TapCallbacks {
             ?.move(path.directions, path.largeGridPoints);
       }
     });
+
+    // Subscribe to reliable position heartbeats that correct stale positions.
+    _positionHeartbeatSubscription =
+        _liveKitService!.positionHeartbeatReceived.listen((heartbeat) {
+      if (heartbeat.playerId == userId) return;
+
+      final targetPosition = Vector2(
+        heartbeat.x.toDouble() * gridSquareSize,
+        heartbeat.y.toDouble() * gridSquareSize,
+      );
+
+      if (_botCharacterComponents.containsKey(heartbeat.playerId)) {
+        _botCharacterComponents[heartbeat.playerId]?.position = targetPosition;
+      } else if (!isBotIdentity(heartbeat.playerId)) {
+        if (!_otherPlayerComponentsMap.containsKey(heartbeat.playerId)) {
+          final participant =
+              _liveKitService!.getParticipant(heartbeat.playerId);
+          final playerComponent = PlayerComponent(
+            position: targetPosition,
+            id: heartbeat.playerId,
+            displayName: participant != null && participant.name.isNotEmpty
+                ? participant.name
+                : heartbeat.playerId,
+          );
+          _otherPlayerComponentsMap[heartbeat.playerId] = playerComponent;
+          add(playerComponent);
+        } else {
+          _otherPlayerComponentsMap[heartbeat.playerId]?.position =
+              targetPosition;
+        }
+      }
+    });
+
+    // Start the periodic reliable heartbeat so other players can correct
+    // stale positions caused by dropped unreliable path updates.
+    _liveKitService!.startPositionHeartbeat(
+      () => playerGridPosition.value,
+    );
 
     // Subscribe to avatar updates from other players
     _avatarSubscription =
@@ -2040,6 +2079,8 @@ class TechWorld extends World with TapCallbacks {
     _localTrackPublishedSubscription = null;
     _liveKitPositionSubscription?.cancel();
     _liveKitPositionSubscription = null;
+    _positionHeartbeatSubscription?.cancel();
+    _positionHeartbeatSubscription = null;
     _participantJoinedSubscription?.cancel();
     _participantJoinedSubscription = null;
     _participantLeftSubscription?.cancel();
