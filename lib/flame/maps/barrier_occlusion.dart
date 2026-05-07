@@ -2,6 +2,10 @@ import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 import 'package:tech_world/flame/tiles/wall_style_def.dart';
 
+/// Maximum horizontal distance (in tiles) scanned when searching for the
+/// closing wall of a doorway gap. Doors wider than this are not recognised.
+const _maxDoorwayScanDistance = 10;
+
 /// Compute priority overrides from a barrier set for y-based depth sorting.
 ///
 /// Detects patterns that need non-default priority:
@@ -56,7 +60,7 @@ Map<(int, int), int> computePriorityOverrides(Set<(int, int)> barriers) {
     if (!barriers.contains((x + 1, y))) {
       // There's a gap starting at x+1. Scan to find where wall resumes.
       var gapEnd = x + 1;
-      while (gapEnd < x + 10 && !barriers.contains((gapEnd, y))) {
+      while (gapEnd < x + _maxDoorwayScanDistance && !barriers.contains((gapEnd, y))) {
         gapEnd++;
       }
       // gapEnd is now the x of the barrier on the right side of the gap.
@@ -104,7 +108,7 @@ Set<(int, int)> computeLintelOverlayPositions(Set<(int, int)> barriers) {
   for (final (x, y) in barriers) {
     if (!barriers.contains((x + 1, y))) {
       var gapEnd = x + 1;
-      while (gapEnd < x + 10 && !barriers.contains((gapEnd, y))) {
+      while (gapEnd < x + _maxDoorwayScanDistance && !barriers.contains((gapEnd, y))) {
         gapEnd++;
       }
       if (barriers.contains((gapEnd, y))) {
@@ -245,7 +249,7 @@ TileLayerData buildObjectLayerFromWalls(Map<(int, int), String> walls) {
     // Place cap tiles above the gap so the wall top continues over the door.
     if (!wallPositions.contains((x + 1, y))) {
       var gapEnd = x + 1;
-      while (gapEnd < x + 10 && !wallPositions.contains((gapEnd, y))) {
+      while (gapEnd < x + _maxDoorwayScanDistance && !wallPositions.contains((gapEnd, y))) {
         gapEnd++;
       }
       if (wallPositions.contains((gapEnd, y))) {
@@ -337,7 +341,7 @@ Map<(int, int), TileRef?> buildWallTilesForRegion(
     // Place cap tiles above the gap so the wall top continues over the door.
     if (!wallPositions.contains((x + 1, y))) {
       var gapEnd = x + 1;
-      while (gapEnd < x + 10 && !wallPositions.contains((gapEnd, y))) {
+      while (gapEnd < x + _maxDoorwayScanDistance && !wallPositions.contains((gapEnd, y))) {
         gapEnd++;
       }
       if (wallPositions.contains((gapEnd, y))) {
