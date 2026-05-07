@@ -610,7 +610,7 @@ class TechWorld extends World with TapCallbacks {
 
     // 3. Collect centres for the metaball field.
     final centres = <Vector2>[];
-    int lowestPriority = 999;
+    int lowestPriority = 0x7fffffff; // max int; replaced by first bubble's priority
     for (final entry in _playerBubbles.entries) {
       centres.add(entry.value.center);
       if (entry.value.priority < lowestPriority) {
