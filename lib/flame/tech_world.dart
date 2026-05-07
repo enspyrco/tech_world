@@ -369,6 +369,7 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<String?>? _connectionLostSubscription;
   StreamSubscription<void>? _mapInfoRequestedSubscription;
   StreamSubscription<DataChannelMessage>? _speechTranscriptSubscription;
+  StreamSubscription<DataChannelMessage>? _doorUnlockSubscription;
   InfraHealthService? _infraHealthService;
 
   // Avatar tracking — stores updates for players not yet created
@@ -1236,6 +1237,12 @@ class TechWorld extends World with TapCallbacks {
         .where((msg) => msg.topic == 'speech-transcript')
         .listen(_handleSpeechTranscript);
 
+    // Subscribe to door-unlock events from other players so doors they
+    // unlock become passable locally (barrier removed, proximity updated).
+    _doorUnlockSubscription = _liveKitService!.dataReceived
+        .where((msg) => msg.topic == 'door-unlock')
+        .listen(_handleRemoteDoorUnlock);
+
     // Infrastructure health monitoring.
     _infraHealthService = InfraHealthService(
       liveKitService: _liveKitService!,
@@ -1930,6 +1937,36 @@ class TechWorld extends World with TapCallbacks {
     _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
   }
 
+  /// Handle a door-unlock message from another player.
+  ///
+  /// Looks up the [DoorData] at the given coordinates, marks it unlocked,
+  /// removes the barrier so the local player can walk through, and
+  /// recomputes the nearby-locked-door signal in case the player is
+  /// standing next to the just-unlocked door.
+  void _handleRemoteDoorUnlock(DataChannelMessage msg) {
+    final json = msg.json;
+    if (json == null) return;
+
+    final doorX = json['doorX'] as int?;
+    final doorY = json['doorY'] as int?;
+    if (doorX == null || doorY == null) return;
+
+    final target = Point(doorX, doorY);
+    DoorData? door;
+    for (final d in currentMap.value.doors) {
+      if (d.position == target) {
+        door = d;
+        break;
+      }
+    }
+    if (door == null || door.isUnlocked) return;
+
+    door.isUnlocked = true;
+    _barriersComponent.removeBarrierAt(door.position);
+    _recomputeNearbyLockedDoor();
+    _log.info('Remote door unlock at ($doorX, $doorY)');
+  }
+
   /// Recompute [nearbyLockedDoor] given the current player position and
   /// the doors on the current map. Picks the closest still-locked door
   /// within [_doorProximityThreshold]; emits `null` if none qualify.
@@ -2017,6 +2054,8 @@ class TechWorld extends World with TapCallbacks {
     _mapInfoRequestedSubscription = null;
     _speechTranscriptSubscription?.cancel();
     _speechTranscriptSubscription = null;
+    _doorUnlockSubscription?.cancel();
+    _doorUnlockSubscription = null;
 
     // Dispose infrastructure health monitoring.
     _infraHealthService?.dispose();
