@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/prompt/cast_result.dart';
 import 'package:tech_world/prompt/evaluation_engine.dart';
@@ -9,6 +11,11 @@ import 'package:tech_world/prompt/prompt_challenge.dart';
 /// MVP approach: single round-trip where the bot both responds to the
 /// player's prompt AND evaluates whether the response meets criteria.
 /// The two-call separation (generation → judge) comes later.
+///
+/// For [EvaluationTier.deterministic] challenges, the bot still generates
+/// a response but evaluation is done locally with programmatic checks
+/// rather than relying on the bot's self-judgment. This is faster, more
+/// reliable, and degrades gracefully when the bot is slow or offline.
 class ChatEvaluationEngine extends EvaluationEngine {
   ChatEvaluationEngine(this._chatService);
 
@@ -36,6 +43,13 @@ class ChatEvaluationEngine extends EvaluationEngine {
           judgeReasoning: 'No response received from the agent.',
         ),
       );
+    }
+
+    // Deterministic challenges are evaluated locally — no RESULT:PASS/FAIL
+    // parsing needed. This is faster, more reliable, and works even when
+    // the bot's self-evaluation is inconsistent.
+    if (challenge.tier == EvaluationTier.deterministic) {
+      return (responseText, evaluateDeterministic(challenge.id, responseText));
     }
 
     return (responseText, parseResponse(responseText));
@@ -115,6 +129,215 @@ class ChatEvaluationEngine extends EvaluationEngine {
       feedback: feedback,
       judgeReasoning: _extractReasoning(responseText),
     );
+  }
+
+  /// Evaluate a deterministic challenge by checking the response text
+  /// programmatically — no LLM judge needed.
+  ///
+  /// Visible for testing.
+  static CastResult evaluateDeterministic(
+    PromptChallengeId id,
+    String responseText,
+  ) =>
+      switch (id) {
+        PromptChallengeId.evocationFizzbuzz =>
+          _evaluateFizzbuzz(responseText),
+        PromptChallengeId.evocationCountdown =>
+          _evaluateCountdown(responseText),
+        PromptChallengeId.transmutationJson => _evaluateJson(responseText),
+        PromptChallengeId.enchantmentBrevity =>
+          _evaluateBrevity(responseText),
+        // Other challenges marked deterministic fall through to a
+        // generic fail — they should get a dedicated evaluator when
+        // their criteria are formalised.
+        _ => const CastResult(
+            passed: false,
+            feedback: CastFeedback.fizzled,
+            judgeReasoning: 'No local evaluator for this challenge.',
+          ),
+      };
+
+  /// FizzBuzz: 20 lines, multiples of 3 → "fizz", multiples of 5 → "buzz",
+  /// multiples of both → "fizzbuzz", rest → the number.
+  static CastResult _evaluateFizzbuzz(String text) {
+    final lines = _nonEmptyLines(text);
+    if (lines.length != 20) {
+      return CastResult(
+        passed: false,
+        feedback: CastFeedback.fizzled,
+        judgeReasoning: 'Expected 20 lines, got ${lines.length}.',
+      );
+    }
+
+    for (var i = 1; i <= 20; i++) {
+      final line = lines[i - 1].trim().toLowerCase();
+      final String expected;
+      if (i % 15 == 0) {
+        expected = 'fizzbuzz';
+      } else if (i % 3 == 0) {
+        expected = 'fizz';
+      } else if (i % 5 == 0) {
+        expected = 'buzz';
+      } else {
+        expected = '$i';
+      }
+      if (line != expected) {
+        return CastResult(
+          passed: false,
+          feedback: CastFeedback.fizzled,
+          judgeReasoning: 'Line $i: expected "$expected", got "$line".',
+        );
+      }
+    }
+    return const CastResult(
+      passed: true,
+      feedback: CastFeedback.resonates,
+    );
+  }
+
+  /// Countdown: exactly "10", "09", "08", ..., "01" — one per line.
+  static CastResult _evaluateCountdown(String text) {
+    final lines = _nonEmptyLines(text);
+    if (lines.length != 10) {
+      return CastResult(
+        passed: false,
+        feedback: CastFeedback.fizzled,
+        judgeReasoning: 'Expected 10 lines, got ${lines.length}.',
+      );
+    }
+
+    for (var i = 0; i < 10; i++) {
+      final expected = (10 - i).toString().padLeft(2, '0');
+      if (lines[i].trim() != expected) {
+        return CastResult(
+          passed: false,
+          feedback: CastFeedback.fizzled,
+          judgeReasoning:
+              'Line ${i + 1}: expected "$expected", got "${lines[i].trim()}".',
+        );
+      }
+    }
+    return const CastResult(
+      passed: true,
+      feedback: CastFeedback.resonates,
+    );
+  }
+
+  /// JSON: valid JSON array of 3 objects, each with "title", "author",
+  /// and "year" keys.
+  static CastResult _evaluateJson(String text) {
+    // Extract JSON from potential markdown code fences or surrounding text.
+    final jsonString = _extractJson(text);
+    if (jsonString == null) {
+      return const CastResult(
+        passed: false,
+        feedback: CastFeedback.fizzled,
+        judgeReasoning: 'No valid JSON array found in response.',
+      );
+    }
+
+    final dynamic parsed;
+    try {
+      parsed = jsonDecode(jsonString);
+    } on FormatException {
+      return const CastResult(
+        passed: false,
+        feedback: CastFeedback.fizzled,
+        judgeReasoning: 'Response contains invalid JSON.',
+      );
+    }
+
+    if (parsed is! List || parsed.length != 3) {
+      return CastResult(
+        passed: false,
+        feedback: CastFeedback.fizzled,
+        judgeReasoning: parsed is! List
+            ? 'JSON is not an array.'
+            : 'Expected 3 objects, got ${parsed.length}.',
+      );
+    }
+
+    const requiredKeys = {'title', 'author', 'year'};
+    for (var i = 0; i < parsed.length; i++) {
+      if (parsed[i] is! Map<String, dynamic>) {
+        return CastResult(
+          passed: false,
+          feedback: CastFeedback.fizzled,
+          judgeReasoning: 'Item ${i + 1} is not a JSON object.',
+        );
+      }
+      final obj = parsed[i] as Map<String, dynamic>;
+      final missing = requiredKeys.difference(obj.keys.toSet());
+      if (missing.isNotEmpty) {
+        return CastResult(
+          passed: false,
+          feedback: CastFeedback.fizzled,
+          judgeReasoning:
+              'Item ${i + 1} missing keys: ${missing.join(', ')}.',
+        );
+      }
+    }
+
+    return const CastResult(
+      passed: true,
+      feedback: CastFeedback.resonates,
+    );
+  }
+
+  /// Brevity: response must be fewer than 10 words.
+  static CastResult _evaluateBrevity(String text) {
+    final wordCount =
+        text.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    if (wordCount < 10) {
+      return const CastResult(
+        passed: true,
+        feedback: CastFeedback.resonates,
+      );
+    }
+    return CastResult(
+      passed: false,
+      feedback: CastFeedback.fizzled,
+      judgeReasoning: 'Response has $wordCount words (limit: <10).',
+    );
+  }
+
+  /// Return non-empty lines from [text], stripping any RESULT:/FEEDBACK:
+  /// markers that the bot may have appended.
+  static List<String> _nonEmptyLines(String text) {
+    // Strip everything from the first RESULT: marker onward — the bot
+    // may still append self-evaluation markers even when we don't need
+    // them.
+    final resultIndex = text.toUpperCase().indexOf('RESULT:');
+    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+    return clean
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+  }
+
+  /// Try to extract a JSON array from [text], handling markdown code
+  /// fences and surrounding prose.
+  static String? _extractJson(String text) {
+    // Strip RESULT:/FEEDBACK: markers first.
+    final resultIndex = text.toUpperCase().indexOf('RESULT:');
+    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+
+    // Try markdown code fence first.
+    final fencePattern = RegExp(r'```(?:json)?\s*\n([\s\S]*?)\n\s*```');
+    final fenceMatch = fencePattern.firstMatch(clean);
+    if (fenceMatch != null) {
+      return fenceMatch.group(1)?.trim();
+    }
+
+    // Try to find a bare JSON array.
+    final arrayPattern = RegExp(r'\[[\s\S]*\]');
+    final arrayMatch = arrayPattern.firstMatch(clean);
+    if (arrayMatch != null) {
+      return arrayMatch.group(0);
+    }
+
+    return null;
   }
 
   /// Extract the agent's actual response (before the RESULT marker).
