@@ -369,6 +369,7 @@ class TechWorld extends World with TapCallbacks {
   StreamSubscription<String?>? _connectionLostSubscription;
   StreamSubscription<void>? _mapInfoRequestedSubscription;
   StreamSubscription<DataChannelMessage>? _speechTranscriptSubscription;
+  StreamSubscription<DataChannelMessage>? _doorUnlockSubscription;
   InfraHealthService? _infraHealthService;
 
   // Avatar tracking — stores updates for players not yet created
@@ -1236,6 +1237,11 @@ class TechWorld extends World with TapCallbacks {
         .where((msg) => msg.topic == 'speech-transcript')
         .listen(_handleSpeechTranscript);
 
+    // Subscribe to remote door-unlock broadcasts from other players.
+    _doorUnlockSubscription = _liveKitService!.dataReceived
+        .where((msg) => msg.topic == 'door-unlock')
+        .listen(_handleRemoteDoorUnlock);
+
     // Infrastructure health monitoring.
     _infraHealthService = InfraHealthService(
       liveKitService: _liveKitService!,
@@ -1912,6 +1918,9 @@ class TechWorld extends World with TapCallbacks {
 
     // Remove the barrier at the door position so the player can walk through.
     _barriersComponent.removeBarrierAt(door.position);
+    // Invalidate the JPS pathfinding grid so the next pathfind rebuilds it
+    // without the now-removed barrier cell.
+    _pathComponent?.invalidateGrid();
 
     // The unlocked door must drop out of the proximity signal — otherwise
     // the mic FAB lingers over an open doorway.
@@ -1928,6 +1937,31 @@ class TechWorld extends World with TapCallbacks {
     );
 
     _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
+  }
+
+  /// Handle a remote door-unlock broadcast from another player.
+  ///
+  /// Finds the matching door by grid position, marks it unlocked, removes the
+  /// barrier, and invalidates the pathfinding grid — mirroring [unlockDoor].
+  void _handleRemoteDoorUnlock(DataChannelMessage msg) {
+    final json = msg.json;
+    if (json == null) return;
+    final x = json['doorX'] as int?;
+    final y = json['doorY'] as int?;
+    if (x == null || y == null) return;
+
+    final door = currentMap.value.doors.where(
+      (d) => d.position.x == x && d.position.y == y && !d.isUnlocked,
+    ).firstOrNull;
+    if (door == null) return;
+
+    door.isUnlocked = true;
+    _barriersComponent.removeBarrierAt(door.position);
+    // Invalidate the JPS pathfinding grid so remote unlock takes effect
+    // immediately — same fix as the local path in [unlockDoor].
+    _pathComponent?.invalidateGrid();
+    _recomputeNearbyLockedDoor();
+    _log.info('Remote door unlock applied at ($x, $y)');
   }
 
   /// Recompute [nearbyLockedDoor] given the current player position and
@@ -2017,6 +2051,8 @@ class TechWorld extends World with TapCallbacks {
     _mapInfoRequestedSubscription = null;
     _speechTranscriptSubscription?.cancel();
     _speechTranscriptSubscription = null;
+    _doorUnlockSubscription?.cancel();
+    _doorUnlockSubscription = null;
 
     // Dispose infrastructure health monitoring.
     _infraHealthService?.dispose();
