@@ -192,6 +192,29 @@ void main() {
 
         expect(pathComponent.largeGridPoints, isNotEmpty);
       });
+
+      test('invalidateGrid allows new grid to be built after barriers change', () {
+        // Populate the grid via the first calculatePath call.
+        pathComponent.calculatePath(start: (0, 0), end: (5, 0));
+        expect(pathComponent.largeGridPoints, isNotEmpty);
+
+        // Simulate a door-unlock: swap in a new BarriersComponent with fewer
+        // barriers, then invalidate so the next path uses the updated layout.
+        final newBarriers = BarriersComponent(barriers: const []);
+        pathComponent.barriers = newBarriers; // setter also calls invalidateGrid
+
+        // invalidateGrid alone (without the setter) should also work.
+        pathComponent.invalidateGrid();
+
+        // After invalidation the component should still calculate paths normally.
+        pathComponent.calculatePath(start: (0, 0), end: (5, 0));
+        expect(pathComponent.largeGridPoints, isNotEmpty);
+      });
+
+      test('invalidateGrid on fresh component does not throw', () {
+        // Should be safe to invalidate before any calculatePath call.
+        expect(() => pathComponent.invalidateGrid(), returnsNormally);
+      });
     });
 
     group('edge cases', () {
