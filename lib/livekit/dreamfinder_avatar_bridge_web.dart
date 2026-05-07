@@ -64,6 +64,9 @@ class DreamfinderAvatarBridge {
     // Listen for the renderer-ready postMessage from the iframe.
     final readyCompleter = Completer<void>();
     _messageListener = ((web.MessageEvent event) {
+      // Reject messages from other origins to prevent spoofed renderer-ready.
+      if (event.origin != web.window.location.origin) return;
+
       final data = event.data;
       if (data == null) return;
 
@@ -104,9 +107,16 @@ class DreamfinderAvatarBridge {
     _log.info('Avatar renderer is ready');
 
     // Access the iframe's canvas (same-origin).
-    final canvas = _findIframeCanvas();
+    // The renderer may signal ready before the canvas is inserted into the DOM,
+    // so retry up to 3 times with a short delay.
+    web.HTMLCanvasElement? canvas;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      canvas = _findIframeCanvas();
+      if (canvas != null) break;
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
     if (canvas == null) {
-      _log.severe('Could not find canvas in avatar iframe');
+      _log.severe('Cannot find canvas in avatar iframe after retries');
       return;
     }
 
@@ -250,8 +260,13 @@ class DreamfinderAvatarBridge {
 
       if (json['type'] == 'interrupt') {
         _callIframeFunction('__interruptPlayback', null);
-      } else if (json['mood'] != null) {
-        _callIframeFunction('__setMood', json['mood'] as String);
+      } else {
+        final mood = json['mood'];
+        if (mood is String) {
+          _callIframeFunction('__setMood', mood);
+        } else if (mood != null) {
+          _log.warning('Unexpected mood type: ${mood.runtimeType}');
+        }
       }
     } catch (e) {
       _log.fine('Mood forward error: $e');
@@ -262,7 +277,12 @@ class DreamfinderAvatarBridge {
   void _callIframeFunction(String functionName, String? argument) {
     try {
       final contentWindow = _iframe?.contentWindow;
-      if (contentWindow == null) return;
+      if (contentWindow == null) {
+        _log.warning(
+          'Iframe contentWindow is null — iframe may have been unloaded',
+        );
+        return;
+      }
 
       final win = contentWindow as JSObject;
       if (argument != null) {
@@ -271,7 +291,7 @@ class DreamfinderAvatarBridge {
         win.callMethod(functionName.toJS);
       }
     } catch (e) {
-      _log.fine('Call $functionName failed: $e');
+      _log.warning('Call $functionName failed: $e');
     }
   }
 
