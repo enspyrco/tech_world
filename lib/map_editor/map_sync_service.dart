@@ -55,6 +55,7 @@ class MapSyncService {
   // -------------------------------------------------------------------------
 
   bool _isSyncing = false;
+  bool _syncResponseReceived = false;
   Completer<void>? _syncCompleter;
   final List<MapEditBatch> _syncBuffer = [];
 
@@ -549,6 +550,7 @@ class MapSyncService {
   /// editors are present).
   Future<void> requestSync() async {
     _isSyncing = true;
+    _syncResponseReceived = false;
     _syncBuffer.clear();
     _syncCompleter = Completer<void>();
 
@@ -670,6 +672,8 @@ class MapSyncService {
 
   void _handleSyncResponse(Map<String, dynamic> json) {
     if (!_isSyncing) return;
+    if (_syncResponseReceived) return;
+    _syncResponseReceived = true;
 
     // Apply structure tiles.
     final structure = json['structure'] as List<dynamic>? ?? [];
