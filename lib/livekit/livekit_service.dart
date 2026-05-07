@@ -34,6 +34,12 @@ enum ConnectionResult {
   roomFailed,
 }
 
+/// Internal connection state for [LiveKitService].
+///
+/// Replaces the former `_isConnecting` / `_isConnected` boolean pair, which
+/// admitted the illegal `(true, true)` combination.
+enum _ConnectionState { disconnected, connecting, connected }
+
 final _log = Logger('LiveKitService');
 
 /// Service that manages LiveKit room connection and participant tracking.
@@ -61,8 +67,7 @@ class LiveKitService {
 
   Room? _room;
   EventsListener<RoomEvent>? _listener;
-  bool _isConnecting = false;
-  bool _isConnected = false;
+  _ConnectionState _connectionState = _ConnectionState.disconnected;
 
   // Stream controllers for participant events
   final _participantJoinedController =
@@ -199,7 +204,7 @@ class LiveKitService {
   Room? get room => _room;
 
   /// Whether connected to LiveKit
-  bool get isConnected => _isConnected;
+  bool get isConnected => _connectionState == _ConnectionState.connected;
 
   /// Local participant
   LocalParticipant? get localParticipant => _room?.localParticipant;
@@ -213,12 +218,12 @@ class LiveKitService {
   /// Returns a [ConnectionResult] indicating success or the specific failure
   /// reason, so the UI can show actionable messages.
   Future<ConnectionResult> connect() async {
-    if (_isConnecting || _isConnected) {
+    if (_connectionState != _ConnectionState.disconnected) {
       _log.info('Already connecting or connected');
       return ConnectionResult.alreadyConnected;
     }
 
-    _isConnecting = true;
+    _connectionState = _ConnectionState.connecting;
     _log.info('Connecting to LiveKit...');
 
     try {
@@ -226,7 +231,7 @@ class LiveKitService {
       final tokenResult = await _retrieveToken();
       if (tokenResult.token == null) {
         _log.warning('Failed to retrieve token');
-        _isConnecting = false;
+        _connectionState = _ConnectionState.disconnected;
         return tokenResult.connectionResult;
       }
 
@@ -274,8 +279,7 @@ class LiveKitService {
         ),
       );
 
-      _isConnected = true;
-      _isConnecting = false;
+      _connectionState = _ConnectionState.connected;
       _log.info('Connected to LiveKit room "$roomName"');
 
       // Notify about existing participants
@@ -301,14 +305,19 @@ class LiveKitService {
         _log.warning('Room cleanup failed', cleanupError);
       }
       _room = null;
-      _isConnecting = false;
+      _connectionState = _ConnectionState.disconnected;
       return ConnectionResult.roomFailed;
     }
   }
 
-  /// Disconnect from the LiveKit room
+  /// Disconnect from the LiveKit room.
+  ///
+  /// Also handles the `connecting` state so that a disconnect request during
+  /// an in-flight [connect] call tears down resources correctly.
   Future<void> disconnect() async {
-    if (!_isConnected || _room == null) return;
+    if (_connectionState == _ConnectionState.disconnected || _room == null) {
+      return;
+    }
 
     _log.info('Disconnecting from LiveKit...');
 
@@ -316,7 +325,7 @@ class LiveKitService {
     await _listener?.dispose();
     _listener = null;
     _room = null;
-    _isConnected = false;
+    _connectionState = _ConnectionState.disconnected;
 
     _log.info('Disconnected');
   }
@@ -624,7 +633,7 @@ class LiveKitService {
       })
       ..on<RoomDisconnectedEvent>((event) {
         _log.warning('Room disconnected: ${event.reason}');
-        _isConnected = false;
+        _connectionState = _ConnectionState.disconnected;
         // Clean up resources left dangling by the unexpected disconnect.
         // Note: _listener.dispose() is intentionally not awaited here — this
         // is a synchronous event callback and the dispose is fire-and-forget.
