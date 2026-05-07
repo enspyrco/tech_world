@@ -6,7 +6,6 @@ permissions:
   pull-requests: write
 jobs:
   changes:
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.filter.outputs.docs_only }}
@@ -69,4 +68,3 @@ jobs:
           minimum-coverage: 50
           github-token: ${{ secrets.GITHUB_TOKEN }}
           update-comment: true
-
