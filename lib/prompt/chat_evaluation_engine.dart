@@ -14,8 +14,29 @@ class ChatEvaluationEngine extends EvaluationEngine {
 
   final ChatService _chatService;
 
+  /// Match the chat service's own 30-second response timeout so a hung bot
+  /// cannot block the UI indefinitely.
+  static const _evaluationTimeout = Duration(seconds: 30);
+
   @override
   Future<(String, CastResult)> evaluate(
+    PromptChallenge challenge,
+    String playerPrompt,
+  ) async {
+    return _evaluate(challenge, playerPrompt).timeout(
+      _evaluationTimeout,
+      onTimeout: () => (
+        '',
+        const CastResult(
+          passed: false,
+          feedback: CastFeedback.unclear,
+          judgeReasoning: 'Evaluation timed out.',
+        ),
+      ),
+    );
+  }
+
+  Future<(String, CastResult)> _evaluate(
     PromptChallenge challenge,
     String playerPrompt,
   ) async {
