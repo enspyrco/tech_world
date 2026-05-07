@@ -31,16 +31,15 @@ void main() {
       }
     });
 
-    test('|allWords| == |WordId.values| == |allPromptChallenges|', () {
-      expect(allWords.length, WordId.values.length);
-      expect(allWords.length, allPromptChallenges.length);
-    });
-
-    test('wordById is total over WordId.values', () {
-      for (final id in WordId.values) {
-        expect(wordById[id], isNotNull,
-            reason: 'wordById missing entry for $id');
-      }
+    test('wordById has no silent duplicate-id collisions', () {
+      // Catches: two WordOfPower instances accidentally sharing a WordId,
+      // which would silently overwrite in the map literal and leave one
+      // word unreachable. Cardinality (|values| == |allWords|) follows
+      // from the two bijection tests above; this is the one extra failure
+      // mode they don't cover.
+      expect(wordById.length, WordId.values.length,
+          reason: 'wordById is missing entries — a duplicate id in '
+              'allWords would collapse two entries into one');
     });
 
     test('intensity is 1, 2, or 3', () {
@@ -97,10 +96,9 @@ void main() {
       expect(WordId.parse('IGNIS'), isNull); // case-sensitive on wire
     });
 
-    test('displayName is uppercase of name', () {
-      for (final id in WordId.values) {
-        expect(id.displayName, id.name.toUpperCase());
-      }
-    });
+    // Removed: `displayName == name.toUpperCase()` — that test pinned the
+    // current implementation rather than the user-visible contract. The
+    // contract (display strings render correctly in the spellbook UI) is
+    // covered by the spellbook_panel widget tests.
   });
 }
