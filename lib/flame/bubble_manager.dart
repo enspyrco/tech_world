@@ -82,7 +82,7 @@ class BubbleManager {
   // ── Constants ─────────────────────────────────────────────────────────────
 
   static const _localPlayerBubbleKey = '_local_player_';
-  static const int visualThreshold = 5; // grid squares — bubbles visible
+  static const int _visualThreshold = 5; // grid squares — bubbles visible
   static const int _audioThreshold = 2; // grid squares — audio enabled
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
@@ -124,7 +124,7 @@ class BubbleManager {
 
     // Check each other player for proximity.
     final nearbyPlayerIds = <String>{};
-    int closestDistance = visualThreshold + 1;
+    int closestDistance = _visualThreshold + 1;
 
     for (final entry in _remotePlayers.entries) {
       final playerId = entry.key;
@@ -132,7 +132,7 @@ class BubbleManager {
 
       final distance =
           chebyshevDistance(playerGrid, playerComponent.miniGridPosition);
-      final isVisible = distance <= visualThreshold;
+      final isVisible = distance <= _visualThreshold;
 
       if (isVisible) {
         nearbyPlayerIds.add(playerId);
@@ -158,7 +158,7 @@ class BubbleManager {
       final dfGrid = dreamfinderComponent!.miniGridPosition;
       final dfDistance = chebyshevDistance(playerGrid, dfGrid);
 
-      if (dfDistance <= visualThreshold) {
+      if (dfDistance <= _visualThreshold) {
         nearbyPlayerIds.add(dreamfinderIdentity);
         if (dfDistance < closestDistance) closestDistance = dfDistance;
 
@@ -186,7 +186,7 @@ class BubbleManager {
       final botDistance =
           chebyshevDistance(playerGrid, botComp.miniGridPosition);
 
-      if (botDistance <= visualThreshold) {
+      if (botDistance <= _visualThreshold) {
         nearbyPlayerIds.add(botId);
         if (botDistance < closestDistance) closestDistance = botDistance;
 
@@ -400,7 +400,7 @@ class BubbleManager {
       _shaderProgram =
           await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
     } catch (e) {
-      // Shader loading failed — video bubbles will render without effects.
+      _log.warning('Video bubble shader failed to load', e);
     }
   }
 
