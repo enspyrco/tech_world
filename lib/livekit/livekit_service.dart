@@ -139,7 +139,7 @@ class LiveKitService {
   /// Heartbeats carry a single grid position with reliable delivery,
   /// correcting stale positions caused by dropped unreliable path updates.
   Stream<PositionHeartbeat> get positionHeartbeatReceived => dataReceived
-      .where((msg) => msg.topic == 'position-heartbeat')
+      .where((msg) => msg.topic == DataTopic.positionHeartbeat.wireName)
       .map((msg) {
         final json = msg.json;
         if (json == null) return null;
@@ -161,7 +161,7 @@ class LiveKitService {
   /// client can load the same map. Own messages (matching [userId]) and
   /// messages from bots are excluded.
   Stream<String> get mapSwitchReceived => dataReceived
-      .where((msg) => msg.topic == 'map-switch')
+      .where((msg) => msg.topic == DataTopic.mapSwitch.wireName)
       .map((msg) {
         if (msg.json case {'senderId': String senderId, 'mapId': String mapId}
             when senderId != userId) {
@@ -513,7 +513,7 @@ class LiveKitService {
       'senderId': userId,
       'mapId': mapId,
     };
-    await publishJson(message, topic: 'map-switch');
+    await publishJson(message, topic: DataTopic.mapSwitch.wireName);
   }
 
   /// Publish the local player's position to other participants.
@@ -563,7 +563,7 @@ class LiveKitService {
             'y': pos.y,
             'type': 'heartbeat',
           },
-          topic: 'position-heartbeat',
+          topic: DataTopic.positionHeartbeat.wireName,
           reliable: true,
         );
       },

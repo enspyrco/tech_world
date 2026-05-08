@@ -780,7 +780,7 @@ class TechWorld extends World with TapCallbacks {
     // Subscribe to door-unlock events from other players so doors they
     // unlock become passable locally (barrier removed, proximity updated).
     _doorUnlockSubscription = _liveKitService!.dataReceived
-        .where((msg) => msg.topic == 'door-unlock')
+        .where((msg) => msg.topic == DataTopic.doorUnlock.wireName)
         .listen(_handleRemoteDoorUnlock);
 
     // Infrastructure health monitoring.

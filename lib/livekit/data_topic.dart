@@ -21,6 +21,7 @@
 enum DataTopic {
   // ── Player presence ────────────────────────────────────────────────────────
   position('position'),
+  positionHeartbeat('position-heartbeat'),
   avatar('avatar'),
 
   // ── Chat ───────────────────────────────────────────────────────────────────
@@ -34,6 +35,7 @@ enum DataTopic {
   // ── Map & Navigation ───────────────────────────────────────────────────────
   mapInfo('map-info'),
   mapInfoRequest('map-info-request'),
+  mapSwitch('map-switch'),
   mapEdit('map-edit'),
   mapEditSync('map-edit-sync'),
 
