@@ -77,9 +77,9 @@ void main() {
       expect(logs[0].contains('...'), isFalse);
     });
 
-    test('works as registered sink via dispatch', () async {
+    test('works as registered sink via dispatch', () {
       registerSink(consoleSink);
-      await dispatch([DoorUnlocked(doorX: 5, doorY: 10)]);
+      dispatch([DoorUnlocked(doorX: 5, doorY: 10)]);
 
       expect(logs, hasLength(1));
       expect(logs[0], contains('DoorUnlocked'));

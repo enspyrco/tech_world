@@ -77,7 +77,7 @@ Future<List<AppEvent>> applyCastSuccessEffects({
   }
 
   final events = castSuccessEvents(challengeId);
-  await dispatch(events);
+  dispatch(events);
   return events;
 }
 
