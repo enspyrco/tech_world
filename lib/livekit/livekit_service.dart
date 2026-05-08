@@ -210,6 +210,8 @@ class LiveKitService {
         return null;
       }
 
+      // 2× world bounds: negative coords valid for off-origin maps,
+      // interpolation can briefly overshoot. Units: world-space pixels.
       final maxCoord = (gridSize * gridSquareSize * 2).toDouble();
       final points = pointsJson
           .map((p) => Vector2(
@@ -880,6 +882,7 @@ class PositionHeartbeat {
     final x = json['x'];
     final y = json['y'];
     if (playerId is! String || x is! int || y is! int) return null;
+    // 2× grid bounds: negative coords valid for off-origin maps. Units: grid cells.
     const maxCoord = gridSize * 2;
     return PositionHeartbeat(
       playerId: playerId,
