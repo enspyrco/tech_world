@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
+
 class ProximityEvent {
   ProximityEvent({
     required this.playerId,
@@ -57,6 +60,7 @@ class ProximityService {
           position: otherPosition,
           distance: distance,
         ));
+        dispatch([PlayerEnteredProximity(playerId: playerId)]);
       } else if (!isNearby && wasNearby) {
         _nearbyPlayers.remove(playerId);
         _lastDistances.remove(playerId);
@@ -66,6 +70,7 @@ class ProximityService {
           position: otherPosition,
           distance: distance,
         ));
+        dispatch([PlayerLeftProximity(playerId: playerId)]);
       } else if (isNearby && wasNearby &&
           _lastDistances[playerId] != distance) {
         // Only emit when distance actually changed (for opacity fading).
@@ -91,6 +96,7 @@ class ProximityService {
         position: const Point(0, 0),
         distance: proximityThreshold + 1,
       ));
+      dispatch([PlayerLeftProximity(playerId: playerId)]);
     }
   }
 

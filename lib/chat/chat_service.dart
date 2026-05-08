@@ -8,6 +8,8 @@ import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/bots/bot_config.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -190,6 +192,7 @@ class ChatService {
       _activeBotIdentity = p.identity;
       final wasAbsent = botStatusNotifier.value == BotStatus.absent;
       botStatusNotifier.value = BotStatus.idle;
+      dispatch([BotJoined(identity: p.identity)]);
       if (wasAbsent) {
         retryPendingSubmissions();
       }
@@ -203,6 +206,7 @@ class ChatService {
           .any((r) => isBotIdentity(r.identity));
       if (!anyBotLeft) {
         botStatusNotifier.value = BotStatus.absent;
+        dispatch([BotLeft()]);
       }
     });
 
@@ -281,6 +285,7 @@ class ChatService {
       ));
       // Speak the response
       _ttsService.speak(text);
+      dispatch([BotSpoke(text: text, context: BotSpokeContext.group)]);
       _messagesController.add(List.from(_messages));
     } else {
       // Group chat from another user — use transport identity, not payload.
@@ -446,6 +451,10 @@ class ChatService {
     ));
 
     _log.info('Sent message: "$text"');
+    dispatch([GroupMessageSent(
+      messageId: messageId,
+      challengeId: metadata?['challengeId'] as String?,
+    )]);
 
     // Persist to Firestore.
     _persistMessage(userMessage);
@@ -645,6 +654,7 @@ class ChatService {
     );
 
     _log.info('Sent DM to $peerId: "$text"');
+    dispatch([DmSent(peerId: peerId, conversationId: convId)]);
 
     // Persist to Firestore.
     _persistMessage(chatMessage);
@@ -753,6 +763,7 @@ class ChatService {
 
     // Speak the hint aloud so Clawd "says" it when arriving (web only)
     _ttsService.speak(hint);
+    dispatch([BotSpoke(text: hint, context: BotSpokeContext.help)]);
 
     final completer = _pendingHelpRequests.remove(requestId);
     completer?.complete(hint);
@@ -813,6 +824,7 @@ class ChatService {
     ));
 
     _log.info('Sent help-request $requestId');
+    dispatch([HelpRequested(challengeId: challengeId)]);
 
     try {
       return await completer.future.timeout(
