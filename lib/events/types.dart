@@ -52,6 +52,8 @@ final class ChallengeCompleted extends AppEvent {
   }) : timestamp = timestamp ?? DateTime.now();
 
   /// Wire-format challenge ID (matches Firestore `completedChallenges` array).
+  /// String because this is a union of CodeChallengeId and PromptChallengeId
+  /// — both serialize to disjoint wire names in the same Firestore array.
   final String challengeId;
   @override
   final DateTime timestamp;
@@ -68,6 +70,9 @@ final class ChallengeCompleted extends AppEvent {
 enum CastFailureReason { noMatch, notLearned, wrongDoor }
 
 /// A voice-cast at a door failed.
+///
+/// Note: [transcript] contains STT output of what the user spoke.
+/// Local-only — scrub before routing to any remote sink.
 final class SpellCastFailed extends AppEvent {
   SpellCastFailed({
     required this.reason,
@@ -694,6 +699,9 @@ final class GroupMessageSent extends AppEvent {
 }
 
 /// Player sent a DM to another player.
+///
+/// Note: [peerId] and [conversationId] are written to the local JSONL log.
+/// If this event is ever routed to a remote sink, scrub PII first.
 final class DmSent extends AppEvent {
   DmSent({
     required this.peerId,

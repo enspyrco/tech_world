@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:tech_world/events/types.dart';
 
 typedef Sink = void Function(AppEvent event);
@@ -34,7 +36,7 @@ void dispatch(List<AppEvent> events) {
       sink(event);
     }
     for (final sink in asyncs) {
-      sink(event);
+      unawaited(sink(event));
     }
   }
 }
