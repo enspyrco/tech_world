@@ -52,6 +52,12 @@ class PlayerBubbleComponent extends PositionComponent {
   )..layout();
 
   @override
+  void onRemove() {
+    _initialPainter.dispose();
+    super.onRemove();
+  }
+
+  @override
   void render(Canvas canvas) {
     if (_opacity <= 0) return;
 

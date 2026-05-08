@@ -106,11 +106,9 @@ class VideoBubbleComponent extends PositionComponent {
   final Paint _layerPaint = Paint();
   final Paint _hologramLinePaint = Paint()..strokeWidth = 1.5;
 
-  // ── Cached bubble path (rebuilt only when speaking level or time changes)
+  // ── Per-frame bubble path (built once in render, reused for clip + border)
 
-  Path? _cachedBubblePath;
-  double _cachedPathTime = -1;
-  double _cachedPathSpeaking = -1;
+  Path? _frameBubblePath;
 
   // Voice ripple — number of wave lobes around the circle
   static const int _rippleLobes = 8;
@@ -657,17 +655,11 @@ class VideoBubbleComponent extends PositionComponent {
         paint,
       );
 
-      // Cache the bubble path — rebuild only when time or speaking level changed.
-      if (_cachedBubblePath == null ||
-          _cachedPathTime != _time ||
-          _cachedPathSpeaking != _speakingLevel) {
-        _cachedBubblePath = _buildBubblePath(center, radius);
-        _cachedPathTime = _time;
-        _cachedPathSpeaking = _speakingLevel;
-      }
+      // Build the bubble path once per frame, reuse for clip and border.
+      _frameBubblePath = _buildBubblePath(center, radius);
 
       canvas.save();
-      canvas.clipPath(_cachedBubblePath!);
+      canvas.clipPath(_frameBubblePath!);
 
       final srcRect = Rect.fromLTWH(
         0,
@@ -744,8 +736,8 @@ class VideoBubbleComponent extends PositionComponent {
         ..color = _currentFrame != null ? _glowColor : Colors.white
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
-      // Reuse the cached path (or build fresh if we didn't enter the video branch).
-      final path = _cachedBubblePath ?? _buildBubblePath(center, radius);
+      // Reuse the path built earlier, or build fresh if we took the no-video branch.
+      final path = _frameBubblePath ?? _buildBubblePath(center, radius);
       canvas.drawPath(path, borderPaint);
     }
 
