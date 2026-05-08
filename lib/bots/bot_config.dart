@@ -78,13 +78,20 @@ final botsByIdentity = <String, BotConfig>{
 /// All bot identities as a set, for efficient lookups.
 final allBotIdentities = botsByIdentity.keys.toSet();
 
+/// Identity prefixes used by the LiveKit agents SDK.
+///
+/// The `@livekit/agents` SDK assigns identities like `agent-{jobId}` when
+/// the worker doesn't override the identity. Only Dreamfinder uses this SDK.
+/// Add entries here (not ad-hoc `startsWith` checks) when new bots adopt it.
+const _agentPrefixes = ['agent-'];
+
 /// Returns `true` if [identity] belongs to a registered bot.
 ///
-/// Also matches `agent-` prefixed identities from the `@livekit/agents`
-/// SDK, which assigns identities like `agent-{jobId}` when the worker
-/// doesn't override the identity via `requestFunc`.
+/// Checks the [allBotIdentities] set for exact matches and the
+/// [_agentPrefixes] list for LiveKit agents SDK identities.
 bool isBotIdentity(String identity) =>
-    botsByIdentity.containsKey(identity) || identity.startsWith('agent-');
+    allBotIdentities.contains(identity) ||
+    _agentPrefixes.any((prefix) => identity.startsWith(prefix));
 
 /// Returns `true` if [identity] belongs to Dreamfinder, including the
 /// auto-generated `agent-*` identities used by the LiveKit agents SDK.
@@ -97,8 +104,11 @@ bool isDreamfinderIdentity(String identity) =>
 
 /// Returns the [BotConfig] for [identity], or [clawdBot] as fallback.
 ///
-/// Identities starting with `agent-` are mapped to [dreamfinderBot],
-/// since only Dreamfinder uses the `@livekit/agents` SDK directly.
+/// Identities matching an [_agentPrefixes] entry are mapped to
+/// [dreamfinderBot], since only Dreamfinder uses the `@livekit/agents`
+/// SDK directly.
 BotConfig getBotConfig(String identity) =>
     botsByIdentity[identity] ??
-    (identity.startsWith('agent-') ? dreamfinderBot : clawdBot);
+    (_agentPrefixes.any((prefix) => identity.startsWith(prefix))
+        ? dreamfinderBot
+        : clawdBot);

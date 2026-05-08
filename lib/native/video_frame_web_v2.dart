@@ -644,7 +644,7 @@ class VideoElementCapture implements FrameSource {
   /// Create a capture instance from an existing HTMLVideoElement.
   ///
   /// This is used when we have direct access to a video element (e.g., from RTCVideoRenderer).
-  static VideoElementCapture? createFromVideoElement(dynamic videoElement) {
+  static VideoElementCapture? createFromVideoElement(Object videoElement) {
     try {
       final video = videoElement as web.HTMLVideoElement;
       final width = video.videoWidth;

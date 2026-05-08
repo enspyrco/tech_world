@@ -528,7 +528,9 @@ enum CodeSubmitResult {
   timeout;
 
   /// Parse a bot response string into a typed result.
-  static CodeSubmitResult fromWire(String? wire) => switch (wire) {
+  /// Case-folds the wire value so `'PASS'` and `'Pass'` both match.
+  static CodeSubmitResult fromWire(String? wire) =>
+      switch (wire?.toString().toLowerCase()) {
         'pass' => CodeSubmitResult.pass,
         'fail' => CodeSubmitResult.fail,
         _ => CodeSubmitResult.timeout,

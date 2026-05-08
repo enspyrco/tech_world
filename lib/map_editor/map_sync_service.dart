@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart'
@@ -12,6 +13,8 @@ import 'package:tech_world/map_editor/crdt/cell_version_map.dart';
 import 'package:tech_world/map_editor/crdt/map_edit_op.dart';
 import 'package:tech_world/map_editor/crdt/undo_manager.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
+
+final _log = Logger('MapSyncService');
 
 /// Orchestrates collaborative map editing over LiveKit data channels.
 ///
@@ -583,7 +586,13 @@ class MapSyncService {
     if (json == null) return;
 
     if (msg.topic == _editTopic) {
-      final batch = MapEditBatch.fromJson(json);
+      final MapEditBatch batch;
+      try {
+        batch = MapEditBatch.fromJson(json);
+      } catch (e, stack) {
+        _log.warning('Ignoring malformed map-edit message', e, stack);
+        return;
+      }
       if (batch.ops.isEmpty) return;
       if (_isSyncing) {
         _syncBuffer.add(batch);

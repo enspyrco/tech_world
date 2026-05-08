@@ -816,7 +816,7 @@ class ChatService {
 
     try {
       return await completer.future.timeout(
-        const Duration(seconds: 60),
+        const Duration(seconds: 30),
         onTimeout: () {
           _log.warning('Help request timeout');
           _pendingHelpRequests.remove(requestId);

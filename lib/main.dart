@@ -1240,7 +1240,7 @@ class _MyAppState extends State<MyApp> {
 
                             // Only mark completed when bot confirms pass
                             final codeResult = CodeSubmitResult.fromWire(
-                              response?['challengeResult'] as String?,
+                              response?['challengeResult']?.toString(),
                             );
                             dispatch([CodeSubmitted(
                               challengeId: challenge.id.wireName,

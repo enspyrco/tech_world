@@ -13,20 +13,27 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Rooms — any authenticated user can read (public listing + joining).
-    // Private room filtering is handled client-side; the query itself
-    // filters on isPublic so private rooms won't appear in browse results.
+    // Rooms — public rooms are readable by any authenticated user (for browse
+    // listing). Private rooms are only readable by their owner and editors.
+    // The listPublicRooms() query filters on isPublic == true so it satisfies
+    // this rule. listMyRooms() queries on ownerId so those docs also pass.
     match /rooms/{roomId} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null &&
+        (resource.data.isPublic == true ||
+         request.auth.uid == resource.data.ownerId ||
+         request.auth.uid in resource.data.editorIds);
 
       // Anyone signed in can create (must set themselves as owner)
       allow create: if request.auth != null &&
         request.auth.uid == request.resource.data.ownerId;
 
-      // Owner and editors can update
+      // Owner and editors can update.
+      // Editors cannot modify ownerId or editorIds (prevents privilege escalation).
       allow update: if request.auth != null &&
         (request.auth.uid == resource.data.ownerId ||
-         request.auth.uid in resource.data.editorIds);
+         (request.auth.uid in resource.data.editorIds &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+           .hasAny(['ownerId', 'editorIds'])));
 
       // Only owner can delete
       allow delete: if request.auth != null &&
@@ -34,14 +41,14 @@ service cloud.firestore {
 
       // Chat messages subcollection
       match /messages/{messageId} {
-        // Read: authenticated + (group chat OR participants array check OR
-        // regex fallback for legacy messages without participants field)
+        // Read: authenticated + (group chat OR participants array membership).
+        // Legacy messages without a `participants` field are unreadable until
+        // migrated via a one-time Cloud Function that backfills the array from
+        // the conversationId string.
         allow read: if request.auth != null &&
           (resource.data.conversationId == 'group' ||
            ('participants' in resource.data &&
-            request.auth.uid in resource.data.participants) ||
-           (!('participants' in resource.data) &&
-            resource.data.conversationId.matches('.*' + request.auth.uid + '.*')));
+            request.auth.uid in resource.data.participants));
 
         // Create: authenticated + senderId must match the caller's UID +
         // for DMs, sender must be a participant

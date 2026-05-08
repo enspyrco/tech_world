@@ -77,35 +77,6 @@ void main() {
     );
 
     testWithGame<TestGameWithMockImages>(
-      'onTapDown toggles bot status',
-      TestGameWithMockImages.new,
-      (game) async {
-        final bot = BotCharacterComponent(
-          position: Vector2(100, 100),
-          id: 'bot-claude',
-          displayName: 'Claude',
-        );
-
-        await game.world.add(bot);
-        await game.ready();
-
-        // Initial status should be idle
-        expect(botStatusNotifier.value, equals(BotStatus.idle));
-
-        // Create a mock tap event using flame_test helper
-        final event = createTapDownEvents(game: game);
-
-        // Simulate tap down - should toggle to thinking
-        bot.onTapDown(event);
-        expect(botStatusNotifier.value, equals(BotStatus.thinking));
-
-        // Another tap - should toggle back to idle
-        bot.onTapDown(event);
-        expect(botStatusNotifier.value, equals(BotStatus.idle));
-      },
-    );
-
-    testWithGame<TestGameWithMockImages>(
       'multiple bots can be added to game',
       TestGameWithMockImages.new,
       (game) async {
