@@ -1178,7 +1178,10 @@ class _MyAppState extends State<MyApp> {
                             );
 
                             // Only mark completed when bot confirms pass
-                            if (response?['challengeResult'] == 'pass') {
+                            if (response?['challengeResult']
+                                    ?.toString()
+                                    .toLowerCase() ==
+                                'pass') {
                               final progress =
                                   Locator.maybeLocate<ProgressService>();
                               if (progress == null) {
@@ -1197,6 +1200,10 @@ class _MyAppState extends State<MyApp> {
                                 }
                               }
                               techWorld.refreshTerminalStates();
+                            } else if (response?['challengeResult'] != null) {
+                              _log.warning(
+                                  'Unrecognised challengeResult: '
+                                  '${response!['challengeResult']}');
                             }
                           },
                         );
