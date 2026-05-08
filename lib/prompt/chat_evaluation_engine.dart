@@ -121,7 +121,7 @@ class ChatEvaluationEngine extends EvaluationEngine {
     // injection — a player embedding "RESULT:PASS" mid-text must not
     // trigger a spurious pass.
     final passPattern = RegExp(
-      r'(^|\n)\s*RESULT:PASS\s*$',
+      r'^\s*RESULT:PASS\s*$',
       caseSensitive: false,
       multiLine: true,
     );
@@ -137,12 +137,12 @@ class ChatEvaluationEngine extends EvaluationEngine {
 
     // Determine feedback category from FEEDBACK: marker.
     final feedbackPattern = RegExp(
-      r'(^|\n)\s*FEEDBACK:(\w+)',
+      r'^\s*FEEDBACK:(\w+)',
       caseSensitive: false,
       multiLine: true,
     );
     final feedbackMatch = feedbackPattern.firstMatch(responseText);
-    final feedbackValue = feedbackMatch?.group(2)?.toUpperCase();
+    final feedbackValue = feedbackMatch?.group(1)?.toUpperCase();
     final CastFeedback feedback;
     if (feedbackValue == 'BACKFIRED') {
       feedback = CastFeedback.backfired;
@@ -322,7 +322,7 @@ class ChatEvaluationEngine extends EvaluationEngine {
     // Strip RESULT:/FEEDBACK: markers before counting (same as other
     // deterministic evaluators).
     final resultIndex = text.toUpperCase().indexOf('RESULT:');
-    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+    final clean = resultIndex != -1 ? text.substring(0, resultIndex) : text;
     final wordCount =
         clean.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
     if (wordCount < 10) {
@@ -343,7 +343,7 @@ class ChatEvaluationEngine extends EvaluationEngine {
   static CastResult _evaluateDivinationColor(String text) {
     // Strip RESULT:/FEEDBACK markers before checking content.
     final resultIndex = text.toUpperCase().indexOf('RESULT:');
-    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+    final clean = resultIndex != -1 ? text.substring(0, resultIndex) : text;
 
     // Check for the color reveal line.
     final hasColorReveal =
@@ -376,7 +376,7 @@ class ChatEvaluationEngine extends EvaluationEngine {
     // may still append self-evaluation markers even when we don't need
     // them.
     final resultIndex = text.toUpperCase().indexOf('RESULT:');
-    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+    final clean = resultIndex != -1 ? text.substring(0, resultIndex) : text;
     return clean
         .split('\n')
         .map((l) => l.trim())
@@ -389,7 +389,7 @@ class ChatEvaluationEngine extends EvaluationEngine {
   static String? _extractJson(String text) {
     // Strip RESULT:/FEEDBACK: markers first.
     final resultIndex = text.toUpperCase().indexOf('RESULT:');
-    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+    final clean = resultIndex != -1 ? text.substring(0, resultIndex) : text;
 
     // Try markdown code fence first.
     final fencePattern = RegExp(r'```(?:json)?\s*\n([\s\S]*?)\n\s*```');
