@@ -29,10 +29,7 @@ dependencies:
   collection: ^1.19.1
   ffi: ^2.1.5
   web: ^1.1.0 # For web video capture APIs
-  code_forge_web:
-    git:
-      url: https://github.com/nickmeinhold/code_forge_web.git
-      ref: 51f0e2b
+  code_forge_web: ^2.9.0
   re_highlight: ^0.0.3
   tiled: ^0.11.1 # TMX/TSX parser only — no rendering
   xml: ^6.6.1
