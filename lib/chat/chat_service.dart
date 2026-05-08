@@ -280,11 +280,12 @@ class ChatService {
       _ttsService.speak(text);
       _messagesController.add(List.from(_messages));
     } else {
-      // Message from another user (group chat)
+      // Group chat: use transport identity like DMs. Bot responses keep
+      // payloadSenderId because bots are trusted LiveKit participants.
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: payloadSenderId,
+        senderId: message.senderId,
         conversationId: 'group',
         isLocalUser: false,
       ));
