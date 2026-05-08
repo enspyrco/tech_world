@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -161,6 +162,70 @@ void main() {
       });
     });
 
+    group('protocol version field', () {
+      test('publishJson injects v:1 into every outgoing message', () async {
+        // Capture the bytes that would be sent via publishData.
+        List<int>? capturedData;
+        final service = _CapturingLiveKitService(
+          userId: 'test-user',
+          displayName: 'Test',
+          onPublishData: (data) => capturedData = data,
+        );
+
+        await service.publishJson({'key': 'value'}, topic: 'test');
+
+        expect(capturedData, isNotNull);
+        final decoded = jsonDecode(utf8.decode(capturedData!)) as Map<String, dynamic>;
+        expect(decoded['v'], equals(1),
+            reason: 'Every outgoing message must carry v:1');
+        expect(decoded['key'], equals('value'),
+            reason: 'Original payload fields must be preserved');
+
+        await service.dispose();
+      });
+
+      test('publishJson preserves caller fields and does not double-version',
+          () async {
+        List<int>? capturedData;
+        final service = _CapturingLiveKitService(
+          userId: 'test-user',
+          displayName: 'Test',
+          onPublishData: (data) => capturedData = data,
+        );
+
+        await service.publishJson(
+          {'type': 'heartbeat', 'playerId': 'u1'},
+          topic: 'position-heartbeat',
+        );
+
+        final decoded = jsonDecode(utf8.decode(capturedData!)) as Map<String, dynamic>;
+        expect(decoded['v'], equals(1));
+        expect(decoded['type'], equals('heartbeat'));
+        expect(decoded['playerId'], equals('u1'));
+        // Exactly one 'v' key — no duplicate
+        expect(decoded.keys.where((k) => k == 'v'), hasLength(1));
+
+        await service.dispose();
+      });
+
+      test('DataChannelMessage.json does not reject messages without v field',
+          () {
+        // Old clients that don't include 'v' should still be parseable.
+        final legacyBytes = utf8.encode(jsonEncode({'playerId': 'old-client', 'x': 5}));
+        final msg = DataChannelMessage(
+          senderId: 'old-client',
+          topic: 'position-heartbeat',
+          data: legacyBytes,
+        );
+
+        final json = msg.json;
+        expect(json, isNotNull);
+        expect(json!['playerId'], equals('old-client'));
+        // No 'v' field is fine — backward compatibility
+        expect(json.containsKey('v'), isFalse);
+      });
+    });
+
     group('setCameraEnabled without connection', () {
       test('returns early when not connected', () async {
         final service = LiveKitService(
@@ -235,4 +300,27 @@ void main() {
       });
     });
   });
+}
+
+/// A [LiveKitService] subclass that intercepts [publishData] calls so tests
+/// can inspect the encoded bytes without requiring a live LiveKit connection.
+class _CapturingLiveKitService extends LiveKitService {
+  _CapturingLiveKitService({
+    required super.userId,
+    required super.displayName,
+    required void Function(List<int> data) onPublishData,
+  }) : _onPublishData = onPublishData;
+
+  final void Function(List<int> data) _onPublishData;
+
+  @override
+  Future<void> publishData(
+    List<int> data, {
+    bool reliable = true,
+    List<String>? destinationIdentities,
+    String? topic,
+  }) async {
+    // Capture the bytes instead of sending them to a real room.
+    _onPublishData(data);
+  }
 }

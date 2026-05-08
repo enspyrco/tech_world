@@ -469,13 +469,20 @@ class LiveKitService {
   /// Publish a JSON message to the room via data channel.
   ///
   /// Convenience method that encodes [json] as UTF-8 bytes.
+  ///
+  /// A `v: 1` protocol version field is automatically added to every outgoing
+  /// message. Old clients that don't recognise the field will ignore it
+  /// (forward-compatible). Receivers should NOT reject messages that lack
+  /// the field, so backward-compatibility with pre-versioned clients is
+  /// maintained.
   Future<void> publishJson(
     Map<String, dynamic> json, {
     bool reliable = true,
     List<String>? destinationIdentities,
     String? topic,
   }) async {
-    final data = utf8.encode(jsonEncode(json));
+    final versioned = {'v': 1, ...json};
+    final data = utf8.encode(jsonEncode(versioned));
     await publishData(
       data,
       reliable: reliable,
