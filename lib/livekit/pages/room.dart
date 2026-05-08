@@ -30,7 +30,9 @@ class RoomPage extends StatefulWidget {
 class _RoomPageState extends State<RoomPage> {
   List<ParticipantTrack> participantTracks = [];
   EventsListener<RoomEvent> get _listener => widget.listener;
-  bool get fastConnection => widget.room.engine.fastConnectOptions != null;
+  // FastConnect is not used in Tech World; the engine.fastConnectOptions
+  // accessor became @internal in livekit_client 2.7.
+  bool get fastConnection => false;
   bool _flagStartedReplayKit = false;
   @override
   void initState() {
