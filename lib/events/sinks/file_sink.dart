@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path_provider/path_provider.dart';
 import 'package:tech_world/events/types.dart';
 
@@ -34,6 +35,8 @@ Future<void Function(AppEvent)> createFileSink() async {
     // swallowed because a failing sink must never crash the app.
     logFile
         .writeAsString('$line\n', mode: FileMode.append)
-        .then<void>((_) {}, onError: (_) {});
+        .then<void>((_) {}, onError: (Object e) {
+      debugPrint('[sink:file] Write failed: $e');
+    });
   };
 }

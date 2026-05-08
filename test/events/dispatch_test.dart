@@ -11,7 +11,7 @@ void main() {
     test('empty events list is a no-op', () async {
       var called = false;
       registerSink((_) => called = true);
-      await dispatch([]);
+      dispatch([]);
       expect(called, isFalse);
     });
 
@@ -37,7 +37,7 @@ void main() {
         order.add('second');
       });
 
-      await dispatch([DoorUnlocked(doorX: 0, doorY: 0)]);
+      dispatch([DoorUnlocked(doorX: 0, doorY: 0)]);
       expect(order, ['first', 'second']);
     });
 
@@ -50,7 +50,7 @@ void main() {
         order.add('sync');
       });
 
-      await dispatch([DoorUnlocked(doorX: 0, doorY: 0)]);
+      dispatch([DoorUnlocked(doorX: 0, doorY: 0)]);
       expect(order, ['sync', 'async']);
     });
 
@@ -58,7 +58,7 @@ void main() {
       final received = <Type>[];
       registerSink((e) => received.add(e.runtimeType));
 
-      await dispatch([
+      dispatch([
         DoorUnlocked(doorX: 1, doorY: 2),
         BotSpoke(text: 'hello', context: BotSpokeContext.group),
       ]);
@@ -68,7 +68,7 @@ void main() {
 
     test('no sinks registered does not throw', () async {
       // dispatch with no sinks — must not throw.
-      await dispatch([DoorUnlocked(doorX: 0, doorY: 0)]);
+      dispatch([DoorUnlocked(doorX: 0, doorY: 0)]);
     });
 
     test('clearSinks removes all sinks', () async {
@@ -76,7 +76,7 @@ void main() {
       registerSink((_) => called = true);
       clearSinks();
 
-      await dispatch([DoorUnlocked(doorX: 0, doorY: 0)]);
+      dispatch([DoorUnlocked(doorX: 0, doorY: 0)]);
       expect(called, isFalse);
     });
   });

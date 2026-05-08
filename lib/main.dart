@@ -3,7 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:ui' as ui;
 
 import 'package:flame/game.dart';
-import 'package:flutter/foundation.dart' show ValueListenable, kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart' show ValueListenable, debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart'
@@ -73,13 +73,22 @@ void main() async {
 
 /// Register event sinks before the app starts. Console sink runs in
 /// debug mode only; file sink runs on native platforms (not web).
+///
+/// Guarded against duplicate registration on hot restart — sinks are
+/// global mutable state that persists across restarts.
 Future<void> _registerEventSinks() async {
+  if (sinksRegistered) return;
   if (kDebugMode) {
     registerSink(consoleSink);
   }
   if (!kIsWeb) {
-    final fileSink = await createFileSink();
-    registerSink(fileSink);
+    try {
+      final fileSink = await createFileSink();
+      registerSink(fileSink);
+    } catch (e) {
+      // path_provider failure — continue without file logging.
+      debugPrint('[events] File sink registration failed: $e');
+    }
   }
 }
 
@@ -1230,12 +1239,14 @@ class _MyAppState extends State<MyApp> {
                             );
 
                             // Only mark completed when bot confirms pass
-                            final codeResult = response?['challengeResult'] as String?;
+                            final codeResult = CodeSubmitResult.fromWire(
+                              response?['challengeResult'] as String?,
+                            );
                             dispatch([CodeSubmitted(
                               challengeId: challenge.id.wireName,
-                              result: codeResult ?? 'timeout',
+                              result: codeResult,
                             )]);
-                            if (codeResult == 'pass') {
+                            if (codeResult == CodeSubmitResult.pass) {
                               final progress =
                                   Locator.maybeLocate<ProgressService>();
                               if (progress == null) {

@@ -12,17 +12,29 @@ void registerSink(Sink sink) => _syncSinks.add(sink);
 /// Register an asynchronous sink. Called once at app startup or in tests.
 void registerAsyncSink(AsyncSink sink) => _asyncSinks.add(sink);
 
+/// Whether any sinks have been registered. Used to guard against
+/// duplicate registration on hot restart.
+bool get sinksRegistered => _syncSinks.isNotEmpty || _asyncSinks.isNotEmpty;
+
 /// Fan [events] to all registered sinks. Synchronous sinks run first,
 /// then async sinks in registration order.
 ///
 /// Safe to call with an empty list or when no sinks are registered.
-Future<void> dispatch(List<AppEvent> events) async {
+/// Safe to not await — all call sites are fire-and-forget.
+///
+/// Snapshots the sink lists before iterating so that a sink calling
+/// [registerSink] or [clearSinks] during dispatch does not corrupt
+/// the iteration.
+void dispatch(List<AppEvent> events) {
+  if (events.isEmpty) return;
+  final syncs = List.of(_syncSinks);
+  final asyncs = List.of(_asyncSinks);
   for (final event in events) {
-    for (final sink in _syncSinks) {
+    for (final sink in syncs) {
       sink(event);
     }
-    for (final sink in _asyncSinks) {
-      await sink(event);
+    for (final sink in asyncs) {
+      sink(event);
     }
   }
 }

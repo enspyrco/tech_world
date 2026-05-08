@@ -51,7 +51,7 @@ void consoleSink(AppEvent event) {
       'ProfileUpdated: $displayName',
     // Code
     CodeSubmitted(:final challengeId, :final result) =>
-      'CodeSubmitted: $challengeId → $result',
+      'CodeSubmitted: $challengeId → ${result.name}',
     // Map editor
     MapEdited(:final action, :final x, :final y) =>
       'MapEdited: ${action.name} at ($x, $y)',

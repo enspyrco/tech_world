@@ -516,7 +516,21 @@ final class RoomDeleted extends AppEvent {
       };
 }
 
-/// Player submitted code for a challenge (pass, fail, or timeout).
+/// Outcome of a code submission evaluation.
+enum CodeSubmitResult {
+  pass,
+  fail,
+  timeout;
+
+  /// Parse a bot response string into a typed result.
+  static CodeSubmitResult fromWire(String? wire) => switch (wire) {
+        'pass' => CodeSubmitResult.pass,
+        'fail' => CodeSubmitResult.fail,
+        _ => CodeSubmitResult.timeout,
+      };
+}
+
+/// Player submitted code for a challenge.
 final class CodeSubmitted extends AppEvent {
   CodeSubmitted({
     required this.challengeId,
@@ -525,9 +539,7 @@ final class CodeSubmitted extends AppEvent {
   }) : timestamp = timestamp ?? DateTime.now();
 
   final String challengeId;
-
-  /// `'pass'`, `'fail'`, or `'timeout'`.
-  final String result;
+  final CodeSubmitResult result;
   @override
   final DateTime timestamp;
 
@@ -535,7 +547,7 @@ final class CodeSubmitted extends AppEvent {
   Map<String, dynamic> toJson() => {
         'type': 'code_submitted',
         'challengeId': challengeId,
-        'result': result,
+        'result': result.name,
         'timestamp': timestamp.toIso8601String(),
       };
 }

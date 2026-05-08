@@ -525,7 +525,7 @@ class MapSyncService {
   /// Undo the last local edit.
   void undo() {
     final batch = _undoManager.createUndo();
-    if (batch == null) return;
+    if (batch == null || batch.ops.isEmpty) return;
     _applyBatchLocally(batch);
     _versionMap.recordBatch(batch);
     _publishBatch(batch);
@@ -537,7 +537,7 @@ class MapSyncService {
   /// Redo the last undone edit.
   void redo() {
     final batch = _undoManager.createRedo();
-    if (batch == null) return;
+    if (batch == null || batch.ops.isEmpty) return;
     _applyBatchLocally(batch);
     _versionMap.recordBatch(batch);
     _publishBatch(batch);
@@ -649,8 +649,10 @@ class MapSyncService {
     _versionMap.recordBatch(batch);
     _publishBatch(batch);
     _notifyUndoRedo();
-    final firstOp = batch.ops.first;
-    dispatch([MapEdited(action: action, x: firstOp.x, y: firstOp.y)]);
+    if (batch.ops.isNotEmpty) {
+      final firstOp = batch.ops.first;
+      dispatch([MapEdited(action: action, x: firstOp.x, y: firstOp.y)]);
+    }
   }
 
   Future<void> _publishBatch(MapEditBatch batch) async {
