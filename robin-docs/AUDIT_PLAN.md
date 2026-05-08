@@ -146,7 +146,7 @@ Game Systems:
 | 12 | Security | `/tw-platform-parity` | **Done** | 1 CRIT / 2 HIGH / 3 MED / 2 LOW → `phase4b-platform-parity.md` |
 | 13 | Operations | `/tw-sweep3` | **Done** | Perf 3.2/5, Deps 3.2/5, Prod 3.25/5 → `phase5-sweep3-operations.md` |
 | 14 | Structural | `/tw-add-events` | **Done** | 34 events, 40 dispatch sites, console + JSONL sinks, 77 E2E tests → PR #412 |
-| 15 | Structural | `/tw-architecture-sweep` | **Done** | LiveKitTopic (26 topics) + SpeakerRole enums, DI injection, 108 contract tests, ARCHITECTURE.md → PR #TBD |
+| 15 | Structural | `/tw-architecture-sweep` | **Done** | LiveKitTopic enum, SpeakerRole enum, DI injection, LiveKitGameBridge, DoorManager, botStatusNotifier eliminated, applyCodeSubmitEffects, 108 contract tests, ARCHITECTURE.md → PR #413 |
 | 16 | Structural | `/tw-category-sweep` | Not started | |
 
 ## PR Summary
@@ -159,8 +159,8 @@ Game Systems:
 | 4 follow-ups | 5 | #395–#396 | — |
 | 4b: Bot + Platform | 9 | #397–#405 | 2 (bot tap toggle, eval parsing) |
 | 5: Operations | 6 | #406–#411 | 2 (Paint cache, reconnect backoff) |
-| 6: Structural | 2 | #412–#TBD | 2 (event system, E2E tests) + pending (architecture-sweep) |
-| **Total** | **62** | | **19** |
+| 6: Structural | 2 | #412–#413 | 3 (event system, E2E tests, architecture-sweep) |
+| **Total** | **63** | | **20** |
 
 ## Known Issues Resolved
 
@@ -180,9 +180,13 @@ These were identified in Phase 1 and fixed across subsequent phases:
 | Non-atomic Firestore writes | Phase 5 (#408 — WriteBatch) |
 | No structured event logging | Phase 6 (#412 — 34 event types, JSONL file sink) |
 | No E2E event tests | Phase 6 (#412 — 77 tests, capture-sink pattern) |
-| Scattered topic string literals | Phase 6 (#TBD — LiveKitTopic enum, 26 values across 10 files) |
-| Locator calls inside widgets | Phase 6 (#TBD — DI injection for MapSyncService, ProgressService) |
-| No architecture contract tests | Phase 6 (#TBD — 108 tests in test/architecture/) |
+| Scattered topic string literals | Phase 6 (#413 — LiveKitTopic enum, 26 values across 10 files) |
+| Locator calls inside widgets | Phase 6 (#413 — DI injection for MapSyncService, ProgressService) |
+| No architecture contract tests | Phase 6 (#413 — 108 tests in test/architecture/) |
+| Global mutable `botStatusNotifier` | Phase 6 (#413 — ChatService owns `_botStatus`, exposes `ValueListenable`) |
+| 14 subscription fields in TechWorld | Phase 6 (#413 — LiveKitGameBridge extraction, 260 lines) |
+| Door logic scattered in TechWorld | Phase 6 (#413 — DoorManager extraction, 152 lines) |
+| Duplicated challenge-completion logic | Phase 6 (#413 — `_persistCompletion` + `applyCodeSubmitEffects`) |
 
 ## Items Deferred to Nick
 

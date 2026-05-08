@@ -1,7 +1,7 @@
 # Handover — Tech World Audit
 
 **Date:** 2026-05-09
-**Status:** Phases 1–5 complete, Phase 6 in progress. 62 PRs shipped, 2 architectural refactors, 14 audit reports, 19 cage-match reviews. 1688 tests passing.
+**Status:** Phases 1–5 complete, Phase 6 in progress. 63 PRs shipped, 4 architectural refactors, 14 audit reports, 20 cage-match reviews. 1686 tests passing.
 
 ---
 
@@ -23,6 +23,8 @@
 - `/tw-video-pipeline` — 3 capture pipelines → `phase3-video-pipeline.md`
 - **Refactor 1:** BubbleManager extracted from TechWorld (-33%) → `ARCHITECTURAL_REFACTOR1.md`
 - **Refactor 2:** RoomSession extracted from _MyAppState (-10%) → `ARCHITECTURAL_REFACTOR2.md`
+- **Refactor 3:** LiveKitGameBridge — 14 subscriptions extracted (260 lines) → PR #413
+- **Refactor 4:** DoorManager — door unlock/proximity extracted (152 lines) → PR #413
 
 ### Phase 4: Security (complete)
 - `/tw-sweep1` — security + deps + protocol → `phase4-sweep1-security.md`
@@ -40,21 +42,33 @@
 - `fire_all_events.dart` CLI fires all 34 events as JSONL to stdout
 - Cage-match: 2 rounds — caught empty-batch crash, hot-restart sink duplication, stringly-typed enum, PII in test data
 - Docs: `robin-docs/LOGS.md` (event catalogue), `robin-docs/E2E.md` (test coverage)
-- `/tw-architecture-sweep` — `LiveKitTopic` enum (26 topics wired into 10 files), `SpeakerRole` enum, `calculateOpacity` moved to BubbleManager, `ProgressService`/`MapSyncService` DI injection, 108 contract tests in `test/architecture/`, `ARCHITECTURE.md` with Mermaid diagrams → PR #TBD
+- `/tw-architecture-sweep` — 10 refactors from `architect.tmp`:
+  - `LiveKitTopic` enum (26 topics wired into 10 files)
+  - `SpeakerRole` enum (replaces `'dreamfinder'`/`'user'` strings)
+  - `calculateOpacity` moved to BubbleManager
+  - `ProgressService`/`MapSyncService` DI injection
+  - **`botStatusNotifier` eliminated** — ChatService owns `_botStatus` as `ValueListenable<BotStatus>`, 9 consumer sites updated, global removed
+  - **`applyCodeSubmitEffects`** — shared `_persistCompletion` helper, code path dispatches `ChallengeCompleted`
+  - **`LiveKitGameBridge`** — 14 subscriptions + InfraHealthService extracted (260 lines)
+  - **`DoorManager`** — unlock, proximity, remote-unlock extracted (152 lines)
+  - TechWorld: 1570 → 1299 lines
+  - 108 contract tests in `test/architecture/`, `ARCHITECTURE.md`
+  - → PR #413, cage-match: architect.tmp leak, force-unwrap, stale docs
+  - **Deferred:** MapLoader extraction (~400 lines, 10+ dependencies)
 - Remaining: `/tw-category-sweep`
 
 ---
 
-## 61 PRs Shipped
+## 63 PRs Shipped
 
 All PRs opened against upstream (`enspyrco/tech_world`). None merged by Nick yet.
 
-### Phase 6 — Structural (2 PRs, #412–#TBD)
+### Phase 6 — Structural (2 PRs, #412–#413)
 
 | PR# | Branch | What | Cage-match |
 |-----|--------|------|------------|
 | #412 | `audit/add-events` | Event-sink system: 34 types, 40 dispatch sites, sinks, log bridge, 77 E2E tests | 2 rounds (empty-batch crash, hot-restart, enum, PII) |
-| #TBD | `audit/architecture-sweep` | LiveKitTopic enum (26 topics), SpeakerRole enum, DI injection, 108 contract tests, ARCHITECTURE.md | Pending |
+| #413 | `audit/architecture-sweep` | LiveKitTopic enum, SpeakerRole enum, DI injection, LiveKitGameBridge (260 lines), DoorManager (152 lines), botStatusNotifier eliminated, applyCodeSubmitEffects, 108 contract tests, ARCHITECTURE.md. TechWorld 1570→1299 lines. | 1 round (architect.tmp leak, force-unwrap, stale ARCHITECTURE.md) |
 
 ### Phase 3a — Sweep2 fixes (14 PRs)
 
@@ -149,7 +163,7 @@ All PRs opened against upstream (`enspyrco/tech_world`). None merged by Nick yet
 
 ---
 
-## Cage-Match Pattern (confirmed across 19 reviews)
+## Cage-Match Pattern (confirmed across 20 reviews)
 
 **Certainty correlates inversely with correctness.** Key catches across all phases:
 - PR #410: Path cache looked solid but `_time` changes every frame — cache logically dead during speaking. TextPainter leak in `PlayerBubbleComponent` (missing `dispose()`).
@@ -159,6 +173,7 @@ All PRs opened against upstream (`enspyrco/tech_world`). None merged by Nick yet
 - PR #357: Two depth-sort bugs found during review.
 - PR #392: Unused import failing CI.
 - PR #412: Round 1 — `batch.ops.first` crash on empty undo batch (multi-version peer scenario), hot-restart doubles sinks, `CodeSubmitted.result` was String not enum. Round 2 — PII in test data, missing tearDown in fire-all-events CLI, weak assertions (containsAll → exact key set).
+- PR #413: `architect.tmp` scratch file leaked into commit. `_handleHeartbeatReceived` force-unwrap (`_liveKitService!`) — both reviewers caught. `ARCHITECTURE.md` still listed completed refactors as pending (Kelvin's historical-context lens). Kelvin's `setBotStatus` ordering concern verified as false positive — all 4 call paths already correct.
 
 ---
 
@@ -169,6 +184,9 @@ All PRs opened against upstream (`enspyrco/tech_world`). None merged by Nick yet
 | 16 | `/tw-category-sweep` | Categorical law verification: CRDT monoid (associativity, identity, commutativity), Stream functor (composition, identity), event-sink natural transformations. |
 
 The event system from #412 provides the `WithEvents<T>` Writer monad structure, and `ARCHITECTURE.md` from the architecture sweep documents the module structure. `/tw-category-sweep` can verify algebraic laws on both.
+
+### Deferred from architecture sweep
+- **MapLoader extraction** (~400 lines from TechWorld) — `_loadMapComponents` has 10+ dependencies (terminal interaction callbacks, tileset registry, pathComponent, game reference, editor mode notifier). Extract when next touching map-loading code, not speculatively.
 
 ---
 
