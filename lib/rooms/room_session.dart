@@ -39,10 +39,12 @@ class RoomSession {
     required this.room,
     required this.userId,
     required this.displayName,
+    required FirebaseFirestore firestore,
     required void Function() onStateChanged,
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
-  })  : _onStateChanged = onStateChanged,
+  })  : _firestore = firestore,
+        _onStateChanged = onStateChanged,
         _onReconnectWorld = onReconnectWorld,
         _onRoomDeleted = onRoomDeleted;
 
@@ -55,6 +57,7 @@ class RoomSession {
   final RoomData room;
   final String userId;
   final String displayName;
+  final FirebaseFirestore _firestore;
 
   // --- Callbacks ---
 
@@ -114,12 +117,15 @@ class RoomSession {
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
     @visibleForTesting ChatMessageRepository? chatMessageRepository,
+    @visibleForTesting LiveKitService? liveKitService,
+    @visibleForTesting FirebaseFirestore? firestore,
   }) {
-    final liveKit = LiveKitService(
-      userId: userId,
-      displayName: displayName,
-      roomName: room.id,
-    );
+    final liveKit = liveKitService ??
+        LiveKitService(
+          userId: userId,
+          displayName: displayName,
+          roomName: room.id,
+        );
     final chatRepo = chatMessageRepository ?? ChatMessageRepository();
     final chat = ChatService(
       liveKitService: liveKit,
@@ -147,6 +153,7 @@ class RoomSession {
       room: room,
       userId: userId,
       displayName: displayName,
+      firestore: firestore ?? FirebaseFirestore.instance,
       onStateChanged: onStateChanged,
       onReconnectWorld: onReconnectWorld,
       onRoomDeleted: onRoomDeleted,
@@ -180,7 +187,7 @@ class RoomSession {
   /// document disappears (host deleted the room while the user is inside).
   void _listenForRoomDeletion() {
     _roomDeletionSub?.cancel();
-    _roomDeletionSub = FirebaseFirestore.instance
+    _roomDeletionSub = _firestore
         .collection('rooms')
         .doc(room.id)
         .snapshots()

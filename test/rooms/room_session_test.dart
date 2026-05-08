@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
@@ -10,6 +12,25 @@ import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_session.dart';
 import 'package:tech_world/utils/locator.dart';
+
+class _FakeLiveKit extends Mock implements LiveKitService {}
+
+/// Stub the LiveKitService surface that ChatService and RoomSession touch
+/// during construction. Returns the live-stream controllers so callers can
+/// inject events post-setup.
+({StreamController<String?> connectionLost,}) _stubLiveKit(_FakeLiveKit fake) {
+  final lostCtrl = StreamController<String?>.broadcast();
+  when(() => fake.connectionLost).thenAnswer((_) => lostCtrl.stream);
+  when(() => fake.dataReceived).thenAnswer((_) => const Stream.empty());
+  when(() => fake.participantJoined).thenAnswer((_) => const Stream.empty());
+  when(() => fake.participantLeft).thenAnswer((_) => const Stream.empty());
+  when(() => fake.remoteParticipants).thenReturn({});
+  when(() => fake.userId).thenReturn('user-1');
+  when(fake.dispose).thenAnswer((_) async {});
+  when(() => fake.setCameraEnabled(any())).thenAnswer((_) async {});
+  when(() => fake.setMicrophoneEnabled(any())).thenAnswer((_) async {});
+  return (connectionLost: lostCtrl,);
+}
 
 const _testMap = GameMap(
   id: 'test_map',
@@ -44,6 +65,7 @@ RoomSession _createSession({
     onRoomDeleted: onRoomDeleted ?? () {},
     chatMessageRepository:
         ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+    firestore: FakeFirebaseFirestore(),
   );
 }
 
@@ -161,6 +183,96 @@ void main() {
 
       session.chatService.dispose();
       session.proximityService.dispose();
+    });
+  });
+
+  group('room deletion listener', () {
+    test('fires onRoomDeleted when the room doc is deleted', () async {
+      final firestore = FakeFirebaseFirestore();
+      await firestore.collection('rooms').doc(_testRoom.id).set({
+        'name': _testRoom.name,
+        'ownerId': _testRoom.ownerId,
+      });
+
+      final liveKit = _FakeLiveKit();
+      _stubLiveKit(liveKit);
+      when(liveKit.connect)
+          .thenAnswer((_) async => ConnectionResult.tokenAuthError);
+
+      var deletedCount = 0;
+      final session = RoomSession.create(
+        room: _testRoom,
+        userId: 'user-1',
+        displayName: 'User 1',
+        onStateChanged: () {},
+        onReconnectWorld: () async {},
+        onRoomDeleted: () => deletedCount++,
+        chatMessageRepository:
+            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+        liveKitService: liveKit,
+        firestore: firestore,
+      );
+
+      await session.connect();
+      // Listener subscribes synchronously; let the initial snapshot drain.
+      await Future<void>.delayed(Duration.zero);
+      expect(deletedCount, 0, reason: 'doc still exists');
+
+      await firestore.collection('rooms').doc(_testRoom.id).delete();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(deletedCount, 1);
+
+      await session.leave();
+    });
+  });
+
+  group('reconnection use-after-dispose guard', () {
+    test('leave during reconnect delay does not mutate disposed services',
+        () async {
+      final liveKit = _FakeLiveKit();
+      final stubs = _stubLiveKit(liveKit);
+      final lostCtrl = stubs.connectionLost;
+      var connectCalls = 0;
+      when(liveKit.connect).thenAnswer((_) async {
+        connectCalls++;
+        return ConnectionResult.connected;
+      });
+
+      var reconnectWorldCalls = 0;
+      final session = RoomSession.create(
+        room: _testRoom,
+        userId: 'user-1',
+        displayName: 'User 1',
+        onStateChanged: () {},
+        onReconnectWorld: () async => reconnectWorldCalls++,
+        onRoomDeleted: () {},
+        chatMessageRepository:
+            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+        liveKitService: liveKit,
+        firestore: FakeFirebaseFirestore(),
+      );
+
+      await session.connect();
+      expect(connectCalls, 1, reason: 'initial connect happened');
+
+      // Fire connection loss; _handleConnectionLost begins its 2s delay.
+      lostCtrl.add('peer-disconnected');
+      await Future<void>.delayed(Duration.zero);
+
+      // Leave during the delay — _disposed flips to true, services dispose.
+      await session.leave();
+
+      // Wait past the 2s reconnect delay, then verify the continuation
+      // bailed out without touching disposed state.
+      await Future<void>.delayed(const Duration(seconds: 3));
+
+      expect(connectCalls, 1,
+          reason: 'reconnection must not call connect() after leave()');
+      expect(reconnectWorldCalls, 0,
+          reason: 'onReconnectWorld must not run post-dispose');
+
+      await lostCtrl.close();
     });
   });
 }
