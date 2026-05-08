@@ -3,7 +3,7 @@ import 'dart:developer' as developer;
 import 'dart:ui' as ui;
 
 import 'package:flame/game.dart';
-import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
+import 'package:flutter/foundation.dart' show ValueListenable, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart'
@@ -57,24 +57,44 @@ import 'package:tech_world/widgets/edit_profile_dialog.dart'
     show EditProfileDialog, EditProfileResult;
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/sinks/console_sink.dart';
+import 'package:tech_world/events/types.dart';
+import 'package:tech_world/events/sinks/file_sink.dart'
+    if (dart.library.js_interop) 'package:tech_world/events/sinks/file_sink_stub.dart';
 import 'package:tech_world/utils/locator.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _registerEventSinks();
   _initLogging();
   runApp(const MyApp());
+}
+
+/// Register event sinks before the app starts. Console sink runs in
+/// debug mode only; file sink runs on native platforms (not web).
+Future<void> _registerEventSinks() async {
+  if (kDebugMode) {
+    registerSink(consoleSink);
+  }
+  if (!kIsWeb) {
+    final fileSink = await createFileSink();
+    registerSink(fileSink);
+  }
 }
 
 /// Subscription for the root logger — stored so it can be cancelled if needed
 /// and to prevent accidental duplicates on hot restart.
 StreamSubscription<LogRecord>? _logSubscription;
 
-/// Configure the root logger to route all log records to [developer.log],
-/// which shows up in DevTools and the debug console.
+/// Configure the root logger to route all log records to [developer.log]
+/// (which shows up in DevTools) AND to the event dispatch pipeline (which
+/// routes to JSONL file sinks on native platforms).
 void _initLogging() {
   Logger.root.level = Level.INFO;
   _logSubscription?.cancel();
   _logSubscription = Logger.root.onRecord.listen((record) {
+    // DevTools / debug console (existing behaviour).
     developer.log(
       record.message,
       time: record.time,
@@ -83,6 +103,24 @@ void _initLogging() {
       error: record.error,
       stackTrace: record.stackTrace,
     );
+
+    // Bridge to event-sink pipeline (JSONL file, future Crashlytics).
+    final severity = switch (record.level) {
+      Level.SEVERE || Level.SHOUT => LogSeverity.severe,
+      Level.WARNING => LogSeverity.warning,
+      Level.FINE || Level.FINER || Level.FINEST => LogSeverity.fine,
+      _ => LogSeverity.info,
+    };
+    dispatch([
+      AppLogRecord(
+        loggerName: record.loggerName,
+        severity: severity,
+        message: record.message,
+        error: record.error?.toString(),
+        stackTrace: record.stackTrace?.toString(),
+        timestamp: record.time,
+      ),
+    ]);
   });
 }
 
@@ -241,6 +279,7 @@ class _MyAppState extends State<MyApp> {
       _currentProfilePictureUrl = null;
       _currentRoom = null;
       _log.info('User signed out - cleaned up');
+      dispatch([UserSignedOut()]);
       setState(() {});
     } else {
       // User signed in — set up profile & services, show lobby.
@@ -302,6 +341,10 @@ class _MyAppState extends State<MyApp> {
         ownerDisplayName: user.displayName,
       );
 
+      dispatch([UserSignedIn(
+        userId: user.id,
+        displayName: user.displayName,
+      )]);
       setState(() {}); // Show lobby (or avatar picker first).
     }
   }
@@ -442,6 +485,7 @@ class _MyAppState extends State<MyApp> {
       }
 
       // Fade out the overlay.
+      dispatch([RoomJoined(roomId: room.id, roomName: room.name)]);
       setState(() => _showJoinOverlay = false);
     } catch (e) {
       // If anything unexpected escapes the per-wire try/catch blocks,
@@ -489,6 +533,7 @@ class _MyAppState extends State<MyApp> {
     await _session?.leave();
     _session = null;
 
+    dispatch([RoomLeft(roomId: _currentRoom?.id)]);
     _activeDmPeer.value = null;
     _currentRoom = null;
     _mapEditorState.setRoomId(null);
@@ -586,6 +631,10 @@ class _MyAppState extends State<MyApp> {
         name: _mapEditorState.mapName,
         mapData: gameMap,
       );
+      dispatch([RoomMapSaved(
+        roomId: existingRoomId,
+        roomName: _mapEditorState.mapName,
+      )]);
     } else {
       // Create new room (fork or brand new).
       final room = await _roomService!.createRoom(
@@ -595,6 +644,7 @@ class _MyAppState extends State<MyApp> {
         map: gameMap,
       );
       _mapEditorState.setRoomId(room.id);
+      dispatch([RoomCreated(roomId: room.id, roomName: room.name)]);
       _currentRoom = room;
 
       // Now connect LiveKit for the new room.
@@ -729,6 +779,7 @@ class _MyAppState extends State<MyApp> {
     if (_roomService == null) return;
     try {
       await _roomService!.deleteRoom(room.id);
+      dispatch([RoomDeleted(roomId: room.id, roomName: room.name)]);
       // Invalidate cache so it refreshes on next open.
       _myRooms = null;
       setState(() {});
@@ -800,6 +851,7 @@ class _MyAppState extends State<MyApp> {
 
     // Apply to game world (also broadcasts via LiveKit)
     locate<TechWorld>().setLocalAvatar(avatar);
+    dispatch([AvatarSelected(avatarId: avatar.id)]);
 
     setState(() {}); // Transition from selection screen to game
   }
@@ -1178,7 +1230,12 @@ class _MyAppState extends State<MyApp> {
                             );
 
                             // Only mark completed when bot confirms pass
-                            if (response?['challengeResult'] == 'pass') {
+                            final codeResult = response?['challengeResult'] as String?;
+                            dispatch([CodeSubmitted(
+                              challengeId: challenge.id.wireName,
+                              result: codeResult ?? 'timeout',
+                            )]);
+                            if (codeResult == 'pass') {
                               final progress =
                                   Locator.maybeLocate<ProgressService>();
                               if (progress == null) {
@@ -1519,8 +1576,10 @@ class _ScreenShareButtonState extends State<_ScreenShareButton> {
     final service = widget.liveKitService;
     if (service == null || !service.isConnected) return;
 
+    final starting = !_sharing;
     try {
-      await service.setScreenShareEnabled(!_sharing);
+      await service.setScreenShareEnabled(starting);
+      dispatch([ScreenShareToggled(started: starting)]);
     } catch (e) {
       _log.warning('Screen share toggle failed: $e', e);
     }

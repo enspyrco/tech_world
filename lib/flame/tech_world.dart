@@ -46,6 +46,8 @@ import 'package:tech_world/map_editor/map_sync_service.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/infra/infra_health_service.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -214,6 +216,7 @@ class TechWorld extends World with TapCallbacks {
     // Only publish if we were actually in the editor.
     if (activeChallenge.value != null) {
       _liveKitService?.publishTerminalActivity(action: 'close');
+      dispatch([TerminalClosed()]);
     }
     activeChallenge.value = null;
     activePromptChallenge.value = null;
@@ -229,6 +232,10 @@ class TechWorld extends World with TapCallbacks {
     editorState.loadFromGameMap(currentMap.value);
 
     mapEditorActive.value = true;
+    dispatch([MapEditorEntered(
+      mapId: currentMap.value.id,
+      mapName: currentMap.value.name,
+    )]);
 
     // Create collaborative sync service if LiveKit is connected.
     if (_liveKitService != null) {
@@ -260,6 +267,7 @@ class TechWorld extends World with TapCallbacks {
   /// and the original map components are simply re-shown.
   Future<void> exitEditorMode({bool applyChanges = true}) async {
     mapEditorActive.value = false;
+    dispatch([MapEditorExited(applied: applyChanges)]);
 
     if (applyChanges && _editorState != null) {
       // Apply the full edited map to the game world so barriers, terminals,
@@ -1245,6 +1253,8 @@ class TechWorld extends World with TapCallbacks {
       points: pathComponent.largeGridPoints,
       directions: pathComponent.directions,
     );
+
+    dispatch([PlayerMoved(destX: miniGridX, destY: miniGridY)]);
   }
 
   /// Handle terminal interaction - check proximity before opening editor.
@@ -1268,6 +1278,11 @@ class TechWorld extends World with TapCallbacks {
         terminalX: terminalPos.x,
         terminalY: terminalPos.y,
       );
+      dispatch([TerminalOpened(
+        challengeId: challenge.id.wireName,
+        terminalX: terminalPos.x,
+        terminalY: terminalPos.y,
+      )]);
     } else {
       _showHint(
         'Walk closer to use this terminal',
@@ -1292,6 +1307,11 @@ class TechWorld extends World with TapCallbacks {
     if (distance <= _terminalProximityThreshold) {
       activePromptChallenge.value = challenge.id;
       activeTerminalPosition.value = terminalPos;
+      dispatch([TerminalOpened(
+        challengeId: challenge.id.wireName,
+        terminalX: terminalPos.x,
+        terminalY: terminalPos.y,
+      )]);
     } else {
       _showHint(
         'Walk closer to use this terminal',
@@ -1356,6 +1376,8 @@ class TechWorld extends World with TapCallbacks {
     );
 
     _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
+
+    dispatch([DoorUnlocked(doorX: door.position.x, doorY: door.position.y)]);
     return true;
   }
 
@@ -1390,6 +1412,7 @@ class TechWorld extends World with TapCallbacks {
     _pathComponent?.invalidateGrid();
     _recomputeNearbyLockedDoor();
     _log.info('Remote door unlock at ($doorX, $doorY)');
+    dispatch([RemoteDoorUnlocked(doorX: doorX, doorY: doorY)]);
   }
 
   /// Recompute [nearbyLockedDoor] given the current player position and

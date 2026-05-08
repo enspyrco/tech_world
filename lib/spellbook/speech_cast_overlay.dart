@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/door_data.dart';
 import 'package:tech_world/spellbook/door_cast_result.dart';
 import 'package:tech_world/spellbook/oracle_service.dart';
@@ -99,7 +101,7 @@ class _SpeechCastOverlayState extends State<SpeechCastOverlay> {
 
     setState(() => _resolving = true);
     try {
-      final result = await widget.speechCast.castAt(
+      final (result, _) = await widget.speechCast.castAt(
         doorRequiredChallenges: door.requiredChallengeIds,
       );
       await _renderFeedback(result, door);
@@ -134,12 +136,18 @@ class _SpeechCastOverlayState extends State<SpeechCastOverlay> {
       case DoorCastNotLearned(:final wordId):
         text = 'You have not learned ${wordId.displayName} yet.';
         color = Colors.orange.shade700;
+        dispatch([SpellCastFailed(reason: CastFailureReason.notLearned)]);
       case CastWrongDoor():
         text = 'The door is unmoved.';
         color = Colors.blueGrey.shade700;
+        dispatch([SpellCastFailed(reason: CastFailureReason.wrongDoor)]);
       case DoorCastNoMatch(:final transcript):
         text = await widget.oracle.flavorForNoMatch(transcript: transcript);
         color = Colors.indigo.shade700;
+        dispatch([SpellCastFailed(
+          reason: CastFailureReason.noMatch,
+          transcript: transcript,
+        )]);
     }
 
     _showFlash(text, color);

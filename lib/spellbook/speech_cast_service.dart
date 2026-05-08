@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/services/stt_service.dart';
@@ -47,10 +48,11 @@ class SpeechCastService {
   /// [doorRequiredChallenges]. Listens once via STT, classifies the
   /// transcript, and applies side-effects on success.
   ///
-  /// Returns the typed [DoorCastResult] for the UI to switch on. Never
-  /// throws — STT failures surface as [DoorCastNoMatch] with a `null`
-  /// transcript.
-  Future<DoorCastResult> castAt({
+  /// Returns the typed [DoorCastResult] alongside any events produced.
+  /// Events are already dispatched internally — the caller can inspect
+  /// them but does not need to re-dispatch. Never throws — STT failures
+  /// surface as [DoorCastNoMatch] with a `null` transcript.
+  Future<WithEvents<DoorCastResult>> castAt({
     required List<PromptChallengeId> doorRequiredChallenges,
   }) async {
     _log.fine('castAt: requesting STT transcript');

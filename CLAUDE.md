@@ -94,6 +94,12 @@ Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthSer
 - **`BubbleManager`** — plain Dart class (not a Component) owning all proximity bubble state: creation/removal, physics repulsion, metaball field, merged video, audio enable/disable, shader loading, Dreamfinder avatar bridge. Receives `addComponent` callback to add to the World.
 - **`RoomSession`** — `lib/rooms/room_session.dart`, encapsulates room-scoped service lifecycle (LiveKit, Chat, Proximity, Oracle). Static `create()` factory, `connect()`, `enableMedia()`, `leave()`. Owned by `_MyAppState` as `_session: RoomSession?`
 
+### Event-Sink System
+
+Domain events (`lib/events/types.dart`) are dispatched via `dispatch()` (`lib/events/dispatch.dart`) and fanned to registered sinks. 34 sealed event types cover auth, room lifecycle, player movement, terminals, casting, chat, map editing, proximity, bot presence, and LiveKit state. The log bridge routes all `_log.*` calls through the same pipeline.
+
+Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app documents). See `robin-docs/LOGS.md` for the full event catalogue.
+
 ### Communication (All via LiveKit)
 
 | Topic | Direction | Purpose |

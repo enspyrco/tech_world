@@ -10,6 +10,8 @@ import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/services/dreamfinder_client.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/spellbook/oracle_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
@@ -205,6 +207,7 @@ class RoomSession {
       liveKitService.setCameraEnabled(true),
       liveKitService.setMicrophoneEnabled(true),
     ]);
+    dispatch([MediaEnabled()]);
   }
 
   // ---------------------------------------------------------------------------
