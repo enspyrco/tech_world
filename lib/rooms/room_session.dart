@@ -217,6 +217,14 @@ class RoomSession {
         liveKitService.connectionLost.listen(_handleConnectionLost);
   }
 
+  // Backoff schedule: 2s, 4s, 8s.
+  static const _maxReconnectAttempts = 3;
+  static const _reconnectDelays = [
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 8),
+  ];
+
   Future<void> _handleConnectionLost(String? reason) async {
     _log.warning('LiveKit connection lost: $reason');
     if (_isReconnecting || _disposed) return;
@@ -233,29 +241,47 @@ class RoomSession {
     // enables re-initialization when connectToLiveKit() is called again.
 
     try {
-      await Future.delayed(const Duration(seconds: 2));
-      // Bail if the user left during the delay — services and notifiers
-      // are disposed and any further work would be use-after-free.
-      if (_disposed) return;
+      for (int attempt = 0; attempt < _maxReconnectAttempts; attempt++) {
+        final delay = _reconnectDelays[attempt];
+        _log.info('Reconnect attempt ${attempt + 1}/$_maxReconnectAttempts '
+            'in ${delay.inSeconds}s');
+        connectionMessage.value = 'Connection lost — reconnecting '
+            '(${attempt + 1}/$_maxReconnectAttempts)…';
+        _onStateChanged();
 
-      final result = await liveKitService.connect();
-      if (_disposed) return;
-      _log.info('Reconnection attempt result: $result');
-
-      if (result == ConnectionResult.connected) {
-        await _onReconnectWorld();
-        if (_disposed) return;
-        _listenForConnectionLoss();
-        await enableMedia();
+        await Future.delayed(delay);
+        // Bail if the user left during the delay — services and notifiers
+        // are disposed and any further work would be use-after-free.
         if (_disposed) return;
 
-        connectionFailed.value = false;
-        connectionMessage.value = null;
-        _log.info('Reconnected successfully');
-      } else {
-        connectionMessage.value =
-            'Video & chat unavailable — connection lost';
+        final result = await liveKitService.connect();
+        if (_disposed) return;
+        _log.info('Reconnection attempt ${attempt + 1} result: $result');
+
+        if (result == ConnectionResult.connected) {
+          await _onReconnectWorld();
+          if (_disposed) return;
+          _listenForConnectionLoss();
+          await enableMedia();
+          if (_disposed) return;
+
+          connectionFailed.value = false;
+          connectionMessage.value = null;
+          _log.info('Reconnected successfully on attempt ${attempt + 1}');
+          _onStateChanged();
+          return;
+        }
+
+        // Auth errors won't resolve with retries — stop immediately.
+        if (result == ConnectionResult.tokenAuthError) {
+          _log.warning('Auth error — aborting reconnection');
+          break;
+        }
       }
+
+      // All attempts exhausted or auth error.
+      connectionMessage.value =
+          'Video & chat unavailable — connection lost';
       _onStateChanged();
     } finally {
       _isReconnecting = false;
