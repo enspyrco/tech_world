@@ -799,6 +799,9 @@ class DataChannelMessage {
   bool _jsonParsed = false;
 
   /// Marker for a cached parse failure (distinct from a successful `null`).
+  /// Uses `identical()` (not `==`) because an empty Map could be valid JSON.
+  /// This const instance has stable identity, so `identical` distinguishes
+  /// "parse failed" from "parsed to empty map".
   static const _jsonParseFailed = <String, dynamic>{};
 
   /// Decode data as UTF-8 JSON. Cached after first access so repeated

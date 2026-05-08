@@ -70,6 +70,20 @@ void main() {
       expect(u, isA<AuthUser>());
       expect(u, isA<User>());
     });
+
+    test('equality is scoped to AuthUser, not User (intentional narrowing)', () {
+      // AuthUser.== checks `other is AuthUser`, not `other is User`.
+      // This means Flame components (PlayerComponent) that implement User
+      // but not AuthUser are intentionally NOT equal to auth objects with
+      // the same id. Auth identity and game entity are different concerns.
+      const authUser = SignedInUser(id: 'same-id', displayName: 'A');
+      final nonAuthUser = _FakeUser(id: 'same-id', displayName: 'B');
+
+      // Same id, but different type hierarchies — should NOT be equal.
+      // ignore: unrelated_type_equality_checks
+      expect(authUser == nonAuthUser, isFalse,
+          reason: 'AuthUser equality is scoped to the sealed hierarchy');
+    });
   });
 
   group('DoorCastResult sealed coproduct (4 summands)', () {
@@ -126,4 +140,15 @@ void main() {
       );
     });
   });
+}
+
+/// Mimics a Flame component that implements [User] but is not an [AuthUser].
+/// Used to verify equality narrowing is intentional.
+class _FakeUser implements User {
+  const _FakeUser({required this.id, required this.displayName});
+
+  @override
+  final String id;
+  @override
+  final String displayName;
 }
