@@ -117,12 +117,15 @@ class ChatEvaluationEngine extends EvaluationEngine {
   ///
   /// Visible for testing.
   static CastResult parseResponse(String responseText) {
-    // Match RESULT: only at line start (or start of string) to reduce
-    // the risk of a player embedding RESULT:PASS in their prompt text.
-    final resultPattern = RegExp(r'(^|\n)\s*RESULT:', caseSensitive: false);
-    final hasResult = resultPattern.hasMatch(responseText);
-    final upper = responseText.toUpperCase();
-    final passed = hasResult && upper.contains('RESULT:PASS');
+    // Anchor RESULT:PASS and RESULT:FAIL to line start to prevent prompt
+    // injection — a player embedding "RESULT:PASS" mid-text must not
+    // trigger a spurious pass.
+    final passPattern = RegExp(
+      r'^\s*RESULT:PASS\s*$',
+      caseSensitive: false,
+      multiLine: true,
+    );
+    final passed = passPattern.hasMatch(responseText);
 
     if (passed) {
       return CastResult(
@@ -133,12 +136,19 @@ class ChatEvaluationEngine extends EvaluationEngine {
     }
 
     // Determine feedback category from FEEDBACK: marker.
+    final feedbackPattern = RegExp(
+      r'^\s*FEEDBACK:(\w+)',
+      caseSensitive: false,
+      multiLine: true,
+    );
+    final feedbackMatch = feedbackPattern.firstMatch(responseText);
+    final feedbackValue = feedbackMatch?.group(1)?.toUpperCase();
     final CastFeedback feedback;
-    if (upper.contains('FEEDBACK:BACKFIRED')) {
+    if (feedbackValue == 'BACKFIRED') {
       feedback = CastFeedback.backfired;
-    } else if (upper.contains('FEEDBACK:FIZZLED')) {
+    } else if (feedbackValue == 'FIZZLED') {
       feedback = CastFeedback.fizzled;
-    } else if (upper.contains('FEEDBACK:UNCLEAR')) {
+    } else if (feedbackValue == 'UNCLEAR') {
       feedback = CastFeedback.unclear;
     } else {
       // No explicit marker — default to fizzled (close but not quite).
@@ -309,8 +319,12 @@ class ChatEvaluationEngine extends EvaluationEngine {
 
   /// Brevity: response must be fewer than 10 words.
   static CastResult _evaluateBrevity(String text) {
+    // Strip RESULT:/FEEDBACK: markers before counting (same as other
+    // deterministic evaluators).
+    final resultIndex = text.toUpperCase().indexOf('RESULT:');
+    final clean = resultIndex != -1 ? text.substring(0, resultIndex) : text;
     final wordCount =
-        text.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+        clean.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
     if (wordCount < 10) {
       return const CastResult(
         passed: true,
@@ -325,11 +339,11 @@ class ChatEvaluationEngine extends EvaluationEngine {
   }
 
   /// Divination color: response must contain "The color is: blue"
-  /// (case-insensitive) and all intermediate answers must be "Yes" or "No".
+  /// (case-insensitive).
   static CastResult _evaluateDivinationColor(String text) {
     // Strip RESULT:/FEEDBACK markers before checking content.
     final resultIndex = text.toUpperCase().indexOf('RESULT:');
-    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+    final clean = resultIndex != -1 ? text.substring(0, resultIndex) : text;
 
     // Check for the color reveal line.
     final hasColorReveal =
@@ -343,24 +357,11 @@ class ChatEvaluationEngine extends EvaluationEngine {
       );
     }
 
-    // Verify intermediate answers are only "Yes" or "No".
-    // Lines before the color reveal should be Yes/No answers.
-    final lines = clean
-        .split('\n')
-        .map((l) => l.trim())
-        .where((l) => l.isNotEmpty)
-        .toList();
-
-    for (final line in lines) {
-      // Skip the color reveal line and any line that isn't a standalone
-      // answer (e.g. the question echo or preamble).
-      if (line.toLowerCase().contains('the color is')) continue;
-      final normalized = line.toLowerCase().replaceAll(RegExp(r'[.!]'), '');
-      if (normalized == 'yes' || normalized == 'no') continue;
-      // Non-yes/no lines are allowed if they're part of question
-      // numbering or similar structure — we only fail on lines that
-      // look like answers but aren't yes/no.
-    }
+    // Note: intermediate answer validation (checking that lines are only
+    // "Yes" or "No") was considered but deliberately omitted — the bot's
+    // response typically includes preamble, question echoes, and numbering
+    // that would all fail strict line validation. The color reveal is the
+    // definitive check for this challenge.
 
     return const CastResult(
       passed: true,
@@ -375,7 +376,7 @@ class ChatEvaluationEngine extends EvaluationEngine {
     // may still append self-evaluation markers even when we don't need
     // them.
     final resultIndex = text.toUpperCase().indexOf('RESULT:');
-    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+    final clean = resultIndex != -1 ? text.substring(0, resultIndex) : text;
     return clean
         .split('\n')
         .map((l) => l.trim())
@@ -388,7 +389,7 @@ class ChatEvaluationEngine extends EvaluationEngine {
   static String? _extractJson(String text) {
     // Strip RESULT:/FEEDBACK: markers first.
     final resultIndex = text.toUpperCase().indexOf('RESULT:');
-    final clean = resultIndex > 0 ? text.substring(0, resultIndex) : text;
+    final clean = resultIndex != -1 ? text.substring(0, resultIndex) : text;
 
     // Try markdown code fence first.
     final fencePattern = RegExp(r'```(?:json)?\s*\n([\s\S]*?)\n\s*```');
