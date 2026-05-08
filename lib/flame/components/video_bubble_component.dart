@@ -120,8 +120,8 @@ class VideoBubbleComponent extends PositionComponent {
   // Track stats for debugging
   int _framesCaptured = 0;
   int _framesDropped = 0;
-  DateTime? _lastFrameTime;
-  final Duration _minFrameInterval = const Duration(milliseconds: 50);
+  double _timeSinceLastFrame = 0;
+  static const double _minFrameIntervalSeconds = 0.05; // 20 fps cap
 
   // Guard against concurrent async frame decodes
   bool _nativeFrameInFlight = false;
@@ -217,6 +217,7 @@ class VideoBubbleComponent extends PositionComponent {
     _speakingLevel = _smoothedAudioLevel;
 
     // Check for new frames
+    _timeSinceLastFrame += dt;
     _checkForNewFrame();
   }
 
@@ -418,15 +419,13 @@ class VideoBubbleComponent extends PositionComponent {
       return;
     }
 
-    // Throttle frame processing
-    final now = DateTime.now();
-    if (_lastFrameTime != null &&
-        now.difference(_lastFrameTime!) < _minFrameInterval) {
+    // Throttle frame processing using dt accumulator.
+    if (_timeSinceLastFrame < _minFrameIntervalSeconds) {
       _framesDropped++;
       newFrame.dispose();
       return;
     }
-    _lastFrameTime = now;
+    _timeSinceLastFrame = 0;
 
     // Swap frames — defer old frame disposal so CanvasKit can finish
     // any in-progress render pass that references the texture.
@@ -449,14 +448,12 @@ class VideoBubbleComponent extends PositionComponent {
     // Check if a new frame is available
     if (!_capture!.hasNewFrame) return;
 
-    // Throttle frame processing
-    final now = DateTime.now();
-    if (_lastFrameTime != null &&
-        now.difference(_lastFrameTime!) < _minFrameInterval) {
+    // Throttle frame processing using dt accumulator.
+    if (_timeSinceLastFrame < _minFrameIntervalSeconds) {
       _framesDropped++;
       return;
     }
-    _lastFrameTime = now;
+    _timeSinceLastFrame = 0;
 
     // Process the frame
     _processNativeFrame();
