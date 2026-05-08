@@ -1365,7 +1365,36 @@ class TechWorld extends World with TapCallbacks {
   /// removes the barrier so the local player can walk through, and
   /// recomputes the nearby-locked-door signal in case the player is
   /// standing next to the just-unlocked door.
+  ///
+  /// **Sender verification**: only messages from known human participants
+  /// (present in [LiveKitService.remoteParticipants] and not a bot) are
+  /// accepted. This prevents arbitrary actors from broadcasting a
+  /// `door-unlock` and unlocking doors for all players without completing
+  /// the required challenge.
   void _handleRemoteDoorUnlock(DataChannelMessage msg) {
+    final senderId = msg.senderId;
+
+    // Reject messages with no sender identity (e.g. server-API injections).
+    if (senderId == null) {
+      _log.warning('door-unlock ignored: no sender identity');
+      return;
+    }
+
+    // Reject messages from bots — bots do not complete player challenges.
+    if (isBotIdentity(senderId)) {
+      _log.warning('door-unlock ignored: sender "$senderId" is a bot');
+      return;
+    }
+
+    // Reject messages from identities not currently in the room.
+    final knownParticipant =
+        _liveKitService?.remoteParticipants.containsKey(senderId) ?? false;
+    if (!knownParticipant) {
+      _log.warning(
+          'door-unlock ignored: sender "$senderId" is not a known participant');
+      return;
+    }
+
     final json = msg.json;
     if (json == null) return;
 
