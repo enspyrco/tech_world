@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart'
     show buildWallTilesForRegion;
 import 'package:tech_world/flame/shared/constants.dart';
@@ -10,6 +11,8 @@ import 'package:tech_world/map_editor/crdt/cell_version_map.dart';
 import 'package:tech_world/map_editor/crdt/map_edit_op.dart';
 import 'package:tech_world/map_editor/crdt/undo_manager.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
+
+final _log = Logger('MapSyncService');
 
 /// Orchestrates collaborative map editing over LiveKit data channels.
 ///
@@ -28,7 +31,9 @@ class MapSyncService {
     _dataSubscription = _liveKitService.dataReceived
         .where((msg) =>
             msg.topic == _editTopic || msg.topic == _syncTopic)
-        .listen(_onDataReceived);
+        .listen(_onDataReceived, onError: (Object e, StackTrace st) {
+      _log.severe('CRDT data stream error', e, st);
+    });
   }
 
   static const _editTopic = 'map-edit';
@@ -576,21 +581,25 @@ class MapSyncService {
     final json = msg.json;
     if (json == null) return;
 
-    if (msg.topic == _editTopic) {
-      final batch = MapEditBatch.fromJson(json);
-      if (batch.ops.isEmpty) return;
-      if (_isSyncing) {
-        _syncBuffer.add(batch);
-      } else {
-        _onRemoteEdit(batch);
+    try {
+      if (msg.topic == _editTopic) {
+        final batch = MapEditBatch.fromJson(json);
+        if (batch.ops.isEmpty) return;
+        if (_isSyncing) {
+          _syncBuffer.add(batch);
+        } else {
+          _onRemoteEdit(batch);
+        }
+      } else if (msg.topic == _syncTopic) {
+        final type = json['type'] as String?;
+        if (type == 'sync-request' && json['playerId'] != _localPlayerId) {
+          _handleSyncRequest(json['playerId'] as String);
+        } else if (type == 'sync-response') {
+          _handleSyncResponse(json);
+        }
       }
-    } else if (msg.topic == _syncTopic) {
-      final type = json['type'] as String?;
-      if (type == 'sync-request' && json['playerId'] != _localPlayerId) {
-        _handleSyncRequest(json['playerId'] as String);
-      } else if (type == 'sync-response') {
-        _handleSyncResponse(json);
-      }
+    } catch (e, st) {
+      _log.severe('Failed to process CRDT message (topic=${msg.topic})', e, st);
     }
   }
 

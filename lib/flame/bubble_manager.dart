@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -72,6 +73,11 @@ class BubbleManager {
 
   BubbleFieldComponent? _bubbleField;
   MergedVideoBubbleComponent? _mergedBubble;
+
+  // ── Merge group cache ───────────────────────────────────────────────────
+
+  bool _mergeGroupDirty = true;
+  List<String> _cachedMergeGroup = [];
 
   // ── Shader programs ───────────────────────────────────────────────────────
 
@@ -364,6 +370,7 @@ class BubbleManager {
   void removeBubble(String playerId) {
     final bubble = _playerBubbles.remove(playerId);
     bubble?.removeFromParent();
+    _mergeGroupDirty = true;
   }
 
   /// Remove all bubbles and reset state. Safe to call multiple times.
@@ -372,6 +379,7 @@ class BubbleManager {
       bubble.removeFromParent();
     }
     _playerBubbles.clear();
+    _mergeGroupDirty = true;
     _bubbleDisplacements.clear();
     _bubbleField?.removeFromParent();
     _bubbleField = null;
@@ -539,6 +547,10 @@ class BubbleManager {
   // ═══════════════════════════════════════════════════════════════════════════
 
   void _updateBubblePositions(double dt) {
+    // Bubble positions change every frame (they track their owning character),
+    // so the merge group must be rechecked.
+    _mergeGroupDirty = true;
+
     // 1. Set base positions from owning characters.
     for (final entry in _playerBubbles.entries) {
       if (entry.key == _localPlayerBubbleKey) {
@@ -656,7 +668,11 @@ class BubbleManager {
       }
     }
 
-    final mergeGroup = _findMergeGroup(videoBubbles);
+    if (_mergeGroupDirty) {
+      _cachedMergeGroup = _findMergeGroup(videoBubbles);
+      _mergeGroupDirty = false;
+    }
+    final mergeGroup = _cachedMergeGroup;
 
     if (mergeGroup.length >= 2) {
       if (_mergedBubble == null) {
@@ -706,11 +722,11 @@ class BubbleManager {
       if (visited.contains(startKey)) continue;
 
       final group = <String>[startKey];
-      final queue = <String>[startKey];
+      final queue = Queue<String>()..add(startKey);
       visited.add(startKey);
 
       while (queue.isNotEmpty) {
-        final current = queue.removeAt(0);
+        final current = queue.removeFirst();
         final currentCenter = bubbles[current]!.center;
 
         for (final candidateKey in keys) {

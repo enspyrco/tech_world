@@ -69,6 +69,7 @@ class LiveKitService {
   Room? _room;
   EventsListener<RoomEvent>? _listener;
   _ConnectionState _connectionState = _ConnectionState.disconnected;
+  Set<String> _previousSpeakerIds = {};
 
   // Stream controllers for participant events
   final _participantJoinedController =
@@ -712,10 +713,21 @@ class LiveKitService {
         }
       })
       ..on<ActiveSpeakersChangedEvent>((event) {
-        // Emit speaking state for active speakers
+        final currentIds = event.speakers.map((s) => s.identity).toSet();
+        // Emit speaking-started for new speakers.
         for (final speaker in event.speakers) {
           _speakingChangedController.add((speaker, true));
         }
+        // Emit speaking-stopped for participants who were speaking but aren't now.
+        for (final prevId in _previousSpeakerIds) {
+          if (!currentIds.contains(prevId)) {
+            final participant = _room?.remoteParticipants[prevId];
+            if (participant != null) {
+              _speakingChangedController.add((participant, false));
+            }
+          }
+        }
+        _previousSpeakerIds = currentIds;
       })
       ..on<RoomDisconnectedEvent>((event) {
         _log.warning('Room disconnected: ${event.reason}');
