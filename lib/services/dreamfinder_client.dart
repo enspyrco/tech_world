@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io'; // SocketException — native only; web uses http.ClientException
 
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
