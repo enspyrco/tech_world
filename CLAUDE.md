@@ -92,6 +92,7 @@ Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthSer
 - **`TechWorldGame`** — extends `FlameGame`, wraps `TechWorld` world component
 - **`TechWorld`** — extends `World`, manages game components, subscribes to LiveKit events, delegates bubble lifecycle to `BubbleManager`
 - **`BubbleManager`** — plain Dart class (not a Component) owning all proximity bubble state: creation/removal, physics repulsion, metaball field, merged video, audio enable/disable, shader loading, Dreamfinder avatar bridge. Receives `addComponent` callback to add to the World.
+- **`RoomSession`** — `lib/rooms/room_session.dart`, encapsulates room-scoped service lifecycle (LiveKit, Chat, Proximity, Oracle). Static `create()` factory, `connect()`, `enableMedia()`, `leave()`. Owned by `_MyAppState` as `_session: RoomSession?`
 
 ### Communication (All via LiveKit)
 

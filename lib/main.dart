@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:ui' as ui;
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:flutter/material.dart';
@@ -18,14 +17,12 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/avatar_selection_screen.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
-import 'package:tech_world/flame/components/bot_status.dart';
-import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
-import 'package:tech_world/services/dreamfinder_client.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/code_editor_panel.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
+import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/prompt/chat_evaluation_engine.dart';
@@ -39,7 +36,6 @@ import 'package:tech_world/livekit/widgets/screen_share_overlay.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/services/stt_service.dart';
 import 'package:tech_world/spellbook/cast_effects.dart';
-import 'package:tech_world/spellbook/oracle_service.dart';
 import 'package:tech_world/spellbook/speech_cast_overlay.dart';
 import 'package:tech_world/spellbook/speech_cast_service.dart';
 import 'package:tech_world/spellbook/spellbook_panel.dart';
@@ -47,12 +43,12 @@ import 'package:tech_world/spellbook/spellbook_service.dart';
 import 'package:tech_world/spellbook/word_of_power.dart' show arcaneColor;
 import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
-import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/room_browser.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
+import 'package:tech_world/rooms/room_session.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
 import 'package:tech_world/widgets/join_overlay.dart';
 import 'package:tech_world/widgets/map_selector.dart';
@@ -103,31 +99,21 @@ class _MyAppState extends State<MyApp> {
   bool _initialized = false;
   String _loadingMessage = 'Initializing...';
   double? _progress;
-  LiveKitService? _liveKitService;
-  ChatService? _chatService;
-  ProximityService? _proximityService;
   ProgressService? _progressService;
   SpellbookService? _spellbookService;
   SttService? _sttService;
   SpeechCastService? _speechCastService;
-  /// Cached per-room: lazily created on first build that has both
-  /// LiveKit and the speech-cast service available, cleared in
-  /// [_leaveRoom] alongside [_liveKitService]. Caching lets the
-  /// service's `_seq` request counter actually disambiguate microsecond
-  /// collisions instead of starting at 0 on every Stack rebuild.
-  OracleService? _oracleService;
   final ValueNotifier<bool> _spellbookOpen = ValueNotifier<bool>(false);
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
   final ValueNotifier<String?> _activeDmPeer = ValueNotifier<String?>(null);
-  ChatMessageRepository? _chatMessageRepository;
   final SpellSlotService _spellSlotService = SpellSlotService();
-  bool _liveKitConnectionFailed = false;
-  String? _connectionFailureMessage;
   StreamSubscription<AuthUser>? _authSubscription;
-  StreamSubscription<String?>? _connectionLostSubscription;
-  StreamSubscription<DocumentSnapshot>? _roomDeletionSubscription;
-  bool _isReconnecting = false;
+
+  /// The current room session, or null when in the lobby / signed out.
+  /// Encapsulates LiveKit, Chat, Proximity, Oracle, and the room-deletion
+  /// listener.
+  RoomSession? _session;
 
   /// Re-entrancy guard: true while [_joinRoom] is running its async wires.
   /// Prevents double-tap on a room card from launching two concurrent joins.
@@ -247,8 +233,6 @@ class _MyAppState extends State<MyApp> {
       _roomService = null;
       _myRooms = null;
       Locator.remove<RoomService>();
-      _liveKitConnectionFailed = false;
-      _connectionFailureMessage = null;
       _selectedAvatar = null;
       _avatarLoaded = false;
       _currentUserId = null;
@@ -357,10 +341,6 @@ class _MyAppState extends State<MyApp> {
       _showJoinOverlay = true;
     });
 
-    // Listen for room deletion so players return to the lobby if the
-    // owner deletes the room while they are inside it.
-    _listenForRoomDeletion(room.id);
-
     try {
       // Wire A: prefetch tileset bytes into cache (parallel with engine init).
       wires.start(Wire.tilesets);
@@ -378,22 +358,28 @@ class _MyAppState extends State<MyApp> {
       wires.start(Wire.server);
       final wireB = () async {
         try {
-          _createServices(room.id, userId, _currentDisplayName);
-          final result = await _liveKitService!.connect();
-          _log.info('LiveKit connection result for room ${room.id}: $result');
+          _session = RoomSession.create(
+            room: room,
+            userId: userId,
+            displayName: _currentDisplayName,
+            onStateChanged: () => setState(() {}),
+            onReconnectWorld: () =>
+                locate<TechWorld>().connectToLiveKit(
+                  userId,
+                  _currentDisplayName,
+                ),
+            onRoomDeleted: _onRoomDeleted,
+          );
+          final result = await _session!.connect();
           if (result == ConnectionResult.connected) {
             wires.complete(Wire.server);
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
-            _listenForConnectionLoss();
 
             // Wire C: camera + mic (depends on server connection).
             wires.start(Wire.camera);
             final wireC = () async {
               try {
-                await Future.wait([
-                  _liveKitService!.setCameraEnabled(true),
-                  _liveKitService!.setMicrophoneEnabled(true),
-                ]);
+                await _session!.enableMedia();
                 wires.complete(Wire.camera);
               } catch (e) {
                 _log.warning('Camera/mic setup failed', e);
@@ -405,7 +391,7 @@ class _MyAppState extends State<MyApp> {
             wires.start(Wire.chat);
             final wireD = () async {
               try {
-                await _chatService!.loadHistory(room.id);
+                await _session!.chatService.loadHistory(room.id);
                 wires.complete(Wire.chat);
               } catch (e) {
                 _log.warning('Chat history load failed', e);
@@ -419,8 +405,7 @@ class _MyAppState extends State<MyApp> {
             // Mark dependent wires as complete (skipped) so overlay dismisses.
             wires.complete(Wire.camera);
             wires.complete(Wire.chat);
-            _liveKitConnectionFailed = true;
-            _connectionFailureMessage = _failureMessageFor(result);
+            // Session already set connectionFailed/connectionMessage.
           } else {
             wires.complete(Wire.server);
             wires.complete(Wire.camera);
@@ -472,85 +457,12 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
-  /// Create and register LiveKit, Chat, and Proximity services.
-  void _createServices(String roomId, String userId, String displayName) {
-    _liveKitService = LiveKitService(
-      userId: userId,
-      displayName: displayName,
-      roomName: roomId,
-    );
-    _chatMessageRepository = ChatMessageRepository();
-    _chatService = ChatService(
-      liveKitService: _liveKitService!,
-      repository: _chatMessageRepository,
-      dreamfinderClient: DreamfinderClient(
-        baseUrl: 'https://dreamfinder.imagineering.cc',
-        apiKey: const String.fromEnvironment(
-          'DREAMFINDER_API_KEY',
-          defaultValue: '2aa0e9ab3207b197dc0d392fe6e35e8cbe8bfa78f72ce7f9',
-        ),
-      ),
-    );
-    _proximityService = ProximityService();
-
-    Locator.add<LiveKitService>(_liveKitService!);
-    Locator.add<ChatService>(_chatService!);
-    Locator.add<ProximityService>(_proximityService!);
-  }
-
-  /// Create LiveKit, Chat, and Proximity services, connect, and enable media.
-  ///
-  /// Sets [_liveKitConnectionFailed] on failure so the UI can show a banner.
-  /// Applies the saved avatar if one is selected.
-  ///
-  /// Used by the [_onCreateRoom] / save-room flow which doesn't use the
-  /// circuit-board overlay.
-  Future<void> _setupLiveKit(
-    String roomId,
-    String userId,
-    String displayName,
-  ) async {
-    _createServices(roomId, userId, displayName);
-
-    final result = await _liveKitService!.connect();
-    _log.info('LiveKit connection result for room $roomId: $result');
-
-    if (result == ConnectionResult.connected) {
-      await locate<TechWorld>().connectToLiveKit(userId, displayName);
-      _listenForConnectionLoss();
-      await _liveKitService!.setCameraEnabled(true);
-      await _liveKitService!.setMicrophoneEnabled(true);
-      await _chatService!.loadHistory(roomId);
-    } else if (result != ConnectionResult.alreadyConnected) {
-      _liveKitConnectionFailed = true;
-      _connectionFailureMessage = _failureMessageFor(result);
-    }
-
-    // Apply saved avatar to game world.
-    if (_selectedAvatar != null) {
-      locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
-    }
-  }
-
-  /// Map a [ConnectionResult] failure code to a user-visible error message.
-  ///
-  /// Does not handle [ConnectionResult.connected] or
-  /// [ConnectionResult.alreadyConnected] — callers must guard against those
-  /// before invoking this helper.
-  String _failureMessageFor(ConnectionResult result) => switch (result) {
-    ConnectionResult.tokenAuthError =>
-      'Session expired — please sign in again',
-    ConnectionResult.tokenNetworkError =>
-      'Could not reach server — check your connection',
-    ConnectionResult.roomFailed => 'Room connection failed — try again later',
-    _ => 'Video & chat unavailable — connection failed',
-  };
-
   /// Leave the current room — disconnect LiveKit and return to lobby.
   ///
   /// Disposal order: TechWorld subscriptions first (cancels stream listeners
-  /// while the underlying services are still alive), then consumers before
-  /// producers (ChatService → ProximityService → LiveKitService).
+  /// while the underlying services are still alive), then RoomSession handles
+  /// consumer-before-producer disposal (ChatService → ProximityService →
+  /// LiveKitService).
   Future<void> _leaveRoom() async {
     if (_currentRoom == null) return;
 
@@ -570,32 +482,14 @@ class _MyAppState extends State<MyApp> {
       await techWorld.exitEditorMode();
     }
 
-    // Cancel room-deletion and connection-loss subscriptions before
-    // tearing down services.
-    _roomDeletionSubscription?.cancel();
-    _roomDeletionSubscription = null;
-    _connectionLostSubscription?.cancel();
-    _connectionLostSubscription = null;
-    _isReconnecting = false;
-
     // Cancel TechWorld's LiveKit subscriptions before disposing services.
     techWorld.disconnectFromLiveKit();
 
-    // Dispose consumers before producers.
-    _chatService?.dispose();
-    _proximityService?.dispose();
-    await _liveKitService?.dispose();
-    _chatService = null;
-    _chatMessageRepository = null;
-    _proximityService = null;
-    _liveKitService = null;
-    _oracleService = null;
+    // RoomSession handles service disposal in dependency order.
+    await _session?.leave();
+    _session = null;
+
     _activeDmPeer.value = null;
-    _liveKitConnectionFailed = false;
-    _connectionFailureMessage = null;
-    Locator.remove<LiveKitService>();
-    Locator.remove<ChatService>();
-    Locator.remove<ProximityService>();
     _currentRoom = null;
     _mapEditorState.setRoomId(null);
     _wireStates?.dispose();
@@ -605,91 +499,22 @@ class _MyAppState extends State<MyApp> {
     setState(() {});
   }
 
-  /// Listen to the Firestore room document for deletion.
+  /// Handle host-deletion of the current room: tell the user, return to lobby.
   ///
-  /// If the owner deletes the room while other players are inside it,
-  /// the snapshot will report `!exists` and we navigate back to the lobby.
-  void _listenForRoomDeletion(String roomId) {
-    _roomDeletionSubscription?.cancel();
-    _roomDeletionSubscription = FirebaseFirestore.instance
-        .collection('rooms')
-        .doc(roomId)
-        .snapshots()
-        .listen((snapshot) {
-      if (!snapshot.exists && _currentRoom != null) {
-        _log.info('Room $roomId was deleted — returning to lobby');
-        _leaveRoom();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('This room has been deleted by its owner.'),
-            ),
-          );
-        }
-      }
-    });
-  }
-
-  /// Subscribe to [LiveKitService.connectionLost] for auto-reconnection.
-  ///
-  /// Called after a successful LiveKit connection from both [_joinRoom]
-  /// and [_setupLiveKit]. On unexpected disconnect: shows a banner, resets
-  /// bot presence, and attempts to reconnect automatically.
-  void _listenForConnectionLoss() {
-    _connectionLostSubscription?.cancel();
-    _connectionLostSubscription =
-        _liveKitService?.connectionLost.listen(_handleConnectionLost);
-  }
-
-  Future<void> _handleConnectionLost(String? reason) async {
-    _log.warning('LiveKit connection lost: $reason');
-    if (_isReconnecting) return; // Already handling a reconnection attempt.
-    _isReconnecting = true;
-
-    // Show failure banner immediately.
-    _liveKitConnectionFailed = true;
-    _connectionFailureMessage = 'Connection lost — reconnecting…';
-    // Reset bot presence so the chat panel shows "offline".
-    botStatusNotifier.value = BotStatus.absent;
-    setState(() {});
-
-    // TechWorld's own connectionLost listener calls disconnectFromLiveKit(),
-    // which clears its subscriptions and nulls its service reference. That
-    // enables re-initialization when connectToLiveKit() is called again.
-
-    try {
-      // Wait briefly then attempt reconnection.
-      await Future.delayed(const Duration(seconds: 2));
-      if (_liveKitService == null || _currentRoom == null) return;
-
-      final result = await _liveKitService!.connect();
-      _log.info('Reconnection attempt result: $result');
-
-      if (result == ConnectionResult.connected) {
-        // Re-initialize TechWorld's LiveKit subscriptions.
-        final userId = _currentUserId;
-        if (userId != null) {
-          await locate<TechWorld>()
-              .connectToLiveKit(userId, _currentDisplayName);
-          _listenForConnectionLoss();
-          // Re-enable camera/mic.
-          await _liveKitService!.setCameraEnabled(true);
-          await _liveKitService!.setMicrophoneEnabled(true);
-        }
-
-        _liveKitConnectionFailed = false;
-        _connectionFailureMessage = null;
-        _log.info('Reconnected successfully');
-        setState(() {});
-      } else {
-        // Reconnection failed — update banner.
-        _connectionFailureMessage =
-            'Video & chat unavailable — connection lost';
-        setState(() {});
-      }
-    } finally {
-      _isReconnecting = false;
+  /// Wired into [RoomSession.create] as `onRoomDeleted`; fires when the
+  /// Firestore room document goes from existing → non-existing while the
+  /// user is inside.
+  void _onRoomDeleted() {
+    if (_currentRoom == null) return;
+    _log.info('Room ${_currentRoom!.id} was deleted — returning to lobby');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This room has been deleted by its owner.'),
+        ),
+      );
     }
+    _leaveRoom();
   }
 
   /// Create a new room — enter editor with empty map, then save.
@@ -773,8 +598,31 @@ class _MyAppState extends State<MyApp> {
       _currentRoom = room;
 
       // Now connect LiveKit for the new room.
-      if (_liveKitService == null) {
-        await _setupLiveKit(room.id, userId, _currentDisplayName);
+      if (_session == null) {
+        _session = RoomSession.create(
+          room: room,
+          userId: userId,
+          displayName: _currentDisplayName,
+          onStateChanged: () => setState(() {}),
+          onReconnectWorld: () =>
+              locate<TechWorld>().connectToLiveKit(
+                userId,
+                _currentDisplayName,
+              ),
+          onRoomDeleted: _onRoomDeleted,
+        );
+        final result = await _session!.connect();
+        if (result == ConnectionResult.connected) {
+          await locate<TechWorld>()
+              .connectToLiveKit(userId, _currentDisplayName);
+          await _session!.enableMedia();
+          await _session!.chatService.loadHistory(room.id);
+        }
+
+        // Apply saved avatar to game world.
+        if (_selectedAvatar != null) {
+          locate<TechWorld>().setLocalAvatar(_selectedAvatar!);
+        }
       }
     }
 
@@ -1032,19 +880,11 @@ class _MyAppState extends State<MyApp> {
                     ),
                     // Side panel - map editor or chat (hidden in lobby and
                     // during avatar selection)
-                    StreamBuilder<AuthUser>(
-                      stream: locate<AuthService>().authStateChanges,
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData ||
-                            snapshot.data is SignedOutUser ||
-                            _currentRoom == null ||
-                            _selectedAvatar == null) {
-                          return const SizedBox.shrink();
-                        }
-                        final techWorld = locate<TechWorld>();
-                        return ValueListenableBuilder<bool>(
-                          valueListenable: techWorld.mapEditorActive,
+                    if (_currentRoom != null && _selectedAvatar != null)
+                      ValueListenableBuilder<bool>(
+                          valueListenable: locate<TechWorld>().mapEditorActive,
                           builder: (context, editorActive, _) {
+                            final techWorld = locate<TechWorld>();
                             if (editorActive) {
                               final canEdit = _currentRoom != null &&
                                   _currentUserId != null &&
@@ -1174,7 +1014,7 @@ class _MyAppState extends State<MyApp> {
                                     builder: (context, dmPeer, _) {
                                       return ChatPanel(
                                         chatService: chatService,
-                                        liveKitService: _liveKitService!,
+                                        liveKitService: _session!.liveKitService,
                                         onCollapse: () =>
                                             _chatCollapsed.value = true,
                                         initialDmPeerId: dmPeer,
@@ -1187,136 +1027,113 @@ class _MyAppState extends State<MyApp> {
                               },
                             );
                           },
-                        );
-                      },
-                    ),
+                        ),
                   ],
                 ),
                 // Toolbar — top right when in a room (hidden during avatar
-                // selection)
-                StreamBuilder<AuthUser>(
-                  stream: locate<AuthService>().authStateChanges,
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData ||
-                        snapshot.data is SignedOutUser ||
-                        _currentRoom == null ||
-                        _selectedAvatar == null) {
-                      return const SizedBox.shrink();
-                    }
-                    return ValueListenableBuilder<bool>(
-                      valueListenable: _chatCollapsed,
-                      builder: (context, chatCollapsed, child) {
-                    return ValueListenableBuilder<bool>(
-                      valueListenable: _spellbookOpen,
-                      builder: (context, spellbookOpen, _) {
-                    final techWorld = locate<TechWorld>();
-                    // The spellbook panel only renders when no challenge is
-                    // active — see the overlay's gating below — so the
-                    // toolbar should only shift for the spellbook in that
-                    // same window.
-                    final spellbookVisible = spellbookOpen &&
-                        techWorld.activePromptChallenge.value == null;
-                    // Toolbar offset depends on what's showing in the side panel
-                    final double toolbarRight;
-                    if (techWorld.mapEditorActive.value) {
-                      toolbarRight = (constraints.maxWidth >= 800 ? 480 : 360) + 16;
-                    } else if (spellbookVisible) {
-                      toolbarRight = constraints.maxWidth >= 800 ? 400 : 320;
-                    } else if (chatCollapsed) {
-                      toolbarRight = 64;
-                    } else {
-                      toolbarRight = constraints.maxWidth >= 800 ? 336 : 296;
-                    }
-                    return Positioned(
-                      top: 16,
-                      right: toolbarRight,
-                      child: SafeArea(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // Leave room button
-                            IconButton(
-                              onPressed: _leaveRoom,
-                              icon: const Icon(Icons.arrow_back,
-                                  color: Colors.white70, size: 20),
-                              tooltip: 'Leave room',
-                              style: IconButton.styleFrom(
-                                backgroundColor: Colors.black54,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
+                // selection and in the lobby)
+                if (_currentRoom != null && _selectedAvatar != null)
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _chatCollapsed,
+                    builder: (context, chatCollapsed, child) {
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: _spellbookOpen,
+                    builder: (context, spellbookOpen, _) {
+                  final techWorld = locate<TechWorld>();
+                  // The spellbook panel only renders when no challenge is
+                  // active — see the overlay's gating below — so the
+                  // toolbar should only shift for the spellbook in that
+                  // same window.
+                  final spellbookVisible = spellbookOpen &&
+                      techWorld.activePromptChallenge.value == null;
+                  // Toolbar offset depends on what's showing in the side panel
+                  final double toolbarRight;
+                  if (techWorld.mapEditorActive.value) {
+                    toolbarRight = (constraints.maxWidth >= 800 ? 480 : 360) + 16;
+                  } else if (spellbookVisible) {
+                    toolbarRight = constraints.maxWidth >= 800 ? 400 : 320;
+                  } else if (chatCollapsed) {
+                    toolbarRight = 64;
+                  } else {
+                    toolbarRight = constraints.maxWidth >= 800 ? 336 : 296;
+                  }
+                  return Positioned(
+                    top: 16,
+                    right: toolbarRight,
+                    child: SafeArea(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Leave room button
+                          IconButton(
+                            onPressed: _leaveRoom,
+                            icon: const Icon(Icons.arrow_back,
+                                color: Colors.white70, size: 20),
+                            tooltip: 'Leave room',
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.black54,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
                               ),
                             ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Map selector with saved rooms
+                          MapSelector(
+                            techWorld: techWorld,
+                            roomService: _roomService,
+                            userId: _currentUserId,
+                            savedRooms: _myRooms,
+                            onPopupOpened: _refreshMyRooms,
+                            onLoadRoom: _loadSavedRoom,
+                            onDeleteRoom: _deleteSavedRoom,
+                          ),
+                          if (_currentRoom!.canEdit(_currentUserId!)) ...[
                             const SizedBox(width: 8),
-                            // Map selector with saved rooms
-                            MapSelector(
-                              techWorld: techWorld,
-                              roomService: _roomService,
-                              userId: _currentUserId,
-                              savedRooms: _myRooms,
-                              onPopupOpened: _refreshMyRooms,
-                              onLoadRoom: _loadSavedRoom,
-                              onDeleteRoom: _deleteSavedRoom,
-                            ),
-                            if (_currentRoom!.canEdit(_currentUserId!)) ...[
-                              const SizedBox(width: 8),
-                              _MapEditorButton(
-                                mapEditorState: _mapEditorState,
-                                techWorld: locate<TechWorld>(),
-                              ),
-                            ],
-                            if (kIsWeb || lkPlatformIsDesktop()) ...[
-                              const SizedBox(width: 8),
-                              _ScreenShareButton(
-                                liveKitService: _liveKitService,
-                              ),
-                            ],
-                            const SizedBox(width: 8),
-                            _SpellbookButton(
-                              open: _spellbookOpen,
-                              activePromptChallenge:
-                                  techWorld.activePromptChallenge,
-                            ),
-                            const SizedBox(width: 8),
-                            AuthMenu(
-                              displayName: _currentDisplayName.isNotEmpty
-                                  ? _currentDisplayName
-                                  : snapshot.data!.displayName,
-                              onChangeAvatar: _changeAvatar,
-                              onEditProfile: _editProfile,
-                              profilePictureUrl: _currentProfilePictureUrl,
+                            _MapEditorButton(
+                              mapEditorState: _mapEditorState,
+                              techWorld: locate<TechWorld>(),
                             ),
                           ],
-                        ),
+                          if (kIsWeb || lkPlatformIsDesktop()) ...[
+                            const SizedBox(width: 8),
+                            _ScreenShareButton(
+                              liveKitService: _session?.liveKitService,
+                            ),
+                          ],
+                          const SizedBox(width: 8),
+                          _SpellbookButton(
+                            open: _spellbookOpen,
+                            activePromptChallenge:
+                                techWorld.activePromptChallenge,
+                          ),
+                          const SizedBox(width: 8),
+                          AuthMenu(
+                            displayName: _currentDisplayName,
+                            onChangeAvatar: _changeAvatar,
+                            onEditProfile: _editProfile,
+                            profilePictureUrl: _currentProfilePictureUrl,
+                          ),
+                        ],
                       ),
-                    );
-                      },
-                    );
-                      },
-                    );
-                  },
-                ),
+                    ),
+                  );
+                    },
+                  );
+                    },
+                  ),
                 // Code editor modal overlay — only for code-mode terminals.
-                StreamBuilder<AuthUser>(
-                  stream: locate<AuthService>().authStateChanges,
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData ||
-                        snapshot.data is SignedOutUser ||
-                        _currentRoom == null ||
-                        _selectedAvatar == null) {
-                      return const SizedBox.shrink();
-                    }
-                    final techWorld = locate<TechWorld>();
-                    if (techWorld.currentMap.value.terminalMode !=
-                        TerminalMode.code) {
-                      return const SizedBox.shrink();
-                    }
-                    return ValueListenableBuilder<CodeChallengeId?>(
-                      valueListenable: techWorld.activeChallenge,
-                      builder: (context, challengeId, _) {
+                if (_currentRoom != null &&
+                    _selectedAvatar != null &&
+                    locate<TechWorld>().currentMap.value.terminalMode ==
+                        TerminalMode.code)
+                  ValueListenableBuilder<CodeChallengeId?>(
+                    valueListenable: locate<TechWorld>().activeChallenge,
+                    builder: (context, challengeId, _) {
                         if (challengeId == null) {
                           return const SizedBox.shrink();
                         }
+                        final techWorld = locate<TechWorld>();
                         final challenge = allChallenges.firstWhere(
                           (c) => c.id == challengeId,
                           orElse: () => allChallenges.first,
@@ -1384,83 +1201,71 @@ class _MyAppState extends State<MyApp> {
                           },
                         );
                       },
-                    );
-                  },
-                ),
+                  ),
                 // Prompt challenge modal overlay — only for prompt-mode terminals.
-                StreamBuilder<AuthUser>(
-                  stream: locate<AuthService>().authStateChanges,
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData ||
-                        snapshot.data is SignedOutUser ||
-                        _currentRoom == null) {
-                      return const SizedBox.shrink();
-                    }
-                    final techWorld = locate<TechWorld>();
-                    if (techWorld.currentMap.value.terminalMode !=
-                        TerminalMode.prompt) {
-                      return const SizedBox.shrink();
-                    }
-                    return ValueListenableBuilder<PromptChallengeId?>(
-                      valueListenable: techWorld.activePromptChallenge,
-                      builder: (context, challengeId, _) {
-                        if (challengeId == null) {
-                          return const SizedBox.shrink();
-                        }
-                        final challenge = allPromptChallenges.firstWhere(
-                          (c) => c.id == challengeId,
-                          orElse: () => allPromptChallenges.first,
-                        );
-                        final chatService =
-                            Locator.maybeLocate<ChatService>();
-                        return Positioned(
-                          top: 60,
-                          right: 0,
-                          bottom: 0,
-                          width: MediaQuery.of(context).size.width >= 800
-                              ? 400
-                              : 320,
-                          child: PromptChallengePanel(
-                            challenge: challenge,
-                            spellSlotService: _spellSlotService,
-                            onClose: techWorld.closeEditor,
-                            onCast: (prompt) async {
-                              if (chatService == null) {
-                                throw Exception('Chat service not available');
-                              }
-                              final engine =
-                                  ChatEvaluationEngine(chatService);
-                              final result =
-                                  await engine.evaluate(challenge, prompt);
-                              final (_, castResult) = result;
+                if (_currentRoom != null &&
+                    locate<TechWorld>().currentMap.value.terminalMode ==
+                        TerminalMode.prompt)
+                  ValueListenableBuilder<PromptChallengeId?>(
+                    valueListenable:
+                        locate<TechWorld>().activePromptChallenge,
+                    builder: (context, challengeId, _) {
+                      if (challengeId == null) {
+                        return const SizedBox.shrink();
+                      }
+                      final techWorld = locate<TechWorld>();
+                      final challenge = allPromptChallenges.firstWhere(
+                        (c) => c.id == challengeId,
+                        orElse: () => allPromptChallenges.first,
+                      );
+                      final chatService =
+                          Locator.maybeLocate<ChatService>();
+                      return Positioned(
+                        top: 60,
+                        right: 0,
+                        bottom: 0,
+                        width: MediaQuery.of(context).size.width >= 800
+                            ? 400
+                            : 320,
+                        child: PromptChallengePanel(
+                          challenge: challenge,
+                          spellSlotService: _spellSlotService,
+                          onClose: techWorld.closeEditor,
+                          onCast: (prompt) async {
+                            if (chatService == null) {
+                              throw Exception('Chat service not available');
+                            }
+                            final engine =
+                                ChatEvaluationEngine(chatService);
+                            final result =
+                                await engine.evaluate(challenge, prompt);
+                            final (_, castResult) = result;
 
-                              // Persistent side-effects of a successful cast:
-                              // grant the word of power, then mark the
-                              // challenge completed. See applyCastSuccessEffects
-                              // for the rationale on ordering.
-                              if (castResult.passed) {
-                                await applyCastSuccessEffects(
-                                  challengeId: challenge.id,
-                                  spellbook: Locator
-                                      .maybeLocate<SpellbookService>(),
-                                  progress: Locator
-                                      .maybeLocate<ProgressService>(),
-                                );
-                                final doors = techWorld
-                                    .doorsForChallenge(challenge.id);
-                                for (final door in doors) {
-                                  final _ = techWorld.unlockDoor(door);
-                                }
+                            // Persistent side-effects of a successful cast:
+                            // grant the word of power, then mark the
+                            // challenge completed. See applyCastSuccessEffects
+                            // for the rationale on ordering.
+                            if (castResult.passed) {
+                              await applyCastSuccessEffects(
+                                challengeId: challenge.id,
+                                spellbook: Locator
+                                    .maybeLocate<SpellbookService>(),
+                                progress: Locator
+                                    .maybeLocate<ProgressService>(),
+                              );
+                              final doors = techWorld
+                                  .doorsForChallenge(challenge.id);
+                              for (final door in doors) {
+                                final _ = techWorld.unlockDoor(door);
                               }
+                            }
 
-                              return result;
-                            },
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
+                            return result;
+                          },
+                        ),
+                      );
+                    },
+                  ),
                 // Spellbook side panel — toggled by the toolbar button.
                 // Hidden while a prompt challenge is active so the two
                 // right-aligned panels never collide; reappears when the
@@ -1496,54 +1301,67 @@ class _MyAppState extends State<MyApp> {
                 // Voice-cast affordance — proximity-gated mic FAB at
                 // bottom-centre. Visible only when the player is near a
                 // locked door and STT is supported (web). The
-                // OracleService is cached for the LiveKit session so its
+                // OracleService is cached on RoomSession so its
                 // request-sequence counter is meaningful across rebuilds.
-                if (_liveKitService != null && _speechCastService != null)
+                if (_session != null && _speechCastService != null)
                   SpeechCastOverlay(
                     nearbyLockedDoor: locate<TechWorld>().nearbyLockedDoor,
                     speechCast: _speechCastService!,
-                    oracle: _oracleService ??=
-                        OracleService(liveKit: _liveKitService!),
+                    oracle: _session!.oracleService,
                     onCastSuccess: (door) =>
                         locate<TechWorld>().unlockDoor(door),
                   ),
 
                 // Screen share floating panels
-                if (_liveKitService != null)
-                  ScreenShareOverlay(liveKitService: _liveKitService!),
-                // Connection failure banner
-                if (_liveKitConnectionFailed)
-                  Positioned(
-                    bottom: 16,
-                    left: 16,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade800,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.wifi_off, color: Colors.white, size: 18),
-                            const SizedBox(width: 8),
-                            Text(
-                              _connectionFailureMessage ??
-                                  'Video & chat unavailable — connection failed',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
+                if (_session != null)
+                  ScreenShareOverlay(
+                      liveKitService: _session!.liveKitService),
+                // Connection failure banner — listens to both the failed
+                // flag and the message so reconnection text updates reactively.
+                if (_session != null)
+                  ValueListenableBuilder<bool>(
+                    valueListenable: _session!.connectionFailed,
+                    builder: (context, failed, _) {
+                      if (!failed) return const SizedBox.shrink();
+                      return ValueListenableBuilder<String?>(
+                        valueListenable: _session!.connectionMessage,
+                        builder: (context, message, _) {
+                          return Positioned(
+                            bottom: 16,
+                            left: 16,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.shade800,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.wifi_off,
+                                        color: Colors.white, size: 18),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      message ??
+                                          'Video & chat unavailable — connection failed',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
+                          );
+                        },
+                      );
+                    },
                   ),
               ],
             );
