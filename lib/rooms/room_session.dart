@@ -86,6 +86,11 @@ class RoomSession {
   StreamSubscription<DocumentSnapshot>? _roomDeletionSub;
   OracleService? _oracleService;
 
+  /// Set by [leave]; read after every `await` in [_handleConnectionLost] so
+  /// a delayed reconnection that races with the user leaving the room can't
+  /// mutate disposed services or notifiers.
+  bool _disposed = false;
+
   /// Lazily-created oracle service for bot-mediated generation (voice cast,
   /// spell combos). Cached for the session so the request-sequence counter
   /// (`_seq`) disambiguates microsecond collisions across rebuilds.
@@ -207,7 +212,7 @@ class RoomSession {
 
   Future<void> _handleConnectionLost(String? reason) async {
     _log.warning('LiveKit connection lost: $reason');
-    if (_isReconnecting) return;
+    if (_isReconnecting || _disposed) return;
     _isReconnecting = true;
 
     // Show failure banner immediately.
@@ -222,14 +227,20 @@ class RoomSession {
 
     try {
       await Future.delayed(const Duration(seconds: 2));
+      // Bail if the user left during the delay — services and notifiers
+      // are disposed and any further work would be use-after-free.
+      if (_disposed) return;
 
       final result = await liveKitService.connect();
+      if (_disposed) return;
       _log.info('Reconnection attempt result: $result');
 
       if (result == ConnectionResult.connected) {
         await _onReconnectWorld();
+        if (_disposed) return;
         _listenForConnectionLoss();
         await enableMedia();
+        if (_disposed) return;
 
         connectionFailed.value = false;
         connectionMessage.value = null;
@@ -268,6 +279,7 @@ class RoomSession {
   /// Disposal order: cancel reconnection listener, then consumers before
   /// producers (ChatService → ProximityService → LiveKitService).
   Future<void> leave() async {
+    _disposed = true;
     _roomDeletionSub?.cancel();
     _roomDeletionSub = null;
     _connectionLostSub?.cancel();
