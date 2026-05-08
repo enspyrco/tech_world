@@ -43,10 +43,12 @@ class RoomSession {
     required void Function() onStateChanged,
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
+    List<Duration>? reconnectDelays,
   })  : _firestore = firestore,
         _onStateChanged = onStateChanged,
         _onReconnectWorld = onReconnectWorld,
-        _onRoomDeleted = onRoomDeleted;
+        _onRoomDeleted = onRoomDeleted,
+        _reconnectDelays = reconnectDelays ?? _defaultReconnectDelays;
 
   // --- Final fields (set at construction) ---
 
@@ -119,6 +121,7 @@ class RoomSession {
     @visibleForTesting ChatMessageRepository? chatMessageRepository,
     @visibleForTesting LiveKitService? liveKitService,
     @visibleForTesting FirebaseFirestore? firestore,
+    @visibleForTesting List<Duration>? reconnectDelays,
   }) {
     final liveKit = liveKitService ??
         LiveKitService(
@@ -153,6 +156,7 @@ class RoomSession {
       onStateChanged: onStateChanged,
       onReconnectWorld: onReconnectWorld,
       onRoomDeleted: onRoomDeleted,
+      reconnectDelays: reconnectDelays,
     );
   }
 
@@ -213,36 +217,36 @@ class RoomSession {
         liveKitService.connectionLost.listen(_handleConnectionLost);
   }
 
-  // Backoff schedule: 2s, 4s, 8s.
-  static const _maxReconnectAttempts = 3;
-  static const _reconnectDelays = [
+  // Backoff schedule: 2s, 4s, 8s. Loop bound derived from list length.
+  static const _defaultReconnectDelays = [
     Duration(seconds: 2),
     Duration(seconds: 4),
     Duration(seconds: 8),
   ];
+
+  final List<Duration> _reconnectDelays;
 
   Future<void> _handleConnectionLost(String? reason) async {
     _log.warning('LiveKit connection lost: $reason');
     if (_isReconnecting || _disposed) return;
     _isReconnecting = true;
 
-    // Show failure banner immediately.
+    // Show failure banner and reset bot status.
     connectionFailed.value = true;
-    connectionMessage.value = 'Connection lost — reconnecting…';
     botStatusNotifier.value = BotStatus.absent;
-    _onStateChanged();
 
     // TechWorld's own connectionLost listener calls disconnectFromLiveKit(),
     // which clears its subscriptions and nulls its service reference. That
     // enables re-initialization when connectToLiveKit() is called again.
 
     try {
-      for (int attempt = 0; attempt < _maxReconnectAttempts; attempt++) {
+      final maxAttempts = _reconnectDelays.length;
+      for (int attempt = 0; attempt < maxAttempts; attempt++) {
         final delay = _reconnectDelays[attempt];
-        _log.info('Reconnect attempt ${attempt + 1}/$_maxReconnectAttempts '
+        _log.info('Reconnect attempt ${attempt + 1}/$maxAttempts '
             'in ${delay.inSeconds}s');
         connectionMessage.value = 'Connection lost — reconnecting '
-            '(${attempt + 1}/$_maxReconnectAttempts)…';
+            '(${attempt + 1}/$maxAttempts)…';
         _onStateChanged();
 
         await Future.delayed(delay);
@@ -271,11 +275,15 @@ class RoomSession {
         // Auth errors won't resolve with retries — stop immediately.
         if (result == ConnectionResult.tokenAuthError) {
           _log.warning('Auth error — aborting reconnection');
-          break;
+          connectionMessage.value = failureMessageFor(result);
+          _onStateChanged();
+          return;
         }
+
+        // Network errors may be transient — keep retrying.
       }
 
-      // All attempts exhausted or auth error.
+      // All attempts exhausted.
       connectionMessage.value =
           'Video & chat unavailable — connection lost';
       _onStateChanged();

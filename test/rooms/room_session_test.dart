@@ -275,4 +275,149 @@ void main() {
       await lostCtrl.close();
     });
   });
+
+  group('reconnection backoff', () {
+    // Zero-duration delays for fast testing.
+    const _zeroDelays = [Duration.zero, Duration.zero, Duration.zero];
+
+    test('retries up to 3 times then shows failure message', () async {
+      final liveKit = _FakeLiveKit();
+      final stubs = _stubLiveKit(liveKit);
+      final lostCtrl = stubs.connectionLost;
+      var connectCalls = 0;
+      var initialConnectDone = false;
+      when(liveKit.connect).thenAnswer((_) async {
+        connectCalls++;
+        // First call is the initial connect — succeed so the loss listener
+        // is wired up. All subsequent calls (reconnection) fail.
+        if (!initialConnectDone) {
+          initialConnectDone = true;
+          return ConnectionResult.connected;
+        }
+        return ConnectionResult.tokenNetworkError;
+      });
+
+      final session = RoomSession.create(
+        room: _testRoom,
+        userId: 'user-1',
+        displayName: 'User 1',
+        onStateChanged: () {},
+        onReconnectWorld: () async {},
+        onRoomDeleted: () {},
+        chatMessageRepository:
+            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+        liveKitService: liveKit,
+        firestore: FakeFirebaseFirestore(),
+        reconnectDelays: _zeroDelays,
+      );
+
+      await session.connect();
+      expect(connectCalls, 1, reason: 'initial connect');
+      connectCalls = 0;
+
+      // Fire connection loss and let the handler run to completion.
+      lostCtrl.add('peer-disconnected');
+      // Give async handler time to run all 3 zero-delay attempts.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(connectCalls, 3, reason: 'should attempt 3 reconnections');
+      expect(session.connectionFailed.value, isTrue);
+      expect(session.connectionMessage.value, contains('connection lost'));
+
+      await session.leave();
+      await lostCtrl.close();
+    });
+
+    test('aborts immediately on tokenAuthError with session-expired message',
+        () async {
+      final liveKit = _FakeLiveKit();
+      final stubs = _stubLiveKit(liveKit);
+      final lostCtrl = stubs.connectionLost;
+      var connectCalls = 0;
+      var initialConnectDone = false;
+      when(liveKit.connect).thenAnswer((_) async {
+        connectCalls++;
+        if (!initialConnectDone) {
+          initialConnectDone = true;
+          return ConnectionResult.connected;
+        }
+        return ConnectionResult.tokenAuthError;
+      });
+
+      final session = RoomSession.create(
+        room: _testRoom,
+        userId: 'user-1',
+        displayName: 'User 1',
+        onStateChanged: () {},
+        onReconnectWorld: () async {},
+        onRoomDeleted: () {},
+        chatMessageRepository:
+            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+        liveKitService: liveKit,
+        firestore: FakeFirebaseFirestore(),
+        reconnectDelays: _zeroDelays,
+      );
+
+      await session.connect();
+      connectCalls = 0;
+
+      lostCtrl.add('auth-expired');
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(connectCalls, 1, reason: 'auth error should abort after 1 try');
+      expect(session.connectionMessage.value, contains('Session expired'));
+
+      await session.leave();
+      await lostCtrl.close();
+    });
+
+    test('succeeds on second attempt and clears failure state', () async {
+      final liveKit = _FakeLiveKit();
+      final stubs = _stubLiveKit(liveKit);
+      final lostCtrl = stubs.connectionLost;
+      var connectCalls = 0;
+      var initialConnectDone = false;
+      var reconnectAttempts = 0;
+      when(liveKit.connect).thenAnswer((_) async {
+        connectCalls++;
+        if (!initialConnectDone) {
+          initialConnectDone = true;
+          return ConnectionResult.connected;
+        }
+        reconnectAttempts++;
+        // First reconnect attempt fails, second succeeds.
+        if (reconnectAttempts == 1) return ConnectionResult.tokenNetworkError;
+        return ConnectionResult.connected;
+      });
+
+      var reconnectWorldCalls = 0;
+      final session = RoomSession.create(
+        room: _testRoom,
+        userId: 'user-1',
+        displayName: 'User 1',
+        onStateChanged: () {},
+        onReconnectWorld: () async => reconnectWorldCalls++,
+        onRoomDeleted: () {},
+        chatMessageRepository:
+            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+        liveKitService: liveKit,
+        firestore: FakeFirebaseFirestore(),
+        reconnectDelays: _zeroDelays,
+      );
+
+      await session.connect();
+      connectCalls = 0;
+
+      lostCtrl.add('network-blip');
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(connectCalls, 2, reason: 'should try twice');
+      expect(reconnectWorldCalls, 1);
+      expect(session.connectionFailed.value, isFalse);
+      expect(session.connectionMessage.value, isNull);
+
+      await session.leave();
+      await lostCtrl.close();
+    });
+  });
 }
