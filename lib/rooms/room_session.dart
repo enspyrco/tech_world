@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
-import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
@@ -236,7 +235,7 @@ class RoomSession {
 
     // Show failure banner and reset bot status.
     connectionFailed.value = true;
-    botStatusNotifier.value = BotStatus.absent;
+    chatService.markBotAbsent();
 
     // TechWorld's own connectionLost listener calls disconnectFromLiveKit(),
     // which clears its subscriptions and nulls its service reference. That

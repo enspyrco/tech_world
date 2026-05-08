@@ -6,27 +6,35 @@ import 'package:tech_world/flame/components/bot_status.dart';
 
 void main() {
   group('BotBubbleComponent', () {
+    late ValueNotifier<BotStatus> testStatus;
+
     setUp(() {
-      // Reset bot status before each test
-      botStatusNotifier.value = BotStatus.idle;
+      testStatus = ValueNotifier(BotStatus.idle);
+    });
+
+    tearDown(() {
+      testStatus.dispose();
     });
 
     test('uses default bubble size of 48', () {
-      final component = BotBubbleComponent();
+      final component = BotBubbleComponent(botStatus: testStatus);
 
       expect(component.bubbleSize, equals(48));
       expect(component.size, equals(Vector2.all(48)));
     });
 
     test('respects custom bubble size', () {
-      final component = BotBubbleComponent(bubbleSize: 64);
+      final component = BotBubbleComponent(
+        botStatus: testStatus,
+        bubbleSize: 64,
+      );
 
       expect(component.bubbleSize, equals(64));
       expect(component.size, equals(Vector2.all(64)));
     });
 
     test('has bottomCenter anchor for positioning above player', () {
-      final component = BotBubbleComponent();
+      final component = BotBubbleComponent(botStatus: testStatus);
 
       expect(component.anchor, equals(Anchor.bottomCenter));
     });
@@ -37,24 +45,25 @@ void main() {
   });
 
   group('BotStatus', () {
-    test('botStatusNotifier defaults to idle', () {
-      // Create new notifier to test default
+    test('ValueNotifier defaults correctly', () {
       final notifier = ValueNotifier<BotStatus>(BotStatus.idle);
-
       expect(notifier.value, equals(BotStatus.idle));
+      notifier.dispose();
     });
 
     test('can change to thinking status', () {
-      botStatusNotifier.value = BotStatus.thinking;
-
-      expect(botStatusNotifier.value, equals(BotStatus.thinking));
+      final notifier = ValueNotifier<BotStatus>(BotStatus.idle);
+      notifier.value = BotStatus.thinking;
+      expect(notifier.value, equals(BotStatus.thinking));
+      notifier.dispose();
     });
 
     test('can change back to idle status', () {
-      botStatusNotifier.value = BotStatus.thinking;
-      botStatusNotifier.value = BotStatus.idle;
-
-      expect(botStatusNotifier.value, equals(BotStatus.idle));
+      final notifier = ValueNotifier<BotStatus>(BotStatus.idle);
+      notifier.value = BotStatus.thinking;
+      notifier.value = BotStatus.idle;
+      expect(notifier.value, equals(BotStatus.idle));
+      notifier.dispose();
     });
   });
 }

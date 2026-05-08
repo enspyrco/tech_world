@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:re_highlight/languages/dart.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/lsp_config.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 
@@ -13,6 +14,7 @@ class CodeEditorPanel extends StatefulWidget {
     required this.challenge,
     required this.onClose,
     required this.onSubmit,
+    required this.botStatus,
     this.onHelpRequest,
     this.isCompleted = false,
     super.key,
@@ -21,6 +23,9 @@ class CodeEditorPanel extends StatefulWidget {
   final Challenge challenge;
   final VoidCallback onClose;
   final void Function(String code) onSubmit;
+
+  /// Bot presence state — drives the Help and Submit button enabled state.
+  final ValueListenable<BotStatus> botStatus;
 
   /// Callback to request a hint from Clawd. Returns the hint text, or null
   /// if the request failed or timed out.
@@ -318,7 +323,7 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
                 // Help button — left side
                 if (widget.onHelpRequest != null)
                   ValueListenableBuilder<BotStatus>(
-                    valueListenable: botStatusNotifier,
+                    valueListenable: widget.botStatus,
                     builder: (context, botStatus, _) {
                       final enabled =
                           !_isRequesting && botStatus != BotStatus.absent;
@@ -364,7 +369,7 @@ class _CodeEditorPanelState extends State<CodeEditorPanel> {
                 ),
                 const SizedBox(width: 12),
                 ValueListenableBuilder<BotStatus>(
-                  valueListenable: botStatusNotifier,
+                  valueListenable: widget.botStatus,
                   builder: (context, botStatus, _) {
                     final enabled = botStatus != BotStatus.absent;
                     final button = ElevatedButton.icon(

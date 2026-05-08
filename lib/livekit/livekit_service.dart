@@ -9,7 +9,6 @@ import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
-import 'package:tech_world/utils/stream_extensions.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
@@ -17,7 +16,11 @@ import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
-import 'package:tech_world/livekit/data_topic.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
+
+/// Protocol version stamped on every outgoing LiveKit data-channel message.
+/// Bump when a wire-format change requires receivers to upgrade.
+const kProtocolVersion = 1;
 
 /// Result of a [LiveKitService.connect] attempt.
 enum ConnectionResult {
@@ -48,9 +51,6 @@ enum _ConnectionState { disconnected, connecting, connected }
 
 final _log = Logger('LiveKitService');
 
-/// Protocol version stamped on every outgoing LiveKit data channel message.
-const kProtocolVersion = 1;
-
 /// Service that manages LiveKit room connection and participant tracking.
 ///
 /// This service:
@@ -77,7 +77,6 @@ class LiveKitService {
   Room? _room;
   EventsListener<RoomEvent>? _listener;
   _ConnectionState _connectionState = _ConnectionState.disconnected;
-  Set<String> _previousSpeakerIds = {};
 
   // Stream controllers for participant events
   final _participantJoinedController =
@@ -133,24 +132,35 @@ class LiveKitService {
   ///
   /// Filters dataReceived for 'position' topic and parses into PlayerPath.
   Stream<PlayerPath> get positionReceived => dataReceived
-      .where((msg) => msg.topic == DataTopic.position.wireName)
-      .whereMap((msg) => msg.json == null ? null : _parsePlayerPath(msg.json!));
+      .where((msg) => msg.topic == LiveKitTopic.position.wire)
+      .map((msg) {
+        final json = msg.json;
+        if (json == null) return null;
+        return _parsePlayerPath(json);
+      })
+      .where((path) => path != null)
+      .cast<PlayerPath>();
 
   /// Stream of position heartbeat messages from other participants.
   ///
   /// Heartbeats carry a single grid position with reliable delivery,
   /// correcting stale positions caused by dropped unreliable path updates.
   Stream<PositionHeartbeat> get positionHeartbeatReceived => dataReceived
-      .where((msg) => msg.topic == DataTopic.positionHeartbeat.wireName)
-      .whereMap((msg) =>
-          msg.json == null ? null : PositionHeartbeat.tryParse(msg.json!));
+      .where((msg) => msg.topic == LiveKitTopic.positionHeartbeat.wire)
+      .map((msg) {
+        final json = msg.json;
+        if (json == null) return null;
+        return PositionHeartbeat.tryParse(json);
+      })
+      .where((hb) => hb != null)
+      .cast<PositionHeartbeat>();
 
   /// Stream that fires when a bot requests map info.
   ///
   /// Bots publish a `map-info-request` message when they connect and are
   /// ready to receive data. The client responds by sending the current map.
   Stream<void> get mapInfoRequested =>
-      dataReceived.where((msg) => msg.topic == DataTopic.mapInfoRequest.wireName);
+      dataReceived.where((msg) => msg.topic == LiveKitTopic.mapInfoRequest.wire);
 
   /// Stream of map-switch notifications from other human players.
   ///
@@ -158,28 +168,33 @@ class LiveKitService {
   /// client can load the same map. Own messages (matching [userId]) and
   /// messages from bots are excluded.
   Stream<String> get mapSwitchReceived => dataReceived
-      .where((msg) => msg.topic == DataTopic.mapSwitch.wireName)
-      .whereMap((msg) {
+      .where((msg) => msg.topic == LiveKitTopic.mapSwitch.wire)
+      .map((msg) {
         if (msg.json case {'senderId': String senderId, 'mapId': String mapId}
             when senderId != userId) {
           return mapId;
         }
         return null;
-      });
+      })
+      .where((mapId) => mapId != null)
+      .cast<String>();
 
   /// Stream of avatar updates received from other participants.
   ///
   /// Filters [dataReceived] for the `avatar` topic and parses into
   /// [AvatarUpdate]. Own messages (matching [userId]) are excluded.
   Stream<AvatarUpdate> get avatarReceived => dataReceived
-      .where((msg) => msg.topic == DataTopic.avatar.wireName)
-      .whereMap((msg) {
-        final update =
-            msg.json == null ? null : AvatarUpdate.tryParse(msg.json!);
+      .where((msg) => msg.topic == LiveKitTopic.avatar.wire)
+      .map((msg) {
+        final json = msg.json;
+        if (json == null) return null;
+        final update = AvatarUpdate.tryParse(json);
         // Ignore our own avatar broadcasts
         if (update != null && update.playerId == userId) return null;
         return update;
-      });
+      })
+      .where((update) => update != null)
+      .cast<AvatarUpdate>();
 
   /// Broadcast the local player's avatar to the room.
   ///
@@ -190,7 +205,7 @@ class LiveKitService {
       'avatarId': avatar.id,
       'spriteAsset': avatar.spriteAsset,
     };
-    await publishJson(message, topic: DataTopic.avatar.wireName);
+    await publishJson(message, topic: LiveKitTopic.avatar.wire);
   }
 
   PlayerPath? _parsePlayerPath(Map<String, dynamic> json) {
@@ -203,13 +218,10 @@ class LiveKitService {
         return null;
       }
 
-      // 2× world bounds: negative coords valid for off-origin maps,
-      // interpolation can briefly overshoot. Units: world-space pixels.
-      final maxCoord = (gridSize * gridSquareSize * 2).toDouble();
       final points = pointsJson
           .map((p) => Vector2(
-                (p['x'] as num).toDouble().clamp(-maxCoord, maxCoord),
-                (p['y'] as num).toDouble().clamp(-maxCoord, maxCoord),
+                (p['x'] as num).toDouble(),
+                (p['y'] as num).toDouble(),
               ))
           .toList();
 
@@ -257,12 +269,11 @@ class LiveKitService {
     try {
       // Get token from Firebase Function
       final tokenResult = await _retrieveToken();
-      if (tokenResult case _TokenFailure(:final connectionResult)) {
+      if (tokenResult.token == null) {
         _log.warning('Failed to retrieve token');
         _connectionState = _ConnectionState.disconnected;
-        return connectionResult;
+        return tokenResult.connectionResult;
       }
-      final token = (tokenResult as _TokenSuccess).token;
 
       // Create room with options
       _room = Room(
@@ -296,7 +307,7 @@ class LiveKitService {
       // candidates are tried alongside direct UDP.
       await _room!.connect(
         _serverUrl,
-        token,
+        tokenResult.token!,
         connectOptions: const ConnectOptions(
           rtcConfiguration: RTCConfiguration(
             iceTransportPolicy: RTCIceTransportPolicy.all,
@@ -426,6 +437,30 @@ class LiveKitService {
     }
   }
 
+  /// Whether Dreamfinder's audio is currently silenced for the local player.
+  ///
+  /// Server-side disable (via [setParticipantAudioEnabled]) — DF still
+  /// speaks in the room, but the SFU stops forwarding their audio to us.
+  /// State is session-scoped (resets on rejoin); applies to all current
+  /// and future DF participants (including `agent-*` identities).
+  final ValueNotifier<bool> dreamfinderSilenced = ValueNotifier<bool>(false);
+
+  /// Toggle whether we receive Dreamfinder's audio.
+  ///
+  /// Iterates current remote participants and disables/enables audio on
+  /// any matching [isDreamfinderIdentity]. Late-joining DF tracks are
+  /// caught in the [TrackSubscribedEvent] handler.
+  void setDreamfinderSilenced(bool silenced) {
+    dreamfinderSilenced.value = silenced;
+    final room = _room;
+    if (room == null) return;
+    for (final participant in room.remoteParticipants.values) {
+      if (isDreamfinderIdentity(participant.identity)) {
+        setParticipantAudioEnabled(participant.identity, !silenced);
+      }
+    }
+  }
+
   /// Get a participant by their identity (userId)
   Participant? getParticipant(String identity) {
     if (_room == null) return null;
@@ -466,12 +501,6 @@ class LiveKitService {
   /// Publish a JSON message to the room via data channel.
   ///
   /// Convenience method that encodes [json] as UTF-8 bytes.
-  ///
-  /// A `v: 1` protocol version field is automatically added to every outgoing
-  /// message. Old clients that don't recognise the field will ignore it
-  /// (forward-compatible). Receivers should NOT reject messages that lack
-  /// the field, so backward-compatibility with pre-versioned clients is
-  /// maintained.
   Future<void> publishJson(
     Map<String, dynamic> json, {
     bool reliable = true,
@@ -503,7 +532,7 @@ class LiveKitService {
     };
     await publishJson(
       message,
-      topic: DataTopic.mapInfo.wireName,
+      topic: LiveKitTopic.mapInfo.wire,
       destinationIdentities: allBotIdentities.toList(),
     );
   }
@@ -517,7 +546,7 @@ class LiveKitService {
       'senderId': userId,
       'mapId': mapId,
     };
-    await publishJson(message, topic: DataTopic.mapSwitch.wireName);
+    await publishJson(message, topic: LiveKitTopic.mapSwitch.wire);
   }
 
   /// Publish the local player's position to other participants.
@@ -535,7 +564,7 @@ class LiveKitService {
 
     await publishJson(
       message,
-      topic: DataTopic.position.wireName,
+      topic: LiveKitTopic.position.wire,
       reliable: false, // Positions can use unreliable for lower latency
     );
   }
@@ -567,7 +596,7 @@ class LiveKitService {
             'y': pos.y,
             'type': 'heartbeat',
           },
-          topic: DataTopic.positionHeartbeat.wireName,
+          topic: LiveKitTopic.positionHeartbeat.wire,
           reliable: true,
         );
       },
@@ -595,7 +624,7 @@ class LiveKitService {
     int? terminalY,
   }) async {
     final message = <String, dynamic>{
-      'type': DataTopic.terminalActivity.wireName,
+      'type': 'terminal-activity',
       'action': action,
       'playerId': userId,
       'playerName': displayName,
@@ -611,7 +640,7 @@ class LiveKitService {
 
     await publishJson(
       message,
-      topic: DataTopic.terminalActivity.wireName,
+      topic: LiveKitTopic.terminalActivity.wire,
       destinationIdentities: const ['bot-claude'],
     );
   }
@@ -625,14 +654,14 @@ class LiveKitService {
   }) async {
     final pingId = DateTime.now().millisecondsSinceEpoch.toString();
     final pingMessage = {
-      'type': DataTopic.ping.wireName,
+      'type': 'ping',
       'id': pingId,
       'timestamp': DateTime.now().toIso8601String(),
     };
 
     // Listen for pong response with matching ID
     final pongFuture = dataReceived
-        .where((msg) => msg.topic == DataTopic.pong.wireName)
+        .where((msg) => msg.topic == LiveKitTopic.pong.wire)
         .where((msg) {
           final json = msg.json;
           return json != null &&
@@ -644,7 +673,7 @@ class LiveKitService {
     // Send the ping
     await publishJson(
       pingMessage,
-      topic: DataTopic.ping.wireName,
+      topic: LiveKitTopic.ping.wire,
       destinationIdentities: ['bot-claude'],
     );
     _log.fine('Sent ping with id: $pingId');
@@ -663,8 +692,8 @@ class LiveKitService {
     if (_tokenRetriever != null) {
       final token = await _tokenRetriever();
       return token != null
-          ? _TokenSuccess(token)
-          : const _TokenFailure(ConnectionResult.tokenUnknownError);
+          ? _TokenResult.success(token)
+          : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
     }
     try {
       _log.info('Retrieving token for room "$roomName"');
@@ -673,19 +702,19 @@ class LiveKitService {
           .call({'roomName': roomName});
       final token = result.data as String?;
       return token != null
-          ? _TokenSuccess(token)
-          : const _TokenFailure(ConnectionResult.tokenUnknownError);
+          ? _TokenResult.success(token)
+          : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
     } on FirebaseFunctionsException catch (e) {
       _log.warning('Token retrieval failed', e);
       if (e.code == 'unauthenticated' || e.code == 'permission-denied') {
-        return const _TokenFailure(ConnectionResult.tokenAuthError);
+        return const _TokenResult.failure(ConnectionResult.tokenAuthError);
       }
-      return const _TokenFailure(ConnectionResult.tokenNetworkError);
+      return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
     } catch (e) {
       // Generic catch handles timeouts, network errors, and other transient
       // failures not covered by FirebaseFunctionsException above.
       _log.warning('Token retrieval failed', e);
-      return const _TokenFailure(ConnectionResult.tokenNetworkError);
+      return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
     }
   }
 
@@ -707,6 +736,14 @@ class LiveKitService {
           _trackSubscribedController
               .add((event.participant, event.track as VideoTrack));
         }
+        // Apply Dreamfinder silence to a freshly-subscribed DF audio track.
+        // Without this, toggling silence before DF joins (or while DF is
+        // republishing) would leave the new track audible.
+        if (event.track is AudioTrack &&
+            dreamfinderSilenced.value &&
+            isDreamfinderIdentity(event.participant.identity)) {
+          setParticipantAudioEnabled(event.participant.identity, false);
+        }
       })
       ..on<TrackUnsubscribedEvent>((event) {
         _log.fine(
@@ -717,21 +754,10 @@ class LiveKitService {
         }
       })
       ..on<ActiveSpeakersChangedEvent>((event) {
-        final currentIds = event.speakers.map((s) => s.identity).toSet();
-        // Emit speaking-started for new speakers.
+        // Emit speaking state for active speakers
         for (final speaker in event.speakers) {
           _speakingChangedController.add((speaker, true));
         }
-        // Emit speaking-stopped for participants who were speaking but aren't now.
-        for (final prevId in _previousSpeakerIds) {
-          if (!currentIds.contains(prevId)) {
-            final participant = _room?.remoteParticipants[prevId];
-            if (participant != null) {
-              _speakingChangedController.add((participant, false));
-            }
-          }
-        }
-        _previousSpeakerIds = currentIds;
       })
       ..on<RoomDisconnectedEvent>((event) {
         _log.warning('Room disconnected: ${event.reason}');
@@ -785,20 +811,15 @@ class LiveKitService {
 }
 
 /// Internal result from [LiveKitService._retrieveToken].
-///
-/// Sealed Either: success carries a token, failure carries a reason.
-/// No invalid state (token: null, result: connected) is representable.
-sealed class _TokenResult {
-  const _TokenResult();
-}
+class _TokenResult {
+  const _TokenResult.success(String this.token)
+      : connectionResult = ConnectionResult.connected;
+  const _TokenResult.failure(this.connectionResult) : token = null;
 
-final class _TokenSuccess extends _TokenResult {
-  const _TokenSuccess(this.token);
-  final String token;
-}
+  final String? token;
 
-final class _TokenFailure extends _TokenResult {
-  const _TokenFailure(this.connectionResult);
+  /// The [ConnectionResult] describing the outcome — [ConnectionResult.connected]
+  /// on success, or a specific failure reason otherwise.
   final ConnectionResult connectionResult;
 }
 
@@ -819,23 +840,10 @@ class DataChannelMessage {
   /// Raw bytes of the message payload.
   final List<int> data;
 
-  /// Cached JSON parse result — `null` means "not yet parsed".
-  /// A parse failure is cached as the empty map sentinel [_jsonParseFailed].
-  Map<String, dynamic>? _cachedJson;
-  bool _jsonParsed = false;
-
-  /// Marker for a cached parse failure (distinct from a successful `null`).
-  static const _jsonParseFailed = <String, dynamic>{};
-
-  /// Decode data as UTF-8 JSON. Cached after first access so repeated
-  /// reads are referentially transparent.
+  /// Decode data as UTF-8 JSON.
   Map<String, dynamic>? get json {
-    if (_jsonParsed) {
-      return identical(_cachedJson, _jsonParseFailed) ? null : _cachedJson;
-    }
-    _jsonParsed = true;
     try {
-      _cachedJson = jsonDecode(utf8.decode(data)) as Map<String, dynamic>;
+      return jsonDecode(utf8.decode(data)) as Map<String, dynamic>;
     } catch (e) {
       final preview = utf8.decode(data, allowMalformed: true);
       debugPrint(
@@ -843,10 +851,8 @@ class DataChannelMessage {
         '(topic: $topic, error: $e, '
         'data: ${preview.length > 200 ? preview.substring(0, 200) : preview})',
       );
-      _cachedJson = _jsonParseFailed;
       return null;
     }
-    return _cachedJson;
   }
 
   /// Decode data as UTF-8 string.
@@ -870,18 +876,16 @@ class AvatarUpdate {
   final String spriteAsset;
 
   /// Try to parse an [AvatarUpdate] from a JSON map. Returns null if required
-  /// fields are missing, have wrong types, or contain an unknown sprite asset.
+  /// fields are missing or have wrong types.
   ///
   /// Uses Dart 3 map patterns so a wrong-typed value returns null rather
   /// than throwing — a thrown error inside the stream's `.map` callback
   /// would tear down avatar reception for the rest of the session.
-  ///
-  /// The [spriteAsset] value is validated against [predefinedAvatars] to
-  /// prevent a malicious participant from supplying an unknown asset name that
-  /// would cause `game.images.fromCache` to throw a [StateError] and crash
-  /// rendering for that player component.
   static AvatarUpdate? tryParse(Map<String, dynamic>? json) {
     if (json case {'playerId': String playerId, 'spriteAsset': String spriteAsset}) {
+      // Whitelist sprite asset against the known-avatar set — prevents
+      // path-traversal, empty strings, and cache-miss crashes from
+      // forwarding through to the renderer.
       final knownAssets = predefinedAvatars.map((a) => a.spriteAsset).toSet();
       if (!knownAssets.contains(spriteAsset)) return null;
       final avatarId = switch (json['avatarId']) { String s => s, _ => '' };

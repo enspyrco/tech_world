@@ -11,8 +11,8 @@ import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
-import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/services/dreamfinder_client.dart';
 import 'package:tech_world/services/tts_service.dart';
 
@@ -49,6 +49,25 @@ class ChatService {
   final DreamfinderClient? _dreamfinderClient;
   final Duration _historyTimeout;
   final TtsService _ttsService;
+
+  /// Bot presence state — owned by this service, exposed as read-only.
+  final _botStatus = ValueNotifier<BotStatus>(BotStatus.absent);
+
+  /// Read-only view of the bot's presence state. UI consumers listen to this
+  /// instead of the former global `botStatusNotifier`.
+  ValueListenable<BotStatus> get botStatus => _botStatus;
+
+  /// Mark the bot as absent. Called by [RoomSession] on connection loss
+  /// and by the UI layer on room leave.
+  void markBotAbsent() {
+    _botStatus.value = BotStatus.absent;
+  }
+
+  /// Test-only: force bot status to [status] without simulating LiveKit events.
+  @visibleForTesting
+  void setBotStatusForTest(BotStatus status) {
+    _botStatus.value = status;
+  }
 
   // -- Group chat state (unchanged from before) --
   final _messagesController = StreamController<List<ChatMessage>>.broadcast();
@@ -166,15 +185,15 @@ class ChatService {
     // Listen for group chat messages and bot responses
     _chatSubscription = _liveKitService.dataReceived
         .where((msg) =>
-            msg.topic == DataTopic.chat.wireName ||
-            msg.topic == DataTopic.chatResponse.wireName ||
-            msg.topic == DataTopic.dm.wireName ||
-            msg.topic == DataTopic.dmResponse.wireName)
+            msg.topic == LiveKitTopic.chat.wire ||
+            msg.topic == LiveKitTopic.chatResponse.wire ||
+            msg.topic == LiveKitTopic.dm.wire ||
+            msg.topic == LiveKitTopic.dmResponse.wire)
         .listen(_handleMessage);
 
     // Listen for help-response messages from the bot
     _helpResponseSubscription = _liveKitService.dataReceived
-        .where((msg) => msg.topic == DataTopic.helpResponse.wireName)
+        .where((msg) => msg.topic == LiveKitTopic.helpResponse.wire)
         .listen(_handleHelpResponse);
   }
 
@@ -190,8 +209,8 @@ class ChatService {
         .where((p) => isBotIdentity(p.identity))
         .listen((p) {
       _activeBotIdentity = p.identity;
-      final wasAbsent = botStatusNotifier.value == BotStatus.absent;
-      botStatusNotifier.value = BotStatus.idle;
+      final wasAbsent = _botStatus.value == BotStatus.absent;
+      _botStatus.value = BotStatus.idle;
       dispatch([BotJoined(identity: p.identity)]);
       if (wasAbsent) {
         retryPendingSubmissions();
@@ -205,7 +224,7 @@ class ChatService {
       final anyBotLeft = _liveKitService.remoteParticipants.values
           .any((r) => isBotIdentity(r.identity));
       if (!anyBotLeft) {
-        botStatusNotifier.value = BotStatus.absent;
+        _botStatus.value = BotStatus.absent;
         dispatch([BotLeft()]);
       }
     });
@@ -216,9 +235,9 @@ class ChatService {
         .firstOrNull;
     if (activeBot != null) {
       _activeBotIdentity = activeBot.identity;
-      botStatusNotifier.value = BotStatus.idle;
+      _botStatus.value = BotStatus.idle;
     } else {
-      botStatusNotifier.value = BotStatus.absent;
+      _botStatus.value = BotStatus.absent;
     }
   }
 
@@ -231,16 +250,9 @@ class ChatService {
     // 'messageId' is the ID of the message being responded to (for correlation)
     final ownId = json['id'] as String?;
     final replyToId = json['messageId'] as String?;
-    // senderName is cosmetic — payload value is acceptable for display.
     final senderName =
         json['senderName'] as String? ?? message.senderId ?? 'Unknown';
-    // payloadSenderId is read from the JSON payload, which the bot uses to
-    // advertise its specific identity in chat-response messages. Bots are
-    // trusted LiveKit participants so payload-sourced senderId is safe THERE.
-    // Never use payloadSenderId for DMs or group chat from regular users —
-    // a malicious participant could spoof another user's UID via the payload.
-    // For those paths, use message.senderId (LiveKit transport, server-verified).
-    final payloadSenderId = json['senderId'] as String? ?? message.senderId;
+    final senderId = json['senderId'] as String? ?? message.senderId;
 
     if (text == null) return;
 
@@ -249,12 +261,15 @@ class ChatService {
     if (ownId != null) _markSeen(ownId);
 
     final isDm =
-        message.topic == DataTopic.dm.wireName || message.topic == DataTopic.dmResponse.wireName;
+        message.topic == LiveKitTopic.dm.wire ||
+        message.topic == LiveKitTopic.dmResponse.wire;
 
     // Skip our own outgoing group messages (we add them locally).
     // DMs from self are also added locally in sendDm, so skip those too.
     final isFromSelf = message.senderId == _liveKitService.userId;
-    if (isFromSelf && (message.topic == DataTopic.chat.wireName || message.topic == DataTopic.dm.wireName)) {
+    if (isFromSelf &&
+        (message.topic == LiveKitTopic.chat.wire ||
+            message.topic == LiveKitTopic.dm.wire)) {
       return;
     }
 
@@ -263,23 +278,22 @@ class ChatService {
         '"${text.substring(0, text.length.clamp(0, 50))}..."');
 
     if (isDm) {
-      // For DMs, always use the transport-layer identity (message.senderId).
-      // message.senderId is the authoritative, server-verified identity.
+      // Trust the transport-verified identity over the payload — prevents
+      // a malicious peer from filing a DM under another user's UID by
+      // spoofing senderId in the payload.
       _handleDmMessage(
         text: text,
         senderName: senderName,
         senderId: message.senderId ?? 'unknown',
-        isResponse: message.topic == DataTopic.dmResponse.wireName,
+        isResponse: message.topic == LiveKitTopic.dmResponse.wire,
       );
-    } else if (message.topic == DataTopic.chatResponse.wireName) {
-      // Bot response — payload senderId is OK (bot is a trusted participant
-      // that advertises its specific identity via the payload, supporting
-      // multiple bots in one room).
-      botStatusNotifier.value = BotStatus.idle;
+    } else if (message.topic == LiveKitTopic.chatResponse.wire) {
+      // Bot response — use sender info from payload (supports multiple bots).
+      _botStatus.value = BotStatus.idle;
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: payloadSenderId ?? _activeBotIdentity,
+        senderId: senderId ?? _activeBotIdentity,
         conversationId: 'group',
         isBot: true,
       ));
@@ -288,11 +302,11 @@ class ChatService {
       dispatch([BotSpoke(text: text, context: BotSpokeContext.group)]);
       _messagesController.add(List.from(_messages));
     } else {
-      // Group chat from another user — use transport identity, not payload.
+      // Message from another user (group chat)
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: message.senderId,
+        senderId: senderId,
         conversationId: 'group',
         isLocalUser: false,
       ));
@@ -388,7 +402,7 @@ class ChatService {
       return null;
     }
 
-    if (botStatusNotifier.value == BotStatus.absent) {
+    if (_botStatus.value == BotStatus.absent) {
       _log.warning('Bot is not in the room');
       _messages.add(ChatMessage(
         text: "Clawd isn't in the room right now. Try again in a moment!",
@@ -415,7 +429,7 @@ class ChatService {
     _messagesController.add(List.from(_messages));
 
     // Show thinking indicator
-    botStatusNotifier.value = BotStatus.thinking;
+    _botStatus.value = BotStatus.thinking;
 
     // Create a completer to track when we get a response
     final completer = Completer<Map<String, dynamic>?>();
@@ -427,7 +441,7 @@ class ChatService {
         metadata?.entries.where((e) => !reservedKeys.contains(e.key));
 
     final payload = {
-      'type': DataTopic.chat.wireName,
+      'type': 'chat',
       'id': messageId,
       'text': text,
       'senderName': _liveKitService.displayName,
@@ -437,7 +451,7 @@ class ChatService {
 
     await _liveKitService.publishJson(
       payload,
-      topic: DataTopic.chat.wireName,
+      topic: LiveKitTopic.chat.wire,
       // No destinationIdentities = broadcast to all
     );
 
@@ -450,7 +464,7 @@ class ChatService {
       payload: payload,
     ));
 
-    _log.info('Sent message (id=$messageId, len=${text.length})');
+    _log.info('Sent message: "$text"');
     dispatch([GroupMessageSent(
       messageId: messageId,
       challengeId: metadata?['challengeId'] as String?,
@@ -468,7 +482,7 @@ class ChatService {
           _pendingMessages.remove(messageId);
 
           // Bot disconnected during evaluation — queue for retry.
-          if (botStatusNotifier.value == BotStatus.absent) {
+          if (_botStatus.value == BotStatus.absent) {
             final challengeId = metadata?['challengeId'] as String?;
             if (challengeId != null) {
               // Preserve existing attempt count if re-queuing, otherwise
@@ -495,7 +509,7 @@ class ChatService {
           }
 
           // Bot still present but slow — normal timeout.
-          botStatusNotifier.value = BotStatus.idle;
+          _botStatus.value = BotStatus.idle;
           _messages.add(ChatMessage(
             text: "Hmm, Clawd seems to be taking a while. Try again?",
             senderName: 'System',
@@ -509,8 +523,8 @@ class ChatService {
       _log.severe('Error waiting for response', e);
       _pendingMessages.remove(messageId);
       // Reset bot status so the UI doesn't stay in "thinking" state.
-      if (botStatusNotifier.value == BotStatus.thinking) {
-        botStatusNotifier.value = BotStatus.idle;
+      if (_botStatus.value == BotStatus.thinking) {
+        _botStatus.value = BotStatus.idle;
       }
       return null;
     }
@@ -639,7 +653,7 @@ class ChatService {
 
     // Send via LiveKit targeted data channel.
     final payload = {
-      'type': DataTopic.dm.wireName,
+      'type': 'dm',
       'id': messageId,
       'text': text,
       'senderName': _liveKitService.displayName,
@@ -649,11 +663,11 @@ class ChatService {
 
     await _liveKitService.publishJson(
       payload,
-      topic: DataTopic.dm.wireName,
+      topic: LiveKitTopic.dm.wire,
       destinationIdentities: [peerId],
     );
 
-    _log.info('Sent DM to $peerId (len=${text.length})');
+    _log.info('Sent DM to $peerId: "$text"');
     dispatch([DmSent(peerId: peerId, conversationId: convId)]);
 
     // Persist to Firestore.
@@ -786,7 +800,7 @@ class ChatService {
       return null;
     }
 
-    if (botStatusNotifier.value == BotStatus.absent) {
+    if (_botStatus.value == BotStatus.absent) {
       _log.warning('Bot is absent, cannot request help');
       return null;
     }
@@ -796,7 +810,7 @@ class ChatService {
     _pendingHelpRequests[requestId] = completer;
 
     final payload = {
-      'type': DataTopic.helpRequest.wireName,
+      'type': 'help-request',
       'id': requestId,
       'challengeId': challengeId,
       'challengeTitle': challengeTitle,
@@ -810,7 +824,7 @@ class ChatService {
 
     await _liveKitService.publishJson(
       payload,
-      topic: DataTopic.helpRequest.wireName,
+      topic: LiveKitTopic.helpRequest.wire,
       destinationIdentities: [_activeBotIdentity],
     );
 
@@ -879,7 +893,7 @@ class ChatService {
         roomId,
         conversationId: convId,
         participants: participants,
-        type: DataTopic.dm.wireName,
+        type: 'dm',
         lastMessageText: message.text,
       )
           .catchError((Object e) {
@@ -888,7 +902,11 @@ class ChatService {
     }
   }
 
+  bool _disposed = false;
+
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _chatSubscription?.cancel();
     _helpResponseSubscription?.cancel();
     _botJoinedSubscription?.cancel();
@@ -901,5 +919,6 @@ class ChatService {
     }
     _dreamfinderClient?.dispose();
     _ttsService.dispose();
+    _botStatus.dispose();
   }
 }

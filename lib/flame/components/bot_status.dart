@@ -1,6 +1,6 @@
-import 'package:flutter/foundation.dart';
-
 /// Status of the Claude bot for UI display.
+///
+/// Owned by [ChatService] — access via `chatService.botStatus`.
 enum BotStatus {
   /// Bot is not present in the LiveKit room.
   absent,
@@ -11,7 +11,3 @@ enum BotStatus {
   /// Bot is thinking/processing - shows animated bouncing dots
   thinking,
 }
-
-/// Global notifier for bot status changes.
-/// UI components can listen to this to update their display.
-final botStatusNotifier = ValueNotifier<BotStatus>(BotStatus.absent);

@@ -1,5 +1,6 @@
 import 'package:flame/components.dart';
 import 'package:flame_test/flame_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
@@ -26,16 +27,21 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('BotBubbleComponent integration tests', () {
+    late ValueNotifier<BotStatus> testStatus;
+
     setUp(() {
-      // Reset bot status before each test
-      botStatusNotifier.value = BotStatus.idle;
+      testStatus = ValueNotifier(BotStatus.idle);
+    });
+
+    tearDown(() {
+      testStatus.dispose();
     });
 
     testWithGame<TestGameWithMockImages>(
       'mounts correctly with default size',
       TestGameWithMockImages.new,
       (game) async {
-        final bubble = BotBubbleComponent();
+        final bubble = BotBubbleComponent(botStatus: testStatus);
 
         await game.world.add(bubble);
         await game.ready();
@@ -51,7 +57,10 @@ void main() {
       'mounts with custom bubble size',
       TestGameWithMockImages.new,
       (game) async {
-        final bubble = BotBubbleComponent(bubbleSize: 64);
+        final bubble = BotBubbleComponent(
+          botStatus: testStatus,
+          bubbleSize: 64,
+        );
 
         await game.world.add(bubble);
         await game.ready();
@@ -67,7 +76,7 @@ void main() {
       'has bottom center anchor',
       TestGameWithMockImages.new,
       (game) async {
-        final bubble = BotBubbleComponent();
+        final bubble = BotBubbleComponent(botStatus: testStatus);
 
         await game.world.add(bubble);
         await game.ready();
@@ -80,7 +89,7 @@ void main() {
       'updates animation time during game update',
       TestGameWithMockImages.new,
       (game) async {
-        final bubble = BotBubbleComponent();
+        final bubble = BotBubbleComponent(botStatus: testStatus);
 
         await game.world.add(bubble);
         await game.ready();
@@ -99,13 +108,13 @@ void main() {
       'responds to status changes to thinking',
       TestGameWithMockImages.new,
       (game) async {
-        final bubble = BotBubbleComponent();
+        final bubble = BotBubbleComponent(botStatus: testStatus);
 
         await game.world.add(bubble);
         await game.ready();
 
         // Change status to thinking
-        botStatusNotifier.value = BotStatus.thinking;
+        testStatus.value = BotStatus.thinking;
 
         // Update game to process the change
         game.update(0.016);
@@ -119,17 +128,17 @@ void main() {
       'responds to status changes back to idle',
       TestGameWithMockImages.new,
       (game) async {
-        final bubble = BotBubbleComponent();
+        final bubble = BotBubbleComponent(botStatus: testStatus);
 
         await game.world.add(bubble);
         await game.ready();
 
         // Change status to thinking
-        botStatusNotifier.value = BotStatus.thinking;
+        testStatus.value = BotStatus.thinking;
         game.update(0.016);
 
         // Change back to idle
-        botStatusNotifier.value = BotStatus.idle;
+        testStatus.value = BotStatus.idle;
         game.update(0.016);
 
         // Component should still be mounted
@@ -141,7 +150,7 @@ void main() {
       'cleans up listener on remove',
       TestGameWithMockImages.new,
       (game) async {
-        final bubble = BotBubbleComponent();
+        final bubble = BotBubbleComponent(botStatus: testStatus);
 
         await game.world.add(bubble);
         await game.ready();
@@ -154,8 +163,8 @@ void main() {
         expect(bubble.isMounted, isFalse);
 
         // Status changes after removal should not cause errors
-        botStatusNotifier.value = BotStatus.thinking;
-        botStatusNotifier.value = BotStatus.idle;
+        testStatus.value = BotStatus.thinking;
+        testStatus.value = BotStatus.idle;
       },
     );
 
@@ -163,8 +172,8 @@ void main() {
       'renders correctly in thinking state',
       TestGameWithMockImages.new,
       (game) async {
-        botStatusNotifier.value = BotStatus.thinking;
-        final bubble = BotBubbleComponent();
+        testStatus.value = BotStatus.thinking;
+        final bubble = BotBubbleComponent(botStatus: testStatus);
 
         await game.world.add(bubble);
         await game.ready();
@@ -182,7 +191,7 @@ void main() {
       'renders correctly in idle state',
       TestGameWithMockImages.new,
       (game) async {
-        final bubble = BotBubbleComponent();
+        final bubble = BotBubbleComponent(botStatus: testStatus);
 
         await game.world.add(bubble);
         await game.ready();
@@ -200,8 +209,14 @@ void main() {
       'multiple bubbles can be added',
       TestGameWithMockImages.new,
       (game) async {
-        final bubble1 = BotBubbleComponent(bubbleSize: 48);
-        final bubble2 = BotBubbleComponent(bubbleSize: 64);
+        final bubble1 = BotBubbleComponent(
+          botStatus: testStatus,
+          bubbleSize: 48,
+        );
+        final bubble2 = BotBubbleComponent(
+          botStatus: testStatus,
+          bubbleSize: 64,
+        );
 
         await game.world.add(bubble1);
         await game.world.add(bubble2);

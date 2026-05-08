@@ -18,7 +18,6 @@ import 'package:tech_world/map_editor/map_sync_service.dart';
 import 'package:tech_world/map_editor/predefined_rules.dart';
 import 'package:tech_world/map_editor/tile_colors.dart';
 import 'package:tech_world/map_editor/tile_palette.dart';
-import 'package:tech_world/utils/locator.dart';
 
 final _log = Logger('MapEditorPanel');
 
@@ -32,6 +31,7 @@ class MapEditorPanel extends StatelessWidget {
     required this.state,
     required this.onApply,
     required this.onCancel,
+    this.syncService,
     this.referenceMap,
     this.playerPosition,
     this.onSave,
@@ -48,6 +48,12 @@ class MapEditorPanel extends StatelessWidget {
 
   /// Discard edits and close the editor.
   final Future<void> Function() onCancel;
+
+  /// Collaborative sync service for multi-user editing. Null in offline mode.
+  ///
+  /// Passed explicitly rather than resolved via [Locator] so the widget's
+  /// dependency is visible at the construction site.
+  final MapSyncService? syncService;
 
   /// Optional game map to render as a faint reference layer under the grid.
   final GameMap? referenceMap;
@@ -77,6 +83,7 @@ class MapEditorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _UndoRedoShortcuts(
+      syncService: syncService,
       child: Container(
         color: _panelBg,
         child: Column(
@@ -86,7 +93,7 @@ class MapEditorPanel extends StatelessWidget {
               listenable: state,
               builder: (context, _) => _LayerTabs(state: state),
             ),
-            _MapToolbar(state: state),
+            _MapToolbar(state: state, syncService: syncService),
           // Only the grid area and layer tabs need to rebuild on state change.
           Expanded(
             child: ListenableBuilder(
@@ -234,11 +241,9 @@ class MapEditorPanel extends StatelessWidget {
 
     // Route through MapSyncService if available (collaborative editing),
     // otherwise fall back to direct state manipulation (offline editing).
-    final syncService = Locator.maybeLocate<MapSyncService>();
-
     if (state.activeLayer == ActiveLayer.structure) {
       if (syncService != null) {
-        syncService.paintTile(x, y);
+        syncService!.paintTile(x, y);
       } else {
         state.paintTile(x, y);
       }
@@ -247,20 +252,20 @@ class MapEditorPanel extends StatelessWidget {
       // Auto-terrain brush mode: paint or erase terrain.
       if (state.currentBrush == null) {
         if (syncService != null) {
-          syncService.eraseTerrainAt(x, y);
+          syncService!.eraseTerrainAt(x, y);
         } else {
           state.eraseTerrainAt(x, y);
         }
       } else {
         if (syncService != null) {
-          syncService.paintTerrain(x, y);
+          syncService!.paintTerrain(x, y);
         } else {
           state.paintTerrain(x, y);
         }
       }
     } else {
       if (syncService != null) {
-        syncService.paintTileRef(x, y);
+        syncService!.paintTileRef(x, y);
       } else {
         state.paintTileRef(x, y);
       }
@@ -499,9 +504,10 @@ class _LayerTabs extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _MapToolbar extends StatefulWidget {
-  const _MapToolbar({required this.state});
+  const _MapToolbar({required this.state, this.syncService});
 
   final MapEditorState state;
+  final MapSyncService? syncService;
 
   @override
   State<_MapToolbar> createState() => _MapToolbarState();
@@ -522,7 +528,7 @@ class _MapToolbarState extends State<_MapToolbar> {
     _nameController = TextEditingController(text: widget.state.mapName);
     _idController = TextEditingController(text: widget.state.mapId);
     widget.state.addListener(_onStateChanged);
-    _syncService = Locator.maybeLocate<MapSyncService>();
+    _syncService = widget.syncService;
     _syncService?.undoRedoChanged.addListener(_onUndoRedoChanged);
   }
 
@@ -1211,9 +1217,10 @@ class _GridPainter extends CustomPainter {
 // ---------------------------------------------------------------------------
 
 class _UndoRedoShortcuts extends StatelessWidget {
-  const _UndoRedoShortcuts({required this.child});
+  const _UndoRedoShortcuts({required this.child, this.syncService});
 
   final Widget child;
+  final MapSyncService? syncService;
 
   @override
   Widget build(BuildContext context) {
@@ -1239,13 +1246,13 @@ class _UndoRedoShortcuts extends StatelessWidget {
         actions: {
           _UndoIntent: CallbackAction<_UndoIntent>(
             onInvoke: (_) {
-              Locator.maybeLocate<MapSyncService>()?.undo();
+              syncService?.undo();
               return null;
             },
           ),
           _RedoIntent: CallbackAction<_RedoIntent>(
             onInvoke: (_) {
-              Locator.maybeLocate<MapSyncService>()?.redo();
+              syncService?.redo();
               return null;
             },
           ),
