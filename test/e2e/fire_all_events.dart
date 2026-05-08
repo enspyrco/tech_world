@@ -18,19 +18,19 @@ import 'package:tech_world/events/types.dart';
 import 'event_pipeline_test.dart' show allSampleEvents;
 
 void main() {
+  tearDown(clearSinks);
+
   test('fire all 34 events and print JSONL', () {
     final captured = <AppEvent>[];
     registerSink(captured.add);
 
     dispatch(allSampleEvents());
 
-    // Print each event as a JSONL line — this is the CLI output.
     for (final event in captured) {
       // ignore: avoid_print
       print(jsonEncode(event.toJson()));
     }
 
     expect(captured.length, 34);
-    clearSinks();
   });
 }

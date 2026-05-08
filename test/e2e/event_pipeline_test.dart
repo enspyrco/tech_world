@@ -14,6 +14,7 @@ import 'package:tech_world/spellbook/spellbook_service.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
 
 /// All 34 event types with sample data, for smoke-testing the full pipeline.
+/// UPDATE THIS (and the count assertions) when adding new AppEvent subtypes.
 List<AppEvent> allSampleEvents() => [
       // Cast / spellbook
       WordLearned(
@@ -40,13 +41,13 @@ List<AppEvent> allSampleEvents() => [
       // Room
       RoomJoined(roomId: 'room_01', roomName: "The Wizard's Tower"),
       RoomLeft(roomId: 'room_01'),
-      RoomCreated(roomId: 'room_02', roomName: "Robin's Lab"),
+      RoomCreated(roomId: 'room_02', roomName: "Test Lab"),
       RoomMapSaved(roomId: 'room_01', roomName: "The Wizard's Tower"),
-      RoomDeleted(roomId: 'room_02', roomName: "Robin's Lab"),
+      RoomDeleted(roomId: 'room_02', roomName: "Test Lab"),
       // Auth
-      UserSignedIn(userId: 'user_abc', displayName: 'Robin'),
+      UserSignedIn(userId: 'user_abc', displayName: 'Alice'),
       UserSignedOut(),
-      ProfileUpdated(displayName: 'Robin the Magnificent'),
+      ProfileUpdated(displayName: 'Alice the Magnificent'),
       // Code
       CodeSubmitted(
         challengeId: 'evocation_fizzbuzz',
@@ -208,11 +209,11 @@ void main() {
   });
 
   group('TerminalClosed', () {
-    test('serializes with type only', () {
+    test('serializes with type and timestamp only', () {
       dispatch([TerminalClosed()]);
       final json = captured[0].toJson();
       expect(json['type'], 'terminal_closed');
-      expect(json.keys, containsAll(['type', 'timestamp']));
+      expect(json.keys.toSet(), {'type', 'timestamp'});
     });
   });
 
@@ -224,9 +225,11 @@ void main() {
   });
 
   group('MediaEnabled', () {
-    test('serializes with type only', () {
+    test('serializes with type and timestamp only', () {
       dispatch([MediaEnabled()]);
-      expect(captured[0].toJson()['type'], 'media_enabled');
+      final json = captured[0].toJson();
+      expect(json['type'], 'media_enabled');
+      expect(json.keys.toSet(), {'type', 'timestamp'});
     });
   });
 
@@ -263,7 +266,10 @@ void main() {
   group('RoomMapSaved', () {
     test('serializes roomId and roomName', () {
       dispatch([RoomMapSaved(roomId: 'r1', roomName: 'Saved Room')]);
-      expect(captured[0].toJson()['type'], 'room_map_saved');
+      final json = captured[0].toJson();
+      expect(json['type'], 'room_map_saved');
+      expect(json['roomId'], 'r1');
+      expect(json['roomName'], 'Saved Room');
     });
   });
 
@@ -286,9 +292,11 @@ void main() {
   });
 
   group('UserSignedOut', () {
-    test('serializes with type only', () {
+    test('serializes with type and timestamp only', () {
       dispatch([UserSignedOut()]);
-      expect(captured[0].toJson()['type'], 'user_signed_out');
+      final json = captured[0].toJson();
+      expect(json['type'], 'user_signed_out');
+      expect(json.keys.toSet(), {'type', 'timestamp'});
     });
   });
 
@@ -376,9 +384,11 @@ void main() {
   });
 
   group('BotLeft', () {
-    test('serializes with type only', () {
+    test('serializes with type and timestamp only', () {
       dispatch([BotLeft()]);
-      expect(captured[0].toJson()['type'], 'bot_left');
+      final json = captured[0].toJson();
+      expect(json['type'], 'bot_left');
+      expect(json.keys.toSet(), {'type', 'timestamp'});
     });
   });
 
@@ -777,7 +787,7 @@ void main() {
     test('full session sequence is well-ordered', () {
       // Simulate a complete session through direct dispatch.
       dispatch([
-        UserSignedIn(userId: 'u1', displayName: 'Robin'),
+        UserSignedIn(userId: 'u1', displayName: 'Alice'),
         AvatarSelected(avatarId: 'wizard_blue'),
         RoomJoined(roomId: 'r1', roomName: "The Wizard's Tower"),
         LiveKitConnected(roomName: 'l_room'),
