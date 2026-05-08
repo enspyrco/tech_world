@@ -50,6 +50,10 @@ class DreamfinderClient {
     required String senderName,
     required Map<String, dynamic> payload,
   }) async {
+    if (apiKey.isEmpty) {
+      _log.warning('DREAMFINDER_API_KEY not set — skipping event "$topic"');
+      return;
+    }
     try {
       final response = await _client
           .post(
