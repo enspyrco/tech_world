@@ -9,6 +9,7 @@ import 'package:tech_world/flame/maps/barrier_occlusion.dart'
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/map_editor/crdt/cell_version_map.dart';
 import 'package:tech_world/map_editor/crdt/map_edit_op.dart';
 import 'package:tech_world/map_editor/crdt/undo_manager.dart';
@@ -32,12 +33,10 @@ class MapSyncService {
         _localPlayerId = localPlayerId {
     _dataSubscription = _liveKitService.dataReceived
         .where((msg) =>
-            msg.topic == _editTopic || msg.topic == _syncTopic)
+            msg.topic == LiveKitTopic.mapEdit.wire ||
+            msg.topic == LiveKitTopic.mapEditSync.wire)
         .listen(_onDataReceived);
   }
-
-  static const _editTopic = 'map-edit';
-  static const _syncTopic = 'map-edit-sync';
 
   final LiveKitService _liveKitService;
   final MapEditorState _editorState;
@@ -566,7 +565,7 @@ class MapSyncService {
 
     await _liveKitService.publishJson(
       {'type': 'sync-request', 'playerId': _localPlayerId},
-      topic: _syncTopic,
+      topic: LiveKitTopic.mapEditSync.wire,
       reliable: true,
     );
 
@@ -585,7 +584,7 @@ class MapSyncService {
     final json = msg.json;
     if (json == null) return;
 
-    if (msg.topic == _editTopic) {
+    if (msg.topic == LiveKitTopic.mapEdit.wire) {
       final MapEditBatch batch;
       try {
         batch = MapEditBatch.fromJson(json);
@@ -599,7 +598,7 @@ class MapSyncService {
       } else {
         _onRemoteEdit(batch);
       }
-    } else if (msg.topic == _syncTopic) {
+    } else if (msg.topic == LiveKitTopic.mapEditSync.wire) {
       final type = json['type'] as String?;
       if (type == 'sync-request' && json['playerId'] != _localPlayerId) {
         _handleSyncRequest(json['playerId'] as String);
@@ -667,7 +666,7 @@ class MapSyncService {
   Future<void> _publishBatch(MapEditBatch batch) async {
     await _liveKitService.publishJson(
       batch.toJson(),
-      topic: _editTopic,
+      topic: LiveKitTopic.mapEdit.wire,
       reliable: true,
     );
   }
@@ -685,7 +684,7 @@ class MapSyncService {
     final snapshot = _buildSnapshot();
     _liveKitService.publishJson(
       snapshot,
-      topic: _syncTopic,
+      topic: LiveKitTopic.mapEditSync.wire,
       reliable: true,
       destinationIdentities: [requesterId],
     );

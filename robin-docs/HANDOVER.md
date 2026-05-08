@@ -1,7 +1,7 @@
 # Handover — Tech World Audit
 
-**Date:** 2026-05-08
-**Status:** Phases 1–5 complete. 60 PRs shipped, 2 architectural refactors, 13 audit reports, 17 cage-match reviews.
+**Date:** 2026-05-09
+**Status:** Phases 1–5 complete, Phase 6 in progress. 62 PRs shipped, 2 architectural refactors, 14 audit reports, 19 cage-match reviews. 1688 tests passing.
 
 ---
 
@@ -34,11 +34,27 @@
 - Cross-cutting theme: "pattern applied once, not generalised"
 - 6 items deferred to Nick
 
+### Phase 6: Structural (in progress)
+- `/tw-add-events` + `/tw-production-sinks` — 34 sealed event types, 40 dispatch sites across 10 files, console + JSONL file sinks, log bridge for all `_log.*` calls → PR #412
+- 77 E2E tests: pipeline smoke, per-type serialization, cast completion flow, proximity scenarios, session lifecycle sequences
+- `fire_all_events.dart` CLI fires all 34 events as JSONL to stdout
+- Cage-match: 2 rounds — caught empty-batch crash, hot-restart sink duplication, stringly-typed enum, PII in test data
+- Docs: `robin-docs/LOGS.md` (event catalogue), `robin-docs/E2E.md` (test coverage)
+- `/tw-architecture-sweep` — `LiveKitTopic` enum (26 topics wired into 10 files), `SpeakerRole` enum, `calculateOpacity` moved to BubbleManager, `ProgressService`/`MapSyncService` DI injection, 108 contract tests in `test/architecture/`, `ARCHITECTURE.md` with Mermaid diagrams → PR #TBD
+- Remaining: `/tw-category-sweep`
+
 ---
 
-## 60 PRs Shipped
+## 61 PRs Shipped
 
 All PRs opened against upstream (`enspyrco/tech_world`). None merged by Nick yet.
+
+### Phase 6 — Structural (2 PRs, #412–#TBD)
+
+| PR# | Branch | What | Cage-match |
+|-----|--------|------|------------|
+| #412 | `audit/add-events` | Event-sink system: 34 types, 40 dispatch sites, sinks, log bridge, 77 E2E tests | 2 rounds (empty-batch crash, hot-restart, enum, PII) |
+| #TBD | `audit/architecture-sweep` | LiveKitTopic enum (26 topics), SpeakerRole enum, DI injection, 108 contract tests, ARCHITECTURE.md | Pending |
 
 ### Phase 3a — Sweep2 fixes (14 PRs)
 
@@ -133,7 +149,7 @@ All PRs opened against upstream (`enspyrco/tech_world`). None merged by Nick yet
 
 ---
 
-## Cage-Match Pattern (confirmed across 17 reviews)
+## Cage-Match Pattern (confirmed across 19 reviews)
 
 **Certainty correlates inversely with correctness.** Key catches across all phases:
 - PR #410: Path cache looked solid but `_time` changes every frame — cache logically dead during speaking. TextPainter leak in `PlayerBubbleComponent` (missing `dispose()`).
@@ -142,18 +158,17 @@ All PRs opened against upstream (`enspyrco/tech_world`). None merged by Nick yet
 - PR #404: Kelvin found orphaned test calling deleted `onTapDown` — build-breaking compile error.
 - PR #357: Two depth-sort bugs found during review.
 - PR #392: Unused import failing CI.
+- PR #412: Round 1 — `batch.ops.first` crash on empty undo batch (multi-version peer scenario), hot-restart doubles sinks, `CodeSubmitted.result` was String not enum. Round 2 — PII in test data, missing tearDown in fire-all-events CLI, weak assertions (containsAll → exact key set).
 
 ---
 
-## What's Next: Phase 6 — Structural
+## What's Next: Phase 6 — Remaining
 
 | # | Skill | What It Covers |
 |---|-------|----------------|
-| 14 | `/tw-add-events` | Refactor side effects (LiveKit publishes, Firestore writes, log calls) to pure event returns using Dart records. Create event type definitions. |
-| 15 | `/tw-architecture-sweep` | Ousterhout's module depth analysis. Information hiding, dependency structure, Flame component tree depth. Contract tests for service boundaries. |
 | 16 | `/tw-category-sweep` | Categorical law verification: CRDT monoid (associativity, identity, commutativity), Stream functor (composition, identity), event-sink natural transformations. |
 
-This is the most intellectually interesting phase — it connects to the categorical evolution work (Lyra's ECTA paper) and asks whether the codebase has algebraic structure that can be verified or imposed.
+The event system from #412 provides the `WithEvents<T>` Writer monad structure, and `ARCHITECTURE.md` from the architecture sweep documents the module structure. `/tw-category-sweep` can verify algebraic laws on both.
 
 ---
 
@@ -179,6 +194,9 @@ This is the most intellectually interesting phase — it connects to the categor
 | `robin-docs/ARCHITECTURAL_REFACTOR2.md` | RoomSession extraction plan |
 | `robin-docs/IMPRESSIVE.md` | Technical showcase for employers |
 | `robin-docs/blog-post-tech-world.md` | Blog post draft for enspyr.co |
+| `robin-docs/LOGS.md` | Event logging catalogue — 34 types, dispatch sites, JSONL format |
+| `robin-docs/E2E.md` | E2E test coverage — 77 tests, what's tested and what's not |
+| `ARCHITECTURE.md` | Module depth table, Flame component tree, layer diagram, sequence diagram, remaining refactors |
 
 ## Git Setup
 
@@ -187,7 +205,7 @@ origin   → git@github.com:RaggedR/tech_world.git   (Robin's fork)
 upstream → https://github.com/enspyrco/tech_world   (enspyrco — Nick's repo)
 ```
 
-All PRs opened against upstream. None merged by Nick yet (as of 2026-05-08).
+All PRs opened against upstream. None merged by Nick yet (as of 2026-05-09).
 
 ## Conventions
 

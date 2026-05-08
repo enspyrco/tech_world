@@ -15,6 +15,7 @@ import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
 
 /// Result of a [LiveKitService.connect] attempt.
 enum ConnectionResult {
@@ -126,7 +127,7 @@ class LiveKitService {
   ///
   /// Filters dataReceived for 'position' topic and parses into PlayerPath.
   Stream<PlayerPath> get positionReceived => dataReceived
-      .where((msg) => msg.topic == 'position')
+      .where((msg) => msg.topic == LiveKitTopic.position.wire)
       .map((msg) {
         final json = msg.json;
         if (json == null) return null;
@@ -140,7 +141,7 @@ class LiveKitService {
   /// Heartbeats carry a single grid position with reliable delivery,
   /// correcting stale positions caused by dropped unreliable path updates.
   Stream<PositionHeartbeat> get positionHeartbeatReceived => dataReceived
-      .where((msg) => msg.topic == 'position-heartbeat')
+      .where((msg) => msg.topic == LiveKitTopic.positionHeartbeat.wire)
       .map((msg) {
         final json = msg.json;
         if (json == null) return null;
@@ -154,7 +155,7 @@ class LiveKitService {
   /// Bots publish a `map-info-request` message when they connect and are
   /// ready to receive data. The client responds by sending the current map.
   Stream<void> get mapInfoRequested =>
-      dataReceived.where((msg) => msg.topic == 'map-info-request');
+      dataReceived.where((msg) => msg.topic == LiveKitTopic.mapInfoRequest.wire);
 
   /// Stream of map-switch notifications from other human players.
   ///
@@ -162,7 +163,7 @@ class LiveKitService {
   /// client can load the same map. Own messages (matching [userId]) and
   /// messages from bots are excluded.
   Stream<String> get mapSwitchReceived => dataReceived
-      .where((msg) => msg.topic == 'map-switch')
+      .where((msg) => msg.topic == LiveKitTopic.mapSwitch.wire)
       .map((msg) {
         if (msg.json case {'senderId': String senderId, 'mapId': String mapId}
             when senderId != userId) {
@@ -178,7 +179,7 @@ class LiveKitService {
   /// Filters [dataReceived] for the `avatar` topic and parses into
   /// [AvatarUpdate]. Own messages (matching [userId]) are excluded.
   Stream<AvatarUpdate> get avatarReceived => dataReceived
-      .where((msg) => msg.topic == 'avatar')
+      .where((msg) => msg.topic == LiveKitTopic.avatar.wire)
       .map((msg) {
         final json = msg.json;
         if (json == null) return null;
@@ -199,7 +200,7 @@ class LiveKitService {
       'avatarId': avatar.id,
       'spriteAsset': avatar.spriteAsset,
     };
-    await publishJson(message, topic: 'avatar');
+    await publishJson(message, topic: LiveKitTopic.avatar.wire);
   }
 
   PlayerPath? _parsePlayerPath(Map<String, dynamic> json) {
@@ -501,7 +502,7 @@ class LiveKitService {
     };
     await publishJson(
       message,
-      topic: 'map-info',
+      topic: LiveKitTopic.mapInfo.wire,
       destinationIdentities: allBotIdentities.toList(),
     );
   }
@@ -515,7 +516,7 @@ class LiveKitService {
       'senderId': userId,
       'mapId': mapId,
     };
-    await publishJson(message, topic: 'map-switch');
+    await publishJson(message, topic: LiveKitTopic.mapSwitch.wire);
   }
 
   /// Publish the local player's position to other participants.
@@ -533,7 +534,7 @@ class LiveKitService {
 
     await publishJson(
       message,
-      topic: 'position',
+      topic: LiveKitTopic.position.wire,
       reliable: false, // Positions can use unreliable for lower latency
     );
   }
@@ -565,7 +566,7 @@ class LiveKitService {
             'y': pos.y,
             'type': 'heartbeat',
           },
-          topic: 'position-heartbeat',
+          topic: LiveKitTopic.positionHeartbeat.wire,
           reliable: true,
         );
       },
@@ -609,7 +610,7 @@ class LiveKitService {
 
     await publishJson(
       message,
-      topic: 'terminal-activity',
+      topic: LiveKitTopic.terminalActivity.wire,
       destinationIdentities: const ['bot-claude'],
     );
   }
@@ -630,7 +631,7 @@ class LiveKitService {
 
     // Listen for pong response with matching ID
     final pongFuture = dataReceived
-        .where((msg) => msg.topic == 'pong')
+        .where((msg) => msg.topic == LiveKitTopic.pong.wire)
         .where((msg) {
           final json = msg.json;
           return json != null &&
@@ -642,7 +643,7 @@ class LiveKitService {
     // Send the ping
     await publishJson(
       pingMessage,
-      topic: 'ping',
+      topic: LiveKitTopic.ping.wire,
       destinationIdentities: ['bot-claude'],
     );
     _log.fine('Sent ping with id: $pingId');

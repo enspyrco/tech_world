@@ -1,0 +1,109 @@
+Architecture Assessment — Tech World
+
+Summary
+Tech World is a well-structured Flutter/Flame multiplayer educational game with a clear service-locator pattern, a genuine event-sink pipeline, and good information hiding in most service modules. The strongest quality is the event-sink separation: business functions return (Result, List<AppEvent>) records, dispatch() fans to sinks, and sinks are registered at startup — this boundary is clean. The weakest quality is the god-class split between TechWorld (1565 lines) and main.dart (1686 lines): TechWorld does world management AND direct LiveKit publishing AND orchestration of map loading AND terminal interaction AND door unlocking AND speech bubbles AND avatar dispatch, while main.dart duplicates the progress-marking side-effect logic inline. Together they form a two-headed god object whose combined responsibility surface is the codebase's primary complexity budget drain.
+
+---
+
+Deep Module Report
+
+| Module | Interface | Impl | Assessment |
+|--------|-----------|------|------------|
+| TechWorld | 22 public methods/notifiers | 1565 lines | GOD CLASS. 13 LiveKit subscriptions + map loading + terminal interaction + door locking + speech bubbles + avatar publishing + map-editor orchestration. |
+| main.dart / _MyAppState | 12 private methods, ~20 fields | 1686 lines | GOD STATE. Auth lifecycle + room join/leave + inline code-challenge side-effects + inline prompt-cast side-effects + tileset registration + editor save/delete. Duplicates logic from cast_effects.dart. |
+| BubbleManager | 12 public methods | 737 lines | DEEP MODULE. Physics repulsion, metaball updates, shader assignment, Dreamfinder bridge, merge-group BFS — all hidden. Interface is narrow. |
+| LiveKitService | 20 public methods/streams | 888 lines | DEEP MODULE. Hides Room lifecycle, token retrieval, heartbeat timer. publishJson leaks through — callers build payloads. |
+| ChatService | ~10 public methods | 893 lines | SLIGHTLY GOD. Manages group chat, DMs, bot presence, retry queue, TTS invocation, and writes botStatusNotifier.value = directly (Event-Sink violation). |
+| RoomSession | 4 public methods | 312 lines | DEEP MODULE. All room-scoped service lifecycle clean. |
+| MapEditorState | ~35 public methods | 911 lines | SLIGHTLY WIDE. Expected given CRDT editor scope. Acceptable. |
+| MapSyncService | 5 public methods | 965 lines | MIXED CONCERNS. Calls _liveKitService.publishJson() 3 times directly (Event-Sink violation). |
+| ProximityService | 3 public methods | 127 lines | SHALLOW. calculateOpacity() static leaks presentation into proximity logic. |
+| ProgressService | 4 public methods | ~100 lines | DEEP MODULE. Hides Firestore + optimistic rollback. Clean. |
+| SpellbookService | 4 public methods | 139 lines | DEEP MODULE. Clean. |
+| OracleService | 2 public methods | 164 lines | ACCEPTABLE. publishJson is its core job. |
+| SpeechCastService | 3 public methods | 77 lines | DEEP MODULE. Thin wiring layer. Correct. |
+| cast_effects.dart | 2 pure functions | 127 lines | DEEP MODULE. castSuccessEvents() pure; applyCastSuccessEffects() well-reasoned two-function split. |
+| TilesetRegistry | ~10 public methods | ~180 lines | DEEP MODULE. Image caching, animation lookup, barrier analysis. Clean. |
+| MapEditorPanel | 1 widget | 1268 lines | LARGE WIDGET. Locator.maybeLocate<MapSyncService>() called 3 times inside widget — service locator leaks into UI. |
+| Locator | 4 static methods | 68 lines | SHALLOW INFRA. No scoping, no lifecycle — implicit dependencies invisible from import graph. |
+
+---
+
+Flame Component Tree
+
+| Component | Children | Mixins | Depth | Assessment |
+|-----------|----------|--------|-------|------------|
+| TechWorldGame | TechWorld, SnapshotComponent, Camera | — | 1 | Clean thin host. |
+| TechWorld (World) | 15+ direct child types (PathComponent, PlayerComponent, BarriersComponent, TerminalComponent[], DoorComponent[], TileFloor, TileObjectLayer, BotCharacter[], DreamfinderComponent, MapPreview, SpeechBubble[], VideoBubble[], PlayerBubble[], BotBubble[], BubbleField, MergedVideoBubble) | TapCallbacks | 2 | GOD WORLD. Fan-out problem, not depth. Manually manages all child lifecycle with nullable fields. |
+| PlayerComponent | None | SpriteAnimationGroupComponent<Direction>, KeyboardHandler, HasGameReference, User | 3 | Clean. |
+| DreamfinderComponent | None | SpriteAnimationGroupComponent<DreamfinderState>, HasGameReference, User | 3 | Clean. |
+| TerminalComponent | None | TapCallbacks | 3 | MIXED CONCERN. onInteract callback crosses layers (rendering + interaction wiring). |
+| TileFloorComponent | None | — | 3 | DEEP MODULE. Floor rendering + Picture caching. |
+| TileObjectLayerComponent | None | — | 3 | DEEP MODULE. Y-sorted wall rendering + lintel overlay. |
+| VideoBubbleComponent | None | — | 3 | Platform conditional correct. |
+| BubbleFieldComponent | None | — | 3 | DEEP MODULE. Metaball GLSL. Clean. |
+| PathComponent | None | HasWorldReference | 3 | DEEP MODULE. JPS pathfinding. Clean. |
+
+Max depth is 3 everywhere — no runaway nesting. Primary tree problem is TechWorld's ~15 direct child types.
+
+---
+
+Information Leaks
+
+| Leak | Modules | Fix |
+|------|---------|-----|
+| botStatusNotifier global ValueNotifier<BotStatus> written by ChatService, RoomSession, main.dart; read everywhere | chat_service.dart, room_session.dart, main.dart, UI | Replace global with ChatService.botStatus as ValueListenable<BotStatus> getter. Remove bot_status.dart global. |
+| publishJson() called by callers who build raw JSON payloads | tech_world.dart (8 sites), map_sync_service.dart (3), chat_service.dart (3), oracle_service.dart, infra_health_service.dart | Expose typed publish methods on LiveKitService. Make publishJson internal. Move topic strings to enum LiveKitTopic. |
+| Locator.maybeLocate<MapSyncService>() called 3 times inside MapEditorPanel widget | map_editor_panel.dart | Pass MapSyncService? as constructor parameter. |
+| Locator.maybeLocate<ProgressService>() called inside TechWorld business methods | tech_world.dart | Inject via constructor or pass as parameter to methods needing it. |
+| ProximityService.calculateOpacity() returns rendering value from service layer | proximity_service.dart, bubble_manager.dart | Move to BubbleManager or flame/shared/. |
+| speaker == 'dreamfinder' / 'user' magic strings in _handleSpeechTranscript | tech_world.dart | Introduce SpeakerRole enum; parse at data channel boundary. |
+| TilesetId, AvatarId, MapId, RoomId all String — wire names used as business identifiers | Broad | Per CLAUDE.md: refactor when touching the code for another reason. Track only. |
+
+---
+
+Dependency Issues
+
+- functions/ stale directory at repo root — flagged in CLAUDE.md as should be deleted.
+- ~20 LiveKit data-channel topic strings scattered across 5 files with no central enum. Adding a topic requires grepping tech_world.dart, chat_service.dart, map_sync_service.dart, livekit_service.dart, infra_health_service.dart.
+- BotStatus enum lives in flame/components/bot_status.dart but is written by chat/ and rooms/ — wrong home.
+- flutter_webrtc: ^1.2.0 — verify controls.dart actually used; heavy transitive dependency.
+- re_highlight: ^0.0.3 — verify used in CodeEditorPanel.
+- Implicit arc: TechWorld registers MapSyncService in Locator; MapEditorPanel reads it from Locator — dependency invisible in import graph.
+
+---
+
+Tests Flagged (architectural debt)
+
+| File | Action | Issue | Fix |
+|------|--------|-------|-----|
+| test/flame/bubble_manager_test.dart | FIX | MockLiveKitService created but most tests don't verify LiveKit side-effects — mock mostly unused. | Remove mock from tests that don't need it; test pure BubbleManager logic directly. |
+| test/flame/tech_world_integration_test.dart | FIX | 13 LiveKit subscriptions in connectToLiveKit() likely not covered — verify disconnect/reconnect paths. | Add state-machine tests for connect→disconnect→reconnect cycle. |
+| test/e2e/event_pipeline_test.dart | FIX | Manually maintained count assertion (34 event types) will silently go stale when events are added. | Assert against generated or reflective list of sealed subtypes. |
+| test/rooms/room_session_test.dart | FIX | Reconnection path (_handleConnectionLost) — confirm it is tested, not just happy path. | Add: connection lost during join → reconnect succeeds → media re-enabled. |
+| test/map_editor/map_sync_service_test.dart | FIX | MapSyncService calls publishJson() 3 times — confirm tests verify JSON payloads, not just no-exception. | Add payload-shape assertions to each publish-path test. |
+| test/spellbook/spellbook_service_rollback_test.dart | REVIEW | Verify learnWord failure triggers rollback branch, not only success case. | Add explicit rollback assertion. |
+
+---
+
+Recommended Refactors (Priority Order)
+
+1. [M] Extract LiveKitGameBridge — 14 stream subscriptions extracted to lib/flame/livekit_game_bridge.dart (260 lines). TechWorld.connectToLiveKit() creates the bridge; disconnectFromLiveKit() tears it down. Inline lambdas became named methods (_handlePositionReceived, _handleHeartbeatReceived, _handleParticipantLeft). *** DONE ***
+
+2. [M] Eliminate global botStatusNotifier — ChatService owns _botStatus ValueNotifier, exposes ValueListenable<BotStatus> botStatus getter. RoomSession and main.dart call chatService.markBotAbsent(). BotBubbleComponent takes ValueListenable<BotStatus> as constructor param. BubbleManager forwards via setBotStatus(). *** DONE ***
+
+3. [M] Extract code-challenge submission side-effects from main.dart — _persistCompletion() shared helper in cast_effects.dart. applyCodeSubmitEffects() mirrors applyCastSuccessEffects(). Code path now dispatches ChallengeCompleted for event-bus parity. *** DONE ***
+
+4. [S] Add LiveKitTopic enum — ~20 topic strings across 5 files. Dart's exhaustive switch catches every new topic addition. *** DONE ***
+
+5. [S] Move ProximityService.calculateOpacity() to BubbleManager — Removes presentation knowledge from the proximity layer. *** DONE ***
+
+6. [S] Remove Locator.maybeLocate<MapSyncService>() from MapEditorPanel — Pass as constructor parameter. Consistent with existing injection pattern. *** DONE ***
+
+7. [S] Inject ProgressService? into TechWorld at construction — Remove service-locator call inside domain methods. *** DONE ***
+
+8. [L] Decompose TechWorld — DoorManager extracted to lib/flame/door_manager.dart (152 lines): unlockDoor, handleRemoteDoorUnlock, recomputeNearbyLockedDoor, doorsForChallenge, nearbyLockedDoor. TechWorld delegates to _doorManager. *** DONE (DoorManager) *** MapLoader extraction deferred — _loadMapComponents has 10+ dependencies (terminal callbacks, tileset registry, pathComponent, game reference) making clean extraction complex for diminishing returns. TechWorld: 1570 → 1299 lines.
+
+9. [S] Fix SpeakerRole stringly-typed 'dreamfinder'/'user' — Introduce enum SpeakerRole; parse at data channel boundary; switch on enum. *** DONE ***
+
+10. [S] Add reconnection path test coverage for RoomSession — The connect→lost→reconnect→re-enable-media cycle is critical user-facing behavior. *** ALREADY COVERED ***

@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
-import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
@@ -228,7 +227,7 @@ class RoomSession {
     // Show failure banner immediately.
     connectionFailed.value = true;
     connectionMessage.value = 'Connection lost — reconnecting…';
-    botStatusNotifier.value = BotStatus.absent;
+    chatService.markBotAbsent();
     _onStateChanged();
 
     // TechWorld's own connectionLost listener calls disconnectFromLiveKit(),

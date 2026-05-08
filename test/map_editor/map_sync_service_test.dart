@@ -217,6 +217,19 @@ void main() {
 
       expect(state.tileAt(5, 5), TileType.open);
       expect(fakeLiveKit.publishedMessages, hasLength(1));
+
+      // Undo publishes a reverting op on the map-edit topic.
+      final msg = fakeLiveKit.publishedMessages.first;
+      expect(msg['topic'], 'map-edit');
+      final payload = msg['payload'] as Map<String, dynamic>;
+      expect(payload['type'], 'edit');
+      expect(payload['playerId'], 'alice');
+      final ops = payload['ops'] as List;
+      expect(ops, isNotEmpty);
+      expect(ops.first['x'], 5);
+      expect(ops.first['y'], 5);
+      expect(ops.first['layer'], 'structure');
+      expect(ops.first['new'], isNull); // undo of barrier → open (null)
     });
 
     test('redo re-applies and publishes', () async {
@@ -234,6 +247,18 @@ void main() {
 
       expect(state.tileAt(5, 5), TileType.barrier);
       expect(fakeLiveKit.publishedMessages, hasLength(1));
+
+      // Redo publishes a re-applying op on the map-edit topic.
+      final msg = fakeLiveKit.publishedMessages.first;
+      expect(msg['topic'], 'map-edit');
+      final payload = msg['payload'] as Map<String, dynamic>;
+      expect(payload['type'], 'edit');
+      expect(payload['playerId'], 'alice');
+      final ops = payload['ops'] as List;
+      expect(ops, isNotEmpty);
+      expect(ops.first['x'], 5);
+      expect(ops.first['y'], 5);
+      expect(ops.first['new'], 'barrier');
     });
 
     test('canUndo/canRedo state', () {

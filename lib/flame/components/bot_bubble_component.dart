@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 
@@ -8,13 +9,16 @@ import 'package:tech_world/flame/components/bot_status.dart';
 /// Shows animated bouncing dots when thinking, hidden when idle.
 class BotBubbleComponent extends PositionComponent {
   BotBubbleComponent({
+    required ValueListenable<BotStatus> botStatus,
     this.bubbleSize = 48,
-  }) : super(
+  })  : _botStatusListenable = botStatus,
+        super(
           size: Vector2.all(bubbleSize),
           anchor: Anchor.bottomCenter,
         );
 
   final double bubbleSize;
+  final ValueListenable<BotStatus> _botStatusListenable;
 
   // Clawd's orange color
   static const clawdOrange = Color(0xFFD97757);
@@ -31,18 +35,18 @@ class BotBubbleComponent extends PositionComponent {
   @override
   void onMount() {
     super.onMount();
-    _currentStatus = botStatusNotifier.value;
-    botStatusNotifier.addListener(_onStatusChanged);
+    _currentStatus = _botStatusListenable.value;
+    _botStatusListenable.addListener(_onStatusChanged);
   }
 
   @override
   void onRemove() {
-    botStatusNotifier.removeListener(_onStatusChanged);
+    _botStatusListenable.removeListener(_onStatusChanged);
     super.onRemove();
   }
 
   void _onStatusChanged() {
-    _currentStatus = botStatusNotifier.value;
+    _currentStatus = _botStatusListenable.value;
     _animationTime = 0; // Reset animation
   }
 

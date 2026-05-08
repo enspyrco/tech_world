@@ -40,6 +40,8 @@ When you arrive in this codebase: sweep `lib/` for `String` fields whose values 
 - `WordId` (the spellbook 18 — `lib/spellbook/word_of_power.dart`).
 - `PromptChallengeId` (the 18 prompt challenges — `lib/prompt/prompt_challenge.dart`).
 - `CodeChallengeId` (the 23 code-editor challenges — `lib/editor/challenge.dart`).
+- `LiveKitTopic` (26 data-channel topics — `lib/livekit/livekit_topic.dart`).
+- `SpeakerRole` (2 speech transcript roles — `lib/flame/shared/speaker_role.dart`).
 
 Examples still pending: `AvatarId`, `MapId`, `TilesetId`, `RoomType`. Don't refactor speculatively — refactor when you're already touching the code for another reason.
 
@@ -102,12 +104,7 @@ Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app docum
 
 ### Communication (All via LiveKit)
 
-| Topic | Direction | Purpose |
-|-------|-----------|---------|
-| `position` | broadcast | Player position updates |
-| `chat` | broadcast | User chat messages |
-| `chat-response` | broadcast | Bot responses |
-| `ping` / `pong` | targeted | Connectivity testing |
+All 26 data-channel topics are typed via `LiveKitTopic` enum (`lib/livekit/livekit_topic.dart`). Use `LiveKitTopic.<name>.wire` at every publish/subscribe site. Categories: position, avatar, map, doors/terminals, speech, chat/DM/help, bot/oracle, infrastructure, connectivity.
 
 **Bot (Clawd)**: Runs on OCI as participant `bot-claude`. Source in `../tech_world_bot/`.
 

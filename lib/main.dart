@@ -21,8 +21,8 @@ import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/code_editor_panel.dart';
-import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
+import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/prompt/chat_evaluation_engine.dart';
@@ -43,6 +43,7 @@ import 'package:tech_world/spellbook/spellbook_service.dart';
 import 'package:tech_world/spellbook/word_of_power.dart' show arcaneColor;
 import 'package:tech_world/map_editor/map_editor_panel.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
+import 'package:tech_world/map_editor/map_sync_service.dart';
 import 'package:tech_world/rooms/room_browser.dart';
 import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
@@ -270,6 +271,7 @@ class _MyAppState extends State<MyApp> {
       _progressService?.dispose();
       _progressService = null;
       Locator.remove<ProgressService>();
+      locate<TechWorld>().progressService = null;
       _spellbookService?.dispose();
       _spellbookService = null;
       Locator.remove<SpellbookService>();
@@ -318,6 +320,7 @@ class _MyAppState extends State<MyApp> {
         _log.warning('Failed to load progress: $e', e);
       }
       Locator.add<ProgressService>(_progressService!);
+      locate<TechWorld>().progressService = _progressService;
       locate<TechWorld>().refreshTerminalStates();
 
       // Load spellbook (words of power earned by completing prompt challenges).
@@ -415,16 +418,17 @@ class _MyAppState extends State<MyApp> {
             userId: userId,
             displayName: _currentDisplayName,
             onStateChanged: () => setState(() {}),
-            onReconnectWorld: () =>
-                locate<TechWorld>().connectToLiveKit(
-                  userId,
-                  _currentDisplayName,
-                ),
+            onReconnectWorld: () {
+                final tw = locate<TechWorld>();
+                tw.setBotStatus(_session!.chatService.botStatus);
+                return tw.connectToLiveKit(userId, _currentDisplayName);
+              },
             onRoomDeleted: _onRoomDeleted,
           );
           final result = await _session!.connect();
           if (result == ConnectionResult.connected) {
             wires.complete(Wire.server);
+            techWorld.setBotStatus(_session!.chatService.botStatus);
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
             // Wire C: camera + mic (depends on server connection).
@@ -527,7 +531,7 @@ class _MyAppState extends State<MyApp> {
     }
 
     // Reset bot status so stale state (e.g. thinking) doesn't carry over.
-    botStatusNotifier.value = BotStatus.absent;
+    _session?.chatService.markBotAbsent();
 
     // Exit editor mode if active (before tearing down services).
     final techWorld = locate<TechWorld>();
@@ -663,17 +667,18 @@ class _MyAppState extends State<MyApp> {
           userId: userId,
           displayName: _currentDisplayName,
           onStateChanged: () => setState(() {}),
-          onReconnectWorld: () =>
-              locate<TechWorld>().connectToLiveKit(
-                userId,
-                _currentDisplayName,
-              ),
+          onReconnectWorld: () {
+                final tw = locate<TechWorld>();
+                tw.setBotStatus(_session!.chatService.botStatus);
+                return tw.connectToLiveKit(userId, _currentDisplayName);
+              },
           onRoomDeleted: _onRoomDeleted,
         );
         final result = await _session!.connect();
         if (result == ConnectionResult.connected) {
-          await locate<TechWorld>()
-              .connectToLiveKit(userId, _currentDisplayName);
+          final tw = locate<TechWorld>();
+          tw.setBotStatus(_session!.chatService.botStatus);
+          await tw.connectToLiveKit(userId, _currentDisplayName);
           await _session!.enableMedia();
           await _session!.chatService.loadHistory(room.id);
         }
@@ -954,6 +959,7 @@ class _MyAppState extends State<MyApp> {
                                 width: constraints.maxWidth >= 800 ? 480 : 360,
                                 child: MapEditorPanel(
                                   state: _mapEditorState,
+                                  syncService: Locator.maybeLocate<MapSyncService>(),
                                   onApply: () async {
                                     await techWorld.exitEditorMode();
                                     _mapEditorState.markClean();
@@ -1206,6 +1212,7 @@ class _MyAppState extends State<MyApp> {
                         return _CodeEditorModal(
                           challenge: challenge,
                           isCompleted: isCompleted,
+                          botStatus: _session!.chatService.botStatus,
                           onClose: techWorld.closeEditor,
                           onHelpRequest: (code) async {
                             final chatService =
@@ -1247,23 +1254,11 @@ class _MyAppState extends State<MyApp> {
                               result: codeResult,
                             )]);
                             if (codeResult == CodeSubmitResult.pass) {
-                              final progress =
-                                  Locator.maybeLocate<ProgressService>();
-                              if (progress == null) {
-                                _log.warning(
-                                    'ProgressService unavailable; '
-                                    'challenge ${challenge.id.wireName} not '
-                                    'marked completed');
-                              } else {
-                                try {
-                                  await progress.markChallengeCompleted(
-                                      challenge.id.wireName);
-                                } catch (e) {
-                                  _log.warning(
-                                      'Failed to persist completion: $e', e);
-                                  // Rollback already handled by ProgressService.
-                                }
-                              }
+                              await applyCodeSubmitEffects(
+                                challengeId: challenge.id,
+                                progress:
+                                    Locator.maybeLocate<ProgressService>(),
+                              );
                               techWorld.refreshTerminalStates();
                             }
                           },
@@ -1625,6 +1620,7 @@ class _CodeEditorModal extends StatelessWidget {
   const _CodeEditorModal({
     required this.challenge,
     required this.isCompleted,
+    required this.botStatus,
     required this.onClose,
     required this.onSubmit,
     this.onHelpRequest,
@@ -1632,6 +1628,7 @@ class _CodeEditorModal extends StatelessWidget {
 
   final Challenge challenge;
   final bool isCompleted;
+  final ValueListenable<BotStatus> botStatus;
   final VoidCallback onClose;
   final void Function(String code) onSubmit;
   final Future<String?> Function(String code)? onHelpRequest;
@@ -1670,6 +1667,7 @@ class _CodeEditorModal extends StatelessWidget {
                     child: CodeEditorPanel(
                       challenge: challenge,
                       isCompleted: isCompleted,
+                      botStatus: botStatus,
                       onClose: onClose,
                       onSubmit: onSubmit,
                       onHelpRequest: onHelpRequest,

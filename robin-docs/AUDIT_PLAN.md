@@ -80,9 +80,11 @@ upstream → https://github.com/enspyrco/tech_world   (enspyrco — Nick's repo)
 
 13. `/tw-sweep3` — performance + dependencies + production-ready (orchestrated)
 
-### Phase 6: Structural (deep) — NOT STARTED
+### Phase 6: Structural (deep) — IN PROGRESS
 
-14. `/tw-add-events` — refactor side effects to pure event returns
+14. `/tw-add-events` — **DONE** — refactor side effects to pure event returns
+    - Also ran `/tw-production-sinks` — console + JSONL file sinks
+    - 34 event types, 40 dispatch sites, 10 files, 77 E2E tests
 15. `/tw-architecture-sweep` — module depth + contract tests
 16. `/tw-category-sweep` — categorical law verification
 
@@ -143,8 +145,8 @@ Game Systems:
 | 11 | Security | `/tw-bot-integration` | **Done** | 3 HIGH / 7 MED / 4 LOW → `phase4b-bot-integration.md` |
 | 12 | Security | `/tw-platform-parity` | **Done** | 1 CRIT / 2 HIGH / 3 MED / 2 LOW → `phase4b-platform-parity.md` |
 | 13 | Operations | `/tw-sweep3` | **Done** | Perf 3.2/5, Deps 3.2/5, Prod 3.25/5 → `phase5-sweep3-operations.md` |
-| 14 | Structural | `/tw-add-events` | Not started | |
-| 15 | Structural | `/tw-architecture-sweep` | Not started | |
+| 14 | Structural | `/tw-add-events` | **Done** | 34 events, 40 dispatch sites, console + JSONL sinks, 77 E2E tests → PR #412 |
+| 15 | Structural | `/tw-architecture-sweep` | **Done** | LiveKitTopic (26 topics) + SpeakerRole enums, DI injection, 108 contract tests, ARCHITECTURE.md → PR #TBD |
 | 16 | Structural | `/tw-category-sweep` | Not started | |
 
 ## PR Summary
@@ -157,7 +159,8 @@ Game Systems:
 | 4 follow-ups | 5 | #395–#396 | — |
 | 4b: Bot + Platform | 9 | #397–#405 | 2 (bot tap toggle, eval parsing) |
 | 5: Operations | 6 | #406–#411 | 2 (Paint cache, reconnect backoff) |
-| **Total** | **60** | | **17** |
+| 6: Structural | 2 | #412–#TBD | 2 (event system, E2E tests) + pending (architecture-sweep) |
+| **Total** | **62** | | **19** |
 
 ## Known Issues Resolved
 
@@ -175,6 +178,11 @@ These were identified in Phase 1 and fixed across subsequent phases:
 | Single reconnection attempt | Phase 5 (#411 — exponential backoff) |
 | Per-frame Paint allocations | Phase 5 (#410 — Flyweight caching) |
 | Non-atomic Firestore writes | Phase 5 (#408 — WriteBatch) |
+| No structured event logging | Phase 6 (#412 — 34 event types, JSONL file sink) |
+| No E2E event tests | Phase 6 (#412 — 77 tests, capture-sink pattern) |
+| Scattered topic string literals | Phase 6 (#TBD — LiveKitTopic enum, 26 values across 10 files) |
+| Locator calls inside widgets | Phase 6 (#TBD — DI injection for MapSyncService, ProgressService) |
+| No architecture contract tests | Phase 6 (#TBD — 108 tests in test/architecture/) |
 
 ## Items Deferred to Nick
 

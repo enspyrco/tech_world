@@ -34,8 +34,7 @@ void main() {
     setUp(() {
       fakeLiveKit = FakeLiveKitService();
       chatService = ChatService(liveKitService: fakeLiveKit);
-      // Reset bot status
-      botStatusNotifier.value = BotStatus.idle;
+      chatService.setBotStatusForTest(BotStatus.idle);
     });
 
     tearDown(() {
@@ -93,7 +92,7 @@ void main() {
       unawaited(chatService.sendMessage('Hello'));
       await pumpEventQueue();
 
-      expect(botStatusNotifier.value, equals(BotStatus.thinking));
+      expect(chatService.botStatus.value, equals(BotStatus.thinking));
     });
 
     test('receiving response adds bot message to list', () async {
@@ -130,7 +129,7 @@ void main() {
 
       await pumpEventQueue();
 
-      expect(botStatusNotifier.value, equals(BotStatus.idle));
+      expect(chatService.botStatus.value, equals(BotStatus.idle));
     });
 
     test('shows error when not connected', () async {
@@ -337,7 +336,7 @@ void main() {
 
       // Should have both user message and bot response
       expect(chatService.currentMessages.length, equals(2));
-      expect(botStatusNotifier.value, equals(BotStatus.idle));
+      expect(chatService.botStatus.value, equals(BotStatus.idle));
     });
 
     test('handles response to message without matching pending', () async {
@@ -741,7 +740,7 @@ void main() {
 
         // Service should work normally despite failed history load.
         fakeLiveKit.connected = true;
-        botStatusNotifier.value = BotStatus.idle;
+        service.setBotStatusForTest(BotStatus.idle);
         unawaited(service.sendMessage('Hello after failed history'));
         await pumpEventQueue();
 
