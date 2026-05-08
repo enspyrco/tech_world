@@ -22,6 +22,35 @@ class PlayerBubbleComponent extends PositionComponent {
   /// Set the opacity for distance-based fading (0.0 to 1.0).
   set opacity(double value) => _opacity = value.clamp(0.0, 1.0);
 
+  // ── Cached Paints (Flyweight) ───────────────────────────────────────────
+
+  late final Paint _shadowPaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.3)
+    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+
+  late final Paint _bgPaint = Paint()..color = Colors.grey[800]!;
+
+  late final Paint _borderPaint = Paint()
+    ..color = Colors.white
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2;
+
+  final Paint _layerPaint = Paint();
+
+  // ── Cached TextPainter ──────────────────────────────────────────────────
+
+  late final TextPainter _initialPainter = TextPainter(
+    text: TextSpan(
+      text: _getInitial(),
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: bubbleSize * 0.4,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+
   @override
   void render(Canvas canvas) {
     if (_opacity <= 0) return;
@@ -31,47 +60,29 @@ class PlayerBubbleComponent extends PositionComponent {
 
     // Apply opacity via saveLayer when not fully opaque
     if (_opacity < 1.0) {
+      _layerPaint.color =
+          Color.fromARGB((_opacity * 255).round(), 255, 255, 255);
       canvas.saveLayer(
         Rect.fromCircle(center: center, radius: radius + 5),
-        Paint()..color = Color.fromARGB((_opacity * 255).round(), 255, 255, 255),
+        _layerPaint,
       );
     }
 
     // Draw shadow
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.3)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-    canvas.drawCircle(center + const Offset(0, 2), radius, shadowPaint);
+    canvas.drawCircle(center + const Offset(0, 2), radius, _shadowPaint);
 
     // Draw background circle
-    final bgPaint = Paint()..color = Colors.grey[800]!;
-    canvas.drawCircle(center, radius, bgPaint);
+    canvas.drawCircle(center, radius, _bgPaint);
 
     // Draw border
-    final borderPaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawCircle(center, radius, borderPaint);
+    canvas.drawCircle(center, radius, _borderPaint);
 
     // Draw initial
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: _getInitial(),
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: bubbleSize * 0.4,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
+    _initialPainter.paint(
       canvas,
       Offset(
-        center.dx - textPainter.width / 2,
-        center.dy - textPainter.height / 2,
+        center.dx - _initialPainter.width / 2,
+        center.dy - _initialPainter.height / 2,
       ),
     );
 

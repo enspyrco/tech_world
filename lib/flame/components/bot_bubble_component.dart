@@ -28,6 +28,26 @@ class BotBubbleComponent extends PositionComponent {
   static const _cycleDuration = 0.5; // seconds per cycle
   static const _phaseOffset = 0.15; // seconds between each dot
 
+  // ── Cached Paints (Flyweight) ───────────────────────────────────────────
+
+  late final Paint _shadowPaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.3)
+    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+
+  late final Paint _bgPaint = Paint()..color = const Color(0xFF2D2D2D);
+
+  late final Paint _borderPaint = Paint()
+    ..color = clawdOrange
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.5;
+
+  late final Paint _dotPaint = Paint()..color = clawdOrange;
+
+  // Reusable TextPainter for zzz (text/style set per frame due to animation).
+  final TextPainter _zPainter = TextPainter(
+    textDirection: TextDirection.ltr,
+  );
+
   @override
   void onMount() {
     super.onMount();
@@ -38,6 +58,7 @@ class BotBubbleComponent extends PositionComponent {
   @override
   void onRemove() {
     botStatusNotifier.removeListener(_onStatusChanged);
+    _zPainter.dispose();
     super.onRemove();
   }
 
@@ -89,24 +110,21 @@ class BotBubbleComponent extends PositionComponent {
 
       final fontSize = bubbleSize * 0.3 * scale;
 
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: 'z',
-          style: TextStyle(
-            color: clawdOrange.withValues(alpha: opacity.clamp(0.2, 1.0)),
-            fontSize: fontSize,
-            fontWeight: FontWeight.bold,
-            fontStyle: FontStyle.italic,
-          ),
+      _zPainter.text = TextSpan(
+        text: 'z',
+        style: TextStyle(
+          color: clawdOrange.withValues(alpha: opacity.clamp(0.2, 1.0)),
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          fontStyle: FontStyle.italic,
         ),
-        textDirection: TextDirection.ltr,
       );
-      textPainter.layout();
+      _zPainter.layout();
 
-      final x = centerX + xOffset - (textPainter.width / 2);
+      final x = centerX + xOffset - (_zPainter.width / 2);
       final y = baseY + yOffset;
 
-      textPainter.paint(canvas, Offset(x, y));
+      _zPainter.paint(canvas, Offset(x, y));
     }
   }
 
@@ -118,9 +136,6 @@ class BotBubbleComponent extends PositionComponent {
     final dotSpacing = pillWidth / (_dotCount + 1);
 
     // Draw shadow
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.3)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(
@@ -130,34 +145,28 @@ class BotBubbleComponent extends PositionComponent {
         ),
         Radius.circular(pillHeight / 2),
       ),
-      shadowPaint,
+      _shadowPaint,
     );
 
     // Draw pill background
-    final bgPaint = Paint()..color = const Color(0xFF2D2D2D);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: center, width: pillWidth, height: pillHeight),
         Radius.circular(pillHeight / 2),
       ),
-      bgPaint,
+      _bgPaint,
     );
 
     // Draw border
-    final borderPaint = Paint()
-      ..color = clawdOrange
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: center, width: pillWidth, height: pillHeight),
         Radius.circular(pillHeight / 2),
       ),
-      borderPaint,
+      _borderPaint,
     );
 
     // Draw animated dots
-    final dotPaint = Paint()..color = clawdOrange;
     final startX = center.dx - (pillWidth / 2) + dotSpacing;
 
     for (int i = 0; i < _dotCount; i++) {
@@ -176,7 +185,7 @@ class BotBubbleComponent extends PositionComponent {
       canvas.drawCircle(
         Offset(dotX, dotY),
         dotRadius * scale,
-        dotPaint,
+        _dotPaint,
       );
     }
   }
