@@ -242,7 +242,14 @@ class VideoFrameCapture {
   Uint8List? getPixels() {
     if (_disposed || _buffer == null || _buffer == nullptr) return null;
     final buf = _buffer!.ref;
+    if (buf.error != 0) return null;
     if (buf.ready != 1) return null;
+    if (buf.width == 0 ||
+        buf.height == 0 ||
+        buf.height > 4096 ||
+        buf.bytesPerRow > 16384) {
+      return null;
+    }
 
     _lastFrameNumber = buf.frameNumber;
 
