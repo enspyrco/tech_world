@@ -431,6 +431,10 @@ class TechWorld extends World with TapCallbacks {
       // so reconnecting bots always land in the same position.
       final botIndex =
           allBotIdentities.toList().indexOf(participant.identity);
+      // Guard against -1: agent-* identities (LiveKit Agents SDK) are not in
+      // allBotIdentities. Fall back to length so an unknown bot stacks after
+      // all known bots rather than colliding at spawn.x + 0.
+      final safeBotIndex = botIndex >= 0 ? botIndex : allBotIdentities.length;
 
       if (isDreamfinderIdentity(participant.identity) &&
           _pathComponent == null) {
@@ -475,7 +479,7 @@ class TechWorld extends World with TapCallbacks {
         if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
           final playerComp = PlayerComponent(
             position: Vector2(
-              (spawn.x + botIndex + 1) * gridSquareSizeDouble,
+              (spawn.x + safeBotIndex + 1) * gridSquareSizeDouble,
               spawn.y * gridSquareSizeDouble,
             ),
             id: participant.identity,
@@ -491,7 +495,7 @@ class TechWorld extends World with TapCallbacks {
         if (!_botCharacterComponents.containsKey(participant.identity)) {
           final botComp = BotCharacterComponent(
             position: Vector2(
-              (spawn.x + botIndex + 1) * gridSquareSizeDouble,
+              (spawn.x + safeBotIndex + 1) * gridSquareSizeDouble,
               spawn.y * gridSquareSizeDouble,
             ),
             id: participant.identity,
