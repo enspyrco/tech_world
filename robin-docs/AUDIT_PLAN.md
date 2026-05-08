@@ -147,7 +147,7 @@ Game Systems:
 | 13 | Operations | `/tw-sweep3` | **Done** | Perf 3.2/5, Deps 3.2/5, Prod 3.25/5 → `phase5-sweep3-operations.md` |
 | 14 | Structural | `/tw-add-events` | **Done** | 34 events, 40 dispatch sites, console + JSONL sinks, 77 E2E tests → PR #412 |
 | 15 | Structural | `/tw-architecture-sweep` | **Done** | LiveKitTopic enum, SpeakerRole enum, DI injection, LiveKitGameBridge, DoorManager, botStatusNotifier eliminated, applyCodeSubmitEffects, 108 contract tests, ARCHITECTURE.md → PR #413 |
-| 16 | Structural | `/tw-category-sweep` | Not started | |
+| 16 | Structural | `/tw-category-sweep` | **Done** | Sealed AuthUser, .whereMap Kleisli extension, sealed _TokenResult Either, derived CastResult.passed, 165 law + FSM tests, CATEGORY_THEORY.md → PR #414 |
 
 ## PR Summary
 
@@ -159,8 +159,8 @@ Game Systems:
 | 4 follow-ups | 5 | #395–#396 | — |
 | 4b: Bot + Platform | 9 | #397–#405 | 2 (bot tap toggle, eval parsing) |
 | 5: Operations | 6 | #406–#411 | 2 (Paint cache, reconnect backoff) |
-| 6: Structural | 2 | #412–#413 | 3 (event system, E2E tests, architecture-sweep) |
-| **Total** | **63** | | **20** |
+| 6: Structural | 3 | #412–#414 | 4 (event system, E2E tests, architecture-sweep, category-sweep) |
+| **Total** | **64** | | **21** |
 
 ## Known Issues Resolved
 

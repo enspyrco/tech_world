@@ -1,7 +1,7 @@
 # Handover — Tech World Audit
 
 **Date:** 2026-05-09
-**Status:** Phases 1–5 complete, Phase 6 in progress. 63 PRs shipped, 4 architectural refactors, 14 audit reports, 20 cage-match reviews. 1686 tests passing.
+**Status:** Phases 1–6 complete. 64 PRs shipped, 4 architectural refactors, 14 audit reports, 21 cage-match reviews. 1852 tests passing.
 
 ---
 
@@ -55,7 +55,8 @@
   - 108 contract tests in `test/architecture/`, `ARCHITECTURE.md`
   - → PR #413, cage-match: architect.tmp leak, force-unwrap, stale docs
   - **Deferred:** MapLoader extraction (~400 lines, 10+ dependencies)
-- Remaining: `/tw-category-sweep`
+- `/tw-category-sweep` — sealed AuthUser (3-summand coproduct + User interface), `.whereMap<T>()` Kleisli stream extension (5 sites), sealed `_TokenResult` Either, derived `CastResult.passed`, cached `DataChannelMessage.json`, 165 categorical law + FSM integration tests, `CATEGORY_THEORY.md` → PR #414, cage-match: sentinel comment, equality regression test
+- **Phase 6 complete.**
 
 ---
 
@@ -69,6 +70,7 @@ All PRs opened against upstream (`enspyrco/tech_world`). None merged by Nick yet
 |-----|--------|------|------------|
 | #412 | `audit/add-events` | Event-sink system: 34 types, 40 dispatch sites, sinks, log bridge, 77 E2E tests | 2 rounds (empty-batch crash, hot-restart, enum, PII) |
 | #413 | `audit/architecture-sweep` | LiveKitTopic enum, SpeakerRole enum, DI injection, LiveKitGameBridge (260 lines), DoorManager (152 lines), botStatusNotifier eliminated, applyCodeSubmitEffects, 108 contract tests, ARCHITECTURE.md. TechWorld 1570→1299 lines. | 1 round (architect.tmp leak, force-unwrap, stale ARCHITECTURE.md) |
+| #414 | `audit/category-sweep` | Sealed AuthUser (3-summand coproduct + User interface), `.whereMap<T>()` Kleisli extension (5 sites), sealed `_TokenResult` Either, derived `CastResult.passed`, cached `DataChannelMessage.json`, 165 law + FSM tests, CATEGORY_THEORY.md | 1 round (sentinel comment, equality regression test) |
 
 ### Phase 3a — Sweep2 fixes (14 PRs)
 
