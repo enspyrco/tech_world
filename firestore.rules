@@ -23,10 +23,13 @@ service cloud.firestore {
       allow create: if request.auth != null &&
         request.auth.uid == request.resource.data.ownerId;
 
-      // Owner and editors can update
+      // Owner and editors can update.
+      // Editors cannot modify ownerId or editorIds (prevents privilege escalation).
       allow update: if request.auth != null &&
         (request.auth.uid == resource.data.ownerId ||
-         request.auth.uid in resource.data.editorIds);
+         (request.auth.uid in resource.data.editorIds &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+           .hasAny(['ownerId', 'editorIds'])));
 
       // Only owner can delete
       allow delete: if request.auth != null &&
