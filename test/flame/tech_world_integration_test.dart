@@ -180,7 +180,7 @@ void main() {
         expect(world.localPlayerId, isEmpty);
 
         // Emit auth state
-        authController.add(AuthUser(
+        authController.add(SignedInUser(
           id: 'test-user-123',
           displayName: 'Test User',
         ));
@@ -223,7 +223,7 @@ void main() {
         final world = game.world as TechWorld;
 
         // Sign in first
-        authController.add(AuthUser(
+        authController.add(SignedInUser(
           id: 'user-1',
           displayName: 'User One',
         ));

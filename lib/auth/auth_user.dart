@@ -1,39 +1,52 @@
 /// Base interface for user identity.
-abstract class User {
-  abstract final String id;
-  abstract final String displayName;
+///
+/// Implemented by [AuthUser] (sealed auth hierarchy) and by Flame
+/// components like `PlayerComponent` that carry a user identity but
+/// are not auth states.
+abstract interface class User {
+  String get id;
+  String get displayName;
 }
 
-class AuthUser implements User {
-  AuthUser({
-    required this.id,
-    required this.displayName,
-    this.isAnonymous = false,
-  });
+/// Sealed user-identity hierarchy — a 3-summand coproduct.
+///
+/// Using `sealed` gives exhaustive `switch` on auth state and closes the
+/// hierarchy so no external code can extend it.
+sealed class AuthUser implements User {
+  const AuthUser({required this.id, required this.displayName});
 
   @override
   final String id;
   @override
   final String displayName;
 
-  /// Whether this user signed in anonymously (guest mode).
-  final bool isAnonymous;
-
   @override
-  bool operator ==(Object other) => other is User && other.id == id;
+  bool operator ==(Object other) => other is AuthUser && other.id == id;
 
   @override
   int get hashCode => id.hashCode;
 }
 
-/// Holds the details of the [AuthUser] that has signed out so the [id] can be used
+/// A fully authenticated user (Firebase Auth).
+final class SignedInUser extends AuthUser {
+  const SignedInUser({
+    required super.id,
+    required super.displayName,
+    this.isAnonymous = false,
+  });
+
+  /// Whether this user signed in anonymously (guest mode).
+  final bool isAnonymous;
+}
+
+/// Holds the details of the user that has signed out so the [id] can be used
 /// by the [NetworkingService] to update the server's game model.
-class SignedOutUser extends AuthUser {
-  SignedOutUser({required super.id, required super.displayName});
+final class SignedOutUser extends AuthUser {
+  const SignedOutUser({required super.id, required super.displayName});
 }
 
 /// Rather than a nullable authUser member we use a specific type to indicate the
 /// signed in state has not yet been determined.
-class PlaceholderUser extends AuthUser {
-  PlaceholderUser({super.id = '', super.displayName = ''});
+final class PlaceholderUser extends AuthUser {
+  const PlaceholderUser({super.id = '', super.displayName = ''});
 }

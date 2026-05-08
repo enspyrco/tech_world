@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/utils/stream_extensions.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
@@ -128,13 +129,7 @@ class LiveKitService {
   /// Filters dataReceived for 'position' topic and parses into PlayerPath.
   Stream<PlayerPath> get positionReceived => dataReceived
       .where((msg) => msg.topic == LiveKitTopic.position.wire)
-      .map((msg) {
-        final json = msg.json;
-        if (json == null) return null;
-        return _parsePlayerPath(json);
-      })
-      .where((path) => path != null)
-      .cast<PlayerPath>();
+      .whereMap((msg) => msg.json == null ? null : _parsePlayerPath(msg.json!));
 
   /// Stream of position heartbeat messages from other participants.
   ///
@@ -142,13 +137,8 @@ class LiveKitService {
   /// correcting stale positions caused by dropped unreliable path updates.
   Stream<PositionHeartbeat> get positionHeartbeatReceived => dataReceived
       .where((msg) => msg.topic == LiveKitTopic.positionHeartbeat.wire)
-      .map((msg) {
-        final json = msg.json;
-        if (json == null) return null;
-        return PositionHeartbeat.tryParse(json);
-      })
-      .where((hb) => hb != null)
-      .cast<PositionHeartbeat>();
+      .whereMap((msg) =>
+          msg.json == null ? null : PositionHeartbeat.tryParse(msg.json!));
 
   /// Stream that fires when a bot requests map info.
   ///
@@ -164,15 +154,13 @@ class LiveKitService {
   /// messages from bots are excluded.
   Stream<String> get mapSwitchReceived => dataReceived
       .where((msg) => msg.topic == LiveKitTopic.mapSwitch.wire)
-      .map((msg) {
+      .whereMap((msg) {
         if (msg.json case {'senderId': String senderId, 'mapId': String mapId}
             when senderId != userId) {
           return mapId;
         }
         return null;
-      })
-      .where((mapId) => mapId != null)
-      .cast<String>();
+      });
 
   /// Stream of avatar updates received from other participants.
   ///
@@ -180,16 +168,13 @@ class LiveKitService {
   /// [AvatarUpdate]. Own messages (matching [userId]) are excluded.
   Stream<AvatarUpdate> get avatarReceived => dataReceived
       .where((msg) => msg.topic == LiveKitTopic.avatar.wire)
-      .map((msg) {
-        final json = msg.json;
-        if (json == null) return null;
-        final update = AvatarUpdate.tryParse(json);
+      .whereMap((msg) {
+        final update =
+            msg.json == null ? null : AvatarUpdate.tryParse(msg.json!);
         // Ignore our own avatar broadcasts
         if (update != null && update.playerId == userId) return null;
         return update;
-      })
-      .where((update) => update != null)
-      .cast<AvatarUpdate>();
+      });
 
   /// Broadcast the local player's avatar to the room.
   ///
@@ -264,11 +249,12 @@ class LiveKitService {
     try {
       // Get token from Firebase Function
       final tokenResult = await _retrieveToken();
-      if (tokenResult.token == null) {
+      if (tokenResult case _TokenFailure(:final connectionResult)) {
         _log.warning('Failed to retrieve token');
         _connectionState = _ConnectionState.disconnected;
-        return tokenResult.connectionResult;
+        return connectionResult;
       }
+      final token = (tokenResult as _TokenSuccess).token;
 
       // Create room with options
       _room = Room(
@@ -302,7 +288,7 @@ class LiveKitService {
       // candidates are tried alongside direct UDP.
       await _room!.connect(
         _serverUrl,
-        tokenResult.token!,
+        token,
         connectOptions: const ConnectOptions(
           rtcConfiguration: RTCConfiguration(
             iceTransportPolicy: RTCIceTransportPolicy.all,
@@ -662,8 +648,8 @@ class LiveKitService {
     if (_tokenRetriever != null) {
       final token = await _tokenRetriever();
       return token != null
-          ? _TokenResult.success(token)
-          : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
+          ? _TokenSuccess(token)
+          : const _TokenFailure(ConnectionResult.tokenUnknownError);
     }
     try {
       _log.info('Retrieving token for room "$roomName"');
@@ -672,19 +658,19 @@ class LiveKitService {
           .call({'roomName': roomName});
       final token = result.data as String?;
       return token != null
-          ? _TokenResult.success(token)
-          : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
+          ? _TokenSuccess(token)
+          : const _TokenFailure(ConnectionResult.tokenUnknownError);
     } on FirebaseFunctionsException catch (e) {
       _log.warning('Token retrieval failed', e);
       if (e.code == 'unauthenticated' || e.code == 'permission-denied') {
-        return const _TokenResult.failure(ConnectionResult.tokenAuthError);
+        return const _TokenFailure(ConnectionResult.tokenAuthError);
       }
-      return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
+      return const _TokenFailure(ConnectionResult.tokenNetworkError);
     } catch (e) {
       // Generic catch handles timeouts, network errors, and other transient
       // failures not covered by FirebaseFunctionsException above.
       _log.warning('Token retrieval failed', e);
-      return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
+      return const _TokenFailure(ConnectionResult.tokenNetworkError);
     }
   }
 
@@ -773,15 +759,20 @@ class LiveKitService {
 }
 
 /// Internal result from [LiveKitService._retrieveToken].
-class _TokenResult {
-  const _TokenResult.success(String this.token)
-      : connectionResult = ConnectionResult.connected;
-  const _TokenResult.failure(this.connectionResult) : token = null;
+///
+/// Sealed Either: success carries a token, failure carries a reason.
+/// No invalid state (token: null, result: connected) is representable.
+sealed class _TokenResult {
+  const _TokenResult();
+}
 
-  final String? token;
+final class _TokenSuccess extends _TokenResult {
+  const _TokenSuccess(this.token);
+  final String token;
+}
 
-  /// The [ConnectionResult] describing the outcome — [ConnectionResult.connected]
-  /// on success, or a specific failure reason otherwise.
+final class _TokenFailure extends _TokenResult {
+  const _TokenFailure(this.connectionResult);
   final ConnectionResult connectionResult;
 }
 
@@ -802,10 +793,23 @@ class DataChannelMessage {
   /// Raw bytes of the message payload.
   final List<int> data;
 
-  /// Decode data as UTF-8 JSON.
+  /// Cached JSON parse result — `null` means "not yet parsed".
+  /// A parse failure is cached as the empty map sentinel [_jsonParseFailed].
+  Map<String, dynamic>? _cachedJson;
+  bool _jsonParsed = false;
+
+  /// Marker for a cached parse failure (distinct from a successful `null`).
+  static const _jsonParseFailed = <String, dynamic>{};
+
+  /// Decode data as UTF-8 JSON. Cached after first access so repeated
+  /// reads are referentially transparent.
   Map<String, dynamic>? get json {
+    if (_jsonParsed) {
+      return identical(_cachedJson, _jsonParseFailed) ? null : _cachedJson;
+    }
+    _jsonParsed = true;
     try {
-      return jsonDecode(utf8.decode(data)) as Map<String, dynamic>;
+      _cachedJson = jsonDecode(utf8.decode(data)) as Map<String, dynamic>;
     } catch (e) {
       final preview = utf8.decode(data, allowMalformed: true);
       debugPrint(
@@ -813,8 +817,10 @@ class DataChannelMessage {
         '(topic: $topic, error: $e, '
         'data: ${preview.length > 200 ? preview.substring(0, 200) : preview})',
       );
+      _cachedJson = _jsonParseFailed;
       return null;
     }
+    return _cachedJson;
   }
 
   /// Decode data as UTF-8 string.
