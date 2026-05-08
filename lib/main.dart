@@ -575,10 +575,10 @@ class _MyAppState extends State<MyApp> {
         _currentRoom!.isOwner(userId);
 
     if (isOwnedRoom) {
-      // Update existing room the user owns.
-      await _roomService!.updateRoomMap(existingRoomId, gameMap);
-      await _roomService!.updateRoomName(
+      // Update existing room the user owns (single atomic Firestore write).
+      await _roomService!.updateRoomMapAndName(
         existingRoomId,
+        gameMap,
         _mapEditorState.mapName,
       );
       // Update local state.
