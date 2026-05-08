@@ -44,6 +44,9 @@ enum _ConnectionState { disconnected, connecting, connected }
 
 final _log = Logger('LiveKitService');
 
+/// Protocol version stamped on every outgoing LiveKit data channel message.
+const kProtocolVersion = 1;
+
 /// Service that manages LiveKit room connection and participant tracking.
 ///
 /// This service:
@@ -481,7 +484,7 @@ class LiveKitService {
     List<String>? destinationIdentities,
     String? topic,
   }) async {
-    final versioned = {'v': 1, ...json};
+    final versioned = {'v': kProtocolVersion, ...json};
     final data = utf8.encode(jsonEncode(versioned));
     await publishData(
       data,
