@@ -464,7 +464,7 @@ class TechWorld extends World with TapCallbacks {
     } else if (!isBotIdentity(heartbeat.playerId)) {
       if (!_otherPlayerComponentsMap.containsKey(heartbeat.playerId)) {
         final participant =
-            _liveKitService!.getParticipant(heartbeat.playerId);
+            _liveKitService?.getParticipant(heartbeat.playerId);
         final playerComponent = PlayerComponent(
           position: targetPosition,
           id: heartbeat.playerId,

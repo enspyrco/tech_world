@@ -21,6 +21,10 @@ final _log = Logger('DoorManager');
 ///
 /// Extracted from [TechWorld] to give door-related concerns a single owner
 /// with an explicit dependency surface.
+///
+/// Dependencies are late-binding lambdas because [BarriersComponent],
+/// [PathComponent], and services are initialized in [TechWorld.onLoad] or
+/// during room join — after [DoorManager] is constructed.
 class DoorManager {
   DoorManager({
     required ValueNotifier<GameMap> currentMap,

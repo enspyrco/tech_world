@@ -106,6 +106,9 @@ class LiveKitGameBridge {
   LiveKitService get liveKitService => _liveKitService;
 
   /// Subscribe to all LiveKit streams and register existing participants.
+  ///
+  /// **Side-effect:** registers [InfraHealthService] in [Locator].
+  /// [disconnect] removes it.
   void connect() {
     _log.info('Connecting LiveKit bridge');
 

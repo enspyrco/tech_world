@@ -200,11 +200,11 @@ sequenceDiagram
 
 | Module | Interface | Impl (LOC) | Depth | Issues |
 |--------|-----------|------------|-------|--------|
-| `TechWorld` (flame/tech_world.dart) | 22 public methods/notifiers | 1570 | 2 | GOD WORLD — 15+ direct child types. `progressService` now injected (not via Locator). LiveKit topics use enum. |
+| `TechWorld` (flame/tech_world.dart) | ~15 public methods/notifiers | 1299 | 2 | COORDINATOR — delegates to `LiveKitGameBridge`, `DoorManager`, `BubbleManager`. LiveKit topics use enum. |
 | `main.dart` / `_MyAppState` | 12 private methods, ~20 fields | 1690 | — | GOD STATE — orchestrates auth, room join/leave, challenge submission. Sets `techWorld.progressService` on sign-in. |
 | `BubbleManager` | 12 public methods | 754 | — | DEEP MODULE. `_opacityForDistance` moved here from ProximityService (presentation concern). |
 | `LiveKitService` | 20 public methods/streams | 889 | — | DEEP MODULE. All topics use `LiveKitTopic.*.wire`. `publishJson` still public (callers build payloads). |
-| `ChatService` | ~10 public methods | 897 | — | SLIGHTLY GOD. TTS and `botStatusNotifier` side-effects remain. All topics use `LiveKitTopic.*.wire`. |
+| `ChatService` | ~10 public methods | 920 | — | SLIGHTLY GOD. TTS side-effects remain. Owns `botStatus` (`ValueListenable<BotStatus>`). All topics use `LiveKitTopic.*.wire`. |
 | `RoomSession` | 4 public methods | 311 | — | DEEP MODULE. Reconnection path tested. |
 | `MapEditorState` | ~35 public methods | 911 | — | ACCEPTABLE — CRDT editor scope. |
 | `MapSyncService` | 5 public methods | 965 | — | MIXED CONCERNS. All topics use `LiveKitTopic.*.wire`. |
@@ -226,16 +226,16 @@ sequenceDiagram
 
 ## Remaining Issues
 
-The following refactors from the original assessment were skipped as [M] or [L] complexity:
+### [L] Extract `MapLoader` from `TechWorld`
+`_loadMapComponents` (~185 lines), `_removeMapComponents`, `_loadMapInternal`, `loadMap`, `prefetchTilesetBytes`, `refreshTerminalStates` plus state (`_isLoadingMap`, `_tileFloor`, `_tileObjectLayer`, `_tilesetByteCache`, `_terminalComponents`, `_doorComponents`, `_barriersComponent`). Deferred because the dependency surface is broad — terminal interaction callbacks, tileset registry, pathComponent, game reference, editor mode notifier. Extract when next touching map-loading code.
 
-### [M] Extract `TechWorld` LiveKit-subscription block into `LiveKitGameBridge`
-The 13 stream subscriptions in `connectToLiveKit()` (lines ~620–831) form a coherent unit translating LiveKit events into game mutations. Extract to a plain Dart class `LiveKitGameBridge` with callbacks. Makes subscription lifecycle explicit and testable without full Flame game. **Effort: 200–300 lines, high test value.**
-
-### [M] Eliminate global `botStatusNotifier`
-`botStatusNotifier` (in `bot_status.dart`) is written by `ChatService`, `RoomSession`, and `main.dart`, and read globally. Replace with `ChatService.botStatus` as a `ValueListenable<BotStatus>` getter. **Effort: ~50 lines changed across 5 files, removes global mutable state.**
-
-### [M] Extract code-challenge submission side-effects from `main.dart` into `cast_effects.dart`
-Lines 1226–1270 of `main.dart` duplicate the `applyCastSuccessEffects` pattern. Add `applyCodeSubmitEffects(...)` to `cast_effects.dart`. **Effort: ~80 lines, eliminates duplication.**
-
-### [L] Decompose `TechWorld`
-After the [M] refactors above, extract `MapLoader` and `DoorManager` as sub-systems. TechWorld becomes a thin coordinator. **Effort: 400+ lines, very high value for long-term maintainability.**
+### Completed refactors (this sweep)
+- **LiveKitGameBridge** — 14 subscriptions + InfraHealthService extracted to `lib/flame/livekit_game_bridge.dart` (260 lines).
+- **DoorManager** — unlock, proximity, remote-unlock extracted to `lib/flame/door_manager.dart` (152 lines).
+- **`botStatusNotifier` eliminated** — `ChatService` owns `_botStatus`, exposes `ValueListenable<BotStatus>`.
+- **`applyCodeSubmitEffects`** — shared `_persistCompletion` helper in `cast_effects.dart`.
+- **`LiveKitTopic` enum** — 26 topics, exhaustive switch.
+- **`SpeakerRole` enum** — replaces `'dreamfinder'`/`'user'` strings.
+- **`MapEditorPanel` injection** — `syncService` via constructor, not Locator.
+- **`ProximityService.calculateOpacity`** — moved to `BubbleManager._opacityForDistance`.
+- **`ProgressService` field injection** — no Locator inside TechWorld domain methods.
