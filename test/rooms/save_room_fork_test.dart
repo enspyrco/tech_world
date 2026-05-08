@@ -59,9 +59,8 @@ void main() {
       final isOwnedRoom = room.id.isNotEmpty && room.isOwner('user-1');
       expect(isOwnedRoom, isTrue);
 
-      // Owner updates in place.
-      await service.updateRoomMap(room.id, updatedMap);
-      await service.updateRoomName(room.id, 'Updated Map');
+      // Owner updates in place (single atomic write).
+      await service.updateRoomMapAndName(room.id, updatedMap, 'Updated Map');
 
       final fetched = await service.getRoom(room.id);
       expect(fetched!.name, equals('Updated Map'));
