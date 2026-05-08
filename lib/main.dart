@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:ui' as ui;
 
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:flutter/material.dart';
@@ -59,10 +60,33 @@ import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/utils/locator.dart';
 
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  _initLogging();
-  runApp(const MyApp());
+void main() async {
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    _initLogging();
+
+    // Firebase must be initialized before Crashlytics can record errors.
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
+    // Crashlytics is not supported on web.
+    if (!kIsWeb) {
+      FlutterError.onError =
+          FirebaseCrashlytics.instance.recordFlutterFatalError;
+      ui.PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+    }
+
+    runApp(const MyApp());
+  }, (error, stack) {
+    _log.severe('Uncaught error', error, stack);
+    if (!kIsWeb) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    }
+  });
 }
 
 /// Subscription for the root logger — stored so it can be cancelled if needed
@@ -160,15 +184,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _initializeApp() async {
-    // Stage 1: Initialize Firebase
-    setState(() {
-      _loadingMessage = 'Connecting to Firebase...';
-      _progress = 0.2;
-    });
-
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    // Firebase is already initialized in main().
 
     // Stage 2: Initialize services
     setState(() {
