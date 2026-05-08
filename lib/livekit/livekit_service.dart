@@ -210,10 +210,11 @@ class LiveKitService {
         return null;
       }
 
+      final maxCoord = (gridSize * gridSquareSize * 2).toDouble();
       final points = pointsJson
           .map((p) => Vector2(
-                (p['x'] as num).toDouble(),
-                (p['y'] as num).toDouble(),
+                (p['x'] as num).toDouble().clamp(-maxCoord, maxCoord),
+                (p['y'] as num).toDouble().clamp(-maxCoord, maxCoord),
               ))
           .toList();
 
@@ -879,6 +880,11 @@ class PositionHeartbeat {
     final x = json['x'];
     final y = json['y'];
     if (playerId is! String || x is! int || y is! int) return null;
-    return PositionHeartbeat(playerId: playerId, x: x, y: y);
+    const maxCoord = gridSize * 2;
+    return PositionHeartbeat(
+      playerId: playerId,
+      x: x.clamp(-maxCoord, maxCoord),
+      y: y.clamp(-maxCoord, maxCoord),
+    );
   }
 }
