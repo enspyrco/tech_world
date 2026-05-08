@@ -226,9 +226,13 @@ class ChatService {
     // 'messageId' is the ID of the message being responded to (for correlation)
     final ownId = json['id'] as String?;
     final replyToId = json['messageId'] as String?;
+    // senderName is cosmetic — payload value is acceptable for display.
     final senderName =
         json['senderName'] as String? ?? message.senderId ?? 'Unknown';
-    final senderId = json['senderId'] as String? ?? message.senderId;
+    // For non-DM paths (bot responses, group chat) we read senderId from the
+    // payload, which lets the bot advertise its specific identity. The bot is a
+    // trusted LiveKit participant so this is safe.
+    final payloadSenderId = json['senderId'] as String? ?? message.senderId;
 
     if (text == null) return;
 
@@ -251,10 +255,15 @@ class ChatService {
         '"${text.substring(0, text.length.clamp(0, 50))}..."');
 
     if (isDm) {
+      // For DMs, always use the transport-layer identity (message.senderId)
+      // verified by LiveKit. Never trust the payload's senderId — a malicious
+      // participant could spoof another user's UID, causing messages to appear
+      // under that identity in the UI (even though Firestore would reject the
+      // write). message.senderId is the authoritative, server-verified identity.
       _handleDmMessage(
         text: text,
         senderName: senderName,
-        senderId: senderId ?? 'unknown',
+        senderId: message.senderId ?? 'unknown',
         isResponse: message.topic == 'dm-response',
       );
     } else if (message.topic == 'chat-response') {
@@ -263,7 +272,7 @@ class ChatService {
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: senderId ?? _activeBotIdentity,
+        senderId: payloadSenderId ?? _activeBotIdentity,
         conversationId: 'group',
         isBot: true,
       ));
@@ -275,7 +284,7 @@ class ChatService {
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: senderId,
+        senderId: payloadSenderId,
         conversationId: 'group',
         isLocalUser: false,
       ));
