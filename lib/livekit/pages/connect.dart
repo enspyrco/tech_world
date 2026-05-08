@@ -35,7 +35,8 @@ class _ConnectPageState extends State<ConnectPage> {
   final _tokenCtrl = TextEditingController();
   final _sharedKeyCtrl = TextEditingController();
   bool _simulcast = true;
-  bool _adaptiveStream = true;
+  // Must be false — Flame canvas doesn't signal demand to the SFU.
+  bool _adaptiveStream = false;
   bool _dynacast = true;
   bool _busy = true;
   bool _e2ee = false;
@@ -90,7 +91,8 @@ class _ConnectPageState extends State<ConnectPage> {
     _tokenCtrl.text = 'retrieving...';
     setState(() {
       _simulcast = prefs.getBool(_storeKeySimulcast) ?? true;
-      _adaptiveStream = prefs.getBool(_storeKeyAdaptiveStream) ?? true;
+      // Must be false — Flame canvas doesn't signal demand to the SFU.
+      _adaptiveStream = prefs.getBool(_storeKeyAdaptiveStream) ?? false;
       _dynacast = prefs.getBool(_storeKeyDynacast) ?? true;
       _e2ee = prefs.getBool(_storeKeyE2EE) ?? false;
       _multiCodec = prefs.getBool(_storeKeyMultiCodec) ?? false;

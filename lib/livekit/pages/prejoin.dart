@@ -14,7 +14,8 @@ class JoinArgs {
     this.e2ee = false,
     this.e2eeKey,
     this.simulcast = true,
-    this.adaptiveStream = true,
+    // Must be false — Flame canvas doesn't signal demand to the SFU.
+    this.adaptiveStream = false,
     this.dynacast = true,
     this.preferredCodec = 'VP8',
     this.enableBackupVideoCodec = true,
