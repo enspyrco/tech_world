@@ -62,12 +62,24 @@ service cloud.firestore {
           resource.data.senderId == request.auth.uid;
       }
 
-      // Conversation metadata subcollection
+      // Conversation metadata subcollection.
+      //
+      // Update guard mirrors the room editor-escalation guard above:
+      // existing participants can update non-participants fields, but
+      // nobody can add themselves (or anyone else) to participants on an
+      // existing conversation. Without this, an attacker could update any
+      // conversation doc to insert their UID into participants, then read
+      // every message under that conversationId via the participant-
+      // membership rule on /messages.
       match /conversations/{conversationId} {
         allow read: if request.auth != null &&
           request.auth.uid in resource.data.participants;
-        allow create, update: if request.auth != null &&
+        allow create: if request.auth != null &&
           request.auth.uid in request.resource.data.participants;
+        allow update: if request.auth != null &&
+          request.auth.uid in resource.data.participants &&
+          !request.resource.data.diff(resource.data).affectedKeys()
+           .hasAny(['participants']);
       }
     }
   }
