@@ -132,11 +132,7 @@ class RoomSession {
       repository: chatRepo,
       dreamfinderClient: DreamfinderClient(
         baseUrl: 'https://dreamfinder.imagineering.cc',
-        apiKey: const String.fromEnvironment(
-          'DREAMFINDER_API_KEY',
-          defaultValue:
-              '2aa0e9ab3207b197dc0d392fe6e35e8cbe8bfa78f72ce7f9',
-        ),
+        apiKey: const String.fromEnvironment('DREAMFINDER_API_KEY'),
       ),
     );
     final proximity = ProximityService();
