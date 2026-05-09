@@ -278,7 +278,7 @@ void main() {
 
   group('reconnection backoff', () {
     // Zero-duration delays for fast testing.
-    const _zeroDelays = [Duration.zero, Duration.zero, Duration.zero];
+    const zeroDelays = [Duration.zero, Duration.zero, Duration.zero];
 
     test('retries up to 3 times then shows failure message', () async {
       final liveKit = _FakeLiveKit();
@@ -308,7 +308,7 @@ void main() {
             ChatMessageRepository(firestore: FakeFirebaseFirestore()),
         liveKitService: liveKit,
         firestore: FakeFirebaseFirestore(),
-        reconnectDelays: _zeroDelays,
+        reconnectDelays: zeroDelays,
       );
 
       await session.connect();
@@ -355,7 +355,7 @@ void main() {
             ChatMessageRepository(firestore: FakeFirebaseFirestore()),
         liveKitService: liveKit,
         firestore: FakeFirebaseFirestore(),
-        reconnectDelays: _zeroDelays,
+        reconnectDelays: zeroDelays,
       );
 
       await session.connect();
@@ -402,7 +402,7 @@ void main() {
             ChatMessageRepository(firestore: FakeFirebaseFirestore()),
         liveKitService: liveKit,
         firestore: FakeFirebaseFirestore(),
-        reconnectDelays: _zeroDelays,
+        reconnectDelays: zeroDelays,
       );
 
       await session.connect();
