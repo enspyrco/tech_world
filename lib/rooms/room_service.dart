@@ -70,6 +70,19 @@ class RoomService {
     });
   }
 
+  /// Atomically update both map data and name in a single Firestore write.
+  Future<void> updateRoomMapAndName(
+    String roomId,
+    GameMap map,
+    String name,
+  ) async {
+    await _collection.doc(roomId).update({
+      'mapData': _mapDataJson(map),
+      'name': name,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// Delete a room. Only the owner should call this.
   Future<void> deleteRoom(String roomId) async {
     await _collection.doc(roomId).delete();
@@ -155,23 +168,27 @@ class RoomService {
       if (storedVersion == wizardsTowerVersion) return; // Already up-to-date.
 
       _log.info('Updating Wizard\'s Tower: $storedVersion → $wizardsTowerVersion');
-      await updateRoomMap(doc.id, wizardsTower);
       await _collection.doc(doc.id).update({
+        'mapData': _mapDataJson(wizardsTower),
         'mapVersion': wizardsTowerVersion,
+        'updatedAt': FieldValue.serverTimestamp(),
       });
       return;
     }
 
     _log.info('Seeding "The Wizard\'s Tower" room');
-    final room = await createRoom(
+    final room = RoomData(
+      id: '',
       name: "The Wizard's Tower",
       ownerId: ownerId,
       ownerDisplayName: ownerDisplayName,
-      map: wizardsTower,
       isPublic: true,
+      mapData: wizardsTower,
     );
-    await _collection.doc(room.id).update({
-      'mapVersion': wizardsTowerVersion,
-    });
+    final data = room.toFirestore();
+    data['createdAt'] = FieldValue.serverTimestamp();
+    data['updatedAt'] = FieldValue.serverTimestamp();
+    data['mapVersion'] = wizardsTowerVersion;
+    await _collection.add(data);
   }
 }
