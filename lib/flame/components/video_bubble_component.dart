@@ -97,6 +97,19 @@ class VideoBubbleComponent extends PositionComponent {
   static const double _breathAmount = 0.025; // ±2.5% scale
   static const double _breathSpeed = 2.0; // cycles per second (radians)
 
+  // ── Cached Paints (Flyweight) ───────────────────────────────────────────
+
+  late final Paint _shadowPaint = Paint()
+    ..color = Colors.black.withValues(alpha: 0.3)
+    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+
+  final Paint _layerPaint = Paint();
+  final Paint _hologramLinePaint = Paint()..strokeWidth = 1.5;
+
+  // ── Per-frame bubble path (built once in render, reused for clip + border)
+
+  Path? _frameBubblePath;
+
   // Voice ripple — number of wave lobes around the circle
   static const int _rippleLobes = 8;
   // Max ripple displacement in pixels at full speaking volume
@@ -594,19 +607,17 @@ class VideoBubbleComponent extends PositionComponent {
 
     // Apply opacity via saveLayer when not fully opaque
     if (_opacity < 1.0) {
+      _layerPaint.color =
+          Color.fromARGB((_opacity * 255).round(), 255, 255, 255);
       canvas.saveLayer(
         Rect.fromCircle(center: center, radius: radius + 10),
-        Paint()
-          ..color = Color.fromARGB((_opacity * 255).round(), 255, 255, 255),
+        _layerPaint,
       );
     }
 
     // Draw shadow (skip when glowing — the glow replaces the shadow)
     if (_glowIntensity <= 0) {
-      final shadowPaint = Paint()
-        ..color = Colors.black.withValues(alpha: 0.3)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-      canvas.drawCircle(center + const Offset(0, 2), radius, shadowPaint);
+      canvas.drawCircle(center + const Offset(0, 2), radius, _shadowPaint);
     }
 
     // ── Radial glow ──────────────────────────────────────
@@ -644,8 +655,11 @@ class VideoBubbleComponent extends PositionComponent {
         paint,
       );
 
+      // Build the bubble path once per frame, reuse for clip and border.
+      _frameBubblePath = _buildBubblePath(center, radius);
+
       canvas.save();
-      canvas.clipPath(_buildBubblePath(center, radius));
+      canvas.clipPath(_frameBubblePath!);
 
       final srcRect = Rect.fromLTWH(
         0,
@@ -722,7 +736,9 @@ class VideoBubbleComponent extends PositionComponent {
         ..color = _currentFrame != null ? _glowColor : Colors.white
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2;
-      canvas.drawPath(_buildBubblePath(center, radius), borderPaint);
+      // Reuse the path built earlier, or build fresh if we took the no-video branch.
+      final path = _frameBubblePath ?? _buildBubblePath(center, radius);
+      canvas.drawPath(path, borderPaint);
     }
 
     if (_opacity < 1.0) {
@@ -811,14 +827,12 @@ class VideoBubbleComponent extends PositionComponent {
           ? 0.3 + 0.7 * sin(_time * 8 + i * 0.5).abs()
           : 0.4 + 0.3 * sin(_time * 2 + i * 0.3).abs();
 
-      final linePaint = Paint()
-        ..color = baseColor.withValues(alpha: shimmer * 0.8)
-        ..strokeWidth = 1.5;
+      _hologramLinePaint.color = baseColor.withValues(alpha: shimmer * 0.8);
 
       canvas.drawLine(
         Offset(center.dx - halfWidth, y),
         Offset(center.dx + halfWidth, y),
-        linePaint,
+        _hologramLinePaint,
       );
     }
 
