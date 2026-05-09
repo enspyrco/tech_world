@@ -355,7 +355,7 @@ class VideoBubbleComponent extends PositionComponent {
     _capture = null;
 
     // Cancel any pending unmute wait before disposing (avoids orphaned completer).
-    direct_capture.DirectTrackCapture.cancelPendingUnmute();
+    _webCapture?.cancelPendingUnmute();
     _webCapture?.dispose();
     _webCapture = null;
 
