@@ -32,7 +32,9 @@ class MapSyncService {
     _dataSubscription = _liveKitService.dataReceived
         .where((msg) =>
             msg.topic == _editTopic || msg.topic == _syncTopic)
-        .listen(_onDataReceived);
+        .listen(_onDataReceived, onError: (Object e, StackTrace st) {
+      _log.severe('CRDT data stream error', e, st);
+    });
   }
 
   static final _editTopic = DataTopic.mapEdit.wireName;
@@ -580,27 +582,25 @@ class MapSyncService {
     final json = msg.json;
     if (json == null) return;
 
-    if (msg.topic == _editTopic) {
-      final MapEditBatch batch;
-      try {
-        batch = MapEditBatch.fromJson(json);
-      } catch (e, stack) {
-        _log.warning('Ignoring malformed map-edit message', e, stack);
-        return;
+    try {
+      if (msg.topic == _editTopic) {
+        final batch = MapEditBatch.fromJson(json);
+        if (batch.ops.isEmpty) return;
+        if (_isSyncing) {
+          _syncBuffer.add(batch);
+        } else {
+          _onRemoteEdit(batch);
+        }
+      } else if (msg.topic == _syncTopic) {
+        final type = json['type'] as String?;
+        if (type == 'sync-request' && json['playerId'] != _localPlayerId) {
+          _handleSyncRequest(json['playerId'] as String);
+        } else if (type == 'sync-response') {
+          _handleSyncResponse(json);
+        }
       }
-      if (batch.ops.isEmpty) return;
-      if (_isSyncing) {
-        _syncBuffer.add(batch);
-      } else {
-        _onRemoteEdit(batch);
-      }
-    } else if (msg.topic == _syncTopic) {
-      final type = json['type'] as String?;
-      if (type == 'sync-request' && json['playerId'] != _localPlayerId) {
-        _handleSyncRequest(json['playerId'] as String);
-      } else if (type == 'sync-response') {
-        _handleSyncResponse(json);
-      }
+    } catch (e, st) {
+      _log.severe('Failed to process CRDT message (topic=${msg.topic})', e, st);
     }
   }
 
