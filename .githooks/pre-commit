@@ -1,14 +1,57 @@
 #!/bin/bash
 
 # Pre-commit hook for tech_world
-# Runs Flutter analyzer before allowing commits
+# 1. Secret scan against staged diff (incident motivation: PR #227 leaked
+#    DREAMFINDER_API_KEY by hardcoding it as String.fromEnvironment defaultValue
+#    on 2026-04-09; rotated 2026-05-09)
+# 2. Flutter analyzer with --fatal-infos
 
+set -e
+
+# --- Secret scan ----------------------------------------------------------
+echo "Scanning staged diff for secrets..."
+
+staged=$(git diff --cached --diff-filter=AM)
+
+# Skip empty diffs
+if [ -n "$staged" ]; then
+    # Pattern 1: String.fromEnvironment with non-empty defaultValue containing
+    # >=16 chars of base64-ish content. Catches the exact PR #227 shape.
+    if echo "$staged" | grep -qE "^\+.*defaultValue:[[:space:]]*['\"][A-Za-z0-9_+/=-]{16,}['\"]"; then
+        echo "❌ Pre-commit blocked: String.fromEnvironment defaultValue looks like a hardcoded secret."
+        echo "   Use a real env var or GitHub Secret + --dart-define instead."
+        echo "   Override (NOT recommended): git commit --no-verify"
+        exit 1
+    fi
+
+    # Pattern 2: long hex literal in any source/config file
+    if echo "$staged" | grep -E "^\+\+\+ b/" | grep -vE "(\.lock|\.json|test/.*fixture|node_modules/)" > /dev/null && \
+       echo "$staged" | grep -qE "^\+.*['\"][a-f0-9]{40,}['\"]"; then
+        echo "❌ Pre-commit blocked: long hex literal in staged change (40+ chars)."
+        echo "   If this is a checksum/hash and not a secret, exempt it explicitly via path."
+        exit 1
+    fi
+
+    # Pattern 3: known third-party API key shapes
+    if echo "$staged" | grep -qE "^\+.*\b(sk-[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|AKIA[A-Z0-9]{16}|AIzaSy[A-Za-z0-9_-]{33})\b"; then
+        echo "❌ Pre-commit blocked: detected API key shape (Anthropic/OpenAI/GitHub/AWS/Google)."
+        exit 1
+    fi
+fi
+
+# Optional ceiling check: if gitleaks is installed, run it too
+if command -v gitleaks > /dev/null 2>&1; then
+    gitleaks protect --staged --redact --no-banner || {
+        echo "❌ Pre-commit blocked: gitleaks found a secret."
+        exit 1
+    }
+fi
+
+echo "✅ Secret scan clean"
+
+# --- Flutter analyzer -----------------------------------------------------
 echo "Running Flutter analyzer..."
-
-# Run analyzer with fatal-infos (fail on any issues)
-flutter analyze --fatal-infos
-
-if [ $? -ne 0 ]; then
+if ! flutter analyze --fatal-infos; then
     echo ""
     echo "❌ Commit blocked: Flutter analyzer found issues."
     echo "Fix the issues above before committing."
