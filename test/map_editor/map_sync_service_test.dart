@@ -9,6 +9,7 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
+import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
@@ -45,7 +46,7 @@ void main() {
       expect(fakeLiveKit.publishedMessages, hasLength(1));
 
       final msg = fakeLiveKit.publishedMessages.first;
-      expect(msg['topic'], 'map-edit');
+      expect(msg['topic'], DataTopic.mapEdit.wireName);
       final payload = msg['payload'] as Map<String, dynamic>;
       expect(payload['type'], 'edit');
       expect(payload['playerId'], 'alice');
@@ -277,7 +278,7 @@ void main() {
       await Future.delayed(Duration.zero);
 
       final syncMessages = fakeLiveKit.publishedMessages
-          .where((m) => m['topic'] == 'map-edit-sync')
+          .where((m) => m['topic'] == DataTopic.mapEditSync.wireName)
           .toList();
       expect(syncMessages, hasLength(1));
 
@@ -302,7 +303,7 @@ void main() {
       await Future.delayed(Duration.zero);
 
       final syncMessages = fakeLiveKit.publishedMessages
-          .where((m) => m['topic'] == 'map-edit-sync')
+          .where((m) => m['topic'] == DataTopic.mapEditSync.wireName)
           .toList();
       expect(syncMessages, hasLength(1));
 
@@ -416,7 +417,7 @@ void main() {
       await Future.delayed(Duration.zero);
 
       final syncMessages = fakeLiveKit.publishedMessages
-          .where((m) => m['topic'] == 'map-edit-sync')
+          .where((m) => m['topic'] == DataTopic.mapEditSync.wireName)
           .toList();
       expect(syncMessages, hasLength(1));
 
@@ -502,7 +503,7 @@ class FakeLiveKitService implements LiveKitService {
   void simulateMapEdit(Map<String, dynamic> json) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: json['playerId'] as String,
-      topic: 'map-edit',
+      topic: DataTopic.mapEdit.wireName,
       data: utf8.encode(jsonEncode(json)),
     ));
   }
@@ -510,7 +511,7 @@ class FakeLiveKitService implements LiveKitService {
   void simulateMapEditFrom(String senderId, Map<String, dynamic> json) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: senderId,
-      topic: 'map-edit',
+      topic: DataTopic.mapEdit.wireName,
       data: utf8.encode(jsonEncode(json)),
     ));
   }
@@ -518,7 +519,7 @@ class FakeLiveKitService implements LiveKitService {
   void simulateMapSync(Map<String, dynamic> json, {String? senderId}) {
     _dataReceivedController.add(DataChannelMessage(
       senderId: senderId,
-      topic: 'map-edit-sync',
+      topic: DataTopic.mapEditSync.wireName,
       data: utf8.encode(jsonEncode(json)),
     ));
   }

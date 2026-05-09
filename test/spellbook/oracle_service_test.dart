@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/spellbook/oracle_service.dart';
 
 void main() {
@@ -29,7 +30,7 @@ void main() {
 
       expect(fake.published, hasLength(1));
       final pub = fake.published.single;
-      expect(pub.topic, 'oracle-request');
+      expect(pub.topic, DataTopic.oracleRequest.wireName);
       expect(pub.destinationIdentities, ['bot-claude']);
 
       final payload = pub.payload;
@@ -205,7 +206,7 @@ class _FakeLiveKit implements LiveKitService {
   void simulateResponse(Map<String, dynamic> response) {
     _controller.add(DataChannelMessage(
       senderId: 'bot-claude',
-      topic: 'oracle-response',
+      topic: DataTopic.oracleResponse.wireName,
       data: utf8.encode(jsonEncode(response)),
     ));
   }

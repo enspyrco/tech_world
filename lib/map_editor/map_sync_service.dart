@@ -6,6 +6,7 @@ import 'package:tech_world/flame/maps/barrier_occlusion.dart'
     show buildWallTilesForRegion;
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
+import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/map_editor/crdt/cell_version_map.dart';
 import 'package:tech_world/map_editor/crdt/map_edit_op.dart';
@@ -34,8 +35,8 @@ class MapSyncService {
         .listen(_onDataReceived);
   }
 
-  static const _editTopic = 'map-edit';
-  static const _syncTopic = 'map-edit-sync';
+  static final _editTopic = DataTopic.mapEdit.wireName;
+  static final _syncTopic = DataTopic.mapEditSync.wireName;
 
   final LiveKitService _liveKitService;
   final MapEditorState _editorState;

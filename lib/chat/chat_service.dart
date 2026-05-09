@@ -9,6 +9,7 @@ import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
+import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/services/dreamfinder_client.dart';
 import 'package:tech_world/services/tts_service.dart';
@@ -163,15 +164,15 @@ class ChatService {
     // Listen for group chat messages and bot responses
     _chatSubscription = _liveKitService.dataReceived
         .where((msg) =>
-            msg.topic == 'chat' ||
-            msg.topic == 'chat-response' ||
-            msg.topic == 'dm' ||
-            msg.topic == 'dm-response')
+            msg.topic == DataTopic.chat.wireName ||
+            msg.topic == DataTopic.chatResponse.wireName ||
+            msg.topic == DataTopic.dm.wireName ||
+            msg.topic == DataTopic.dmResponse.wireName)
         .listen(_handleMessage);
 
     // Listen for help-response messages from the bot
     _helpResponseSubscription = _liveKitService.dataReceived
-        .where((msg) => msg.topic == 'help-response')
+        .where((msg) => msg.topic == DataTopic.helpResponse.wireName)
         .listen(_handleHelpResponse);
   }
 
@@ -237,12 +238,12 @@ class ChatService {
     if (ownId != null) _markSeen(ownId);
 
     final isDm =
-        message.topic == 'dm' || message.topic == 'dm-response';
+        message.topic == DataTopic.dm.wireName || message.topic == DataTopic.dmResponse.wireName;
 
     // Skip our own outgoing group messages (we add them locally).
     // DMs from self are also added locally in sendDm, so skip those too.
     final isFromSelf = message.senderId == _liveKitService.userId;
-    if (isFromSelf && (message.topic == 'chat' || message.topic == 'dm')) {
+    if (isFromSelf && (message.topic == DataTopic.chat.wireName || message.topic == DataTopic.dm.wireName)) {
       return;
     }
 
@@ -255,9 +256,9 @@ class ChatService {
         text: text,
         senderName: senderName,
         senderId: senderId ?? 'unknown',
-        isResponse: message.topic == 'dm-response',
+        isResponse: message.topic == DataTopic.dmResponse.wireName,
       );
-    } else if (message.topic == 'chat-response') {
+    } else if (message.topic == DataTopic.chatResponse.wireName) {
       // Bot response — use sender info from payload (supports multiple bots).
       botStatusNotifier.value = BotStatus.idle;
       _messages.add(ChatMessage(
@@ -410,7 +411,7 @@ class ChatService {
         metadata?.entries.where((e) => !reservedKeys.contains(e.key));
 
     final payload = {
-      'type': 'chat',
+      'type': DataTopic.chat.wireName,
       'id': messageId,
       'text': text,
       'senderName': _liveKitService.displayName,
@@ -420,7 +421,7 @@ class ChatService {
 
     await _liveKitService.publishJson(
       payload,
-      topic: 'chat',
+      topic: DataTopic.chat.wireName,
       // No destinationIdentities = broadcast to all
     );
 
@@ -618,7 +619,7 @@ class ChatService {
 
     // Send via LiveKit targeted data channel.
     final payload = {
-      'type': 'dm',
+      'type': DataTopic.dm.wireName,
       'id': messageId,
       'text': text,
       'senderName': _liveKitService.displayName,
@@ -628,7 +629,7 @@ class ChatService {
 
     await _liveKitService.publishJson(
       payload,
-      topic: 'dm',
+      topic: DataTopic.dm.wireName,
       destinationIdentities: [peerId],
     );
 
@@ -773,7 +774,7 @@ class ChatService {
     _pendingHelpRequests[requestId] = completer;
 
     final payload = {
-      'type': 'help-request',
+      'type': DataTopic.helpRequest.wireName,
       'id': requestId,
       'challengeId': challengeId,
       'challengeTitle': challengeTitle,
@@ -787,7 +788,7 @@ class ChatService {
 
     await _liveKitService.publishJson(
       payload,
-      topic: 'help-request',
+      topic: DataTopic.helpRequest.wireName,
       destinationIdentities: [_activeBotIdentity],
     );
 
@@ -855,7 +856,7 @@ class ChatService {
         roomId,
         conversationId: convId,
         participants: participants,
-        type: 'dm',
+        type: DataTopic.dm.wireName,
         lastMessageText: message.text,
       )
           .catchError((Object e) {

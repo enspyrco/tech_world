@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:logging/logging.dart';
 import 'package:tech_world/bots/bot_config.dart';
+import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
 final _log = Logger('OracleService');
@@ -108,7 +109,7 @@ class OracleService {
     // future is consumed in the try-block below.
     final responseFuture = _liveKit.dataReceived
         .where((m) =>
-            m.topic == 'oracle-response' &&
+            m.topic == DataTopic.oracleResponse.wireName &&
             m.senderId != null &&
             isBotIdentity(m.senderId!))
         .map((m) => m.json)
@@ -130,7 +131,7 @@ class OracleService {
           'kind': kind,
           'context': context,
         },
-        topic: 'oracle-request',
+        topic: DataTopic.oracleRequest.wireName,
         destinationIdentities: [botIdentity],
       );
     } catch (e) {
