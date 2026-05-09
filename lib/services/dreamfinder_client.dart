@@ -35,7 +35,18 @@ class DreamfinderClient {
     required this.baseUrl,
     required this.apiKey,
     http.Client? httpClient,
-  }) : _client = httpClient ?? http.Client();
+  }) : _client = httpClient ?? http.Client() {
+    if (!isEnabled) {
+      // Loud once at startup so misconfigured builds are obvious. Without
+      // this, an empty key produces silent 401s on every event AND callers
+      // (e.g. ChatService) hang for 30-60s on response Completers that
+      // never resolve because the bot never received the event.
+      _log.severe(
+        'DreamfinderClient: apiKey is empty — client is disabled. '
+        'Set DREAMFINDER_API_KEY via --dart-define before building.',
+      );
+    }
+  }
 
   /// Base URL of the Dreamfinder HTTP server (e.g., `https://dreamfinder.imagineering.cc`).
   final String baseUrl;
@@ -45,12 +56,19 @@ class DreamfinderClient {
 
   final http.Client _client;
 
+  /// Whether this client has a non-empty API key. Callers can check this to
+  /// avoid scheduling Completers/awaiting responses when the client cannot
+  /// actually reach Dreamfinder.
+  bool get isEnabled => apiKey.isNotEmpty;
+
   /// Forwards a game event to Dreamfinder.
   ///
   /// Fire-and-forget — network and timeout errors are silently logged so
   /// the game never breaks due to Dreamfinder being unreachable. Auth and
   /// format errors are logged at a higher level since they indicate
   /// misconfiguration rather than transient issues.
+  ///
+  /// Fast-returns when [isEnabled] is false (no HTTP request, no log spam).
   Future<void> sendEvent({
     required String topic,
     required String roomName,
@@ -58,6 +76,7 @@ class DreamfinderClient {
     required String senderName,
     required Map<String, dynamic> payload,
   }) async {
+    if (!isEnabled) return;
     try {
       final response = await _client
           .post(
