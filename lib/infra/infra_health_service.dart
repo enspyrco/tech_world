@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/infra/infra_health_state.dart';
+import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
 final _log = Logger('InfraHealthService');
@@ -21,15 +22,15 @@ class InfraHealthService {
   InfraHealthService({required LiveKitService liveKitService})
       : _liveKitService = liveKitService {
     _healthSubscription = _liveKitService.dataReceived
-        .where((msg) => msg.topic == 'infra-health')
+        .where((msg) => msg.topic == DataTopic.infraHealth.wireName)
         .listen(_onHealthMessage);
 
     _healResultSubscription = _liveKitService.dataReceived
-        .where((msg) => msg.topic == 'infra-heal-result')
+        .where((msg) => msg.topic == DataTopic.infraHealResult.wireName)
         .listen(_onHealResult);
 
     _bootSubscription = _liveKitService.dataReceived
-        .where((msg) => msg.topic == 'infra-boot')
+        .where((msg) => msg.topic == DataTopic.infraBoot.wireName)
         .listen(_onBootMessage);
 
     // Mark all services as unknown if no heartbeat arrives within 2× the
@@ -112,7 +113,7 @@ class InfraHealthService {
     _log.info('Requesting heal for $serviceId');
     await _liveKitService.publishJson(
       {'service': serviceId, 'action': 'restart'},
-      topic: 'infra-heal',
+      topic: DataTopic.infraHeal.wireName,
       destinationIdentities: [dreamfinderBot.identity],
     );
   }

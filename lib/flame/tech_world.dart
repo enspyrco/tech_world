@@ -48,6 +48,7 @@ import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/infra/infra_health_service.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
+import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -776,13 +777,13 @@ class TechWorld extends World with TapCallbacks {
 
     // Subscribe to speech transcripts for in-game speech bubbles.
     _speechTranscriptSubscription = _liveKitService!.dataReceived
-        .where((msg) => msg.topic == 'speech-transcript')
+        .where((msg) => msg.topic == DataTopic.speechTranscript.wireName)
         .listen(_handleSpeechTranscript);
 
     // Subscribe to door-unlock events from other players so doors they
     // unlock become passable locally (barrier removed, proximity updated).
     _doorUnlockSubscription = _liveKitService!.dataReceived
-        .where((msg) => msg.topic == 'door-unlock')
+        .where((msg) => msg.topic == DataTopic.doorUnlock.wireName)
         .listen(_handleRemoteDoorUnlock);
 
     // Infrastructure health monitoring.
@@ -1352,11 +1353,11 @@ class TechWorld extends World with TapCallbacks {
     // Broadcast to other players.
     _liveKitService?.publishJson(
       {
-        'type': 'door-unlock',
+        'type': DataTopic.doorUnlock.wireName,
         'doorX': door.position.x,
         'doorY': door.position.y,
       },
-      topic: 'door-unlock',
+      topic: DataTopic.doorUnlock.wireName,
     );
 
     _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
