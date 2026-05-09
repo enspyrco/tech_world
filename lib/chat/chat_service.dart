@@ -227,9 +227,16 @@ class ChatService {
     // 'messageId' is the ID of the message being responded to (for correlation)
     final ownId = json['id'] as String?;
     final replyToId = json['messageId'] as String?;
+    // senderName is cosmetic — payload value is acceptable for display.
     final senderName =
         json['senderName'] as String? ?? message.senderId ?? 'Unknown';
-    final senderId = json['senderId'] as String? ?? message.senderId;
+    // payloadSenderId is read from the JSON payload, which the bot uses to
+    // advertise its specific identity in chat-response messages. Bots are
+    // trusted LiveKit participants so payload-sourced senderId is safe THERE.
+    // Never use payloadSenderId for DMs or group chat from regular users —
+    // a malicious participant could spoof another user's UID via the payload.
+    // For those paths, use message.senderId (LiveKit transport, server-verified).
+    final payloadSenderId = json['senderId'] as String? ?? message.senderId;
 
     if (text == null) return;
 
@@ -252,19 +259,23 @@ class ChatService {
         '"${text.substring(0, text.length.clamp(0, 50))}..."');
 
     if (isDm) {
+      // For DMs, always use the transport-layer identity (message.senderId).
+      // message.senderId is the authoritative, server-verified identity.
       _handleDmMessage(
         text: text,
         senderName: senderName,
-        senderId: senderId ?? 'unknown',
+        senderId: message.senderId ?? 'unknown',
         isResponse: message.topic == DataTopic.dmResponse.wireName,
       );
     } else if (message.topic == DataTopic.chatResponse.wireName) {
-      // Bot response — use sender info from payload (supports multiple bots).
+      // Bot response — payload senderId is OK (bot is a trusted participant
+      // that advertises its specific identity via the payload, supporting
+      // multiple bots in one room).
       botStatusNotifier.value = BotStatus.idle;
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: senderId ?? _activeBotIdentity,
+        senderId: payloadSenderId ?? _activeBotIdentity,
         conversationId: 'group',
         isBot: true,
       ));
@@ -272,11 +283,11 @@ class ChatService {
       _ttsService.speak(text);
       _messagesController.add(List.from(_messages));
     } else {
-      // Message from another user (group chat)
+      // Group chat from another user — use transport identity, not payload.
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: senderId,
+        senderId: message.senderId,
         conversationId: 'group',
         isLocalUser: false,
       ));
