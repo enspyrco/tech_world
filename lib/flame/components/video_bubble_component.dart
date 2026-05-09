@@ -367,7 +367,8 @@ class VideoBubbleComponent extends PositionComponent {
     _capture?.dispose();
     _capture = null;
 
-    // Dispose web captures (local and remote)
+    // Cancel any pending unmute wait before disposing (avoids orphaned completer).
+    _webCapture?.cancelPendingUnmute();
     _webCapture?.dispose();
     _webCapture = null;
 
