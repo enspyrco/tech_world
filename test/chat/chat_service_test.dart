@@ -669,6 +669,53 @@ void main() {
         );
         expect(conv.type, equals(ConversationType.dm));
       });
+
+      test('spoofed senderId in DM payload is ignored; transport identity wins',
+          () async {
+        // Regression: a malicious participant could craft a DM payload with
+        // another user's UID as senderId, making the message appear to come
+        // from that person in the UI.  The fix: always route DMs using
+        // message.senderId (the LiveKit transport identity, server-verified),
+        // never the payload's senderId.
+        fakeLiveKit.connected = true;
+
+        // alice-uid is the real sender (transport layer), but the payload
+        // claims the message is from 'victim-uid'.
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'I am impersonating the victim!',
+          'id': 'spoof-1',
+          'senderName': 'Victim',
+          'senderId': 'victim-uid', // <-- attacker spoofs this
+        });
+
+        await pumpEventQueue();
+
+        // Conversation should be keyed to alice-uid, not victim-uid.
+        final aliceConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'alice-uid',
+        );
+        final victimConvId = Conversation.conversationIdFor(
+          'test-user-id',
+          'victim-uid',
+        );
+
+        final convIds =
+            chatService.currentConversations.map((c) => c.id).toSet();
+        expect(convIds, contains(aliceConvId),
+            reason:
+                'conversation should be filed under the real transport sender');
+        expect(convIds, isNot(contains(victimConvId)),
+            reason: 'spoofed victim-uid should not create a conversation');
+
+        // The message itself should carry the transport senderId, not the
+        // payload's spoofed value.
+        final msgs = chatService.dmMessagesSnapshot('alice-uid');
+        expect(msgs, isNotEmpty);
+        expect(msgs.first.senderId, equals('alice-uid'),
+            reason: 'senderId must come from transport, not payload');
+        expect(msgs.first.senderId, isNot(equals('victim-uid')));
+      });
     });
 
     group('loadHistory (regression)', () {
