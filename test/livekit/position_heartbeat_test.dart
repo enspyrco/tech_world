@@ -111,5 +111,27 @@ void main() {
       expect(hb!.x, 1);
       expect(hb.y, 2);
     });
+
+    test('clamps extreme positive coordinates to maxCoord', () {
+      final hb = PositionHeartbeat.tryParse({
+        'playerId': 'u',
+        'x': 9999,
+        'y': 50000,
+      });
+      expect(hb, isNotNull);
+      expect(hb!.x, 100); // gridSize * 2
+      expect(hb.y, 100);
+    });
+
+    test('clamps extreme negative coordinates to -maxCoord', () {
+      final hb = PositionHeartbeat.tryParse({
+        'playerId': 'u',
+        'x': -9999,
+        'y': -200,
+      });
+      expect(hb, isNotNull);
+      expect(hb!.x, -100);
+      expect(hb.y, -100);
+    });
   });
 }
