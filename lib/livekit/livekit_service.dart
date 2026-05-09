@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
@@ -837,13 +838,20 @@ class AvatarUpdate {
   final String spriteAsset;
 
   /// Try to parse an [AvatarUpdate] from a JSON map. Returns null if required
-  /// fields are missing or have wrong types.
+  /// fields are missing, have wrong types, or contain an unknown sprite asset.
   ///
   /// Uses Dart 3 map patterns so a wrong-typed value returns null rather
   /// than throwing — a thrown error inside the stream's `.map` callback
   /// would tear down avatar reception for the rest of the session.
+  ///
+  /// The [spriteAsset] value is validated against [predefinedAvatars] to
+  /// prevent a malicious participant from supplying an unknown asset name that
+  /// would cause `game.images.fromCache` to throw a [StateError] and crash
+  /// rendering for that player component.
   static AvatarUpdate? tryParse(Map<String, dynamic>? json) {
     if (json case {'playerId': String playerId, 'spriteAsset': String spriteAsset}) {
+      final knownAssets = predefinedAvatars.map((a) => a.spriteAsset).toSet();
+      if (!knownAssets.contains(spriteAsset)) return null;
       final avatarId = switch (json['avatarId']) { String s => s, _ => '' };
       return AvatarUpdate(
         playerId: playerId,
