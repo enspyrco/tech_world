@@ -23,7 +23,7 @@ void main() {
       });
 
       test('creates component from User', () {
-        final user = AuthUser(id: 'user-123', displayName: 'John Doe');
+        final user = SignedInUser(id: 'user-123', displayName: 'John Doe');
         final player = PlayerComponent.from(user);
 
         expect(player.id, equals('user-123'));
@@ -219,14 +219,14 @@ void main() {
       });
 
       test('PlayerComponent.from defaults to NPC11.png', () {
-        final user = AuthUser(id: 'user-1', displayName: 'User');
+        final user = SignedInUser(id: 'user-1', displayName: 'User');
         final player = PlayerComponent.from(user);
 
         expect(player.spriteAsset, equals('NPC11.png'));
       });
 
       test('PlayerComponent.from accepts optional spriteAsset', () {
-        final user = AuthUser(id: 'user-1', displayName: 'User');
+        final user = SignedInUser(id: 'user-1', displayName: 'User');
         final player = PlayerComponent.from(user, spriteAsset: 'NPC13.png');
 
         expect(player.spriteAsset, equals('NPC13.png'));

@@ -19,14 +19,22 @@ enum CastFeedback {
 /// The outcome of evaluating a player's prompt against a challenge.
 class CastResult {
   /// Creates a cast result.
+  ///
+  /// [passed] is derived from [feedback]: only [CastFeedback.resonates]
+  /// counts as a pass. The named parameter is accepted for backward
+  /// compatibility but ignored — the canonical source of truth is the
+  /// feedback enum.
   const CastResult({
-    required this.passed,
+    bool passed = false, // ignored — derived from feedback
     required this.feedback,
     this.judgeReasoning,
   });
 
   /// Whether the challenge criteria were met.
-  final bool passed;
+  ///
+  /// Derived from [feedback] — the enum is the single source of truth.
+  /// `resonates` is the only passing feedback; all others fail.
+  bool get passed => feedback == CastFeedback.resonates;
 
   /// Qualitative feedback category.
   final CastFeedback feedback;

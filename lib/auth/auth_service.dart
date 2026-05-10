@@ -20,7 +20,7 @@ class AuthService {
 
   User get user => _user;
   String get userId => _user.id;
-  bool get signedIn => !(_user is PlaceholderUser || _user is SignedOutUser);
+  bool get signedIn => _user is SignedInUser;
   Stream<AuthUser> get authStateChanges async* {
     await for (final firebaseUser in FirebaseAuth.instance.authStateChanges()) {
       if (firebaseUser == null) {
@@ -31,7 +31,7 @@ class AuthService {
           displayName =
               await _userProfileService.getDisplayName(firebaseUser.uid);
         }
-        _user = AuthUser(
+        _user = SignedInUser(
           id: firebaseUser.uid,
           displayName: displayName,
           isAnonymous: firebaseUser.isAnonymous,
@@ -54,7 +54,7 @@ class AuthService {
         displayName =
             await _userProfileService.getDisplayName(credential.user!.uid);
       }
-      _user = AuthUser(
+      _user = SignedInUser(
         id: credential.user!.uid,
         displayName: displayName,
         isAnonymous: true,
@@ -74,7 +74,7 @@ class AuthService {
         displayName =
             await _userProfileService.getDisplayName(credential.user!.uid);
       }
-      _user = AuthUser(
+      _user = SignedInUser(
         id: credential.user!.uid,
         displayName: displayName,
       );
@@ -100,7 +100,7 @@ class AuthService {
         displayName: displayName,
         email: email,
       );
-      _user = AuthUser(
+      _user = SignedInUser(
         id: credential.user!.uid,
         displayName: displayName ?? '',
       );
@@ -173,7 +173,7 @@ class AuthService {
           await _userProfileService.getDisplayName(firebaseUser.uid);
     }
 
-    _user = AuthUser(
+    _user = SignedInUser(
       id: firebaseUser.uid,
       displayName: finalDisplayName,
     );
@@ -233,7 +233,7 @@ class AuthService {
       email: firebaseUser.email,
     );
 
-    _user = AuthUser(
+    _user = SignedInUser(
       id: firebaseUser.uid,
       displayName: firebaseUser.displayName ?? '',
     );

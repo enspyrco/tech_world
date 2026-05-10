@@ -262,7 +262,7 @@ class _MyAppState extends State<MyApp> {
       // User signed in — set up profile & services, show lobby.
       _log.info('User signed in: ${user.id} (${user.displayName})');
       _currentUserId = user.id;
-      _isAnonymous = user.isAnonymous;
+      _isAnonymous = user is SignedInUser && user.isAnonymous;
       _currentDisplayName = user.displayName;
 
       // Load saved avatar and profile picture from Firestore

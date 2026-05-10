@@ -26,7 +26,7 @@ void main() {
 
     test('clears LiveKit state when user signs out', () async {
       // First sign in
-      final user1 = AuthUser(id: 'user1', displayName: 'User 1');
+      final user1 = SignedInUser(id: 'user1', displayName: 'User 1');
       authController.add(user1);
       await pumpEventQueue();
 
@@ -47,7 +47,7 @@ void main() {
       );
       Locator.add<LiveKitService>(service2);
 
-      final user2 = AuthUser(id: 'user2', displayName: 'User 2');
+      final user2 = SignedInUser(id: 'user2', displayName: 'User 2');
       authController.add(user2);
       await pumpEventQueue();
 
@@ -68,7 +68,7 @@ void main() {
       Locator.add<LiveKitService>(service1);
 
       // Sign in
-      final user1 = AuthUser(id: 'user1', displayName: 'User 1');
+      final user1 = SignedInUser(id: 'user1', displayName: 'User 1');
       authController.add(user1);
       await pumpEventQueue();
 
@@ -87,7 +87,7 @@ void main() {
       Locator.add<LiveKitService>(service2);
 
       // Sign in again
-      final user2 = AuthUser(id: 'user2', displayName: 'User 2');
+      final user2 = SignedInUser(id: 'user2', displayName: 'User 2');
       authController.add(user2);
       await pumpEventQueue();
 
@@ -109,7 +109,7 @@ void main() {
         Locator.add<LiveKitService>(service);
 
         // Sign in
-        authController.add(AuthUser(id: 'user$i', displayName: 'User $i'));
+        authController.add(SignedInUser(id: 'user$i', displayName: 'User $i'));
         await pumpEventQueue();
 
         // Sign out
@@ -127,7 +127,7 @@ void main() {
       );
       Locator.add<LiveKitService>(finalService);
 
-      authController.add(AuthUser(id: 'final', displayName: 'Final User'));
+      authController.add(SignedInUser(id: 'final', displayName: 'Final User'));
       await pumpEventQueue();
 
       expect(finalService.userId, equals('final'));
