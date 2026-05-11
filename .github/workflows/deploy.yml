@@ -83,6 +83,12 @@ jobs:
       always() &&
       needs.changes.outputs.docs_only != 'true' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped')
+    # Serialize deploys: rsync --delete to /srv/tech-world races with sibling tmp
+    # files when bursts of merges trigger concurrent runs (observed 2026-05-09).
+    # Latest commit always wins; older runs are cancelled mid-flight.
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
