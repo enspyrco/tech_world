@@ -127,7 +127,7 @@ void main() {
       const doorRequires = [PromptChallengeId.evocationFizzbuzz];
 
       // Act — speak the word.
-      final result = await performCast(
+      final (result, _) = await performCast(
         transcript: 'ignis',
         doorRequiredChallenges: doorRequires,
         spellbook: spellbook,
@@ -159,7 +159,7 @@ void main() {
     test('NotLearned does NOT mark progress — door stays locked', () async {
       // Spellbook is empty. Speaking a real word the player hasn't
       // earned must not unlock the door.
-      final result = await performCast(
+      final (result, _) = await performCast(
         transcript: 'ignis',
         doorRequiredChallenges: const [PromptChallengeId.evocationFizzbuzz],
         spellbook: spellbook,
@@ -174,7 +174,7 @@ void main() {
     test('WrongDoor does NOT mark progress', () async {
       await spellbook.learnWord(WordId.ignis);
 
-      final result = await performCast(
+      final (result, _) = await performCast(
         transcript: 'ignis',
         doorRequiredChallenges: const [PromptChallengeId.divinationColor],
         spellbook: spellbook,
@@ -192,7 +192,7 @@ void main() {
     test('NoMatch does NOT mark progress', () async {
       await spellbook.learnWord(WordId.ignis);
 
-      final result = await performCast(
+      final (result, _) = await performCast(
         transcript: 'blarghnonsense',
         doorRequiredChallenges: const [PromptChallengeId.evocationFizzbuzz],
         spellbook: spellbook,
@@ -210,7 +210,7 @@ void main() {
       // fails on a presentation detail.
       await spellbook.learnWord(WordId.ignis);
 
-      final result = await performCast(
+      final (result, _) = await performCast(
         transcript: '  IGNIS  ',
         doorRequiredChallenges: const [PromptChallengeId.evocationFizzbuzz],
         spellbook: spellbook,
@@ -225,7 +225,7 @@ void main() {
         () async {
       await spellbook.learnWord(WordId.ignis);
 
-      final result = await performCast(
+      final (result, _) = await performCast(
         transcript: null,
         doorRequiredChallenges: const [PromptChallengeId.evocationFizzbuzz],
         spellbook: spellbook,
@@ -245,7 +245,7 @@ void main() {
       // spoken word matches *one* of the door's required challenges.
       await spellbook.learnWord(WordId.lumen);
 
-      final result = await performCast(
+      final (result, _) = await performCast(
         transcript: 'lumen',
         doorRequiredChallenges: const [
           PromptChallengeId.evocationFizzbuzz,

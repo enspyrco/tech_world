@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart'
     show buildWallTilesForRegion;
 import 'package:tech_world/flame/shared/constants.dart';
@@ -96,7 +98,7 @@ class MapSyncService {
       ops: [op],
     );
 
-    _pushAndPublish(batch);
+    _pushAndPublish(batch, action: MapEditAction.paintTile);
   }
 
   /// Paint a wall at (x, y) using the active wall style.
@@ -197,7 +199,7 @@ class MapSyncService {
       counter: counter,
       ops: ops,
     );
-    _pushAndPublish(batch);
+    _pushAndPublish(batch, action: MapEditAction.paintWall);
   }
 
   /// Erase a wall at (x, y).
@@ -293,7 +295,7 @@ class MapSyncService {
       counter: counter,
       ops: ops,
     );
-    _pushAndPublish(batch);
+    _pushAndPublish(batch, action: MapEditAction.eraseWall);
   }
 
   /// Paint a tile ref at (x, y) on the active tile layer.
@@ -401,7 +403,7 @@ class MapSyncService {
       counter: counter,
       ops: ops,
     );
-    _pushAndPublish(batch);
+    _pushAndPublish(batch, action: MapEditAction.paintTileRef);
   }
 
   /// Paint terrain at (x, y) using the active terrain brush.
@@ -466,7 +468,7 @@ class MapSyncService {
       counter: counter,
       ops: ops,
     );
-    _pushAndPublish(batch);
+    _pushAndPublish(batch, action: MapEditAction.paintTerrain);
   }
 
   /// Erase terrain at (x, y).
@@ -523,27 +525,31 @@ class MapSyncService {
       counter: counter,
       ops: ops,
     );
-    _pushAndPublish(batch);
+    _pushAndPublish(batch, action: MapEditAction.eraseTerrain);
   }
 
   /// Undo the last local edit.
   void undo() {
     final batch = _undoManager.createUndo();
-    if (batch == null) return;
+    if (batch == null || batch.ops.isEmpty) return;
     _applyBatchLocally(batch);
     _versionMap.recordBatch(batch);
     _publishBatch(batch);
     _notifyUndoRedo();
+    final firstOp = batch.ops.first;
+    dispatch([MapEdited(action: MapEditAction.undo, x: firstOp.x, y: firstOp.y)]);
   }
 
   /// Redo the last undone edit.
   void redo() {
     final batch = _undoManager.createRedo();
-    if (batch == null) return;
+    if (batch == null || batch.ops.isEmpty) return;
     _applyBatchLocally(batch);
     _versionMap.recordBatch(batch);
     _publishBatch(batch);
     _notifyUndoRedo();
+    final firstOp = batch.ops.first;
+    dispatch([MapEdited(action: MapEditAction.redo, x: firstOp.x, y: firstOp.y)]);
   }
 
   // -------------------------------------------------------------------------
@@ -648,11 +654,15 @@ class MapSyncService {
     _editorState.notifyRemoteChange();
   }
 
-  void _pushAndPublish(MapEditBatch batch) {
+  void _pushAndPublish(MapEditBatch batch, {required MapEditAction action}) {
     _undoManager.push(batch);
     _versionMap.recordBatch(batch);
     _publishBatch(batch);
     _notifyUndoRedo();
+    if (batch.ops.isNotEmpty) {
+      final firstOp = batch.ops.first;
+      dispatch([MapEdited(action: action, x: firstOp.x, y: firstOp.y)]);
+    }
   }
 
   Future<void> _publishBatch(MapEditBatch batch) async {

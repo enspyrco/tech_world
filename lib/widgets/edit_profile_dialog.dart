@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/auth/profile_picture_service.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 
 /// Result returned from [EditProfileDialog] when the user saves.
 class EditProfileResult {
@@ -131,6 +133,7 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
         await user.reload();
       }
 
+      dispatch([ProfileUpdated(displayName: name)]);
       if (mounted) {
         Navigator.of(context).pop(EditProfileResult(
           displayName: name,

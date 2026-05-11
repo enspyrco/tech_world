@@ -1,4 +1,6 @@
 import 'package:logging/logging.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/spellbook/door_cast_result.dart';
@@ -8,7 +10,22 @@ import 'package:tech_world/spellbook/word_of_power.dart';
 
 final _log = Logger('CastEffects');
 
-/// Apply the persistent side-effects of a successful prompt-challenge cast:
+/// Pure function: determine which events a successful cast should produce.
+///
+/// Returns a [WordLearned] event (if the challenge maps to a word) and a
+/// [ChallengeCompleted] event. No I/O, no service calls, no logging.
+List<AppEvent> castSuccessEvents(PromptChallengeId challengeId) {
+  final events = <AppEvent>[];
+  final word = challengeToWord[challengeId];
+  if (word != null) {
+    events.add(WordLearned(wordId: word.id, challengeId: challengeId));
+  }
+  events.add(ChallengeCompleted(challengeId: challengeId.wireName));
+  return events;
+}
+
+/// Apply the persistent side-effects of a successful prompt-challenge cast
+/// and dispatch the corresponding events.
 ///
 /// 1. Grant the [WordOfPower] earned by [challengeId] (if any), then
 /// 2. Mark the challenge completed.
@@ -26,7 +43,10 @@ final _log = Logger('CastEffects');
 /// Both per-service exceptions are logged and swallowed — the door-unlock
 /// callback that follows in the UI should still run regardless of
 /// persistence outcome.
-Future<void> applyCastSuccessEffects({
+///
+/// Returns the events that were dispatched, so callers can inspect them
+/// without re-deriving.
+Future<List<AppEvent>> applyCastSuccessEffects({
   required PromptChallengeId challengeId,
   required SpellbookService? spellbook,
   required ProgressService? progress,
@@ -55,14 +75,21 @@ Future<void> applyCastSuccessEffects({
       _log.warning('Failed to persist completion: $e', e);
     }
   }
+
+  final events = castSuccessEvents(challengeId);
+  dispatch(events);
+  return events;
 }
 
 /// Door-cast orchestrator: classify the transcript and, on a
 /// [CastPass], apply the same persistent side-effects as the
 /// prompt-cast path ([applyCastSuccessEffects]). Negative outcomes
-/// (NoMatch / NotLearned / WrongDoor) write nothing — by design,
+/// (NoMatch / NotLearned / WrongDoor) produce no events — by design,
 /// because aiming a learned word at the wrong door must not silently
 /// satisfy progression.
+///
+/// Returns the classification result alongside any events produced.
+/// Events are already dispatched internally via [applyCastSuccessEffects].
 ///
 /// `spellbook` may be null (race against sign-in) — every cast then
 /// classifies as [DoorCastNotLearned] (or [DoorCastNoMatch]) which is
@@ -74,7 +101,7 @@ Future<void> applyCastSuccessEffects({
 /// flavor on [DoorCastNoMatch], hint on [DoorCastNotLearned] /
 /// [CastWrongDoor]). Free-cast outcomes ([FreeCastResult]) cannot reach
 /// this path — the type system prevents it.
-Future<DoorCastResult> performCast({
+Future<WithEvents<DoorCastResult>> performCast({
   required String? transcript,
   required List<PromptChallengeId> doorRequiredChallenges,
   required SpellbookService? spellbook,
@@ -87,12 +114,13 @@ Future<DoorCastResult> performCast({
   );
 
   if (result is CastPass) {
-    await applyCastSuccessEffects(
+    final events = await applyCastSuccessEffects(
       challengeId: result.challengeId,
       spellbook: spellbook,
       progress: progress,
     );
+    return (result, events);
   }
 
-  return result;
+  return (result, const <AppEvent>[]);
 }

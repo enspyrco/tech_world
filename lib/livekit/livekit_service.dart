@@ -11,6 +11,8 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/utils/stream_extensions.dart';
 import 'package:tech_world/bots/bot_config.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
@@ -308,6 +310,7 @@ class LiveKitService {
 
       _connectionState = _ConnectionState.connected;
       _log.info('Connected to LiveKit room "$roomName"');
+      dispatch([LiveKitConnected(roomName: roomName)]);
 
       // Notify about existing participants
       for (final participant in _room!.remoteParticipants.values) {
@@ -746,6 +749,7 @@ class LiveKitService {
         _room = null;
         // Notify consumers so they can show a banner / attempt reconnect.
         _connectionLostController.add(event.reason?.name);
+        dispatch([LiveKitDisconnected(reason: event.reason?.name)]);
       })
       ..on<LocalTrackPublishedEvent>((event) {
         _log.fine(
