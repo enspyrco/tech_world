@@ -98,7 +98,7 @@ Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthSer
 
 Domain events (`lib/events/types.dart`) are dispatched via `dispatch()` (`lib/events/dispatch.dart`) and fanned to registered sinks. 34 sealed event types cover auth, room lifecycle, player movement, terminals, casting, chat, map editing, proximity, bot presence, and LiveKit state. The log bridge routes all `_log.*` calls through the same pipeline.
 
-Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app documents). See `robin-docs/LOGS.md` for the full event catalogue.
+Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app documents). The full event catalogue is the sealed class hierarchy in `lib/events/types.dart`.
 
 ### Communication (All via LiveKit)
 
