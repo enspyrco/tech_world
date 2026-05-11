@@ -450,7 +450,7 @@ class ChatService {
       payload: payload,
     ));
 
-    _log.info('Sent message: "$text"');
+    _log.info('Sent message (id=$messageId, len=${text.length})');
     dispatch([GroupMessageSent(
       messageId: messageId,
       challengeId: metadata?['challengeId'] as String?,
@@ -653,7 +653,7 @@ class ChatService {
       destinationIdentities: [peerId],
     );
 
-    _log.info('Sent DM to $peerId: "$text"');
+    _log.info('Sent DM to $peerId (len=${text.length})');
     dispatch([DmSent(peerId: peerId, conversationId: convId)]);
 
     // Persist to Firestore.

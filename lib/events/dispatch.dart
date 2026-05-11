@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:tech_world/events/types.dart';
 
 typedef Sink = void Function(AppEvent event);
@@ -33,10 +34,21 @@ void dispatch(List<AppEvent> events) {
   final asyncs = List.of(_asyncSinks);
   for (final event in events) {
     for (final sink in syncs) {
-      sink(event);
+      // A failing sink must never crash the app or interrupt the
+      // dispatch chain — observability is downstream of product flow.
+      try {
+        sink(event);
+      } catch (e, st) {
+        debugPrint('[dispatch] sync sink threw: $e\n$st');
+      }
     }
     for (final sink in asyncs) {
-      unawaited(sink(event));
+      // Async errors get logged via catchError instead of bubbling to
+      // runZonedGuarded — keeps observability failures out of crash
+      // reporting. unawaited makes the fire-and-forget intent explicit.
+      unawaited(sink(event).catchError((Object e, StackTrace st) {
+        debugPrint('[dispatch] async sink threw: $e\n$st');
+      }));
     }
   }
 }
