@@ -367,6 +367,13 @@ class TechWorld extends World with TapCallbacks {
   final Map<String, String> _pendingAvatars = {};
   Avatar? _localAvatar;
 
+  /// Apply the user's "hide video bubbles" preference. Takes effect for
+  /// newly-created bubbles only — existing bubbles are not retroactively
+  /// swapped. Call before [connectToLiveKit] on room entry.
+  void setHideVideoBubbles(bool value) {
+    _bubbleManager.hideVideoBubbles = value;
+  }
+
   /// Set the local player's avatar. Also broadcasts to other participants.
   void setLocalAvatar(Avatar avatar) {
     _localAvatar = avatar;
