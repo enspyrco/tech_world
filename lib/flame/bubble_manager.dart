@@ -40,10 +40,20 @@ class BubbleManager {
     required void Function(Component) addComponent,
     required Map<String, PlayerComponent> remotePlayers,
     required Map<String, BotCharacterComponent> bots,
+    this.hideVideoBubbles = false,
   })  : _localPlayer = localPlayer,
         _addComponent = addComponent,
         _remotePlayers = remotePlayers,
         _bots = bots;
+
+  /// When true, all proximity bubbles render as [PlayerBubbleComponent]
+  /// (avatar-only) regardless of whether the underlying participant has a
+  /// video track. Audio and player avatars are unaffected.
+  ///
+  /// Mutable so the owning game world can apply the user's saved preference
+  /// before each room entry. Existing bubbles are not retroactively swapped —
+  /// the toggle takes effect for newly created bubbles only.
+  bool hideVideoBubbles;
 
   // ── Construction-time stable references ──────────────────────────────────
 
@@ -174,7 +184,7 @@ class BubbleManager {
           final dfParticipant =
               _liveKitService?.getParticipant(dreamfinderIdentity);
           PositionComponent bubble;
-          if (dfParticipant != null) {
+          if (dfParticipant != null && !hideVideoBubbles) {
             bubble = _createDreamfinderVideoBubble(dfParticipant);
           } else {
             bubble = BotBubbleComponent();
@@ -243,6 +253,10 @@ class BubbleManager {
       final dfParticipant =
           _liveKitService?.getParticipant(dreamfinderIdentity);
       if (dfParticipant == null) return;
+
+      // When the user has hidden video bubbles, never upgrade the DF bubble
+      // to a video bubble — the existing BotBubbleComponent stays in place.
+      if (hideVideoBubbles) return;
 
       final hasCanvasCapture = existingBubble is VideoBubbleComponent &&
           existingBubble.externalVideoCapture != null;
@@ -454,7 +468,9 @@ class BubbleManager {
   PositionComponent _createBubbleForPlayer(
       String playerId, PlayerComponent playerComponent) {
     final participant = _liveKitService?.getParticipant(playerId);
-    if (participant != null && _hasVideoTrack(participant)) {
+    if (!hideVideoBubbles &&
+        participant != null &&
+        _hasVideoTrack(participant)) {
       final videoBubble = VideoBubbleComponent(
         participant: participant,
         displayName: playerComponent.displayName,
@@ -478,7 +494,9 @@ class BubbleManager {
   PositionComponent _createLocalPlayerBubble() {
     final localParticipant = _liveKitService?.localParticipant;
 
-    if (localParticipant != null && _hasVideoTrack(localParticipant)) {
+    if (!hideVideoBubbles &&
+        localParticipant != null &&
+        _hasVideoTrack(localParticipant)) {
       _log.fine('Creating local VideoBubbleComponent');
       final videoBubble = VideoBubbleComponent(
         participant: localParticipant,

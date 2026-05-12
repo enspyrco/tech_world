@@ -8,6 +8,7 @@ import 'package:tech_world/auth/profile_picture_service.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
+import 'package:tech_world/preferences/user_preferences.dart';
 
 /// Result returned from [EditProfileDialog] when the user saves.
 class EditProfileResult {
@@ -52,11 +53,17 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   /// The current profile picture URL (may be updated after upload).
   String? _currentPhotoUrl;
 
+  /// Loaded asynchronously from [SharedPreferences]; null until ready.
+  bool? _hideVideoBubbles;
+
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.currentDisplayName);
     _currentPhotoUrl = widget.currentProfilePictureUrl;
+    UserPreferences.hideVideoBubbles().then((value) {
+      if (mounted) setState(() => _hideVideoBubbles = value);
+    });
   }
 
   @override
@@ -242,6 +249,28 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                 ),
                 onSubmitted: (_) => _save(),
                 onChanged: (_) => setState(() {}), // Update initials preview
+              ),
+              const SizedBox(height: 16),
+              // Accessibility / privacy: replace proximity video bubbles with
+              // avatar-only placeholders. Audio is unaffected.
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Hide video bubbles',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  'Show avatars only — no video in proximity. '
+                  'Takes effect on next room entry.',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                value: _hideVideoBubbles ?? false,
+                onChanged: _hideVideoBubbles == null || _saving
+                    ? null
+                    : (value) async {
+                        setState(() => _hideVideoBubbles = value);
+                        await UserPreferences.setHideVideoBubbles(value);
+                      },
               ),
               const SizedBox(height: 24),
               // Status indicator

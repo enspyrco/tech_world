@@ -49,6 +49,7 @@ import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
+import 'package:tech_world/preferences/user_preferences.dart';
 import 'package:tech_world/rooms/room_session.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
 import 'package:tech_world/widgets/join_overlay.dart';
@@ -441,6 +442,10 @@ class _MyAppState extends State<MyApp> {
           final result = await _session!.connect();
           if (result == ConnectionResult.connected) {
             wires.complete(Wire.server);
+            // Apply the user's avatar-only preference before any bubble can
+            // be created. Toggle takes effect on next room entry.
+            techWorld.setHideVideoBubbles(
+                await UserPreferences.hideVideoBubbles());
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
             // Wire C: camera + mic (depends on server connection).
@@ -688,6 +693,8 @@ class _MyAppState extends State<MyApp> {
         );
         final result = await _session!.connect();
         if (result == ConnectionResult.connected) {
+          locate<TechWorld>().setHideVideoBubbles(
+              await UserPreferences.hideVideoBubbles());
           await locate<TechWorld>()
               .connectToLiveKit(userId, _currentDisplayName);
           await _session!.enableMedia();
