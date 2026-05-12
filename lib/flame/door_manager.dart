@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:meta/meta.dart' show useResult;
+import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
@@ -95,7 +96,36 @@ class DoorManager {
   }
 
   /// Handle a door-unlock message from another player.
+  ///
+  /// **Sender verification**: only messages from known human participants
+  /// (present in [LiveKitService.remoteParticipants] and not a bot) are
+  /// accepted. This prevents arbitrary actors from broadcasting a
+  /// `door-unlock` and unlocking doors for all players without completing
+  /// the required challenge (originally PR #431).
   void handleRemoteDoorUnlock(DataChannelMessage msg) {
+    final senderId = msg.senderId;
+
+    // Reject messages with no sender identity (e.g. server-API injections).
+    if (senderId == null) {
+      _log.warning('door-unlock ignored: no sender identity');
+      return;
+    }
+
+    // Reject messages from bots — bots do not complete player challenges.
+    if (isBotIdentity(senderId)) {
+      _log.warning('door-unlock ignored: sender "$senderId" is a bot');
+      return;
+    }
+
+    // Reject messages from identities not currently in the room.
+    final knownParticipant =
+        _getLiveKit()?.remoteParticipants.containsKey(senderId) ?? false;
+    if (!knownParticipant) {
+      _log.warning(
+          'door-unlock ignored: sender "$senderId" is not a known participant');
+      return;
+    }
+
     final json = msg.json;
     if (json == null) return;
 

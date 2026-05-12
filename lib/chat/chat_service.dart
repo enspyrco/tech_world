@@ -250,9 +250,16 @@ class ChatService {
     // 'messageId' is the ID of the message being responded to (for correlation)
     final ownId = json['id'] as String?;
     final replyToId = json['messageId'] as String?;
+    // senderName is cosmetic — payload value is acceptable for display.
     final senderName =
         json['senderName'] as String? ?? message.senderId ?? 'Unknown';
-    final senderId = json['senderId'] as String? ?? message.senderId;
+    // payloadSenderId is read from the JSON payload, which the bot uses to
+    // advertise its specific identity in chat-response messages. Bots are
+    // trusted LiveKit participants so payload-sourced senderId is safe THERE.
+    // Never use payloadSenderId for DMs or group chat from regular users —
+    // a malicious participant could spoof another user's UID via the payload.
+    // For those paths, use message.senderId (LiveKit transport, server-verified).
+    final payloadSenderId = json['senderId'] as String? ?? message.senderId;
 
     if (text == null) return;
 
@@ -293,7 +300,7 @@ class ChatService {
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: senderId ?? _activeBotIdentity,
+        senderId: payloadSenderId ?? _activeBotIdentity,
         conversationId: 'group',
         isBot: true,
       ));
@@ -302,11 +309,13 @@ class ChatService {
       dispatch([BotSpoke(text: text, context: BotSpokeContext.group)]);
       _messagesController.add(List.from(_messages));
     } else {
-      // Message from another user (group chat)
+      // Message from another user (group chat) — use transport-verified
+      // identity. Never trust payload senderId from a regular participant;
+      // they could spoof another user's UID.
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
-        senderId: senderId,
+        senderId: message.senderId ?? 'unknown',
         conversationId: 'group',
         isLocalUser: false,
       ));
