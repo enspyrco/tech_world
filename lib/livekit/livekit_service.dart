@@ -426,6 +426,30 @@ class LiveKitService {
     }
   }
 
+  /// Whether Dreamfinder's audio is currently silenced for the local player.
+  ///
+  /// Server-side disable (via [setParticipantAudioEnabled]) — DF still
+  /// speaks in the room, but the SFU stops forwarding their audio to us.
+  /// State is session-scoped (resets on rejoin); applies to all current
+  /// and future DF participants (including `agent-*` identities).
+  final ValueNotifier<bool> dreamfinderSilenced = ValueNotifier<bool>(false);
+
+  /// Toggle whether we receive Dreamfinder's audio.
+  ///
+  /// Iterates current remote participants and disables/enables audio on
+  /// any matching [isDreamfinderIdentity]. Late-joining DF tracks are
+  /// caught in the [TrackSubscribedEvent] handler.
+  void setDreamfinderSilenced(bool silenced) {
+    dreamfinderSilenced.value = silenced;
+    final room = _room;
+    if (room == null) return;
+    for (final participant in room.remoteParticipants.values) {
+      if (isDreamfinderIdentity(participant.identity)) {
+        setParticipantAudioEnabled(participant.identity, !silenced);
+      }
+    }
+  }
+
   /// Get a participant by their identity (userId)
   Participant? getParticipant(String identity) {
     if (_room == null) return null;
@@ -706,6 +730,14 @@ class LiveKitService {
         if (event.track is VideoTrack) {
           _trackSubscribedController
               .add((event.participant, event.track as VideoTrack));
+        }
+        // Apply Dreamfinder silence to a freshly-subscribed DF audio track.
+        // Without this, toggling silence before DF joins (or while DF is
+        // republishing) would leave the new track audible.
+        if (event.track is AudioTrack &&
+            dreamfinderSilenced.value &&
+            isDreamfinderIdentity(event.participant.identity)) {
+          setParticipantAudioEnabled(event.participant.identity, false);
         }
       })
       ..on<TrackUnsubscribedEvent>((event) {

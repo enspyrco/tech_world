@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:convert';
 
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart'
     show
@@ -1107,6 +1108,14 @@ class FakeLiveKitService implements LiveKitService {
 
   @override
   void setParticipantAudioEnabled(String identity, bool enabled) {}
+
+  @override
+  final ValueNotifier<bool> dreamfinderSilenced = ValueNotifier<bool>(false);
+
+  @override
+  void setDreamfinderSilenced(bool silenced) {
+    dreamfinderSilenced.value = silenced;
+  }
 
   @override
   Participant? getParticipant(String identity) => null;

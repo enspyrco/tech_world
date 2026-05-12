@@ -1179,6 +1179,10 @@ class _MyAppState extends State<MyApp> {
                             ),
                           ],
                           const SizedBox(width: 8),
+                          _DreamfinderSilenceButton(
+                            liveKitService: _session?.liveKitService,
+                          ),
+                          const SizedBox(width: 8),
                           _SpellbookButton(
                             open: _spellbookOpen,
                             activePromptChallenge:
@@ -1634,6 +1638,45 @@ class _ScreenShareButtonState extends State<_ScreenShareButton> {
             : Colors.black54,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+    );
+  }
+}
+
+/// Toolbar button to silence Dreamfinder's audio.
+///
+/// Drives [LiveKitService.dreamfinderSilenced]; the service handles
+/// applying the toggle to current and late-joining DF participants.
+class _DreamfinderSilenceButton extends StatelessWidget {
+  const _DreamfinderSilenceButton({required this.liveKitService});
+
+  final LiveKitService? liveKitService;
+
+  @override
+  Widget build(BuildContext context) {
+    final service = liveKitService;
+    if (service == null) {
+      return const SizedBox.shrink();
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: service.dreamfinderSilenced,
+      builder: (context, silenced, _) => IconButton(
+        onPressed: () => service.setDreamfinderSilenced(!silenced),
+        icon: Icon(
+          silenced ? Icons.volume_off : Icons.volume_up,
+          color: silenced ? Colors.amber.shade300 : Colors.white70,
+          size: 20,
+        ),
+        tooltip:
+            silenced ? 'Unsilence Dreamfinder' : 'Silence Dreamfinder',
+        style: IconButton.styleFrom(
+          backgroundColor: silenced
+              ? Colors.amber.shade300.withValues(alpha: 0.2)
+              : Colors.black54,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
         ),
       ),
     );
