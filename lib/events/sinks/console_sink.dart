@@ -16,7 +16,7 @@ void consoleSink(AppEvent event) {
     WordLearned(:final wordId, :final challengeId) =>
       'WordLearned: ${wordId.name} (${challengeId.wireName})',
     ChallengeCompleted(:final challengeId) =>
-      'ChallengeCompleted: $challengeId',
+      'ChallengeCompleted: ${challengeId.wireName}',
     SpellCastFailed(:final reason, :final transcript) =>
       'SpellCastFailed: ${reason.name}${transcript != null ? ' "$transcript"' : ''}',
     // Game world
@@ -25,7 +25,7 @@ void consoleSink(AppEvent event) {
     PlayerMoved(:final destX, :final destY) =>
       'PlayerMoved: → ($destX, $destY)',
     TerminalOpened(:final challengeId, :final terminalX, :final terminalY) =>
-      'TerminalOpened: $challengeId at ($terminalX, $terminalY)',
+      'TerminalOpened: ${challengeId.wireName} at ($terminalX, $terminalY)',
     TerminalClosed() => 'TerminalClosed',
     AvatarSelected(:final avatarId) => 'AvatarSelected: $avatarId',
     MapEditorEntered(:final mapId, :final mapName) =>
@@ -51,7 +51,7 @@ void consoleSink(AppEvent event) {
       'ProfileUpdated: $displayName',
     // Code
     CodeSubmitted(:final challengeId, :final result) =>
-      'CodeSubmitted: $challengeId → ${result.name}',
+      'CodeSubmitted: ${challengeId.wireName} → ${result.name}',
     // Map editor
     MapEdited(:final action, :final x, :final y) =>
       'MapEdited: ${action.name} at ($x, $y)',
@@ -68,13 +68,13 @@ void consoleSink(AppEvent event) {
     LiveKitDisconnected(:final reason) =>
       'LiveKitDisconnected${reason != null ? ': $reason' : ''}',
     HelpRequested(:final challengeId) =>
-      'HelpRequested: $challengeId',
+      'HelpRequested: ${challengeId.wireName}',
     MediaEnabled() => 'MediaEnabled',
     RemoteDoorUnlocked(:final doorX, :final doorY) =>
       'RemoteDoorUnlocked: ($doorX, $doorY)',
     // Chat
     GroupMessageSent(:final messageId, :final challengeId) =>
-      'GroupMessageSent: $messageId${challengeId != null ? ' (challenge: $challengeId)' : ''}',
+      'GroupMessageSent: $messageId${challengeId != null ? ' (challenge: ${challengeId.wireName})' : ''}',
     DmSent(:final peerId) => 'DmSent: → $peerId',
     BotSpoke(:final text, :final context) =>
       'BotSpoke [${context.name}]: "${text.length > 60 ? '${text.substring(0, 60)}...' : text}"',

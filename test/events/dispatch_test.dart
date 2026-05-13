@@ -105,10 +105,11 @@ void main() {
       expect(event.challengeId, PromptChallengeId.evocationFizzbuzz);
     });
 
-    test('ChallengeCompleted carries wire-format challengeId', () {
+    test('ChallengeCompleted carries typed challengeId', () {
       final event =
-          ChallengeCompleted(challengeId: 'evocation_fizzbuzz');
-      expect(event.challengeId, 'evocation_fizzbuzz');
+          ChallengeCompleted(challengeId: PromptRef(PromptChallengeId.evocationFizzbuzz));
+      expect(event.challengeId, PromptRef(PromptChallengeId.evocationFizzbuzz));
+      expect(event.challengeId.wireName, 'evocation_fizzbuzz');
     });
 
     test('timestamp defaults to now', () {

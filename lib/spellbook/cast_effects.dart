@@ -21,7 +21,7 @@ List<AppEvent> castSuccessEvents(PromptChallengeId challengeId) {
   if (word != null) {
     events.add(WordLearned(wordId: word.id, challengeId: challengeId));
   }
-  events.add(ChallengeCompleted(challengeId: challengeId.wireName));
+  events.add(ChallengeCompleted(challengeId: PromptRef(challengeId)));
   return events;
 }
 
@@ -87,7 +87,7 @@ Future<List<AppEvent>> applyCodeSubmitEffects({
   await _persistCompletion(challengeId.wireName, progress);
 
   final events = <AppEvent>[
-    ChallengeCompleted(challengeId: challengeId.wireName),
+    ChallengeCompleted(challengeId: CodeRef(challengeId)),
   ];
   dispatch(events);
   return events;

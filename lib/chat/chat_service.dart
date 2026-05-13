@@ -8,6 +8,7 @@ import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/bots/bot_config.dart';
+import 'package:tech_world/editor/challenge.dart' show CodeChallengeId;
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
@@ -473,10 +474,11 @@ class ChatService {
       payload: payload,
     ));
 
-    _log.info('Sent message: "$text"');
+    _log.info('Sent message (id=$messageId, len=${text.length})');
+    final challengeWire = metadata?['challengeId'] as String?;
     dispatch([GroupMessageSent(
       messageId: messageId,
-      challengeId: metadata?['challengeId'] as String?,
+      challengeId: challengeWire == null ? null : ChallengeRef.parse(challengeWire),
     )]);
 
     // Persist to Firestore.
@@ -796,8 +798,12 @@ class ChatService {
   ///
   /// Publishes a `help-request` message targeted to the bot and waits for a
   /// `help-response` containing a hint. Returns `null` on timeout or error.
+  ///
+  /// [challengeId] is [CodeChallengeId] because help requests only fire
+  /// from the code editor (prompt challenges use voice-cast / spellbook,
+  /// not a hint affordance).
   Future<String?> requestHelp({
-    required String challengeId,
+    required CodeChallengeId challengeId,
     required String challengeTitle,
     required String challengeDescription,
     required String code,
@@ -821,7 +827,7 @@ class ChatService {
     final payload = {
       'type': 'help-request',
       'id': requestId,
-      'challengeId': challengeId,
+      'challengeId': challengeId.wireName,
       'challengeTitle': challengeTitle,
       'challengeDescription': challengeDescription,
       'code': code,
@@ -847,7 +853,7 @@ class ChatService {
     ));
 
     _log.info('Sent help-request $requestId');
-    dispatch([HelpRequested(challengeId: challengeId)]);
+    dispatch([HelpRequested(challengeId: CodeRef(challengeId))]);
 
     try {
       return await completer.future.timeout(

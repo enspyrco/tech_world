@@ -1,8 +1,60 @@
+import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
 
 /// Return type for business functions that produce events alongside a result.
 typedef WithEvents<T> = (T, List<AppEvent>);
+
+/// Sealed wrapper for the union of code and prompt challenge identifiers.
+///
+/// Both [CodeChallengeId] and [PromptChallengeId] serialize to disjoint
+/// wire names in the same Firestore `completedChallenges` array
+/// (disjointness pinned by `code_challenge_id_test.dart`). The sealed
+/// wrapper lets event consumers pattern-match on which kind they have
+/// instead of stringly-comparing wire names.
+///
+/// Wire format unchanged — serialize via [wireName].
+sealed class ChallengeRef {
+  const ChallengeRef();
+  String get wireName;
+
+  /// Parse a wire-format challenge ID. Tries code first (23 entries) then
+  /// prompt (18). Returns null for unknown wire values — caller decides
+  /// whether to drop, log, or treat as a soft error.
+  static ChallengeRef? parse(String wire) {
+    final code = CodeChallengeId.parse(wire);
+    if (code != null) return CodeRef(code);
+    final prompt = PromptChallengeId.parse(wire);
+    if (prompt != null) return PromptRef(prompt);
+    return null;
+  }
+}
+
+final class CodeRef extends ChallengeRef {
+  const CodeRef(this.id);
+  final CodeChallengeId id;
+  @override
+  String get wireName => id.wireName;
+  @override
+  bool operator ==(Object other) => other is CodeRef && other.id == id;
+  @override
+  int get hashCode => Object.hash('CodeRef', id);
+  @override
+  String toString() => 'CodeRef(${id.name})';
+}
+
+final class PromptRef extends ChallengeRef {
+  const PromptRef(this.id);
+  final PromptChallengeId id;
+  @override
+  String get wireName => id.wireName;
+  @override
+  bool operator ==(Object other) => other is PromptRef && other.id == id;
+  @override
+  int get hashCode => Object.hash('PromptRef', id);
+  @override
+  String toString() => 'PromptRef(${id.name})';
+}
 
 /// Base type for all application events — sealed for exhaustive matching
 /// in sinks.
@@ -51,17 +103,17 @@ final class ChallengeCompleted extends AppEvent {
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
-  /// Wire-format challenge ID (matches Firestore `completedChallenges` array).
-  /// String because this is a union of CodeChallengeId and PromptChallengeId
-  /// — both serialize to disjoint wire names in the same Firestore array.
-  final String challengeId;
+  /// Typed challenge ID. Serializes to wire name (matches Firestore
+  /// `completedChallenges` array) — the union of [CodeChallengeId] and
+  /// [PromptChallengeId] is expressed via [ChallengeRef], not String.
+  final ChallengeRef challengeId;
   @override
   final DateTime timestamp;
 
   @override
   Map<String, dynamic> toJson() => {
         'type': 'challenge_completed',
-        'challengeId': challengeId,
+        'challengeId': challengeId.wireName,
         'timestamp': timestamp.toIso8601String(),
       };
 }
@@ -151,7 +203,7 @@ final class TerminalOpened extends AppEvent {
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
-  final String challengeId;
+  final ChallengeRef challengeId;
   final int terminalX;
   final int terminalY;
   @override
@@ -160,7 +212,7 @@ final class TerminalOpened extends AppEvent {
   @override
   Map<String, dynamic> toJson() => {
         'type': 'terminal_opened',
-        'challengeId': challengeId,
+        'challengeId': challengeId.wireName,
         'terminalX': terminalX,
         'terminalY': terminalY,
         'timestamp': timestamp.toIso8601String(),
@@ -537,6 +589,10 @@ enum CodeSubmitResult {
 }
 
 /// Player submitted code for a challenge.
+///
+/// [challengeId] is [CodeChallengeId] (not [ChallengeRef]) because code
+/// submission is strictly a code-challenge concern — prompt challenges
+/// fire [ChallengeCompleted] from `cast_effects`, never this event.
 final class CodeSubmitted extends AppEvent {
   CodeSubmitted({
     required this.challengeId,
@@ -544,7 +600,7 @@ final class CodeSubmitted extends AppEvent {
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
-  final String challengeId;
+  final CodeChallengeId challengeId;
   final CodeSubmitResult result;
   @override
   final DateTime timestamp;
@@ -552,7 +608,7 @@ final class CodeSubmitted extends AppEvent {
   @override
   Map<String, dynamic> toJson() => {
         'type': 'code_submitted',
-        'challengeId': challengeId,
+        'challengeId': challengeId.wireName,
         'result': result.name,
         'timestamp': timestamp.toIso8601String(),
       };
@@ -626,14 +682,14 @@ final class HelpRequested extends AppEvent {
   HelpRequested({required this.challengeId, DateTime? timestamp})
       : timestamp = timestamp ?? DateTime.now();
 
-  final String challengeId;
+  final ChallengeRef challengeId;
   @override
   final DateTime timestamp;
 
   @override
   Map<String, dynamic> toJson() => {
         'type': 'help_requested',
-        'challengeId': challengeId,
+        'challengeId': challengeId.wireName,
         'timestamp': timestamp.toIso8601String(),
       };
 }
@@ -686,7 +742,7 @@ final class GroupMessageSent extends AppEvent {
   final String messageId;
 
   /// Non-null when this message is a challenge submission.
-  final String? challengeId;
+  final ChallengeRef? challengeId;
   @override
   final DateTime timestamp;
 
@@ -694,7 +750,7 @@ final class GroupMessageSent extends AppEvent {
   Map<String, dynamic> toJson() => {
         'type': 'group_message_sent',
         'messageId': messageId,
-        if (challengeId != null) 'challengeId': challengeId,
+        if (challengeId != null) 'challengeId': challengeId!.wireName,
         'timestamp': timestamp.toIso8601String(),
       };
 }

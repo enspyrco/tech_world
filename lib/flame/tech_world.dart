@@ -1194,7 +1194,7 @@ class TechWorld extends World with TapCallbacks {
         terminalY: terminalPos.y,
       );
       dispatch([TerminalOpened(
-        challengeId: challenge.id.wireName,
+        challengeId: CodeRef(challenge.id),
         terminalX: terminalPos.x,
         terminalY: terminalPos.y,
       )]);
@@ -1223,7 +1223,7 @@ class TechWorld extends World with TapCallbacks {
       activePromptChallenge.value = challenge.id;
       activeTerminalPosition.value = terminalPos;
       dispatch([TerminalOpened(
-        challengeId: challenge.id.wireName,
+        challengeId: PromptRef(challenge.id),
         terminalX: terminalPos.x,
         terminalY: terminalPos.y,
       )]);
