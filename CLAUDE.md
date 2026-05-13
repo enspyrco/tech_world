@@ -40,6 +40,8 @@ When you arrive in this codebase: sweep `lib/` for `String` fields whose values 
 - `WordId` (the spellbook 18 — `lib/spellbook/word_of_power.dart`).
 - `PromptChallengeId` (the 18 prompt challenges — `lib/prompt/prompt_challenge.dart`).
 - `CodeChallengeId` (the 23 code-editor challenges — `lib/editor/challenge.dart`).
+- `ChallengeRef` (sealed) with `CodeRef(CodeChallengeId)` and `PromptRef(PromptChallengeId)` variants — `lib/events/types.dart`. Replaces stringly-typed `challengeId` in event payloads; parse from wire via `ChallengeRef.parse(String wire)`.
+- `BotStatus` (`absent` / `idle` / `thinking` — `lib/flame/components/bot_status.dart`). Owned by `ChatService._botStatus`, exposed as `ValueListenable<BotStatus>`.
 - `LiveKitTopic` (26 data-channel topics — `lib/livekit/livekit_topic.dart`).
 - `SpeakerRole` (2 speech transcript roles — `lib/flame/shared/speaker_role.dart`).
 
@@ -92,9 +94,12 @@ Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthSer
 ### Key Classes
 
 - **`TechWorldGame`** — extends `FlameGame`, wraps `TechWorld` world component
-- **`TechWorld`** — extends `World`, manages game components, subscribes to LiveKit events, delegates bubble lifecycle to `BubbleManager`
-- **`BubbleManager`** — plain Dart class (not a Component) owning all proximity bubble state: creation/removal, physics repulsion, metaball field, merged video, audio enable/disable, shader loading, Dreamfinder avatar bridge. Receives `addComponent` callback to add to the World.
-- **`RoomSession`** — `lib/rooms/room_session.dart`, encapsulates room-scoped service lifecycle (LiveKit, Chat, Proximity, Oracle). Static `create()` factory, `connect()`, `enableMedia()`, `leave()`. Owned by `_MyAppState` as `_session: RoomSession?`
+- **`TechWorld`** — extends `World`, owns the player + remote-player + bot + map components, delegates LiveKit subscriptions to `LiveKitGameBridge`, door state to `DoorManager`, and bubble lifecycle to `BubbleManager`. Shrunk from 1570 → ~1300 lines after PR #438's extraction sweep
+- **`LiveKitGameBridge`** (`lib/flame/livekit_game_bridge.dart`) — owns the 14 stream subscriptions and `InfraHealthService` lifecycle that previously lived on TechWorld. Constructed when `connectToLiveKit` is called, disposed on `disconnectFromLiveKit`
+- **`DoorManager`** (`lib/flame/door_manager.dart`) — owns `unlockDoor`, `handleRemoteDoorUnlock` (with the three-check sender guard from PR #431), `recomputeNearbyLockedDoor`, `doorsForChallenge`, `nearbyLockedDoor` notifier. TechWorld delegates via accessor methods
+- **`BubbleManager`** — plain Dart class (not a Component) owning all proximity bubble state: creation/removal, physics repulsion, metaball field, merged video, audio enable/disable, shader loading, Dreamfinder avatar bridge. Receives `addComponent` callback to add to the World. Reads `setHideVideoBubbles` and `setReduceMotion` from the user preference layer
+- **`RoomSession`** (`lib/rooms/room_session.dart`) — encapsulates room-scoped service lifecycle (LiveKit, Chat, Proximity, Oracle). Static `create()` factory, `connect()`, `enableMedia()`, `leave()`. Owned by `_MyAppState` as `_session: RoomSession?`. Exponential reconnect backoff (2s/4s/8s) with `@visibleForTesting reconnectDelays` parameter
+- **`ChatService`** (`lib/chat/chat_service.dart`) — owns `_botStatus` `ValueNotifier<BotStatus>`, exposed as `ValueListenable<BotStatus>` via the `botStatus` getter. Replaces the former global `botStatusNotifier`. Consumers (UI widgets, BotBubbleComponent via BubbleManager) read via the listenable, never write directly
 
 ### Event-Sink System
 
@@ -110,7 +115,11 @@ All 26 data-channel topics are typed via `LiveKitTopic` enum (`lib/livekit/livek
 
 ### UI Layout
 
-Side panel priority: map editor > code editor > chat panel. Toolbar (top-right): `MapSelector` + editor button + `AuthMenu`. Responsive at 800px breakpoint.
+Side panel priority: map editor > code editor > chat panel. Toolbar (top-right), left-to-right: leave-room → `MapSelector` → map-editor (owners/editors only) → `_ScreenShareButton` (web/desktop only) → `_DreamfinderSilenceButton` → `_SpellbookButton` → `AuthMenu`. Responsive at 800px breakpoint.
+
+**Dreamfinder silence**: `_DreamfinderSilenceButton` toggles `LiveKitService.dreamfinderSilenced` (a `ValueNotifier<bool>`). When silenced, `setDreamfinderSilenced(true)` calls `RemoteTrackPublication.disable()` on all current DF participants — server-side disable, so the SFU stops forwarding DF audio to this client (DF keeps speaking in the room; other players still hear). Late-joining DF tracks are caught in the `TrackSubscribedEvent` handler so toggling silence before DF joins still binds correctly. Identity matching uses `isDreamfinderIdentity()` which handles both `bot-dreamfinder` and `agent-*` identities from the LiveKit agents SDK.
+
+**User preferences**: `setHideVideoBubbles` (avatar-only mode, no video) and `setReduceMotion` (no breathing scale / glow pulse / voice ripples / metaball animation) read from `lib/preferences/user_preferences.dart` and are applied to `BubbleManager` before each room entry.
 
 ### Video Bubble Component
 
