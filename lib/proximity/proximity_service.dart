@@ -24,9 +24,14 @@ class ProximityEvent {
 ///
 /// Uses Chebyshev distance (max of x/y difference) to account for diagonal movement.
 class ProximityService {
-  ProximityService({this.proximityThreshold = 5});
+  ProximityService({this.proximityThreshold = 3})
+      : assert(proximityThreshold >= 0,
+            'proximityThreshold must be non-negative');
 
-  /// Distance in grid squares to trigger proximity
+  /// Distance in grid squares (Chebyshev) at which another player counts as
+  /// nearby. A value of `0` disables proximity entirely — no player ever
+  /// becomes nearby, so video bubbles never form. Set via the user's
+  /// "Proximity range" preference at room entry.
   final int proximityThreshold;
 
   final _proximityController = StreamController<ProximityEvent>.broadcast();
@@ -48,7 +53,11 @@ class ProximityService {
 
       final distance =
           _calculateChebyshevDistance(localPlayerPosition, otherPosition);
-      final isNearby = distance <= proximityThreshold;
+      // `proximityThreshold == 0` disables proximity entirely; nobody is ever
+      // nearby, including players occupying the same square. Without this
+      // guard the natural `distance <= 0` check would still match co-located
+      // players and form a bubble.
+      final isNearby = proximityThreshold > 0 && distance <= proximityThreshold;
       final wasNearby = _nearbyPlayers.contains(playerId);
 
       if (isNearby && !wasNearby) {
