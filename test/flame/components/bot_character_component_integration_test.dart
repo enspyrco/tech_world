@@ -4,7 +4,6 @@ import 'package:flame_test/flame_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/bots/bot_config.dart';
-import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 
 /// A test version of TechWorldGame that uses mock images
@@ -33,11 +32,6 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('BotCharacterComponent integration tests', () {
-    setUp(() {
-      // Reset bot status before each test
-      botStatusNotifier.value = BotStatus.idle;
-    });
-
     testWithGame<TestGameWithMockImages>(
       'onLoad loads image and component is mounted',
       TestGameWithMockImages.new,

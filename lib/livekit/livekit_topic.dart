@@ -1,0 +1,68 @@
+/// Closed set of LiveKit data-channel topic strings used in Tech World.
+///
+/// Wire values are kebab-case identifiers preserved verbatim on the network.
+/// Dart identifiers are camelCase so exhaustive `switch` catches every
+/// consumer the moment a new topic is added.
+///
+/// Usage:
+/// ```dart
+/// await publishJson(msg, topic: LiveKitTopic.chat.wire);
+/// dataReceived.where((m) => m.topic == LiveKitTopic.chat.wire);
+/// ```
+enum LiveKitTopic {
+  // ── Position ──────────────────────────────────────────────────────────────
+  position('position'),
+  positionHeartbeat('position-heartbeat'),
+
+  // ── Avatar ────────────────────────────────────────────────────────────────
+  avatar('avatar'),
+
+  // ── Map ───────────────────────────────────────────────────────────────────
+  mapInfo('map-info'),
+  mapInfoRequest('map-info-request'),
+  mapSwitch('map-switch'),
+  mapEdit('map-edit'),
+  mapEditSync('map-edit-sync'),
+
+  // ── Doors & terminals ─────────────────────────────────────────────────────
+  doorUnlock('door-unlock'),
+  terminalActivity('terminal-activity'),
+
+  // ── Speech ────────────────────────────────────────────────────────────────
+  speechTranscript('speech-transcript'),
+
+  // ── Chat ──────────────────────────────────────────────────────────────────
+  chat('chat'),
+  chatResponse('chat-response'),
+  dm('dm'),
+  dmResponse('dm-response'),
+  helpRequest('help-request'),
+  helpResponse('help-response'),
+
+  // ── Bot / Oracle ──────────────────────────────────────────────────────────
+  oracleRequest('oracle-request'),
+  oracleResponse('oracle-response'),
+
+  // ── Infrastructure ────────────────────────────────────────────────────────
+  infraHealth('infra-health'),
+  infraHeal('infra-heal'),
+  infraHealResult('infra-heal-result'),
+  infraBoot('infra-boot'),
+
+  // ── Connectivity ──────────────────────────────────────────────────────────
+  ping('ping'),
+  pong('pong');
+
+  const LiveKitTopic(this.wire);
+
+  /// The wire-format string transmitted over the LiveKit data channel.
+  final String wire;
+
+  /// Parse a wire string to its [LiveKitTopic], returning null for unknown topics.
+  static LiveKitTopic? tryParse(String wire) {
+    for (final topic in values) {
+      if (topic.wire == wire) return topic;
+    }
+    return null;
+  }
+}

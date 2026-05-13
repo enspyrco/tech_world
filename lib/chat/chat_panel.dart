@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/chat/conversation_list_tile.dart';
 import 'package:tech_world/chat/dm_thread_view.dart';
-import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/services/stt_service.dart';
 
@@ -340,7 +340,7 @@ class _ChatPanelState extends State<ChatPanel>
 
         // Input (with offline banner)
         ValueListenableBuilder<BotStatus>(
-          valueListenable: botStatusNotifier,
+          valueListenable: widget.chatService.botStatus,
           builder: (context, botStatus, _) {
             final isAbsent = botStatus == BotStatus.absent;
             return Column(

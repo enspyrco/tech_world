@@ -203,7 +203,7 @@ class _DmThreadViewState extends State<DmThreadView> {
   Widget _buildInput(bool isBotDm) {
     if (isBotDm) {
       return ValueListenableBuilder<BotStatus>(
-        valueListenable: botStatusNotifier,
+        valueListenable: widget.chatService.botStatus,
         builder: (context, botStatus, _) {
           final isAbsent = botStatus == BotStatus.absent;
           return _inputRow(disabled: isAbsent, showBanner: isAbsent);

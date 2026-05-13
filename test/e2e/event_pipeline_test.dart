@@ -14,8 +14,12 @@ import 'package:tech_world/spellbook/door_cast_result.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
 
-/// All 34 event types with sample data, for smoke-testing the full pipeline.
-/// UPDATE THIS (and the count assertions) when adding new AppEvent subtypes.
+/// One sample instance of every [AppEvent] subtype, for smoke-testing the pipeline.
+///
+/// **When adding a new event type:**
+/// 1. Add one sample instance here.
+/// 2. The count assertions below derive from this list — they update automatically.
+/// 3. Add a `group('<NewType>')` per-type serialization test below.
 List<AppEvent> allSampleEvents() => [
       // Cast / spellbook
       WordLearned(
@@ -94,13 +98,16 @@ void main() {
   // ===========================================================================
 
   group('pipeline smoke', () {
-    test('all 34 event types dispatch and serialize to valid JSON', () {
+    test('all event types dispatch and serialize to valid JSON', () {
       final events = allSampleEvents();
       final types = events.map((e) => e.runtimeType).toSet();
-      expect(types.length, 34);
+      // Count derives from allSampleEvents() — add a new entry there when
+      // adding a new AppEvent subtype, and this assertion auto-updates.
+      expect(types.length, events.length,
+          reason: 'every entry in allSampleEvents() must be a distinct type');
 
       dispatch(events);
-      expect(captured.length, 34);
+      expect(captured.length, events.length);
 
       for (final event in captured) {
         final json = event.toJson();
@@ -112,10 +119,12 @@ void main() {
       }
     });
 
-    test('all 34 type strings are unique', () {
+    test('all type strings are unique', () {
+      final events = allSampleEvents();
       final typeStrings =
-          allSampleEvents().map((e) => e.toJson()['type'] as String).toSet();
-      expect(typeStrings.length, 34);
+          events.map((e) => e.toJson()['type'] as String).toSet();
+      expect(typeStrings.length, events.length,
+          reason: 'every AppEvent subtype must have a distinct JSON type string');
     });
 
     test('JSONL lines contain no embedded newlines', () {

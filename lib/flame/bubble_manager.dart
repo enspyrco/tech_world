@@ -7,8 +7,11 @@ import 'package:flutter/material.dart' show Color, Colors;
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
+
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
+import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/bubble_field_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
@@ -18,7 +21,6 @@ import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
-import 'package:tech_world/proximity/proximity_service.dart';
 
 final _log = Logger('BubbleManager');
 
@@ -75,6 +77,10 @@ class BubbleManager {
   final void Function(Component) _addComponent;
   final Map<String, PlayerComponent> _remotePlayers;
   final Map<String, BotCharacterComponent> _bots;
+
+  // ── Bot status (arrives after construction, when ChatService is created) ──
+
+  ValueListenable<BotStatus> _botStatus = ValueNotifier(BotStatus.absent);
 
   // ── LiveKit (arrives after construction) ─────────────────────────────────
 
@@ -143,6 +149,11 @@ class BubbleManager {
     _liveKitService = service;
   }
 
+  /// Called when ChatService becomes available (after room join).
+  void setBotStatus(ValueListenable<BotStatus> status) {
+    _botStatus = status;
+  }
+
   /// Main per-frame entry point. Called from TechWorld.update().
   void update(double dt) {
     final playerGrid = _localPlayer.miniGridPosition;
@@ -201,7 +212,7 @@ class BubbleManager {
           if (dfParticipant != null && !hideVideoBubbles) {
             bubble = _createDreamfinderVideoBubble(dfParticipant);
           } else {
-            bubble = BotBubbleComponent();
+            bubble = BotBubbleComponent(botStatus: _botStatus);
           }
           bubble.position =
               dreamfinderComponent!.position + _bubbleOffset;
@@ -223,7 +234,7 @@ class BubbleManager {
         if (botDistance < closestDistance) closestDistance = botDistance;
 
         if (!_playerBubbles.containsKey(botId)) {
-          final bubble = BotBubbleComponent();
+          final bubble = BotBubbleComponent(botStatus: _botStatus);
           bubble.position = botComp.position + _bubbleOffset;
           _playerBubbles[botId] = bubble;
           _addComponent(bubble);
@@ -332,7 +343,10 @@ class BubbleManager {
     existingBubble.removeFromParent();
 
     if (isDreamfinderIdentity(playerId)) {
-      final botBubble = BotBubbleComponent(bubbleSize: 64);
+      final botBubble = BotBubbleComponent(
+        botStatus: _botStatus,
+        bubbleSize: 64,
+      );
       botBubble.position = position;
       _playerBubbles[playerId] = botBubble;
       _addComponent(botBubble);
@@ -556,12 +570,30 @@ class BubbleManager {
   // ═══════════════════════════════════════════════════════════════════════════
 
   void _setBubbleOpacity(PositionComponent bubble, int distance) {
-    final opacity = ProximityService.calculateOpacity(distance);
+    final opacity = _opacityForDistance(distance);
     if (bubble is VideoBubbleComponent) {
       bubble.opacity = opacity;
     } else if (bubble is PlayerBubbleComponent) {
       bubble.opacity = opacity;
     }
+  }
+
+  /// Visual opacity for a bubble at [distance] Chebyshev grid squares.
+  ///
+  /// Moved here from ProximityService — opacity is presentation, not
+  /// proximity logic.
+  ///
+  /// - Distance 0–1: 1.0 (fully visible)
+  /// - Distance 2: 0.8
+  /// - Distance 3: 0.5
+  /// - Distance 4: 0.2
+  /// - Distance 5+: 0.0 (removed by caller)
+  static double _opacityForDistance(int distance) {
+    if (distance <= 1) return 1.0;
+    if (distance == 2) return 0.8;
+    if (distance == 3) return 0.5;
+    if (distance == 4) return 0.2;
+    return 0.0;
   }
 
   void _updateParticipantAudio(String playerId, int distance) {
