@@ -599,11 +599,24 @@ class MapSyncService {
         _onRemoteEdit(batch);
       }
     } else if (msg.topic == LiveKitTopic.mapEditSync.wire) {
-      final type = json['type'] as String?;
-      if (type == 'sync-request' && json['playerId'] != _localPlayerId) {
-        _handleSyncRequest(json['playerId'] as String);
-      } else if (type == 'sync-response') {
-        _handleSyncResponse(json);
+      // Outer guard: a malformed sync-request (e.g. missing playerId, or
+      // type-confused `String` cast) used to throw out of the stream
+      // listener, tearing down the whole CRDT sync surface for the
+      // session.
+      try {
+        final type = json['type'] as String?;
+        if (type == 'sync-request' && json['playerId'] != _localPlayerId) {
+          final playerId = json['playerId'];
+          if (playerId is String) {
+            _handleSyncRequest(playerId);
+          } else {
+            _log.warning('Ignoring sync-request with non-String playerId');
+          }
+        } else if (type == 'sync-response') {
+          _handleSyncResponse(json);
+        }
+      } catch (e, stack) {
+        _log.warning('Ignoring malformed map-edit-sync message', e, stack);
       }
     }
   }

@@ -78,6 +78,12 @@ class LiveKitService {
   EventsListener<RoomEvent>? _listener;
   _ConnectionState _connectionState = _ConnectionState.disconnected;
 
+  /// Identities of participants who were speaking on the last
+  /// [ActiveSpeakersChangedEvent]. Diffed against the current set to
+  /// emit (participant, false) for speakers who just stopped — LiveKit
+  /// doesn't fire stop events directly, only "currently speaking" sets.
+  Set<String> _previousSpeakerIds = const {};
+
   // Stream controllers for participant events
   final _participantJoinedController =
       StreamController<RemoteParticipant>.broadcast();
@@ -218,10 +224,15 @@ class LiveKitService {
         return null;
       }
 
+      // Clamp at parse boundary — a malformed or hostile peer could
+      // otherwise push huge coordinates into Flame movement/rendering.
+      // 2× world bounds: path interpolation can briefly overshoot.
+      // Units: world-space pixels.
+      final maxCoord = (gridSize * gridSquareSize * 2).toDouble();
       final points = pointsJson
           .map((p) => Vector2(
-                (p['x'] as num).toDouble(),
-                (p['y'] as num).toDouble(),
+                (p['x'] as num).toDouble().clamp(-maxCoord, maxCoord),
+                (p['y'] as num).toDouble().clamp(-maxCoord, maxCoord),
               ))
           .toList();
 
@@ -754,10 +765,21 @@ class LiveKitService {
         }
       })
       ..on<ActiveSpeakersChangedEvent>((event) {
-        // Emit speaking state for active speakers
+        // Emit (participant, true) for the current set, and (participant, false)
+        // for anyone who was speaking last tick but isn't now. Without the
+        // diff, speaking indicators / audio UI get stuck active after the
+        // first speech event — see project memory `feedback_speakers_diff.md`.
+        final currentIds = event.speakers.map((s) => s.identity).toSet();
         for (final speaker in event.speakers) {
           _speakingChangedController.add((speaker, true));
         }
+        for (final prevId in _previousSpeakerIds.difference(currentIds)) {
+          final participant = getParticipant(prevId);
+          if (participant != null) {
+            _speakingChangedController.add((participant, false));
+          }
+        }
+        _previousSpeakerIds = currentIds;
       })
       ..on<RoomDisconnectedEvent>((event) {
         _log.warning('Room disconnected: ${event.reason}');
