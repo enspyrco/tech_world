@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
-import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
@@ -120,6 +119,7 @@ class RoomSession {
     required void Function() onStateChanged,
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
+    int? proximityRadius,
     @visibleForTesting ChatMessageRepository? chatMessageRepository,
     @visibleForTesting LiveKitService? liveKitService,
     @visibleForTesting FirebaseFirestore? firestore,
@@ -140,7 +140,16 @@ class RoomSession {
         apiKey: const String.fromEnvironment('DREAMFINDER_API_KEY'),
       ),
     );
-    final proximity = ProximityService();
+    // Proximity radius is a *static* config for this session: the user's
+    // saved preference is read at room entry (in `main.dart`) and frozen
+    // here so mid-session toggle changes never retroactively re-evaluate
+    // existing in-range pairs (a deliberate state-lifecycle sidestep). A
+    // null value falls back to the ProximityService default — useful for
+    // tests that want the historic 3-square behaviour without depending on
+    // SharedPreferences.
+    final proximity = proximityRadius == null
+        ? ProximityService()
+        : ProximityService(proximityThreshold: proximityRadius);
 
     Locator.add<LiveKitService>(liveKit);
     Locator.add<ChatService>(chat);
@@ -236,7 +245,7 @@ class RoomSession {
 
     // Show failure banner and reset bot status.
     connectionFailed.value = true;
-    botStatusNotifier.value = BotStatus.absent;
+    chatService.markBotAbsent();
 
     // TechWorld's own connectionLost listener calls disconnectFromLiveKit(),
     // which clears its subscriptions and nulls its service reference. That

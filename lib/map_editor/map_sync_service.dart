@@ -8,8 +8,8 @@ import 'package:tech_world/flame/maps/barrier_occlusion.dart'
     show buildWallTilesForRegion;
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
-import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/map_editor/crdt/cell_version_map.dart';
 import 'package:tech_world/map_editor/crdt/map_edit_op.dart';
 import 'package:tech_world/map_editor/crdt/undo_manager.dart';
@@ -33,14 +33,10 @@ class MapSyncService {
         _localPlayerId = localPlayerId {
     _dataSubscription = _liveKitService.dataReceived
         .where((msg) =>
-            msg.topic == _editTopic || msg.topic == _syncTopic)
-        .listen(_onDataReceived, onError: (Object e, StackTrace st) {
-      _log.severe('CRDT data stream error', e, st);
-    });
+            msg.topic == LiveKitTopic.mapEdit.wire ||
+            msg.topic == LiveKitTopic.mapEditSync.wire)
+        .listen(_onDataReceived);
   }
-
-  static final _editTopic = DataTopic.mapEdit.wireName;
-  static final _syncTopic = DataTopic.mapEditSync.wireName;
 
   final LiveKitService _liveKitService;
   final MapEditorState _editorState;
@@ -569,7 +565,7 @@ class MapSyncService {
 
     await _liveKitService.publishJson(
       {'type': 'sync-request', 'playerId': _localPlayerId},
-      topic: _syncTopic,
+      topic: LiveKitTopic.mapEditSync.wire,
       reliable: true,
     );
 
@@ -588,25 +584,40 @@ class MapSyncService {
     final json = msg.json;
     if (json == null) return;
 
-    try {
-      if (msg.topic == _editTopic) {
-        final batch = MapEditBatch.fromJson(json);
-        if (batch.ops.isEmpty) return;
-        if (_isSyncing) {
-          _syncBuffer.add(batch);
-        } else {
-          _onRemoteEdit(batch);
-        }
-      } else if (msg.topic == _syncTopic) {
+    if (msg.topic == LiveKitTopic.mapEdit.wire) {
+      final MapEditBatch batch;
+      try {
+        batch = MapEditBatch.fromJson(json);
+      } catch (e, stack) {
+        _log.warning('Ignoring malformed map-edit message', e, stack);
+        return;
+      }
+      if (batch.ops.isEmpty) return;
+      if (_isSyncing) {
+        _syncBuffer.add(batch);
+      } else {
+        _onRemoteEdit(batch);
+      }
+    } else if (msg.topic == LiveKitTopic.mapEditSync.wire) {
+      // Outer guard: a malformed sync-request (e.g. missing playerId, or
+      // type-confused `String` cast) used to throw out of the stream
+      // listener, tearing down the whole CRDT sync surface for the
+      // session.
+      try {
         final type = json['type'] as String?;
         if (type == 'sync-request' && json['playerId'] != _localPlayerId) {
-          _handleSyncRequest(json['playerId'] as String);
+          final playerId = json['playerId'];
+          if (playerId is String) {
+            _handleSyncRequest(playerId);
+          } else {
+            _log.warning('Ignoring sync-request with non-String playerId');
+          }
         } else if (type == 'sync-response') {
           _handleSyncResponse(json);
         }
+      } catch (e, stack) {
+        _log.warning('Ignoring malformed map-edit-sync message', e, stack);
       }
-    } catch (e, st) {
-      _log.severe('Failed to process CRDT message (topic=${msg.topic})', e, st);
     }
   }
 
@@ -668,7 +679,7 @@ class MapSyncService {
   Future<void> _publishBatch(MapEditBatch batch) async {
     await _liveKitService.publishJson(
       batch.toJson(),
-      topic: _editTopic,
+      topic: LiveKitTopic.mapEdit.wire,
       reliable: true,
     );
   }
@@ -686,7 +697,7 @@ class MapSyncService {
     final snapshot = _buildSnapshot();
     _liveKitService.publishJson(
       snapshot,
-      topic: _syncTopic,
+      topic: LiveKitTopic.mapEditSync.wire,
       reliable: true,
       destinationIdentities: [requesterId],
     );

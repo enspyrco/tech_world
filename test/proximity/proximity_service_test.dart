@@ -200,10 +200,65 @@ void main() {
       expect(events[0].distance, equals(3)); // Chebyshev = max(3, 2)
     });
 
-    test('default threshold is 5', () {
+    test('default threshold is 3', () {
       final defaultService = ProximityService();
-      expect(defaultService.proximityThreshold, equals(5));
+      expect(defaultService.proximityThreshold, equals(3));
       defaultService.dispose();
+    });
+
+    group('proximityThreshold = 0 (disabled)', () {
+      test('player on same square is not nearby', () async {
+        final disabled = ProximityService(proximityThreshold: 0);
+        final events = <ProximityEvent>[];
+        disabled.proximityEvents.listen(events.add);
+
+        disabled.checkProximity(
+          localPlayerPosition: const Point(5, 5),
+          otherPlayerPositions: {'player1': const Point(5, 5)},
+        );
+
+        await Future.delayed(Duration.zero);
+        expect(events, isEmpty);
+        expect(disabled.nearbyPlayers, isEmpty);
+        disabled.dispose();
+      });
+
+      test('player at distance 1 is not nearby', () async {
+        final disabled = ProximityService(proximityThreshold: 0);
+        final events = <ProximityEvent>[];
+        disabled.proximityEvents.listen(events.add);
+
+        disabled.checkProximity(
+          localPlayerPosition: const Point(0, 0),
+          otherPlayerPositions: {'player1': const Point(1, 1)},
+        );
+
+        await Future.delayed(Duration.zero);
+        expect(events, isEmpty);
+        disabled.dispose();
+      });
+
+      test('no two players are ever nearby regardless of position', () async {
+        final disabled = ProximityService(proximityThreshold: 0);
+        final events = <ProximityEvent>[];
+        disabled.proximityEvents.listen(events.add);
+
+        for (int i = 0; i < 10; i++) {
+          disabled.checkProximity(
+            localPlayerPosition: Point(i, i),
+            otherPlayerPositions: {
+              'p1': Point(i, i),
+              'p2': Point(i + 1, i),
+              'p3': Point(i, i + 1),
+            },
+          );
+        }
+
+        await Future.delayed(Duration.zero);
+        expect(events, isEmpty);
+        expect(disabled.nearbyPlayers, isEmpty);
+        disabled.dispose();
+      });
     });
   });
 }

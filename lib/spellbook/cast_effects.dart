@@ -1,4 +1,5 @@
 import 'package:logging/logging.dart';
+import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/progress/progress_service.dart';
@@ -65,20 +66,48 @@ Future<List<AppEvent>> applyCastSuccessEffects({
     }
   }
 
-  if (progress == null) {
-    _log.warning('ProgressService unavailable; challenge '
-        '${challengeId.wireName} not marked completed');
-  } else {
-    try {
-      await progress.markChallengeCompleted(challengeId.wireName);
-    } catch (e) {
-      _log.warning('Failed to persist completion: $e', e);
-    }
-  }
+  await _persistCompletion(challengeId.wireName, progress);
 
   final events = castSuccessEvents(challengeId);
   dispatch(events);
   return events;
+}
+
+/// Apply the persistent side-effects of a successful code-challenge
+/// submission and dispatch the corresponding events.
+///
+/// Mirrors [applyCastSuccessEffects] but without the spellbook/word step
+/// (code challenges don't grant words of power).
+///
+/// Returns the events that were dispatched.
+Future<List<AppEvent>> applyCodeSubmitEffects({
+  required CodeChallengeId challengeId,
+  required ProgressService? progress,
+}) async {
+  await _persistCompletion(challengeId.wireName, progress);
+
+  final events = <AppEvent>[
+    ChallengeCompleted(challengeId: CodeRef(challengeId)),
+  ];
+  dispatch(events);
+  return events;
+}
+
+/// Shared persistence logic: null-guard, mark completed, exception-swallow.
+Future<void> _persistCompletion(
+  String wireName,
+  ProgressService? progress,
+) async {
+  if (progress == null) {
+    _log.warning('ProgressService unavailable; challenge '
+        '$wireName not marked completed');
+  } else {
+    try {
+      await progress.markChallengeCompleted(wireName);
+    } catch (e) {
+      _log.warning('Failed to persist completion: $e', e);
+    }
+  }
 }
 
 /// Door-cast orchestrator: classify the transcript and, on a

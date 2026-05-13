@@ -16,7 +16,10 @@ import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
+import 'package:tech_world/flame/components/bot_status.dart';
+import 'package:tech_world/flame/livekit_game_bridge.dart';
 import 'package:tech_world/flame/components/door_component.dart';
+import 'package:tech_world/flame/door_manager.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
@@ -36,6 +39,7 @@ import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/prompt/predefined_prompt_challenges.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/shared/speaker_role.dart';
 import 'package:tech_world/flame/tiles/tileset_cache_provider.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
@@ -48,9 +52,7 @@ import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
-import 'package:tech_world/infra/infra_health_service.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
-import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -74,6 +76,14 @@ class TechWorld extends World with TapCallbacks {
       remotePlayers: _otherPlayerComponentsMap,
       bots: _botCharacterComponents,
     );
+    _doorManager = DoorManager(
+      currentMap: currentMap,
+      getPlayerGrid: () => _userPlayerComponent.miniGridPosition,
+      getLiveKit: () => _liveKitService,
+      getProgress: () => progressService,
+      getBarriers: () => _barriersComponent,
+      getPathComponent: () => _pathComponent,
+    );
   }
 
   final PlayerComponent _userPlayerComponent = PlayerComponent(
@@ -86,6 +96,7 @@ class TechWorld extends World with TapCallbacks {
   final Map<String, BotCharacterComponent> _botCharacterComponents = {};
   DreamfinderComponent? _dreamfinderComponent;
   late final BubbleManager _bubbleManager;
+  late final DoorManager _doorManager;
   // Participant saved when DF joins before onLoad completes (pathComponent
   // not yet available). Processed in onLoad once the world is ready.
   RemoteParticipant? _pendingDreamfinderParticipant;
@@ -107,20 +118,9 @@ class TechWorld extends World with TapCallbacks {
   final ValueNotifier<Point<int>> playerGridPosition =
       ValueNotifier(defaultMap.spawnPoint);
 
-  /// Closest still-locked door within [_doorProximityThreshold] grid
-  /// squares (Chebyshev) of the player, or `null` if none. Drives the
-  /// voice-cast mic FAB — the UI shows the cast affordance only when
-  /// the player is near a door they could plausibly try to open.
-  ///
-  /// Updated when the player moves (in [update]) and
-  /// when a door unlocks (in [unlockDoor]) so the FAB hides
-  /// immediately the door swings.
-  final ValueNotifier<DoorData?> nearbyLockedDoor = ValueNotifier(null);
-
-  /// Chebyshev radius for the door-proximity affordance. Two squares
-  /// gives the player time to see the FAB appear *as they walk up*,
-  /// not after they've stopped.
-  static const int _doorProximityThreshold = 2;
+  /// Closest still-locked door near the player. Delegated to [DoorManager].
+  ValueNotifier<DoorData?> get nearbyLockedDoor =>
+      _doorManager.nearbyLockedDoor;
 
   LiveKitService? _liveKitService;
 
@@ -313,6 +313,11 @@ class TechWorld extends World with TapCallbacks {
   MapEditorState? _editorState;
   MapSyncService? _mapSyncService;
 
+  /// Injected progress service. Set by [main.dart] after sign-in and cleared
+  /// on sign-out, replacing the former [Locator.maybeLocate<ProgressService>()]
+  /// call inside domain logic.
+  ProgressService? progressService;
+
   /// Called when the editor state changes — rebuild pathfinding grid.
   void _onEditorStateChanged() {
     final editor = _editorState;
@@ -326,9 +331,7 @@ class TechWorld extends World with TapCallbacks {
   /// at the [ProgressService] boundary — the service stores both code and
   /// prompt completions in a single Firestore array keyed by wire form.
   bool _isCodeChallengeCompleted(CodeChallengeId challengeId) {
-    return Locator.maybeLocate<ProgressService>()
-            ?.isChallengeCompleted(challengeId.wireName) ??
-        false;
+    return progressService?.isChallengeCompleted(challengeId.wireName) ?? false;
   }
 
   /// Update all terminal components' [isCompleted] state from current progress.
@@ -346,26 +349,18 @@ class TechWorld extends World with TapCallbacks {
 
   final Stream<AuthUser> _authStateChanges;
   StreamSubscription<AuthUser>? _authStateChangesSubscription;
-  StreamSubscription<(Participant, VideoTrack)>? _trackSubscribedSubscription;
-  StreamSubscription<(Participant, VideoTrack)>?
-      _trackUnsubscribedSubscription;
-  StreamSubscription<LocalTrackPublication>? _localTrackPublishedSubscription;
-  StreamSubscription<PlayerPath>? _liveKitPositionSubscription;
-  StreamSubscription<PositionHeartbeat>? _positionHeartbeatSubscription;
-  StreamSubscription<RemoteParticipant>? _participantJoinedSubscription;
-  StreamSubscription<RemoteParticipant>? _participantLeftSubscription;
-  StreamSubscription<AvatarUpdate>? _avatarSubscription;
-  StreamSubscription<(Participant, bool)>? _speakingSubscription;
-  StreamSubscription<String?>? _connectionLostSubscription;
-  StreamSubscription<void>? _mapInfoRequestedSubscription;
-  StreamSubscription<String>? _mapSwitchSubscription;
-  StreamSubscription<DataChannelMessage>? _speechTranscriptSubscription;
-  StreamSubscription<DataChannelMessage>? _doorUnlockSubscription;
-  InfraHealthService? _infraHealthService;
+  LiveKitGameBridge? _liveKitBridge;
 
   // Avatar tracking — stores updates for players not yet created
   final Map<String, String> _pendingAvatars = {};
   Avatar? _localAvatar;
+
+  /// Forward bot status to the bubble manager so BotBubbleComponents can
+  /// listen without depending on a global notifier. Called from [main.dart]
+  /// when [ChatService] is created.
+  void setBotStatus(ValueListenable<BotStatus> status) {
+    _bubbleManager.setBotStatus(status);
+  }
 
   /// Apply the user's "hide video bubbles" preference. Takes effect for
   /// newly-created bubbles only — existing bubbles are not retroactively
@@ -418,7 +413,7 @@ class TechWorld extends World with TapCallbacks {
     if (_lastKnownPlayerGrid != playerGrid) {
       _lastKnownPlayerGrid = playerGrid;
       playerGridPosition.value = playerGrid;
-      _recomputeNearbyLockedDoor();
+      _doorManager.recomputeNearbyLockedDoor();
     }
     _bubbleManager.update(dt);
   }
@@ -442,6 +437,65 @@ class TechWorld extends World with TapCallbacks {
       listener();
     } else {
       gameReady.addListener(listener);
+    }
+  }
+
+  /// Route a position update to the correct component (Dreamfinder, bot, or
+  /// human player). Creates a [PlayerComponent] lazily if needed.
+  void _handlePositionReceived(PlayerPath path) {
+    _log.fine('LiveKit position received for ${path.playerId}');
+
+    if (path.playerId == _bubbleManager.dreamfinderIdentity &&
+        _dreamfinderComponent != null) {
+      _dreamfinderComponent!
+          .moveFromServer(path.directions, path.largeGridPoints);
+    } else if (_botCharacterComponents.containsKey(path.playerId)) {
+      _botCharacterComponents[path.playerId]?.move(path.largeGridPoints);
+    } else if (!isBotIdentity(path.playerId)) {
+      if (!_otherPlayerComponentsMap.containsKey(path.playerId)) {
+        _log.fine(
+            'Creating player component for ${path.playerId} from position data');
+        final playerComponent = PlayerComponent(
+          position: path.largeGridPoints.isNotEmpty
+              ? path.largeGridPoints.first
+              : Vector2.zero(),
+          id: path.playerId,
+          displayName: path.playerId,
+        );
+        _otherPlayerComponentsMap[path.playerId] = playerComponent;
+        add(playerComponent);
+      }
+      _otherPlayerComponentsMap[path.playerId]
+          ?.move(path.directions, path.largeGridPoints);
+    }
+  }
+
+  /// Correct stale positions via reliable heartbeats.
+  void _handleHeartbeatReceived(PositionHeartbeat heartbeat) {
+    final targetPosition = Vector2(
+      heartbeat.x.toDouble() * gridSquareSize,
+      heartbeat.y.toDouble() * gridSquareSize,
+    );
+
+    if (_botCharacterComponents.containsKey(heartbeat.playerId)) {
+      _botCharacterComponents[heartbeat.playerId]?.position = targetPosition;
+    } else if (!isBotIdentity(heartbeat.playerId)) {
+      if (!_otherPlayerComponentsMap.containsKey(heartbeat.playerId)) {
+        final participant =
+            _liveKitService!.getParticipant(heartbeat.playerId);
+        final playerComponent = PlayerComponent(
+          position: targetPosition,
+          id: heartbeat.playerId,
+          displayName: participant != null && participant.name.isNotEmpty
+              ? participant.name
+              : heartbeat.playerId,
+        );
+        _otherPlayerComponentsMap[heartbeat.playerId] = playerComponent;
+        add(playerComponent);
+      } else {
+        _otherPlayerComponentsMap[heartbeat.playerId]?.position =
+            targetPosition;
+      }
     }
   }
 
@@ -556,6 +610,30 @@ class TechWorld extends World with TapCallbacks {
     }
   }
 
+  /// Handle a participant leaving the room.
+  void _handleParticipantLeft(RemoteParticipant participant) {
+    _log.info('LiveKit participant left: ${participant.identity}');
+
+    if (isDreamfinderIdentity(participant.identity) &&
+        _dreamfinderComponent != null) {
+      remove(_dreamfinderComponent!);
+      _dreamfinderComponent = null;
+      _bubbleManager.dreamfinderComponent = null;
+      _bubbleManager.handleDreamfinderLeft();
+    } else if (_botCharacterComponents.containsKey(participant.identity)) {
+      final botComp = _botCharacterComponents.remove(participant.identity);
+      if (botComp != null) remove(botComp);
+    } else {
+      final playerComponent =
+          _otherPlayerComponentsMap.remove(participant.identity);
+      if (playerComponent != null) {
+        remove(playerComponent);
+      }
+    }
+
+    _bubbleManager.removeBubble(participant.identity);
+  }
+
   /// Handle an avatar update from a remote player.
   void _handleAvatarUpdate(AvatarUpdate update) {
     final playerComponent = _otherPlayerComponentsMap[update.playerId];
@@ -578,29 +656,30 @@ class TechWorld extends World with TapCallbacks {
     final json = msg.json;
     if (json == null) return;
 
-    final speaker = json['speaker'] as String?;
+    final speakerRaw = json['speaker'] as String?;
+    final speakerRole = SpeakerRole.tryParse(speakerRaw);
     final text = json['text'] as String?;
-    if (speaker == null || text == null || text.isEmpty) return;
+    if (speakerRole == null || text == null || text.isEmpty) return;
 
     // Determine which component to attach the bubble to.
     PositionComponent? target;
     Color bubbleColor;
     Color? borderColor;
 
-    if (speaker == 'dreamfinder' && _dreamfinderComponent != null) {
-      target = _dreamfinderComponent;
-      bubbleColor = const Color(0xCC1A1020); // dark purple
-      borderColor = const Color(0xFFDAA520); // gold
-    } else if (speaker == 'user') {
-      target = _userPlayerComponent;
-      bubbleColor = const Color(0xCC1A1A2E); // dark blue
-      borderColor = null;
-    } else {
-      return;
+    switch (speakerRole) {
+      case SpeakerRole.dreamfinder:
+        if (_dreamfinderComponent == null) return;
+        target = _dreamfinderComponent;
+        bubbleColor = const Color(0xCC1A1020); // dark purple
+        borderColor = const Color(0xFFDAA520); // gold
+      case SpeakerRole.user:
+        target = _userPlayerComponent;
+        bubbleColor = const Color(0xCC1A1A2E); // dark blue
+        borderColor = null;
     }
 
     // Remove existing speech bubble for this speaker.
-    _speechBubbles[speaker]?.removeFromParent();
+    _speechBubbles[speakerRole.wire]?.removeFromParent();
 
     final bubble = SpeechBubbleComponent(
       text: text,
@@ -613,7 +692,7 @@ class TechWorld extends World with TapCallbacks {
     // Position below the character sprite.
     bubble.position = target!.position + Vector2(16, 36);
     bubble.priority = target.priority + 1;
-    _speechBubbles[speaker] = bubble;
+    _speechBubbles[speakerRole.wire] = bubble;
     add(bubble);
   }
 
@@ -628,7 +707,6 @@ class TechWorld extends World with TapCallbacks {
       return;
     }
 
-    // Get LiveKitService from Locator (created in main.dart when user signs in)
     _liveKitService = Locator.maybeLocate<LiveKitService>();
     if (_liveKitService == null) {
       _log.info('LiveKitService not available yet');
@@ -638,218 +716,32 @@ class TechWorld extends World with TapCallbacks {
     _log.info('Using LiveKitService from Locator');
     _bubbleManager.setLiveKitService(_liveKitService!);
 
-    // Respond to bot map-info requests by sending the current map.
-    _mapInfoRequestedSubscription =
-        _liveKitService!.mapInfoRequested.listen((_) {
-      _log.info('Bot requested map-info, sending current map');
-      _liveKitService?.publishMapInfo(currentMap.value);
-    });
-
-    // Listen for map switches from other human players.
-    _mapSwitchSubscription =
-        _liveKitService!.mapSwitchReceived.listen((mapId) {
-      _log.info('Remote player switched to map "$mapId"');
-      final map = predefinedMapLookup[mapId];
-      if (map == null) {
-        _log.warning('Ignoring map-switch: unknown map ID "$mapId"');
-        return;
-      }
-      _loadMapInternal(map);
-    });
-
-    // Subscribe to position updates from other players via LiveKit
-    _liveKitPositionSubscription =
-        _liveKitService!.positionReceived.listen((PlayerPath path) {
-      _log.fine('LiveKit position received for ${path.playerId}');
-      // Don't process our own position
-      if (path.playerId == userId) return;
-
-      if (path.playerId == _bubbleManager.dreamfinderIdentity &&
-          _dreamfinderComponent != null) {
-        // Route Dreamfinder movement through its dedicated component.
-        _dreamfinderComponent!
-            .moveFromServer(path.directions, path.largeGridPoints);
-      } else if (_botCharacterComponents.containsKey(path.playerId)) {
-        // Animate bot along the full path, just like player movement.
-        _botCharacterComponents[path.playerId]?.move(path.largeGridPoints);
-      } else if (!isBotIdentity(path.playerId)) {
-        // If player component doesn't exist, create it.
-        // Skip bot identities — their component is created by
-        // _handleParticipantJoined, which may arrive after the first
-        // position update.
-        if (!_otherPlayerComponentsMap.containsKey(path.playerId)) {
-          _log.fine('Creating player component for ${path.playerId} from position data');
-          final playerComponent = PlayerComponent(
-            position: path.largeGridPoints.isNotEmpty
-                ? path.largeGridPoints.first
-                : Vector2.zero(),
-            id: path.playerId,
-            displayName: path.playerId, // Use ID as fallback display name
-          );
-          _otherPlayerComponentsMap[path.playerId] = playerComponent;
-          add(playerComponent);
-        }
-        _otherPlayerComponentsMap[path.playerId]
-            ?.move(path.directions, path.largeGridPoints);
-      }
-    });
-
-    // Subscribe to reliable position heartbeats that correct stale positions.
-    _positionHeartbeatSubscription =
-        _liveKitService!.positionHeartbeatReceived.listen((heartbeat) {
-      if (heartbeat.playerId == userId) return;
-
-      final targetPosition = Vector2(
-        heartbeat.x.toDouble() * gridSquareSize,
-        heartbeat.y.toDouble() * gridSquareSize,
-      );
-
-      if (_botCharacterComponents.containsKey(heartbeat.playerId)) {
-        _botCharacterComponents[heartbeat.playerId]?.position = targetPosition;
-      } else if (!isBotIdentity(heartbeat.playerId)) {
-        if (!_otherPlayerComponentsMap.containsKey(heartbeat.playerId)) {
-          final participant =
-              _liveKitService!.getParticipant(heartbeat.playerId);
-          final playerComponent = PlayerComponent(
-            position: targetPosition,
-            id: heartbeat.playerId,
-            displayName: participant != null && participant.name.isNotEmpty
-                ? participant.name
-                : heartbeat.playerId,
-          );
-          _otherPlayerComponentsMap[heartbeat.playerId] = playerComponent;
-          add(playerComponent);
-        } else {
-          _otherPlayerComponentsMap[heartbeat.playerId]?.position =
-              targetPosition;
-        }
-      }
-    });
-
-    // Start the periodic reliable heartbeat so other players can correct
-    // stale positions caused by dropped unreliable path updates.
-    _liveKitService!.startPositionHeartbeat(
-      () => playerGridPosition.value,
-    );
-
-    // Subscribe to avatar updates from other players
-    _avatarSubscription =
-        _liveKitService!.avatarReceived.listen(_handleAvatarUpdate);
-
-    // Listen for participant join/leave to manage player presence
-    _participantJoinedSubscription =
-        _liveKitService!.participantJoined.listen(_handleParticipantJoined);
-
-    // Check for existing participants that joined before we subscribed
-    for (final participant in _liveKitService!.remoteParticipants.values) {
-      _log.fine('Found existing participant: ${participant.identity}');
-      _handleParticipantJoined(participant);
-    }
-
-    _participantLeftSubscription =
-        _liveKitService!.participantLeft.listen((participant) {
-      _log.info('LiveKit participant left: ${participant.identity}');
-
-      // Remove component based on participant type
-      if (isDreamfinderIdentity(participant.identity) &&
-          _dreamfinderComponent != null) {
-        remove(_dreamfinderComponent!);
-        _dreamfinderComponent = null;
-        _bubbleManager.dreamfinderComponent = null;
-        _bubbleManager.handleDreamfinderLeft();
-      } else if (_botCharacterComponents.containsKey(participant.identity)) {
-        final botComp = _botCharacterComponents.remove(participant.identity);
-        if (botComp != null) remove(botComp);
-      } else {
-        final playerComponent =
-            _otherPlayerComponentsMap.remove(participant.identity);
-        if (playerComponent != null) {
-          remove(playerComponent);
-        }
-      }
-
-      _bubbleManager.removeBubble(participant.identity);
-    });
-
-    _speakingSubscription =
-        _liveKitService!.speakingChanged.listen((event) {
-      final (participant, isSpeaking) = event;
-      _bubbleManager.updateSpeakingState(participant.identity, isSpeaking);
-    });
-
-    // Listen for track subscription events to upgrade placeholder bubbles to video
-    _trackSubscribedSubscription =
-        _liveKitService!.trackSubscribed.listen((event) {
-      final (participant, track) = event;
-      if (track.kind == TrackType.VIDEO) {
-        _log.fine('Video track subscribed for ${participant.identity}, refreshing bubble');
-        // This will upgrade PlayerBubbleComponent to VideoBubbleComponent
-        _bubbleManager.refreshBubbleForPlayer(participant.identity);
-      }
-      _bubbleManager.notifyTrackReady(participant.identity);
-    });
-
-    // Listen for track unsubscription to downgrade video bubbles back to static
-    _trackUnsubscribedSubscription =
-        _liveKitService!.trackUnsubscribed.listen((event) {
-      final (participant, track) = event;
-      if (track.kind == TrackType.VIDEO) {
-        _log.info(
-            'Video track unsubscribed for ${participant.identity}, '
-            'downgrading bubble');
-        _bubbleManager.downgradeVideoBubble(participant.identity);
-      }
-    });
-
-    // Subscribe to speech transcripts for in-game speech bubbles.
-    _speechTranscriptSubscription = _liveKitService!.dataReceived
-        .where((msg) => msg.topic == DataTopic.speechTranscript.wireName)
-        .listen(_handleSpeechTranscript);
-
-    // Subscribe to door-unlock events from other players so doors they
-    // unlock become passable locally (barrier removed, proximity updated).
-    _doorUnlockSubscription = _liveKitService!.dataReceived
-        .where((msg) => msg.topic == DataTopic.doorUnlock.wireName)
-        .listen(_handleRemoteDoorUnlock);
-
-    // Infrastructure health monitoring.
-    _infraHealthService = InfraHealthService(
+    _liveKitBridge = LiveKitGameBridge(
       liveKitService: _liveKitService!,
+      userId: userId,
+      bubbleManager: _bubbleManager,
+      playerGridPosition: playerGridPosition,
+      localAvatar: _localAvatar,
+      onPositionReceived: _handlePositionReceived,
+      onHeartbeatReceived: _handleHeartbeatReceived,
+      onParticipantJoined: _handleParticipantJoined,
+      onParticipantLeft: _handleParticipantLeft,
+      onAvatarUpdate: _handleAvatarUpdate,
+      onSpeechTranscript: _handleSpeechTranscript,
+      onDoorUnlock: _doorManager.handleRemoteDoorUnlock,
+      onMapInfoRequested: () =>
+          _liveKitService?.publishMapInfo(currentMap.value),
+      onMapSwitchReceived: (mapId) {
+        final map = predefinedMapLookup[mapId];
+        if (map == null) {
+          _log.warning('Ignoring map-switch: unknown map ID "$mapId"');
+          return;
+        }
+        _loadMapInternal(map);
+      },
+      onConnectionLost: disconnectFromLiveKit,
     );
-    Locator.add<InfraHealthService>(_infraHealthService!);
-
-    // Listen for unexpected connection loss to clean up all LiveKit state.
-    // This enables reconnection: disconnectFromLiveKit() nulls _liveKitService,
-    // so the guard at the top of this method will pass on the next call.
-    _connectionLostSubscription =
-        _liveKitService!.connectionLost.listen((reason) {
-      _log.warning('LiveKit connection lost (reason: $reason), cleaning up');
-      disconnectFromLiveKit();
-    });
-
-    // Listen for local track publication to refresh local bubble when camera is ready
-    _localTrackPublishedSubscription =
-        _liveKitService!.localTrackPublished.listen((publication) {
-      if (publication.kind == TrackType.VIDEO) {
-        _log.fine('Local video track published, refreshing bubble');
-        _bubbleManager.refreshLocalPlayerBubble();
-      }
-    });
-
-    // Check if already connected, otherwise wait for connection
-    // Note: camera/mic are enabled by the caller (_setupLiveKit in main.dart)
-    // to keep media device management out of the game world layer.
-    if (_liveKitService!.isConnected) {
-      _log.fine('LiveKit already connected');
-      _bubbleManager.refreshLocalPlayerBubble();
-
-      // Re-publish avatar so late joiners see our character
-      if (_localAvatar != null) {
-        _liveKitService!.publishAvatar(_localAvatar!);
-      }
-    } else {
-      _log.fine('Waiting for LiveKit connection...');
-    }
+    _liveKitBridge!.connect();
   }
 
   @override
@@ -1346,161 +1238,13 @@ class TechWorld extends World with TapCallbacks {
     }
   }
 
-  /// Try to unlock a door and update its visual state.
-  ///
-  /// Returns `true` if the door actually unlocked, `false` if some required
-  /// challenges are still incomplete. Callers should show partial-progress
-  /// feedback when `false` is returned.
-  ///
-  /// Checks [ProgressService] for ALL of the door's [DoorData.requiredChallengeIds]
-  /// before unlocking. A door with multiple requirements (e.g. D1 needs both
-  /// evocationCountdown AND divinationColor) stays locked until every seal is
-  /// broken.
+  /// Try to unlock a door. Delegated to [DoorManager].
   @useResult
-  bool unlockDoor(DoorData door) {
-    // Guard: all required challenges must be completed before the door opens.
-    if (door.requiredChallengeIds.isNotEmpty) {
-      final progress = Locator.maybeLocate<ProgressService>();
-      if (progress == null) {
-        _log.warning('ProgressService not available — door check skipped');
-        return false;
-      }
-      for (final challengeId in door.requiredChallengeIds) {
-        if (!progress.isChallengeCompleted(challengeId.wireName)) {
-          _log.info(
-            'Door at (${door.position.x}, ${door.position.y}) not unlocked: '
-            'challenge ${challengeId.wireName} still incomplete',
-          );
-          return false;
-        }
-      }
-    }
+  bool unlockDoor(DoorData door) => _doorManager.unlockDoor(door);
 
-    door.isUnlocked = true;
-
-    // Remove the barrier at the door position so the player can walk through.
-    _barriersComponent.removeBarrierAt(door.position);
-    // Invalidate the JPS pathfinding grid so the next pathfind rebuilds it
-    // without the now-removed barrier cell.
-    _pathComponent?.invalidateGrid();
-
-    // The unlocked door must drop out of the proximity signal — otherwise
-    // the mic FAB lingers over an open doorway.
-    _recomputeNearbyLockedDoor();
-
-    // Broadcast to other players.
-    _liveKitService?.publishJson(
-      {
-        'type': DataTopic.doorUnlock.wireName,
-        'doorX': door.position.x,
-        'doorY': door.position.y,
-      },
-      topic: DataTopic.doorUnlock.wireName,
-    );
-
-    _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');
-
-    dispatch([DoorUnlocked(doorX: door.position.x, doorY: door.position.y)]);
-    return true;
-  }
-
-  /// Handle a door-unlock message from another player.
-  ///
-  /// Looks up the [DoorData] at the given coordinates, marks it unlocked,
-  /// removes the barrier so the local player can walk through, and
-  /// recomputes the nearby-locked-door signal in case the player is
-  /// standing next to the just-unlocked door.
-  ///
-  /// **Sender verification**: only messages from known human participants
-  /// (present in [LiveKitService.remoteParticipants] and not a bot) are
-  /// accepted. This prevents arbitrary actors from broadcasting a
-  /// `door-unlock` and unlocking doors for all players without completing
-  /// the required challenge.
-  void _handleRemoteDoorUnlock(DataChannelMessage msg) {
-    final senderId = msg.senderId;
-
-    // Reject messages with no sender identity (e.g. server-API injections).
-    if (senderId == null) {
-      _log.warning('door-unlock ignored: no sender identity');
-      return;
-    }
-
-    // Reject messages from bots — bots do not complete player challenges.
-    if (isBotIdentity(senderId)) {
-      _log.warning('door-unlock ignored: sender "$senderId" is a bot');
-      return;
-    }
-
-    // Reject messages from identities not currently in the room.
-    final knownParticipant =
-        _liveKitService?.remoteParticipants.containsKey(senderId) ?? false;
-    if (!knownParticipant) {
-      _log.warning(
-          'door-unlock ignored: sender "$senderId" is not a known participant');
-      return;
-    }
-
-    final json = msg.json;
-    if (json == null) return;
-
-    final doorX = json['doorX'] as int?;
-    final doorY = json['doorY'] as int?;
-    if (doorX == null || doorY == null) return;
-
-    final target = Point(doorX, doorY);
-    DoorData? door;
-    for (final d in currentMap.value.doors) {
-      if (d.position == target) {
-        door = d;
-        break;
-      }
-    }
-    if (door == null || door.isUnlocked) return;
-
-    door.isUnlocked = true;
-    _barriersComponent.removeBarrierAt(door.position);
-    // Invalidate the JPS pathfinding grid so remote unlock takes effect
-    // immediately — same fix as the local path in [unlockDoor].
-    _pathComponent?.invalidateGrid();
-    _recomputeNearbyLockedDoor();
-    _log.info('Remote door unlock at ($doorX, $doorY)');
-    dispatch([RemoteDoorUnlocked(doorX: doorX, doorY: doorY)]);
-  }
-
-  /// Recompute [nearbyLockedDoor] given the current player position and
-  /// the doors on the current map. Picks the closest still-locked door
-  /// within [_doorProximityThreshold]; emits `null` if none qualify.
-  ///
-  /// Cheap (linear scan over a handful of doors) and idempotent — the
-  /// notifier only fires if the value actually changed, so listeners
-  /// don't see spurious rebuilds when the player walks within the
-  /// threshold without crossing a door boundary.
-  void _recomputeNearbyLockedDoor() {
-    final playerGrid = _userPlayerComponent.miniGridPosition;
-    DoorData? closest;
-    int closestDistance = _doorProximityThreshold + 1;
-    for (final door in currentMap.value.doors) {
-      if (door.isUnlocked) continue;
-      final d = max(
-        (door.position.x - playerGrid.x).abs(),
-        (door.position.y - playerGrid.y).abs(),
-      );
-      if (d <= _doorProximityThreshold && d < closestDistance) {
-        closestDistance = d;
-        closest = door;
-      }
-    }
-    if (!identical(nearbyLockedDoor.value, closest)) {
-      nearbyLockedDoor.value = closest;
-    }
-  }
-
-  /// Find all doors that require a specific prompt challenge to be completed.
-  List<DoorData> doorsForChallenge(PromptChallengeId challengeId) {
-    return currentMap.value.doors
-        .where((d) => d.requiredChallengeIds.contains(challengeId) && !d.isUnlocked)
-        .toList();
-  }
+  /// Find all doors that require a specific prompt challenge.
+  List<DoorData> doorsForChallenge(PromptChallengeId challengeId) =>
+      _doorManager.doorsForChallenge(challengeId);
 
   /// Show an ephemeral text hint that fades out after a short delay.
   void _showHint(String message, Vector2 position) {
@@ -1531,69 +1275,29 @@ class TechWorld extends World with TapCallbacks {
   void disconnectFromLiveKit() {
     _log.info('Disconnecting from LiveKit');
 
-    // Cancel all LiveKit-related subscriptions
-    _trackSubscribedSubscription?.cancel();
-    _trackSubscribedSubscription = null;
-    _trackUnsubscribedSubscription?.cancel();
-    _trackUnsubscribedSubscription = null;
-    _localTrackPublishedSubscription?.cancel();
-    _localTrackPublishedSubscription = null;
-    _liveKitPositionSubscription?.cancel();
-    _liveKitPositionSubscription = null;
-    _positionHeartbeatSubscription?.cancel();
-    _positionHeartbeatSubscription = null;
-    _participantJoinedSubscription?.cancel();
-    _participantJoinedSubscription = null;
-    _participantLeftSubscription?.cancel();
-    _participantLeftSubscription = null;
-    _avatarSubscription?.cancel();
-    _avatarSubscription = null;
-    _speakingSubscription?.cancel();
-    _speakingSubscription = null;
-    _connectionLostSubscription?.cancel();
-    _connectionLostSubscription = null;
-    _mapInfoRequestedSubscription?.cancel();
-    _mapInfoRequestedSubscription = null;
-    _mapSwitchSubscription?.cancel();
-    _mapSwitchSubscription = null;
-    _speechTranscriptSubscription?.cancel();
-    _speechTranscriptSubscription = null;
-    _doorUnlockSubscription?.cancel();
-    _doorUnlockSubscription = null;
+    // Tear down all subscriptions and infra health via the bridge.
+    _liveKitBridge?.disconnect();
+    _liveKitBridge = null;
 
-    // Dispose infrastructure health monitoring.
-    _infraHealthService?.dispose();
-    Locator.remove<InfraHealthService>();
-    _infraHealthService = null;
-
-    // Clear speech bubbles
+    // Clear game-world state that was driven by those subscriptions.
     for (final bubble in _speechBubbles.values) {
       bubble.removeFromParent();
     }
     _speechBubbles.clear();
-
-    // Clear pending avatar data
     _pendingAvatars.clear();
-
-    // Clear the service reference so connectToLiveKit can reconnect.
     _liveKitService = null;
-
-    // Clear all bubble state (bridge, shaders survive in BubbleManager).
     _bubbleManager.clear();
 
-    // Remove other player components
     for (final component in _otherPlayerComponentsMap.values) {
       component.removeFromParent();
     }
     _otherPlayerComponentsMap.clear();
 
-    // Remove all bot characters
     for (final botComp in _botCharacterComponents.values) {
       botComp.removeFromParent();
     }
     _botCharacterComponents.clear();
 
-    // Reset position tracking.
     _lastKnownPlayerGrid = null;
   }
 

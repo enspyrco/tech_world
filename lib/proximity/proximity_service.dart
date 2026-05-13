@@ -24,9 +24,14 @@ class ProximityEvent {
 ///
 /// Uses Chebyshev distance (max of x/y difference) to account for diagonal movement.
 class ProximityService {
-  ProximityService({this.proximityThreshold = 5});
+  ProximityService({this.proximityThreshold = 3})
+      : assert(proximityThreshold >= 0,
+            'proximityThreshold must be non-negative');
 
-  /// Distance in grid squares to trigger proximity
+  /// Distance in grid squares (Chebyshev) at which another player counts as
+  /// nearby. A value of `0` disables proximity entirely — no player ever
+  /// becomes nearby, so video bubbles never form. Set via the user's
+  /// "Proximity range" preference at room entry.
   final int proximityThreshold;
 
   final _proximityController = StreamController<ProximityEvent>.broadcast();
@@ -48,7 +53,11 @@ class ProximityService {
 
       final distance =
           _calculateChebyshevDistance(localPlayerPosition, otherPosition);
-      final isNearby = distance <= proximityThreshold;
+      // `proximityThreshold == 0` disables proximity entirely; nobody is ever
+      // nearby, including players occupying the same square. Without this
+      // guard the natural `distance <= 0` check would still match co-located
+      // players and form a bubble.
+      final isNearby = proximityThreshold > 0 && distance <= proximityThreshold;
       final wasNearby = _nearbyPlayers.contains(playerId);
 
       if (isNearby && !wasNearby) {
@@ -103,21 +112,6 @@ class ProximityService {
   /// Chebyshev distance - allows diagonal movement to count as 1 step
   int _calculateChebyshevDistance(Point<int> a, Point<int> b) {
     return max((a.x - b.x).abs(), (a.y - b.y).abs());
-  }
-
-  /// Calculate visual opacity based on Chebyshev distance.
-  ///
-  /// - Distance 0–1: 1.0 (fully visible)
-  /// - Distance 2: 0.8
-  /// - Distance 3: 0.5
-  /// - Distance 4: 0.2
-  /// - Distance 5+: 0.0 (removed by caller)
-  static double calculateOpacity(int distance) {
-    if (distance <= 1) return 1.0;
-    if (distance == 2) return 0.8;
-    if (distance == 3) return 0.5;
-    if (distance == 4) return 0.2;
-    return 0.0;
   }
 
   void dispose() {

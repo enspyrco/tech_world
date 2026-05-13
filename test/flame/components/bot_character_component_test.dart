@@ -8,10 +8,6 @@ import 'package:tech_world/flame/shared/constants.dart';
 
 void main() {
   group('BotCharacterComponent', () {
-    setUp(() {
-      // Reset bot status before each test
-      botStatusNotifier.value = BotStatus.idle;
-    });
 
     group('constructor', () {
       test('creates component with required parameters', () {
@@ -147,19 +143,12 @@ void main() {
     });
 
     group('bot status interaction', () {
-      test('starts with idle status', () {
-        expect(botStatusNotifier.value, equals(BotStatus.idle));
-      });
-
-      test('toggles to thinking status', () {
-        botStatusNotifier.value = BotStatus.thinking;
-        expect(botStatusNotifier.value, equals(BotStatus.thinking));
-      });
-
-      test('toggles back to idle status', () {
-        botStatusNotifier.value = BotStatus.thinking;
-        botStatusNotifier.value = BotStatus.idle;
-        expect(botStatusNotifier.value, equals(BotStatus.idle));
+      test('BotStatus enum has expected values', () {
+        expect(BotStatus.values, containsAll([
+          BotStatus.absent,
+          BotStatus.idle,
+          BotStatus.thinking,
+        ]));
       });
     });
 
