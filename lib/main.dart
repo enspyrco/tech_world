@@ -1251,7 +1251,7 @@ class _MyAppState extends State<MyApp> {
                             final terminalPos =
                                 techWorld.activeTerminalPosition.value;
                             return chatService.requestHelp(
-                              challengeId: challenge.id.wireName,
+                              challengeId: challenge.id,
                               challengeTitle: challenge.title,
                               challengeDescription: challenge.description,
                               code: code,
@@ -1279,7 +1279,7 @@ class _MyAppState extends State<MyApp> {
                               response?['challengeResult'] as String?,
                             );
                             dispatch([CodeSubmitted(
-                              challengeId: challenge.id.wireName,
+                              challengeId: challenge.id,
                               result: codeResult,
                             )]);
                             if (codeResult == CodeSubmitResult.pass) {

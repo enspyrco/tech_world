@@ -46,7 +46,7 @@ void main() {
               PromptChallengeId.evocationFizzbuzz));
       expect(events[1], isA<ChallengeCompleted>()
           .having((e) => e.challengeId, 'challengeId',
-              'evocation_fizzbuzz'));
+              PromptRef(PromptChallengeId.evocationFizzbuzz)));
     });
 
     test('every PromptChallengeId produces exactly 2 events', () {

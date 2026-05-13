@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
@@ -21,7 +22,7 @@ List<AppEvent> allSampleEvents() => [
         wordId: WordId.ignis,
         challengeId: PromptChallengeId.evocationFizzbuzz,
       ),
-      ChallengeCompleted(challengeId: 'evocation_fizzbuzz'),
+      ChallengeCompleted(challengeId: PromptRef(PromptChallengeId.evocationFizzbuzz)),
       SpellCastFailed(
         reason: CastFailureReason.noMatch,
         transcript: 'flambe',
@@ -31,7 +32,7 @@ List<AppEvent> allSampleEvents() => [
       RemoteDoorUnlocked(doorX: 30, doorY: 15),
       PlayerMoved(destX: 25, destY: 10),
       TerminalOpened(
-        challengeId: 'evocation_fizzbuzz',
+        challengeId: PromptRef(PromptChallengeId.evocationFizzbuzz),
         terminalX: 15,
         terminalY: 10,
       ),
@@ -50,7 +51,7 @@ List<AppEvent> allSampleEvents() => [
       ProfileUpdated(displayName: 'Alice the Magnificent'),
       // Code
       CodeSubmitted(
-        challengeId: 'evocation_fizzbuzz',
+        challengeId: CodeChallengeId.helloDart,
         result: CodeSubmitResult.pass,
       ),
       // Map editor
@@ -68,7 +69,7 @@ List<AppEvent> allSampleEvents() => [
       // Chat
       GroupMessageSent(messageId: '1715178785123456'),
       DmSent(peerId: 'user_456', conversationId: 'user_abc_user_456'),
-      HelpRequested(challengeId: 'evocation_countdown'),
+      HelpRequested(challengeId: PromptRef(PromptChallengeId.evocationCountdown)),
       BotSpoke(text: 'Welcome, wizard!', context: BotSpokeContext.group),
       // Log bridge
       AppLogRecord(
@@ -145,8 +146,8 @@ void main() {
 
   group('ChallengeCompleted', () {
     test('serializes wire-format challengeId', () {
-      dispatch([ChallengeCompleted(challengeId: 'conjuration_sort')]);
-      expect(captured[0].toJson()['challengeId'], 'conjuration_sort');
+      dispatch([ChallengeCompleted(challengeId: PromptRef(PromptChallengeId.conjurationGlorp))]);
+      expect(captured[0].toJson()['challengeId'], 'conjuration_glorp');
     });
   });
 
@@ -197,7 +198,7 @@ void main() {
   group('TerminalOpened', () {
     test('serializes challengeId and position', () {
       dispatch([TerminalOpened(
-        challengeId: 'evocation_countdown',
+        challengeId: PromptRef(PromptChallengeId.evocationCountdown),
         terminalX: 20,
         terminalY: 5,
       )]);
@@ -311,7 +312,7 @@ void main() {
     for (final result in CodeSubmitResult.values) {
       test('serializes result=${result.name}', () {
         dispatch([CodeSubmitted(
-          challengeId: 'test_challenge',
+          challengeId: CodeChallengeId.helloDart,
           result: result,
         )]);
         final json = captured[0].toJson();
@@ -427,7 +428,7 @@ void main() {
     test('serializes messageId and optional challengeId', () {
       dispatch([GroupMessageSent(
         messageId: 'msg_1',
-        challengeId: 'evocation_fizzbuzz',
+        challengeId: PromptRef(PromptChallengeId.evocationFizzbuzz),
       )]);
       final json = captured[0].toJson();
       expect(json['messageId'], 'msg_1');
@@ -451,7 +452,7 @@ void main() {
 
   group('HelpRequested', () {
     test('serializes challengeId', () {
-      dispatch([HelpRequested(challengeId: 'evocation_countdown')]);
+      dispatch([HelpRequested(challengeId: PromptRef(PromptChallengeId.evocationCountdown))]);
       expect(captured[0].toJson()['challengeId'], 'evocation_countdown');
     });
   });
@@ -550,7 +551,7 @@ void main() {
       expect(wordEvent.challengeId, PromptChallengeId.evocationFizzbuzz);
 
       final challengeEvent = captured[1] as ChallengeCompleted;
-      expect(challengeEvent.challengeId, 'evocation_fizzbuzz');
+      expect(challengeEvent.challengeId, PromptRef(PromptChallengeId.evocationFizzbuzz));
     });
 
     test('performCast pass emits events, fail emits nothing', () async {
@@ -631,7 +632,7 @@ void main() {
         expect(word.challengeId, id);
 
         final challenge = captured[1] as ChallengeCompleted;
-        expect(challenge.challengeId, id.wireName);
+        expect(challenge.challengeId, PromptRef(id));
       }
     });
 
@@ -796,12 +797,12 @@ void main() {
         PlayerMoved(destX: 12, destY: 8),
         PlayerEnteredProximity(playerId: 'user_2'),
         TerminalOpened(
-          challengeId: 'evocation_fizzbuzz',
+          challengeId: PromptRef(PromptChallengeId.evocationFizzbuzz),
           terminalX: 15,
           terminalY: 10,
         ),
         CodeSubmitted(
-          challengeId: 'evocation_fizzbuzz',
+          challengeId: CodeChallengeId.helloDart,
           result: CodeSubmitResult.pass,
         ),
         TerminalClosed(),

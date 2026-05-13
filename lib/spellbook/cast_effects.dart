@@ -20,7 +20,7 @@ List<AppEvent> castSuccessEvents(PromptChallengeId challengeId) {
   if (word != null) {
     events.add(WordLearned(wordId: word.id, challengeId: challengeId));
   }
-  events.add(ChallengeCompleted(challengeId: challengeId.wireName));
+  events.add(ChallengeCompleted(challengeId: PromptRef(challengeId)));
   return events;
 }
 
