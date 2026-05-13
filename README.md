@@ -9,6 +9,8 @@ An educational multiplayer 2D virtual world where players solve coding challenge
 - **Player-to-player DMs** — Private direct messages delivered via targeted LiveKit data channels and persisted to Firestore
 - **Proximity-based video chat** — LiveKit video/audio streams rendered as in-game bubbles. Proximity is computed with Chebyshev distance (max of |Δx|, |Δy|) so diagonals count the same as cardinals; default threshold is 3 grid squares
 - **Dreamfinder presence** — An optional embodied AI participant rendered as a Three.js avatar in an iframe. The iframe canvas is captured per-frame, decoded via `decodeImageFromPixels`, and drawn into the Flame world as a video bubble — same pipeline as remote players
+- **Silence Dreamfinder** — Toolbar button (speaker icon, top-right) that toggles whether the local client receives DF's audio track. Server-side disable via `RemoteTrackPublication.disable()` — DF keeps speaking in the room and other players still hear, but the SFU stops forwarding DF audio to you. Survives DF rejoin / republish via the `TrackSubscribedEvent` hook
+- **Reduce motion & avatar-only modes** — User preferences (`lib/preferences/user_preferences.dart`) that disable purely decorative bubble animation (breathing scale, glow pulse, voice ripples, metaball merge animation) or hide video bubbles entirely in favour of avatar tiles. Both apply at next room entry; gameplay-essential animation (avatar walk, bubble physics, camera) is unaffected
 - **User profiles** — Set a display name and upload a profile picture, stored in Firestore and Firebase Storage
 
 ### Game World
