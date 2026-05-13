@@ -56,6 +56,9 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   /// Loaded asynchronously from [SharedPreferences]; null until ready.
   bool? _hideVideoBubbles;
 
+  /// Loaded asynchronously from [SharedPreferences]; null until ready.
+  bool? _reduceMotion;
+
   @override
   void initState() {
     super.initState();
@@ -63,6 +66,9 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     _currentPhotoUrl = widget.currentProfilePictureUrl;
     UserPreferences.hideVideoBubbles().then((value) {
       if (mounted) setState(() => _hideVideoBubbles = value);
+    });
+    UserPreferences.reduceMotion().then((value) {
+      if (mounted) setState(() => _reduceMotion = value);
     });
   }
 
@@ -270,6 +276,28 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                     : (value) async {
                         setState(() => _hideVideoBubbles = value);
                         await UserPreferences.setHideVideoBubbles(value);
+                      },
+              ),
+              // Accessibility: disable purely decorative animation on
+              // proximity bubbles (breathing scale, voice ripples, metaball
+              // morph). Gameplay animation is unaffected.
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Reduce motion',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  'Disable bubble breathing, voice ripples, and metaball '
+                  'animation. Takes effect on next room entry.',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                value: _reduceMotion ?? false,
+                onChanged: _reduceMotion == null || _saving
+                    ? null
+                    : (value) async {
+                        setState(() => _reduceMotion = value);
+                        await UserPreferences.setReduceMotion(value);
                       },
               ),
               const SizedBox(height: 24),

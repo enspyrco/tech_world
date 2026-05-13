@@ -30,7 +30,12 @@ class BubbleFieldComponent extends PositionComponent {
     required ui.FragmentProgram shaderProgram,
     this.glowColor = const Color(0xFF00FF88),
     this.bubbleRadius = 32.0,
+    this.reduceMotion = false,
   }) : _shader = shaderProgram.fragmentShader();
+
+  /// When true, the shader-driven metaball animation freezes at its current
+  /// state — [_time] stops advancing so the GLSL noise term is constant.
+  bool reduceMotion;
 
   final ui.FragmentShader _shader;
 
@@ -78,7 +83,7 @@ class BubbleFieldComponent extends PositionComponent {
   @override
   void update(double dt) {
     super.update(dt);
-    _time += dt;
+    if (!reduceMotion) _time += dt;
   }
 
   @override

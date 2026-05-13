@@ -446,6 +446,7 @@ class _MyAppState extends State<MyApp> {
             // be created. Toggle takes effect on next room entry.
             techWorld.setHideVideoBubbles(
                 await UserPreferences.hideVideoBubbles());
+            techWorld.setReduceMotion(await UserPreferences.reduceMotion());
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
             // Wire C: camera + mic (depends on server connection).
@@ -695,6 +696,8 @@ class _MyAppState extends State<MyApp> {
         if (result == ConnectionResult.connected) {
           locate<TechWorld>().setHideVideoBubbles(
               await UserPreferences.hideVideoBubbles());
+          locate<TechWorld>()
+              .setReduceMotion(await UserPreferences.reduceMotion());
           await locate<TechWorld>()
               .connectToLiveKit(userId, _currentDisplayName);
           await _session!.enableMedia();

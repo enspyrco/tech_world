@@ -45,6 +45,7 @@ class VideoBubbleComponent extends PositionComponent {
     this.bubbleSize = 64,
     this.targetFps = 15,
     this.externalVideoCapture,
+    this.reduceMotion = false,
   }) : super(
           size: Vector2.all(bubbleSize),
           anchor: Anchor.bottomCenter,
@@ -54,6 +55,11 @@ class VideoBubbleComponent extends PositionComponent {
   final String displayName;
   final double bubbleSize;
   final int targetFps;
+
+  /// When true, purely decorative animation (breathing scale, glow pulse,
+  /// voice ripples) renders in its resting state. Frame capture, opacity
+  /// fading, and the loading spinner are unaffected.
+  bool reduceMotion;
 
   /// Optional external frame source (e.g., [CanvasCapture] from
   /// Dreamfinder's 3D avatar iframe). When provided, bypasses participant
@@ -597,7 +603,9 @@ class VideoBubbleComponent extends PositionComponent {
     final radius = bubbleSize / 2;
 
     // ── Breathing: scale the entire bubble around its centre ──
-    final breathScale = 1.0 + _breathAmount * sin(_time * _breathSpeed);
+    // Resting state (scale 1.0) when reduce-motion is on.
+    final breathScale =
+        reduceMotion ? 1.0 : 1.0 + _breathAmount * sin(_time * _breathSpeed);
     canvas.save();
     canvas.translate(center.dx, center.dy);
     canvas.scale(breathScale);
@@ -622,7 +630,8 @@ class VideoBubbleComponent extends PositionComponent {
     // Draws a soft halo behind the video circle. Intensity and color
     // are set per-bubble (e.g. gold for Dreamfinder, green for players).
     if (_glowIntensity > 0 && _currentFrame != null) {
-      final glowPulse = 1.0 + 0.15 * sin(_time * 2.5);
+      // Resting glow (no pulse) when reduce-motion is on.
+      final glowPulse = reduceMotion ? 1.0 : 1.0 + 0.15 * sin(_time * 2.5);
       final glowRadius = radius + 8.0 * _glowIntensity * glowPulse;
       final glowPaint = Paint()
         ..color = _glowColor.withValues(alpha: 0.45 * _glowIntensity * glowPulse)
@@ -863,8 +872,8 @@ class VideoBubbleComponent extends PositionComponent {
   /// As audio level rises, sinusoidal lobes appear around the edge,
   /// animated over time so the ripple *moves*.
   Path _buildBubblePath(Offset center, double radius) {
-    if (_speakingLevel < 0.01) {
-      // No audio — fast path, plain circle.
+    if (reduceMotion || _speakingLevel < 0.01) {
+      // No audio (or reduce-motion gating the ripple) — fast path, plain circle.
       return Path()..addOval(Rect.fromCircle(center: center, radius: radius));
     }
 

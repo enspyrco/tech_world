@@ -553,5 +553,134 @@ void main() {
         );
       });
     });
+
+    group('reduceMotion toggle', () {
+      late List<Component> addedComponents;
+      late PlayerComponent localPlayer;
+      late Map<String, PlayerComponent> remotePlayers;
+      late MockLiveKitService mockLiveKit;
+
+      MockRemoteParticipant remoteWithVideo() {
+        final pub = MockRemoteVideoTrackPublication();
+        final track = MockRemoteVideoTrack();
+        when(() => pub.track).thenReturn(track);
+        when(() => pub.subscribed).thenReturn(true);
+        final p = MockRemoteParticipant();
+        when(() => p.videoTrackPublications).thenReturn([pub]);
+        return p;
+      }
+
+      MockLocalParticipant localWithVideo() {
+        final pub = MockLocalVideoTrackPublication();
+        final track = MockLocalVideoTrack();
+        when(() => pub.track).thenReturn(track);
+        when(() => pub.subscribed).thenReturn(true);
+        final p = MockLocalParticipant();
+        when(() => p.videoTrackPublications).thenReturn([pub]);
+        return p;
+      }
+
+      setUp(() {
+        addedComponents = [];
+        remotePlayers = {};
+        mockLiveKit = MockLiveKitService();
+        when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
+            .thenReturn(null);
+        localPlayer = PlayerComponent(
+          position: Vector2(160, 160),
+          id: 'local-user',
+          displayName: 'Local',
+        );
+      });
+
+      test('default (off) creates video bubbles with reduceMotion=false', () {
+        final manager = BubbleManager(
+          localPlayer: localPlayer,
+          addComponent: addedComponents.add,
+          remotePlayers: remotePlayers,
+          bots: {},
+        );
+        manager.setLiveKitService(mockLiveKit);
+
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(192, 160),
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        final remoteParticipant = remoteWithVideo();
+        when(() => mockLiveKit.getParticipant('remote-1'))
+            .thenReturn(remoteParticipant);
+        when(() => mockLiveKit.localParticipant).thenReturn(null);
+
+        manager.update(0.016);
+
+        final videoBubbles =
+            addedComponents.whereType<VideoBubbleComponent>().toList();
+        expect(videoBubbles, hasLength(1));
+        expect(videoBubbles.single.reduceMotion, isFalse,
+            reason: 'default state must leave decorative animation on');
+      });
+
+      test(
+          'reduceMotion=true propagates to a newly-created remote video bubble',
+          () {
+        final manager = BubbleManager(
+          localPlayer: localPlayer,
+          addComponent: addedComponents.add,
+          remotePlayers: remotePlayers,
+          bots: {},
+          reduceMotion: true,
+        );
+        manager.setLiveKitService(mockLiveKit);
+
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(192, 160),
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        final remoteParticipant = remoteWithVideo();
+        when(() => mockLiveKit.getParticipant('remote-1'))
+            .thenReturn(remoteParticipant);
+        when(() => mockLiveKit.localParticipant).thenReturn(null);
+
+        manager.update(0.016);
+
+        final videoBubbles =
+            addedComponents.whereType<VideoBubbleComponent>().toList();
+        expect(videoBubbles, hasLength(1),
+            reason: 'reduce-motion must not suppress the video bubble itself');
+        expect(videoBubbles.single.reduceMotion, isTrue,
+            reason: 'reduceMotion must flow into the created bubble');
+      });
+
+      test('reduceMotion=true propagates to a newly-created local video bubble',
+          () {
+        final manager = BubbleManager(
+          localPlayer: localPlayer,
+          addComponent: addedComponents.add,
+          remotePlayers: remotePlayers,
+          bots: {},
+          reduceMotion: true,
+        );
+        manager.setLiveKitService(mockLiveKit);
+
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(192, 160),
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        when(() => mockLiveKit.getParticipant('remote-1')).thenReturn(null);
+        final localParticipant = localWithVideo();
+        when(() => mockLiveKit.localParticipant).thenReturn(localParticipant);
+
+        manager.update(0.016);
+
+        final localBubble =
+            addedComponents.whereType<VideoBubbleComponent>().firstWhere(
+                  (b) => b.participant is LocalParticipant,
+                );
+        expect(localBubble.reduceMotion, isTrue);
+      });
+    });
   });
 }
