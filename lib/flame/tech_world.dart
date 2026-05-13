@@ -374,6 +374,17 @@ class TechWorld extends World with TapCallbacks {
     _bubbleManager.hideVideoBubbles = value;
   }
 
+  /// Apply the user's "reduce motion" preference. Disables purely decorative
+  /// animation on proximity video bubbles (breathing scale, glow pulse, voice
+  /// ripples) and freezes the metaball merge animation. Gameplay-essential
+  /// animation (avatar walk, bubble physics, camera) is unaffected.
+  ///
+  /// Takes effect on next room entry for newly-created bubbles; the shared
+  /// metaball field/merged-video components pick the new value up live.
+  void setReduceMotion(bool value) {
+    _bubbleManager.reduceMotion = value;
+  }
+
   /// Set the local player's avatar. Also broadcasts to other participants.
   void setLocalAvatar(Avatar avatar) {
     _localAvatar = avatar;

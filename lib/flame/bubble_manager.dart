@@ -41,6 +41,7 @@ class BubbleManager {
     required Map<String, PlayerComponent> remotePlayers,
     required Map<String, BotCharacterComponent> bots,
     this.hideVideoBubbles = false,
+    this.reduceMotion = false,
   })  : _localPlayer = localPlayer,
         _addComponent = addComponent,
         _remotePlayers = remotePlayers,
@@ -54,6 +55,19 @@ class BubbleManager {
   /// before each room entry. Existing bubbles are not retroactively swapped —
   /// the toggle takes effect for newly created bubbles only.
   bool hideVideoBubbles;
+
+  /// When true, purely decorative animation on proximity video bubbles
+  /// renders in its resting state: no breathing scale, no glow pulse, no
+  /// voice ripples, and the metaball merge field/animation freezes.
+  ///
+  /// Gameplay-essential animation (avatar walk, bubble physics repulsion,
+  /// camera, tile rendering) is unaffected. Universal benefit (vestibular
+  /// disorders, low-power devices, ADHD, autism, motion sensitivity).
+  ///
+  /// Mutable so the owning game world can apply the user's saved preference
+  /// before each room entry. Applied to newly-created bubbles and to the
+  /// shared metaball field/merged-video components on next update.
+  bool reduceMotion;
 
   // ── Construction-time stable references ──────────────────────────────────
 
@@ -476,6 +490,7 @@ class BubbleManager {
         displayName: playerComponent.displayName,
         bubbleSize: 64,
         targetFps: 15,
+        reduceMotion: reduceMotion,
       );
 
       if (_shaderProgram != null) {
@@ -503,6 +518,7 @@ class BubbleManager {
         displayName: _localPlayer.displayName,
         bubbleSize: 64,
         targetFps: 15,
+        reduceMotion: reduceMotion,
       );
 
       if (_shaderProgram != null) {
@@ -528,6 +544,7 @@ class BubbleManager {
       bubbleSize: 64,
       targetFps: 10,
       externalVideoCapture: _dreamfinderAvatarBridge?.canvasCapture,
+      reduceMotion: reduceMotion,
     );
     videoBubble.glowColor = const Color(0xFFDAA520); // gold
     videoBubble.glowIntensity = 0.7;
@@ -668,10 +685,14 @@ class BubbleManager {
         shaderProgram: _metaballShaderProgram!,
         glowColor: const Color(0xFF00FF88),
         bubbleRadius: 32,
+        reduceMotion: reduceMotion,
       );
       _addComponent(_bubbleField!);
     }
 
+    // Live-propagate so toggling reduce-motion does not require dropping the
+    // field component (which would happen only when the merge group shrinks).
+    _bubbleField!.reduceMotion = reduceMotion;
     _bubbleField!.priority = lowestPriority - 1;
     _bubbleField!.updateBubblePositions(centres);
   }
@@ -698,9 +719,12 @@ class BubbleManager {
           shaderProgram: _mergedVideoShaderProgram!,
           glowColor: const Color(0xFF00FF88),
           bubbleRadius: 32,
+          reduceMotion: reduceMotion,
         );
         _addComponent(_mergedBubble!);
       }
+      // Live-propagate so a toggle takes effect without re-creating the merge.
+      _mergedBubble!.reduceMotion = reduceMotion;
 
       final sources = <VideoBubbleComponent>[];
       final positions = <Vector2>[];
