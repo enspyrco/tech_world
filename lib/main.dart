@@ -427,6 +427,11 @@ class _MyAppState extends State<MyApp> {
       wires.start(Wire.server);
       final wireB = () async {
         try {
+          // Read the proximity-radius preference *before* RoomSession.create
+          // so it's frozen into the ProximityService for this session. Live
+          // toggle changes take effect on next room entry — see the slider
+          // subtitle in EditProfileDialog.
+          final proximityRadius = await UserPreferences.proximityRadius();
           _session = RoomSession.create(
             room: room,
             userId: userId,
@@ -438,6 +443,7 @@ class _MyAppState extends State<MyApp> {
                   _currentDisplayName,
                 ),
             onRoomDeleted: _onRoomDeleted,
+            proximityRadius: proximityRadius,
           );
           final result = await _session!.connect();
           if (result == ConnectionResult.connected) {
@@ -680,6 +686,9 @@ class _MyAppState extends State<MyApp> {
 
       // Now connect LiveKit for the new room.
       if (_session == null) {
+        // Read proximity-radius pref before RoomSession.create — see the
+        // comment at the other call site above.
+        final proximityRadius = await UserPreferences.proximityRadius();
         _session = RoomSession.create(
           room: room,
           userId: userId,
@@ -691,6 +700,7 @@ class _MyAppState extends State<MyApp> {
                 _currentDisplayName,
               ),
           onRoomDeleted: _onRoomDeleted,
+          proximityRadius: proximityRadius,
         );
         final result = await _session!.connect();
         if (result == ConnectionResult.connected) {

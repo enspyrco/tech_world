@@ -59,6 +59,10 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   /// Loaded asynchronously from [SharedPreferences]; null until ready.
   bool? _reduceMotion;
 
+  /// Loaded asynchronously from [SharedPreferences]; null until ready.
+  /// `0` means proximity is disabled entirely — no video bubble ever forms.
+  int? _proximityRadius;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +73,9 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
     });
     UserPreferences.reduceMotion().then((value) {
       if (mounted) setState(() => _reduceMotion = value);
+    });
+    UserPreferences.proximityRadius().then((value) {
+      if (mounted) setState(() => _proximityRadius = value);
     });
   }
 
@@ -298,6 +305,49 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                     : (value) async {
                         setState(() => _reduceMotion = value);
                         await UserPreferences.setReduceMotion(value);
+                      },
+              ),
+              // Accessibility / sensory load: configure the Chebyshev radius
+              // around the local player inside which video bubbles form. 0
+              // disables proximity entirely. Same lineage as the two switches
+              // above. Static for the session — takes effect on next room
+              // entry.
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Proximity range',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  _proximityRadius == null
+                      ? 'Loading…'
+                      : (_proximityRadius == 0
+                          ? 'Disabled — no video bubbles will form. '
+                              'Takes effect on next room entry.'
+                          : '${_proximityRadius!} grid '
+                              '${_proximityRadius == 1 ? 'square' : 'squares'}. '
+                              '0 disables proximity. '
+                              'Takes effect on next room entry.'),
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Slider(
+                value: (_proximityRadius ?? UserPreferences.defaultProximityRadius)
+                    .toDouble(),
+                min: 0,
+                max: UserPreferences.maxProximityRadius.toDouble(),
+                divisions: UserPreferences.maxProximityRadius,
+                label: '${_proximityRadius ?? UserPreferences.defaultProximityRadius}',
+                onChanged: _proximityRadius == null || _saving
+                    ? null
+                    : (value) async {
+                        final intValue = value.round();
+                        if (intValue == _proximityRadius) return;
+                        setState(() => _proximityRadius = intValue);
+                        await UserPreferences.setProximityRadius(intValue);
                       },
               ),
               const SizedBox(height: 24),

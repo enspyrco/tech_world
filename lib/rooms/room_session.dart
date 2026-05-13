@@ -120,6 +120,7 @@ class RoomSession {
     required void Function() onStateChanged,
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
+    int? proximityRadius,
     @visibleForTesting ChatMessageRepository? chatMessageRepository,
     @visibleForTesting LiveKitService? liveKitService,
     @visibleForTesting FirebaseFirestore? firestore,
@@ -140,7 +141,16 @@ class RoomSession {
         apiKey: const String.fromEnvironment('DREAMFINDER_API_KEY'),
       ),
     );
-    final proximity = ProximityService();
+    // Proximity radius is a *static* config for this session: the user's
+    // saved preference is read at room entry (in `main.dart`) and frozen
+    // here so mid-session toggle changes never retroactively re-evaluate
+    // existing in-range pairs (a deliberate state-lifecycle sidestep). A
+    // null value falls back to the ProximityService default — useful for
+    // tests that want the historic 3-square behaviour without depending on
+    // SharedPreferences.
+    final proximity = proximityRadius == null
+        ? ProximityService()
+        : ProximityService(proximityThreshold: proximityRadius);
 
     Locator.add<LiveKitService>(liveKit);
     Locator.add<ChatService>(chat);

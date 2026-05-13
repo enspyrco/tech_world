@@ -113,6 +113,64 @@ void main() {
       session.chatService.dispose();
       session.proximityService.dispose();
     });
+
+    test('omitting proximityRadius uses the ProximityService default', () {
+      final session = _createSession();
+
+      expect(session.proximityService.proximityThreshold,
+          equals(ProximityService().proximityThreshold));
+
+      session.chatService.dispose();
+      session.proximityService.dispose();
+    });
+
+    test('proximityRadius is piped through to ProximityService', () {
+      final session = RoomSession.create(
+        room: _testRoom,
+        userId: 'user-1',
+        displayName: 'User 1',
+        onStateChanged: () {},
+        onReconnectWorld: () async {},
+        onRoomDeleted: () {},
+        proximityRadius: 6,
+        chatMessageRepository:
+            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+        firestore: FakeFirebaseFirestore(),
+      );
+
+      expect(session.proximityService.proximityThreshold, equals(6));
+
+      session.chatService.dispose();
+      session.proximityService.dispose();
+    });
+
+    test('proximityRadius: 0 produces a disabled ProximityService', () {
+      final session = RoomSession.create(
+        room: _testRoom,
+        userId: 'user-1',
+        displayName: 'User 1',
+        onStateChanged: () {},
+        onReconnectWorld: () async {},
+        onRoomDeleted: () {},
+        proximityRadius: 0,
+        chatMessageRepository:
+            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+        firestore: FakeFirebaseFirestore(),
+      );
+
+      expect(session.proximityService.proximityThreshold, equals(0));
+
+      // Smoke-check the disabled semantic: even co-located players don't
+      // become nearby.
+      session.proximityService.checkProximity(
+        localPlayerPosition: const Point(5, 5),
+        otherPlayerPositions: {'other': const Point(5, 5)},
+      );
+      expect(session.proximityService.nearbyPlayers, isEmpty);
+
+      session.chatService.dispose();
+      session.proximityService.dispose();
+    });
   });
 
   group('failureMessageFor', () {
