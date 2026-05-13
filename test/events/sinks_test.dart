@@ -38,7 +38,7 @@ void main() {
     });
 
     test('prints ChallengeCompleted with challengeId', () {
-      consoleSink(ChallengeCompleted(challengeId: 'divination_color'));
+      consoleSink(ChallengeCompleted(challengeId: PromptRef(PromptChallengeId.divinationColor)));
 
       expect(logs, hasLength(1));
       expect(logs[0], contains('ChallengeCompleted'));
@@ -103,7 +103,7 @@ void main() {
 
     test('ChallengeCompleted serializes correctly', () {
       final json = ChallengeCompleted(
-        challengeId: 'divination_color',
+        challengeId: PromptRef(PromptChallengeId.divinationColor),
         timestamp: DateTime(2026, 5, 8),
       ).toJson();
 
