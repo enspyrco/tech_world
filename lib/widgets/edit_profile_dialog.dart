@@ -8,6 +8,7 @@ import 'package:tech_world/auth/profile_picture_service.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
+import 'package:tech_world/preferences/user_preferences.dart';
 
 /// Result returned from [EditProfileDialog] when the user saves.
 class EditProfileResult {
@@ -52,11 +53,30 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
   /// The current profile picture URL (may be updated after upload).
   String? _currentPhotoUrl;
 
+  /// Loaded asynchronously from [SharedPreferences]; null until ready.
+  bool? _hideVideoBubbles;
+
+  /// Loaded asynchronously from [SharedPreferences]; null until ready.
+  bool? _reduceMotion;
+
+  /// Loaded asynchronously from [SharedPreferences]; null until ready.
+  /// `0` means proximity is disabled entirely — no video bubble ever forms.
+  int? _proximityRadius;
+
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.currentDisplayName);
     _currentPhotoUrl = widget.currentProfilePictureUrl;
+    UserPreferences.hideVideoBubbles().then((value) {
+      if (mounted) setState(() => _hideVideoBubbles = value);
+    });
+    UserPreferences.reduceMotion().then((value) {
+      if (mounted) setState(() => _reduceMotion = value);
+    });
+    UserPreferences.proximityRadius().then((value) {
+      if (mounted) setState(() => _proximityRadius = value);
+    });
   }
 
   @override
@@ -242,6 +262,93 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                 ),
                 onSubmitted: (_) => _save(),
                 onChanged: (_) => setState(() {}), // Update initials preview
+              ),
+              const SizedBox(height: 16),
+              // Accessibility / privacy: replace proximity video bubbles with
+              // avatar-only placeholders. Audio is unaffected.
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Hide video bubbles',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  'Show avatars only — no video in proximity. '
+                  'Takes effect on next room entry.',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                value: _hideVideoBubbles ?? false,
+                onChanged: _hideVideoBubbles == null || _saving
+                    ? null
+                    : (value) async {
+                        setState(() => _hideVideoBubbles = value);
+                        await UserPreferences.setHideVideoBubbles(value);
+                      },
+              ),
+              // Accessibility: disable purely decorative animation on
+              // proximity bubbles (breathing scale, voice ripples, metaball
+              // morph). Gameplay animation is unaffected.
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Reduce motion',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: const Text(
+                  'Disable bubble breathing, voice ripples, and metaball '
+                  'animation. Takes effect on next room entry.',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                value: _reduceMotion ?? false,
+                onChanged: _reduceMotion == null || _saving
+                    ? null
+                    : (value) async {
+                        setState(() => _reduceMotion = value);
+                        await UserPreferences.setReduceMotion(value);
+                      },
+              ),
+              // Accessibility / sensory load: configure the Chebyshev radius
+              // around the local player inside which video bubbles form. 0
+              // disables proximity entirely. Same lineage as the two switches
+              // above. Static for the session — takes effect on next room
+              // entry.
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Proximity range',
+                  style: TextStyle(color: Colors.white),
+                ),
+                subtitle: Text(
+                  _proximityRadius == null
+                      ? 'Loading…'
+                      : (_proximityRadius == 0
+                          ? 'Disabled — no video bubbles will form. '
+                              'Takes effect on next room entry.'
+                          : '${_proximityRadius!} grid '
+                              '${_proximityRadius == 1 ? 'square' : 'squares'}. '
+                              '0 disables proximity. '
+                              'Takes effect on next room entry.'),
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Slider(
+                value: (_proximityRadius ?? UserPreferences.defaultProximityRadius)
+                    .toDouble(),
+                min: 0,
+                max: UserPreferences.maxProximityRadius.toDouble(),
+                divisions: UserPreferences.maxProximityRadius,
+                label: '${_proximityRadius ?? UserPreferences.defaultProximityRadius}',
+                onChanged: _proximityRadius == null || _saving
+                    ? null
+                    : (value) async {
+                        final intValue = value.round();
+                        if (intValue == _proximityRadius) return;
+                        setState(() => _proximityRadius = intValue);
+                        await UserPreferences.setProximityRadius(intValue);
+                      },
               ),
               const SizedBox(height: 24),
               // Status indicator

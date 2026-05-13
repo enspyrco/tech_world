@@ -50,6 +50,7 @@ import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
+import 'package:tech_world/preferences/user_preferences.dart';
 import 'package:tech_world/rooms/room_session.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
 import 'package:tech_world/widgets/join_overlay.dart';
@@ -429,6 +430,11 @@ class _MyAppState extends State<MyApp> {
       wires.start(Wire.server);
       final wireB = () async {
         try {
+          // Read the proximity-radius preference *before* RoomSession.create
+          // so it's frozen into the ProximityService for this session. Live
+          // toggle changes take effect on next room entry — see the slider
+          // subtitle in EditProfileDialog.
+          final proximityRadius = await UserPreferences.proximityRadius();
           _session = RoomSession.create(
             room: room,
             userId: userId,
@@ -440,11 +446,17 @@ class _MyAppState extends State<MyApp> {
                 return tw.connectToLiveKit(userId, _currentDisplayName);
               },
             onRoomDeleted: _onRoomDeleted,
+            proximityRadius: proximityRadius,
           );
           final result = await _session!.connect();
           if (result == ConnectionResult.connected) {
             wires.complete(Wire.server);
             techWorld.setBotStatus(_session!.chatService.botStatus);
+            // Apply the user's avatar-only preference before any bubble can
+            // be created. Toggle takes effect on next room entry.
+            techWorld.setHideVideoBubbles(
+                await UserPreferences.hideVideoBubbles());
+            techWorld.setReduceMotion(await UserPreferences.reduceMotion());
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
             // Wire C: camera + mic (depends on server connection).
@@ -678,6 +690,9 @@ class _MyAppState extends State<MyApp> {
 
       // Now connect LiveKit for the new room.
       if (_session == null) {
+        // Read proximity-radius pref before RoomSession.create — see the
+        // comment at the other call site above.
+        final proximityRadius = await UserPreferences.proximityRadius();
         _session = RoomSession.create(
           room: room,
           userId: userId,
@@ -689,11 +704,14 @@ class _MyAppState extends State<MyApp> {
                 return tw.connectToLiveKit(userId, _currentDisplayName);
               },
           onRoomDeleted: _onRoomDeleted,
+          proximityRadius: proximityRadius,
         );
         final result = await _session!.connect();
         if (result == ConnectionResult.connected) {
           final tw = locate<TechWorld>();
           tw.setBotStatus(_session!.chatService.botStatus);
+          tw.setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
+          tw.setReduceMotion(await UserPreferences.reduceMotion());
           await tw.connectToLiveKit(userId, _currentDisplayName);
           await _session!.enableMedia();
           await _session!.chatService.loadHistory(room.id);

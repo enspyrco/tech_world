@@ -66,9 +66,9 @@ void main() {
       svc.dispose();
     });
 
-    test('proximityThreshold defaults to 5', () {
+    test('proximityThreshold defaults to 3', () {
       final svc = ProximityService();
-      expect(svc.proximityThreshold, 5);
+      expect(svc.proximityThreshold, 3);
       svc.dispose();
     });
 

@@ -27,7 +27,12 @@ class MergedVideoBubbleComponent extends PositionComponent {
     required ui.FragmentProgram shaderProgram,
     this.glowColor = const Color(0xFF00FF88),
     this.bubbleRadius = 32.0,
+    this.reduceMotion = false,
   }) : _shader = shaderProgram.fragmentShader();
+
+  /// When true, the metaball morph animation freezes — [_time] no longer
+  /// advances so the shader receives a constant value.
+  bool reduceMotion;
 
   final ui.FragmentShader _shader;
 
@@ -83,7 +88,7 @@ class MergedVideoBubbleComponent extends PositionComponent {
   @override
   void update(double dt) {
     super.update(dt);
-    _time += dt;
+    if (!reduceMotion) _time += dt;
   }
 
   @override
