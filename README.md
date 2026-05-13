@@ -165,7 +165,6 @@ The bugs that have shipped and the bugs that have been caught are both worth kno
 - **Door unlock auth bypass** — any participant (including bots, or null senders) could broadcast `door-unlock` and unlock doors for every client without completing the challenge. Fix: three-check guard (null sender / bot identity / unknown participant). PR #431.
 - **Dreamfinder protobuf publish failure** — four days of `[infra] Failed to publish health` log spam traced to a missing `reliable: false` on a proto3 `PublishDataRequest` field. proto3 required fields with no default fail silently when omitted. Fixed in `imagineering-infra` PR #52.
 - **CanvasKit `createImageFromImageBitmap` crash** — Skia WASM crashed on this entire code path. The `decodeImageFromPixels` rewrite cost a measurable performance penalty but is the only path that compiles. Skia issue 14637.
-- **DREAMFINDER_API_KEY exposed for 30 days** — leaked in PR #227, rotated 2026-05-09 after detection. The leak was small (no observed exploitation) but the response time was three weeks longer than the SLA. Generalisable lesson: secret-scanning CI should run on every PR, not just main.
 - **CRDT map editor thundering herd** — every editor responded to every sync-request with a full snapshot. Multiple responses clobbered the version map. Fix: first-response-wins flag in `MapSyncService`. Audit fork PR #16.
 
 If you find yourself in a long debugging session and the symptom matches any of these, check the linked PR first.
