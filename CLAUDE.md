@@ -169,7 +169,6 @@ Surfaced from PR cage-matches and session trawls — concrete items with a known
 
 ### Cleanup
 
-- Delete stale `functions/` directory (real functions in `tech_world_firebase_functions/` sibling repo)
 - **Unify `DataTopic` and `LiveKitTopic` enums.** Two parallel topic enums coexist in `lib/livekit/` since #438 — wire strings match (verified by both contract tests) but having two types is debt. Pick one, kill the other.
 
 ### Event-sink hardening (from PR #436 cage-match concerns)
