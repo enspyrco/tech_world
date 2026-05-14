@@ -68,6 +68,24 @@ sealed class AppEvent {
   /// Serialize to JSON for JSONL file sinks. Each subclass contributes
   /// its own fields; the `type` and `timestamp` are always present.
   Map<String, dynamic> toJson();
+
+  /// Whether this event carries personally-identifiable information
+  /// (user identifiers, display names, raw transcripts, free-form user
+  /// content, bot reply text, etc.).
+  ///
+  /// The default is `false` — events must explicitly opt in by
+  /// overriding `=> true;`. This is the type-system gate used by
+  /// [registerRemoteSink] (see `lib/events/dispatch.dart`) to drop
+  /// PII events before they reach any off-device sink (Crashlytics,
+  /// analytics, telemetry).
+  ///
+  /// Be conservative: when in doubt, return `true`. The cost of marking
+  /// a non-PII event as PII is a missing remote-sink line; the cost of
+  /// missing a PII event is a leak.
+  ///
+  /// Invariant: every PII override is pinned by a positive case in
+  /// `test/events/pii_marker_test.dart` (dual control).
+  bool get containsPii => false;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +142,8 @@ enum CastFailureReason { noMatch, notLearned, wrongDoor }
 /// A voice-cast at a door failed.
 ///
 /// Note: [transcript] contains STT output of what the user spoke.
-/// Local-only — scrub before routing to any remote sink.
+/// Marked [containsPii] — `registerRemoteSink` will drop this event
+/// before it reaches any off-device sink.
 final class SpellCastFailed extends AppEvent {
   SpellCastFailed({
     required this.reason,
@@ -144,6 +163,10 @@ final class SpellCastFailed extends AppEvent {
         if (transcript != null) 'transcript': transcript,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: raw STT transcript of what the user spoke.
+  @override
+  bool get containsPii => true;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +281,10 @@ final class RoomJoined extends AppEvent {
         'roomName': roomName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: room names are user-typed free text.
+  @override
+  bool get containsPii => true;
 }
 
 /// Player left a room.
@@ -301,6 +328,10 @@ final class UserSignedIn extends AppEvent {
         'displayName': displayName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: user identifier + display name.
+  @override
+  bool get containsPii => true;
 }
 
 /// User signed out.
@@ -333,6 +364,10 @@ final class ProfileUpdated extends AppEvent {
         'displayName': displayName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: display name.
+  @override
+  bool get containsPii => true;
 }
 
 // ---------------------------------------------------------------------------
@@ -395,6 +430,10 @@ final class PlayerEnteredProximity extends AppEvent {
         'playerId': playerId,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: player identifier.
+  @override
+  bool get containsPii => true;
 }
 
 /// Another player left proximity range.
@@ -412,6 +451,10 @@ final class PlayerLeftProximity extends AppEvent {
         'playerId': playerId,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: player identifier.
+  @override
+  bool get containsPii => true;
 }
 
 /// A bot joined the room.
@@ -496,6 +539,10 @@ final class MapEditorEntered extends AppEvent {
         'mapName': mapName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: map names are user-typed free text.
+  @override
+  bool get containsPii => true;
 }
 
 /// Player exited the map editor.
@@ -533,6 +580,10 @@ final class RoomCreated extends AppEvent {
         'roomName': roomName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: room names are user-typed free text.
+  @override
+  bool get containsPii => true;
 }
 
 /// A room's map was saved to Firestore.
@@ -552,6 +603,10 @@ final class RoomMapSaved extends AppEvent {
         'roomName': roomName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: room names are user-typed free text.
+  @override
+  bool get containsPii => true;
 }
 
 /// A room was deleted by its owner.
@@ -571,6 +626,10 @@ final class RoomDeleted extends AppEvent {
         'roomName': roomName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: room names are user-typed free text.
+  @override
+  bool get containsPii => true;
 }
 
 /// Outcome of a code submission evaluation.
@@ -629,6 +688,10 @@ final class LiveKitConnected extends AppEvent {
         'roomName': roomName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: room names are user-typed free text.
+  @override
+  bool get containsPii => true;
 }
 
 /// LiveKit disconnected from a room.
@@ -675,6 +738,10 @@ final class BotSpoke extends AppEvent {
         'context': context.name,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: free-form bot reply text (may quote or reference user input).
+  @override
+  bool get containsPii => true;
 }
 
 /// Player requested a hint from Clawd.
@@ -753,12 +820,17 @@ final class GroupMessageSent extends AppEvent {
         if (challengeId != null) 'challengeId': challengeId!.wireName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: references a user-authored chat message (and the sender).
+  @override
+  bool get containsPii => true;
 }
 
 /// Player sent a DM to another player.
 ///
 /// Note: [peerId] and [conversationId] are written to the local JSONL log.
-/// If this event is ever routed to a remote sink, scrub PII first.
+/// Marked [containsPii] — `registerRemoteSink` will drop this event
+/// before it reaches any off-device sink.
 final class DmSent extends AppEvent {
   DmSent({
     required this.peerId,
@@ -778,6 +850,10 @@ final class DmSent extends AppEvent {
         'conversationId': conversationId,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: peer identifier and conversation identifier.
+  @override
+  bool get containsPii => true;
 }
 
 /// Discriminator for [BotSpoke] origin.
@@ -836,4 +912,11 @@ final class AppLogRecord extends AppEvent {
         if (stackTrace != null) 'stackTrace': stackTrace,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  /// PII: free-form log message may contain transcripts, oracle replies,
+  /// user names, or anything else a `_log.*` call passes in. Mark all log
+  /// records as PII conservatively — remote sinks must scrub or route
+  /// through Crashlytics' own redaction layer, not the JSONL pipeline.
+  @override
+  bool get containsPii => true;
 }

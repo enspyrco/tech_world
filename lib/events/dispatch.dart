@@ -15,6 +15,32 @@ void registerSink(Sink sink) => _syncSinks.add(sink);
 /// Register an asynchronous sink. Called once at app startup or in tests.
 void registerAsyncSink(AsyncSink sink) => _asyncSinks.add(sink);
 
+/// Register a sink that ships events off-device (Crashlytics, analytics,
+/// telemetry, network-attached log aggregator, etc.).
+///
+/// The wrapper short-circuits any [AppEvent] whose [AppEvent.containsPii]
+/// is `true` — the event never reaches [sink]. This makes the PII gate
+/// impossible to forget: the only way a remote sink sees a PII event is
+/// for someone to bypass this helper and call [registerSink] directly,
+/// which should fail code review.
+///
+/// Local-only sinks (JSONL on disk, debug console) bypass this filter
+/// via [registerSink] — they're already inside the trust boundary.
+void registerRemoteSink(Sink sink) {
+  registerSink((event) {
+    if (event.containsPii) return;
+    sink(event);
+  });
+}
+
+/// Async variant of [registerRemoteSink].
+void registerRemoteAsyncSink(AsyncSink sink) {
+  registerAsyncSink((event) async {
+    if (event.containsPii) return;
+    await sink(event);
+  });
+}
+
 /// Whether any sinks have been registered. Used to guard against
 /// duplicate registration on hot restart.
 bool get sinksRegistered => _syncSinks.isNotEmpty || _asyncSinks.isNotEmpty;
