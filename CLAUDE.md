@@ -165,7 +165,28 @@ lk room join --identity video-test-user --publish-demo l_room
 
 ## TODO
 
+Surfaced from PR cage-matches and session trawls — concrete items with a known shape, waiting for someone to pick them up. Design-question tasks (world-builder split, attempt-vs-persistence semantics) live in session TaskList instead.
+
+### Cleanup
+
 - Delete stale `functions/` directory (real functions in `tech_world_firebase_functions/` sibling repo)
+- **Unify `DataTopic` and `LiveKitTopic` enums.** Two parallel topic enums coexist in `lib/livekit/` since #438 — wire strings match (verified by both contract tests) but having two types is debt. Pick one, kill the other.
+
+### Event-sink hardening (from PR #436 cage-match concerns)
+
+- **Add `containsPii` marker to `AppEvent`.** A `bool get containsPii => false;` overridden by `true` on `SpellCastFailed`, `BotSpoke`, `ProfileUpdated`, `DmSent` etc. makes the gate to remote sinks impossible to forget. Currently the gate is a code comment that future maintainers will ignore.
+- **Defensive level filter at the Logger→AppLogRecord bridge.** `main.dart` currently relies on the implicit `Logger.root.level = INFO` to keep FINE-level PII (raw STT transcripts from `stt_service_web.dart`, oracle replies from `oracle_service.dart`) out of persistent sinks. A future `Logger.root.level = Level.ALL` would silently re-introduce the regression Carnot caught. Add `if (severity == LogSeverity.fine) return;` at the bridge as belt-and-braces.
+- **`events.log` rotation / size cap on `file_sink.dart`.** Currently writes append-only with no rotation; OS-managed storage is not a retention policy. Decide between size-based (e.g. 10MB × 3 files), time-based (daily), or build-mode gating (release builds get no file sink). The platform-vs-content question — does retention belong to the platform or each world? — should be answered first.
+
+### Refactor follow-ups (from PR #438 review)
+
+- **Lift `AvatarUpdate.tryParse` whitelist `Set` to a top-level `final`.** Currently builds the `predefinedAvatars` set on every parse (`livekit_service.dart`). For 3 avatars at low frequency this is fine, but if `predefinedAvatars` grows or this becomes hot-path, lift.
+- **Continue extracting `TechWorld`.** Shrunk from 1570 → ~1300 lines via the bridge + door-manager split, but terminal-interaction, speech-bubble lifecycle, and avatar-tracking still live there. Each is the same shape of extraction as `DoorManager` / `LiveKitGameBridge`.
+- **Add positive-case `predefinedAvatars` whitelist test.** Current coverage exhausts the negative cases (unknown / path-traversal / empty); a "valid sprite asset that's not in `predefinedAvatars`" test would tighten the gate against future avatar additions silently failing.
+
+### Feature work in flight
+
+- **Avatar-only mode (ASD-accessibility toggle).** Fully scoped in `docs/avatar-only-mode-scoping.md` — S effort, ~30–50 LOC production + ~20 LOC tests. Implementation sketch present: `UserAccessibilityPreferences.avatarOnlyMode` Firestore field → `BubbleManager` constructor flag → two conditional returns in `_createBubbleForPlayer`/`_createLocalPlayerBubble`. Connected to the `RESEARCH.md` + `docs/asd-consultation-prep.md` thread.
 
 ## Grant Application
 
