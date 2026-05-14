@@ -273,4 +273,67 @@ void main() {
       expect(received.single, same(keep));
     });
   });
+
+  // ---------------------------------------------------------------------
+  // Async variant — same gate, same invariant. Carnot caught the
+  // coverage gap on PR #459: the sync helper had three tests, the
+  // async helper had zero. A future edit could invert the async
+  // `if (event.containsPii) return;` and the test file would still
+  // pass. Mirror the sync coverage here.
+  // ---------------------------------------------------------------------
+
+  group('registerRemoteAsyncSink', () {
+    tearDown(clearSinks);
+
+    test('drops PII events before they reach the wrapped async sink',
+        () async {
+      final received = <AppEvent>[];
+      registerRemoteAsyncSink((event) async => received.add(event));
+
+      dispatch([
+        DmSent(peerId: 'p', conversationId: 'c'),
+        BotSpoke(text: 'hi', context: BotSpokeContext.group),
+        SpellCastFailed(
+          reason: CastFailureReason.noMatch,
+          transcript: 'leaked',
+        ),
+      ]);
+      // Drain pending microtasks so the async sinks have run.
+      await Future<void>.delayed(Duration.zero);
+
+      expect(received, isEmpty);
+    });
+
+    test('passes non-PII events through to the wrapped async sink',
+        () async {
+      final received = <AppEvent>[];
+      registerRemoteAsyncSink((event) async => received.add(event));
+
+      final ev1 = DoorUnlocked(doorX: 1, doorY: 2);
+      final ev2 = MediaEnabled();
+      dispatch([ev1, ev2]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(received, hasLength(2));
+      expect(received[0], same(ev1));
+      expect(received[1], same(ev2));
+    });
+
+    test('mixed stream: only non-PII events reach the wrapped async sink',
+        () async {
+      final received = <AppEvent>[];
+      registerRemoteAsyncSink((event) async => received.add(event));
+
+      final keep = DoorUnlocked(doorX: 0, doorY: 0);
+      dispatch([
+        DmSent(peerId: 'p', conversationId: 'c'),
+        keep,
+        BotSpoke(text: 'x', context: BotSpokeContext.help),
+      ]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(received, hasLength(1));
+      expect(received.single, same(keep));
+    });
+  });
 }
