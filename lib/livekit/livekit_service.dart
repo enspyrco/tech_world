@@ -907,9 +907,9 @@ class AvatarUpdate {
     if (json case {'playerId': String playerId, 'spriteAsset': String spriteAsset}) {
       // Whitelist sprite asset against the known-avatar set — prevents
       // path-traversal, empty strings, and cache-miss crashes from
-      // forwarding through to the renderer.
-      final knownAssets = predefinedAvatars.map((a) => a.spriteAsset).toSet();
-      if (!knownAssets.contains(spriteAsset)) return null;
+      // forwarding through to the renderer. Set is lifted to a top-level
+      // `final` (`predefinedAvatarSpriteAssets`) so it's built once.
+      if (!predefinedAvatarSpriteAssets.contains(spriteAsset)) return null;
       final avatarId = switch (json['avatarId']) { String s => s, _ => '' };
       return AvatarUpdate(
         playerId: playerId,
