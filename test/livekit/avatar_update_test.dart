@@ -35,6 +35,23 @@ void main() {
       );
     });
 
+    test(
+        'rejects syntactically valid sprite filename not in predefinedAvatars',
+        () {
+      // Guards against a future avatar being added (e.g. 'Hero.png') without
+      // its entry being appended to `predefinedAvatars` — the whitelist gate
+      // must keep rejecting unknown-but-well-formed names. If the avatar set
+      // grows and this asset is added, this test will start failing — swap
+      // it for a different syntactically-valid-but-unknown name.
+      expect(
+        AvatarUpdate.tryParse({
+          'playerId': 'user-1',
+          'spriteAsset': 'Hero.png',
+        }),
+        isNull,
+      );
+    });
+
     test('rejects path-traversal attempt in sprite asset', () {
       expect(
         AvatarUpdate.tryParse({

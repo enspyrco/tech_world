@@ -7,6 +7,16 @@ const predefinedAvatars = [
   Avatar(id: 'npc13', displayName: 'Scholar', spriteAsset: 'NPC13.png'),
 ];
 
+/// The set of sprite-asset strings drawn from [predefinedAvatars].
+///
+/// Lifted to a top-level `final` so the wire-parse whitelist gate
+/// (`AvatarUpdate.tryParse` in `lib/livekit/livekit_service.dart`)
+/// doesn't rebuild it on every avatar broadcast. Cheap today (3 entries),
+/// but the gate is on the hot path of every avatar update from every peer.
+final Set<String> predefinedAvatarSpriteAssets = {
+  for (final avatar in predefinedAvatars) avatar.spriteAsset,
+};
+
 /// The fallback avatar, matching the previously hardcoded NPC11 sprite.
 const defaultAvatar = Avatar(
   id: 'npc11',
