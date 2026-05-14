@@ -183,9 +183,12 @@ Surfaced from PR cage-matches and session trawls — concrete items with a known
 - **Continue extracting `TechWorld`.** Shrunk from 1570 → ~1300 lines via the bridge + door-manager split, but terminal-interaction, speech-bubble lifecycle, and avatar-tracking still live there. Each is the same shape of extraction as `DoorManager` / `LiveKitGameBridge`.
 - **Add positive-case `predefinedAvatars` whitelist test.** Current coverage exhausts the negative cases (unknown / path-traversal / empty); a "valid sprite asset that's not in `predefinedAvatars`" test would tighten the gate against future avatar additions silently failing.
 
-### Feature work in flight
+### Operations & deploy hygiene (from Robin's Phase 5 audit, 2026-05-15)
 
-- **Avatar-only mode (ASD-accessibility toggle).** Fully scoped in `docs/avatar-only-mode-scoping.md` — S effort, ~30–50 LOC production + ~20 LOC tests. Implementation sketch present: `UserAccessibilityPreferences.avatarOnlyMode` Firestore field → `BubbleManager` constructor flag → two conditional returns in `_createBubbleForPlayer`/`_createLocalPlayerBubble`. Connected to the `RESEARCH.md` + `docs/asd-consultation-prep.md` thread.
+- **Android release signing.** `android/app/build.gradle.kts` uses `signingConfigs.getByName("debug")` for release builds — Play Store will reject this. Generate a production keystore, store via GitHub Actions secrets, wire to a `release` signing config. Not urgent until Play Store submission is on the table.
+- **`firebase_options.dart` committed to repo.** FlutterFire-generated; web API key is public-by-design (Firebase Auth domain allowlist is the real gate), but iOS/Android keys are also in repo history. Decision needed: leave as-is (treat all keys as public identifiers, lean on Firestore rules + Auth domain restrictions) or rotate iOS/Android, add to `.gitignore`, ship a `firebase_options.template.dart`. Mixed industry guidance — not a clear win either way.
+- **No staging environment.** LiveKit URL + Firebase project hardcoded; every merge to `main` deploys to production. Single-developer cadence makes this tolerable; add `--dart-define` env selection if a second risky-change contributor joins.
+- **Cross-repo topic drift test.** Bot mirrors a subset of `LiveKitTopic` via `tech_world_bot/src/livekit-topics.ts`, but nothing fails CI when a Flutter rename happens without a bot update. While auditing, found `bot-mood` (published by `dreamfinder-entry.ts`) has no Flutter subscriber — dead-channel drift. Either subscribe on the Flutter side or stop publishing.
 
 ## Grant Application
 
