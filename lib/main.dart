@@ -61,6 +61,7 @@ import 'package:tech_world/widgets/edit_profile_dialog.dart'
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/logger_bridge.dart';
 import 'package:tech_world/events/sinks/console_sink.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/events/sinks/file_sink.dart'
@@ -140,22 +141,13 @@ void _initLogging() {
     );
 
     // Bridge to event-sink pipeline (JSONL file, future Crashlytics).
-    final severity = switch (record.level) {
-      Level.SEVERE || Level.SHOUT => LogSeverity.severe,
-      Level.WARNING => LogSeverity.warning,
-      Level.FINE || Level.FINER || Level.FINEST => LogSeverity.fine,
-      _ => LogSeverity.info,
-    };
-    dispatch([
-      AppLogRecord(
-        loggerName: record.loggerName,
-        severity: severity,
-        message: record.message,
-        error: record.error?.toString(),
-        stackTrace: record.stackTrace?.toString(),
-        timestamp: record.time,
-      ),
-    ]);
+    // [mapLogRecord] drops anything below [Level.INFO] as a defensive
+    // belt-and-braces filter — FINE-level call sites carry raw STT
+    // transcripts and oracle replies (PII) which must never reach a
+    // persistent sink, even if `Logger.root.level` is ever lifted to
+    // [Level.ALL]. See `lib/events/logger_bridge.dart`.
+    final appRecord = mapLogRecord(record);
+    if (appRecord != null) dispatch([appRecord]);
   });
 }
 
