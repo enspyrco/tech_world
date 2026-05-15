@@ -14,17 +14,36 @@ import 'package:tech_world/spellbook/word_of_power.dart';
 /// here AND in the type definition.
 void main() {
   // ---------------------------------------------------------------------
-  // Exhaustive sealed-class switch — the compiler-enforced gate.
+  // Exhaustive sealed-class switch — the compiler-enforced classification.
   //
-  // The hand-enumerated tests below are belt; this is braces. Because
-  // `AppEvent` is sealed, adding a new subtype WITHOUT an arm here makes
-  // this switch a compile error — the build fails before the test can
-  // even run. That's the property we want: a new event cannot ship
-  // without an explicit PII classification AND an explicit test arm.
+  // Two distinct properties are enforced here. Be precise about which is
+  // which, because Carnot's #462 review caught the prior wording
+  // conflating them:
   //
-  // If you add a new `AppEvent` subtype, add an arm below with the
-  // expected `containsPii` value. The analyzer will name the missing
-  // subtype in the error message.
+  //   (1) COMPILE-TIME, by the analyzer:
+  //       Adding a new `AppEvent` subtype WITHOUT an arm in the `check`
+  //       switch below makes this file a compile error. The build fails
+  //       before tests run. The analyzer names the missing subtype.
+  //
+  //   (2) RUN-TIME, by the test:
+  //       For every representative instance in the `events` list, this
+  //       test asserts `event.containsPii` matches the value declared by
+  //       the switch arm for that runtime type.
+  //
+  // What is NOT proven: that the `events` list contains a representative
+  // of every subtype. A future subtype could land with a switch arm
+  // added AND the `containsPii` override added AND the representative
+  // forgotten — the build would succeed and this test would pass while
+  // the new subtype's override goes uncompared. The runtimeType-dedup
+  // assertion below catches at least the "two entries of the same type"
+  // failure mode; it does NOT catch the "missing type" mode. Dart sealed
+  // classes do not expose their subtypes for runtime enumeration, so a
+  // true exhaustiveness check at runtime would need code generation.
+  //
+  // For the foreseeable scale (34 subtypes, low churn) the
+  // compile-time gate is the load-bearing property; this test makes the
+  // runtime classification of representatives explicit and pins them to
+  // the declared switch values.
   // ---------------------------------------------------------------------
   group('AppEvent.containsPii (exhaustive sealed switch)', () {
     // Helper: assert the expected value AND prove the compiler walked
@@ -80,11 +99,13 @@ void main() {
       );
     }
 
-    test('every AppEvent subtype is classified', () {
-      // One representative instance of each of the 34 subtypes. Adding a
-      // new subtype without an entry here trips the switch above at
-      // compile time — Dart's exhaustiveness check will name the missing
-      // subtype.
+    test('every representative is classified by the switch', () {
+      // One representative instance per known subtype. If a new subtype
+      // is added to `lib/events/types.dart`, the analyzer-enforced
+      // exhaustiveness on the `check` switch above will fail the build
+      // until an arm is added. The representative MUST then be added
+      // here for the runtime classification to be pinned — see the
+      // group comment above for what this list does and does not prove.
       final events = <AppEvent>[
         // PII (15)
         SpellCastFailed(
@@ -143,10 +164,22 @@ void main() {
         RemoteDoorUnlocked(doorX: 0, doorY: 0),
       ];
 
-      // Cardinality assertion: if a new subtype is added, the switch
-      // above will refuse to compile until it's classified, AND this
-      // count must be bumped to match — keeping representatives in sync
-      // with the declared subtypes. This is a tripwire, not a proof.
+      // Dedup check: no two representatives share a runtime type.
+      // Catches the "copy-paste a representative line and forget to
+      // change the type" failure mode. Does NOT catch a missing type;
+      // see the group comment on why runtime exhaustiveness is not
+      // achievable without code generation.
+      final types = events.map((e) => e.runtimeType).toSet();
+      expect(
+        types.length,
+        events.length,
+        reason: 'Duplicate representatives in the events list — every '
+            'AppEvent subtype should appear exactly once.',
+      );
+
+      // Cardinality cross-check: keeps this list and the switch above
+      // honest against the same expected subtype count. Bump together
+      // when adding a new subtype.
       expect(events.length, 34);
 
       for (final event in events) {
