@@ -174,7 +174,6 @@ Surfaced from PR cage-matches and session trawls — concrete items with a known
 ### Event-sink hardening (from PR #436 cage-match concerns)
 
 - **Add `containsPii` marker to `AppEvent`.** A `bool get containsPii => false;` overridden by `true` on `SpellCastFailed`, `BotSpoke`, `ProfileUpdated`, `DmSent` etc. makes the gate to remote sinks impossible to forget. Currently the gate is a code comment that future maintainers will ignore.
-- **Defensive level filter at the Logger→AppLogRecord bridge.** `main.dart` currently relies on the implicit `Logger.root.level = INFO` to keep FINE-level PII (raw STT transcripts from `stt_service_web.dart`, oracle replies from `oracle_service.dart`) out of persistent sinks. A future `Logger.root.level = Level.ALL` would silently re-introduce the regression Carnot caught. Add `if (severity == LogSeverity.fine) return;` at the bridge as belt-and-braces.
 - **`events.log` rotation / size cap on `file_sink.dart`.** Currently writes append-only with no rotation; OS-managed storage is not a retention policy. Decide between size-based (e.g. 10MB × 3 files), time-based (daily), or build-mode gating (release builds get no file sink). The platform-vs-content question — does retention belong to the platform or each world? — should be answered first.
 
 ### Refactor follow-ups (from PR #438 review)
