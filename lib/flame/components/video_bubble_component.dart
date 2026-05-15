@@ -118,8 +118,10 @@ class VideoBubbleComponent extends PositionComponent {
 
   // Voice ripple — number of wave lobes around the circle
   static const int _rippleLobes = 8;
-  // Max ripple displacement in pixels at full speaking volume
-  static const double _rippleAmplitude = 4.0;
+  // Max ripple displacement in pixels at full speaking volume.
+  // 10px on a 32px-radius bubble = ~30% edge wobble — clearly visible across
+  // a populated map without being gaudy.
+  static const double _rippleAmplitude = 10.0;
   // Smoothed audio level (lerped toward raw audioLevel each frame)
   double _smoothedAudioLevel = 0.0;
 
@@ -738,15 +740,16 @@ class VideoBubbleComponent extends PositionComponent {
       }
     }
 
-    if (_shader == null || !ui.ImageFilter.isShaderFilterSupported) {
-      final borderPaint = Paint()
-        ..color = _currentFrame != null ? _glowColor : Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2;
-      // Reuse the path built earlier, or build fresh if we took the no-video branch.
-      final path = _frameBubblePath ?? _buildBubblePath(center, radius);
-      canvas.drawPath(path, borderPaint);
-    }
+    // Always draw a thin border at the bubble edge. For player bubbles with
+    // glowIntensity = 0 this is the only edge affordance; for DF it sits on
+    // top of the radial gold halo as a crisp inner ring.
+    final borderPaint = Paint()
+      ..color = _currentFrame != null ? _glowColor : Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    // Reuse the path built earlier, or build fresh if we took the no-video branch.
+    final path = _frameBubblePath ?? _buildBubblePath(center, radius);
+    canvas.drawPath(path, borderPaint);
 
     if (_opacity < 1.0) {
       canvas.restore();
