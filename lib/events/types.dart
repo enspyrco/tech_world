@@ -864,10 +864,17 @@ enum BotSpokeContext { group, help }
 // ---------------------------------------------------------------------------
 
 /// Severity levels for log records routed through the event system.
+///
+/// **Invariant:** `AppLogRecord` is, by construction, an info-or-above
+/// record. FINE-level records are dropped at the
+/// `Logger.root.onRecord` → `AppLogRecord` bridge
+/// (`lib/events/logger_bridge.dart`) BEFORE construction, because
+/// FINE-level call sites carry PII (raw STT transcripts, oracle
+/// replies). There is no `LogSeverity.fine` value — the type system
+/// enforces that no persistent sink can ever receive a fine-level
+/// log record. See PR #436 (cage-match origin), PR #459 (containsPii
+/// gate), PR #461 (bridge-level filter).
 enum LogSeverity {
-  /// [Level.FINE] and below — verbose debug tracing.
-  fine,
-
   /// [Level.INFO] — normal operational messages.
   info,
 

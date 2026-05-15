@@ -29,12 +29,28 @@ import 'package:tech_world/events/types.dart';
 /// Returning `null` is the explicit "drop this record" signal — the
 /// caller must check before dispatching.
 AppLogRecord? mapLogRecord(LogRecord record) {
+  // Below-INFO levels (FINEST 300, FINER 400, FINE 500, CONFIG 700)
+  // are dropped entirely. The `if` is the load-bearing PII gate —
+  // never weaken to `<=` or remove without re-running the cage-match.
   if (record.level < Level.INFO) return null;
 
+  // [Level.OFF] (value 2000) is a *threshold* sentinel, never a real
+  // record level — `logger.log(Level.OFF, msg)` is nonsensical and
+  // shouldn't generate a sink event. Drop it explicitly so it doesn't
+  // get swept into the `info` default below.
+  if (record.level == Level.OFF) return null;
+
+  // Above-INFO mapping: explicit arms only, no wildcard. INFO and
+  // CONFIG-the-value-itself (700, dropped above) are NOT in the
+  // pattern, so any future Level value added to package:logging would
+  // be a compile error here — a deliberate choice. Adding the new
+  // level would require explicit thought about which bucket it lands
+  // in.
   final severity = switch (record.level) {
-    Level.SEVERE || Level.SHOUT => LogSeverity.severe,
+    Level.INFO => LogSeverity.info,
     Level.WARNING => LogSeverity.warning,
-    _ => LogSeverity.info,
+    Level.SEVERE || Level.SHOUT => LogSeverity.severe,
+    _ => LogSeverity.info, // safety net for non-canonical Level values
   };
 
   return AppLogRecord(

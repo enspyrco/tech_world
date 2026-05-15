@@ -61,6 +61,15 @@ void main() {
       final record = LogRecord(Level.SHOUT, 'fatal', 'X');
       expect(mapLogRecord(record)!.severity, LogSeverity.severe);
     });
+
+    test('returns null for Level.OFF (threshold sentinel, not a record)', () {
+      // Level.OFF is for setting "log nothing" on a Logger; a record
+      // constructed at OFF is nonsensical and must not produce a sink
+      // event. Pinning this so the wildcard `_ => info` arm never
+      // sweeps it into the info bucket.
+      final record = LogRecord(Level.OFF, 'should not happen', 'X');
+      expect(mapLogRecord(record), isNull);
+    });
   });
 
   group('mapLogRecord + dispatch integration', () {
