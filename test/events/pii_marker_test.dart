@@ -13,6 +13,181 @@ import 'package:tech_world/spellbook/word_of_power.dart';
 /// is the dual-control invariant — every PII event must announce itself
 /// here AND in the type definition.
 void main() {
+  // ---------------------------------------------------------------------
+  // Exhaustive sealed-class switch — the compiler-enforced classification.
+  //
+  // Two distinct properties are enforced here. Be precise about which is
+  // which, because Carnot's #462 review caught the prior wording
+  // conflating them:
+  //
+  //   (1) COMPILE-TIME, by the analyzer:
+  //       Adding a new `AppEvent` subtype WITHOUT an arm in the `check`
+  //       switch below makes this file a compile error. The build fails
+  //       before tests run. The analyzer names the missing subtype.
+  //
+  //   (2) RUN-TIME, by the test:
+  //       For every representative instance in the `events` list, this
+  //       test asserts `event.containsPii` matches the value declared by
+  //       the switch arm for that runtime type.
+  //
+  // What is NOT proven: that the `events` list contains a representative
+  // of every subtype. A future subtype could land with a switch arm
+  // added AND the `containsPii` override added AND the representative
+  // forgotten — the build would succeed and this test would pass while
+  // the new subtype's override goes uncompared. The runtimeType-dedup
+  // assertion below catches at least the "two entries of the same type"
+  // failure mode; it does NOT catch the "missing type" mode. Dart sealed
+  // classes do not expose their subtypes for runtime enumeration, so a
+  // true exhaustiveness check at runtime would need code generation.
+  //
+  // For the foreseeable scale (34 subtypes, low churn) the
+  // compile-time gate is the load-bearing property; this test makes the
+  // runtime classification of representatives explicit and pins them to
+  // the declared switch values.
+  // ---------------------------------------------------------------------
+  group('AppEvent.containsPii (exhaustive sealed switch)', () {
+    // Helper: assert the expected value AND prove the compiler walked
+    // every subtype. `event` is bound by the case pattern, so each arm
+    // asserts on a known concrete type.
+    void check(AppEvent event) {
+      final expected = switch (event) {
+        // PII subtypes (15)
+        SpellCastFailed() => true,
+        RoomJoined() => true,
+        UserSignedIn() => true,
+        ProfileUpdated() => true,
+        PlayerEnteredProximity() => true,
+        PlayerLeftProximity() => true,
+        MapEditorEntered() => true,
+        RoomCreated() => true,
+        RoomMapSaved() => true,
+        RoomDeleted() => true,
+        LiveKitConnected() => true,
+        BotSpoke() => true,
+        GroupMessageSent() => true,
+        DmSent() => true,
+        AppLogRecord() => true,
+        // Non-PII subtypes (19)
+        WordLearned() => false,
+        ChallengeCompleted() => false,
+        DoorUnlocked() => false,
+        PlayerMoved() => false,
+        TerminalOpened() => false,
+        TerminalClosed() => false,
+        RoomLeft() => false,
+        UserSignedOut() => false,
+        MapEdited() => false,
+        BotJoined() => false,
+        BotLeft() => false,
+        ScreenShareToggled() => false,
+        AvatarSelected() => false,
+        MapEditorExited() => false,
+        CodeSubmitted() => false,
+        LiveKitDisconnected() => false,
+        HelpRequested() => false,
+        MediaEnabled() => false,
+        RemoteDoorUnlocked() => false,
+      };
+      expect(
+        event.containsPii,
+        expected,
+        reason: '${event.runtimeType}.containsPii disagrees with the '
+            'classification declared in this exhaustive switch. Either '
+            'fix the override in lib/events/types.dart or update the '
+            'arm above (and think carefully about which is correct — '
+            'PII leaks here become remote-sink leaks).',
+      );
+    }
+
+    test('every representative is classified by the switch', () {
+      // One representative instance per known subtype. If a new subtype
+      // is added to `lib/events/types.dart`, the analyzer-enforced
+      // exhaustiveness on the `check` switch above will fail the build
+      // until an arm is added. The representative MUST then be added
+      // here for the runtime classification to be pinned — see the
+      // group comment above for what this list does and does not prove.
+      final events = <AppEvent>[
+        // PII (15)
+        SpellCastFailed(
+          reason: CastFailureReason.noMatch,
+          transcript: 'ignis',
+        ),
+        RoomJoined(roomId: 'r', roomName: 'X'),
+        UserSignedIn(userId: 'u', displayName: 'Alice'),
+        ProfileUpdated(displayName: 'Alice'),
+        PlayerEnteredProximity(playerId: 'p'),
+        PlayerLeftProximity(playerId: 'p'),
+        MapEditorEntered(mapId: 'm', mapName: 'X'),
+        RoomCreated(roomId: 'r', roomName: 'X'),
+        RoomMapSaved(roomId: 'r', roomName: 'X'),
+        RoomDeleted(roomId: 'r', roomName: 'X'),
+        LiveKitConnected(roomName: 'X'),
+        BotSpoke(text: 'hi', context: BotSpokeContext.group),
+        GroupMessageSent(messageId: 'm'),
+        DmSent(peerId: 'p', conversationId: 'c'),
+        AppLogRecord(
+          loggerName: 'L',
+          severity: LogSeverity.info,
+          message: 'm',
+        ),
+        // Non-PII (19)
+        WordLearned(
+          wordId: WordId.values.first,
+          challengeId: PromptChallengeId.values.first,
+        ),
+        ChallengeCompleted(
+          challengeId: CodeRef(CodeChallengeId.values.first),
+        ),
+        DoorUnlocked(doorX: 0, doorY: 0),
+        PlayerMoved(destX: 0, destY: 0),
+        TerminalOpened(
+          challengeId: CodeRef(CodeChallengeId.values.first),
+          terminalX: 0,
+          terminalY: 0,
+        ),
+        TerminalClosed(),
+        RoomLeft(),
+        UserSignedOut(),
+        MapEdited(action: MapEditAction.paintTile, x: 0, y: 0),
+        BotJoined(identity: 'bot-claude'),
+        BotLeft(),
+        ScreenShareToggled(started: true),
+        AvatarSelected(avatarId: 'wizard'),
+        MapEditorExited(applied: true),
+        CodeSubmitted(
+          challengeId: CodeChallengeId.values.first,
+          result: CodeSubmitResult.pass,
+        ),
+        LiveKitDisconnected(),
+        HelpRequested(challengeId: CodeRef(CodeChallengeId.values.first)),
+        MediaEnabled(),
+        RemoteDoorUnlocked(doorX: 0, doorY: 0),
+      ];
+
+      // Dedup check: no two representatives share a runtime type.
+      // Catches the "copy-paste a representative line and forget to
+      // change the type" failure mode. Does NOT catch a missing type;
+      // see the group comment on why runtime exhaustiveness is not
+      // achievable without code generation.
+      final types = events.map((e) => e.runtimeType).toSet();
+      expect(
+        types.length,
+        events.length,
+        reason: 'Duplicate representatives in the events list — every '
+            'AppEvent subtype should appear exactly once.',
+      );
+
+      // Cardinality cross-check: keeps this list and the switch above
+      // honest against the same expected subtype count. Bump together
+      // when adding a new subtype.
+      expect(events.length, 34);
+
+      for (final event in events) {
+        check(event);
+      }
+    });
+  });
+
   group('AppEvent.containsPii', () {
     // -------------------------------------------------------------------
     // Positive cases — events that MUST be marked PII=true.

@@ -73,9 +73,12 @@ sealed class AppEvent {
   /// (user identifiers, display names, raw transcripts, free-form user
   /// content, bot reply text, etc.).
   ///
-  /// The default is `false` — events must explicitly opt in by
-  /// overriding `=> true;`. This is the type-system gate used by
-  /// [registerRemoteSink] (see `lib/events/dispatch.dart`) to drop
+  /// **Abstract on purpose.** There is no default — every subclass must
+  /// declare its classification explicitly. A default-`false` getter
+  /// would mean a new event subtype silently opts out of the gate; an
+  /// abstract getter forces the author to think and the analyzer to
+  /// fail the build if they don't. This is the type-system gate used
+  /// by [registerRemoteSink] (see `lib/events/dispatch.dart`) to drop
   /// PII events before they reach any off-device sink (Crashlytics,
   /// analytics, telemetry).
   ///
@@ -83,9 +86,10 @@ sealed class AppEvent {
   /// a non-PII event as PII is a missing remote-sink line; the cost of
   /// missing a PII event is a leak.
   ///
-  /// Invariant: every PII override is pinned by a positive case in
-  /// `test/events/pii_marker_test.dart` (dual control).
-  bool get containsPii => false;
+  /// Invariant: every subtype's classification is pinned by an
+  /// exhaustive sealed-class switch in `test/events/pii_marker_test.dart`
+  /// (dual control — compiler-enforced exhaustiveness AND value asserts).
+  bool get containsPii;
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +116,9 @@ final class WordLearned extends AppEvent {
         'challengeId': challengeId.wireName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// A player completed a challenge (code or prompt).
@@ -134,6 +141,9 @@ final class ChallengeCompleted extends AppEvent {
         'challengeId': challengeId.wireName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Reason a door-cast failed.
@@ -193,6 +203,9 @@ final class DoorUnlocked extends AppEvent {
         'doorY': doorY,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Player clicked to move to a destination.
@@ -215,6 +228,9 @@ final class PlayerMoved extends AppEvent {
         'destY': destY,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Player opened a code or prompt terminal.
@@ -240,6 +256,9 @@ final class TerminalOpened extends AppEvent {
         'terminalY': terminalY,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Player closed the terminal editor.
@@ -255,6 +274,9 @@ final class TerminalClosed extends AppEvent {
         'type': 'terminal_closed',
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +324,9 @@ final class RoomLeft extends AppEvent {
         if (roomId != null) 'roomId': roomId,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +372,9 @@ final class UserSignedOut extends AppEvent {
         'type': 'user_signed_out',
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// User updated their profile (display name or picture).
@@ -409,6 +437,9 @@ final class MapEdited extends AppEvent {
         'y': y,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +503,9 @@ final class BotJoined extends AppEvent {
         'identity': identity,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// All bots left the room.
@@ -486,6 +520,9 @@ final class BotLeft extends AppEvent {
         'type': 'bot_left',
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Player toggled screen sharing.
@@ -503,6 +540,9 @@ final class ScreenShareToggled extends AppEvent {
         'started': started,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Player selected an avatar.
@@ -520,6 +560,9 @@ final class AvatarSelected extends AppEvent {
         'avatarId': avatarId,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Player entered the map editor.
@@ -561,6 +604,9 @@ final class MapEditorExited extends AppEvent {
         'applied': applied,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// A room was created in Firestore.
@@ -671,6 +717,9 @@ final class CodeSubmitted extends AppEvent {
         'result': result.name,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// LiveKit connected to a room.
@@ -709,6 +758,9 @@ final class LiveKitDisconnected extends AppEvent {
         if (reason != null) 'reason': reason,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 // ---------------------------------------------------------------------------
@@ -759,6 +811,9 @@ final class HelpRequested extends AppEvent {
         'challengeId': challengeId.wireName,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Camera and microphone were enabled for the room.
@@ -774,6 +829,9 @@ final class MediaEnabled extends AppEvent {
         'type': 'media_enabled',
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Another player unlocked a door (received via LiveKit).
@@ -796,6 +854,9 @@ final class RemoteDoorUnlocked extends AppEvent {
         'doorY': doorY,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  @override
+  bool get containsPii => false;
 }
 
 /// Player sent a group chat message.
