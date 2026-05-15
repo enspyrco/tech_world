@@ -13,6 +13,148 @@ import 'package:tech_world/spellbook/word_of_power.dart';
 /// is the dual-control invariant — every PII event must announce itself
 /// here AND in the type definition.
 void main() {
+  // ---------------------------------------------------------------------
+  // Exhaustive sealed-class switch — the compiler-enforced gate.
+  //
+  // The hand-enumerated tests below are belt; this is braces. Because
+  // `AppEvent` is sealed, adding a new subtype WITHOUT an arm here makes
+  // this switch a compile error — the build fails before the test can
+  // even run. That's the property we want: a new event cannot ship
+  // without an explicit PII classification AND an explicit test arm.
+  //
+  // If you add a new `AppEvent` subtype, add an arm below with the
+  // expected `containsPii` value. The analyzer will name the missing
+  // subtype in the error message.
+  // ---------------------------------------------------------------------
+  group('AppEvent.containsPii (exhaustive sealed switch)', () {
+    // Helper: assert the expected value AND prove the compiler walked
+    // every subtype. `event` is bound by the case pattern, so each arm
+    // asserts on a known concrete type.
+    void check(AppEvent event) {
+      final expected = switch (event) {
+        // PII subtypes (15)
+        SpellCastFailed() => true,
+        RoomJoined() => true,
+        UserSignedIn() => true,
+        ProfileUpdated() => true,
+        PlayerEnteredProximity() => true,
+        PlayerLeftProximity() => true,
+        MapEditorEntered() => true,
+        RoomCreated() => true,
+        RoomMapSaved() => true,
+        RoomDeleted() => true,
+        LiveKitConnected() => true,
+        BotSpoke() => true,
+        GroupMessageSent() => true,
+        DmSent() => true,
+        AppLogRecord() => true,
+        // Non-PII subtypes (19)
+        WordLearned() => false,
+        ChallengeCompleted() => false,
+        DoorUnlocked() => false,
+        PlayerMoved() => false,
+        TerminalOpened() => false,
+        TerminalClosed() => false,
+        RoomLeft() => false,
+        UserSignedOut() => false,
+        MapEdited() => false,
+        BotJoined() => false,
+        BotLeft() => false,
+        ScreenShareToggled() => false,
+        AvatarSelected() => false,
+        MapEditorExited() => false,
+        CodeSubmitted() => false,
+        LiveKitDisconnected() => false,
+        HelpRequested() => false,
+        MediaEnabled() => false,
+        RemoteDoorUnlocked() => false,
+      };
+      expect(
+        event.containsPii,
+        expected,
+        reason: '${event.runtimeType}.containsPii disagrees with the '
+            'classification declared in this exhaustive switch. Either '
+            'fix the override in lib/events/types.dart or update the '
+            'arm above (and think carefully about which is correct — '
+            'PII leaks here become remote-sink leaks).',
+      );
+    }
+
+    test('every AppEvent subtype is classified', () {
+      // One representative instance of each of the 34 subtypes. Adding a
+      // new subtype without an entry here trips the switch above at
+      // compile time — Dart's exhaustiveness check will name the missing
+      // subtype.
+      final events = <AppEvent>[
+        // PII (15)
+        SpellCastFailed(
+          reason: CastFailureReason.noMatch,
+          transcript: 'ignis',
+        ),
+        RoomJoined(roomId: 'r', roomName: 'X'),
+        UserSignedIn(userId: 'u', displayName: 'Alice'),
+        ProfileUpdated(displayName: 'Alice'),
+        PlayerEnteredProximity(playerId: 'p'),
+        PlayerLeftProximity(playerId: 'p'),
+        MapEditorEntered(mapId: 'm', mapName: 'X'),
+        RoomCreated(roomId: 'r', roomName: 'X'),
+        RoomMapSaved(roomId: 'r', roomName: 'X'),
+        RoomDeleted(roomId: 'r', roomName: 'X'),
+        LiveKitConnected(roomName: 'X'),
+        BotSpoke(text: 'hi', context: BotSpokeContext.group),
+        GroupMessageSent(messageId: 'm'),
+        DmSent(peerId: 'p', conversationId: 'c'),
+        AppLogRecord(
+          loggerName: 'L',
+          severity: LogSeverity.info,
+          message: 'm',
+        ),
+        // Non-PII (19)
+        WordLearned(
+          wordId: WordId.values.first,
+          challengeId: PromptChallengeId.values.first,
+        ),
+        ChallengeCompleted(
+          challengeId: CodeRef(CodeChallengeId.values.first),
+        ),
+        DoorUnlocked(doorX: 0, doorY: 0),
+        PlayerMoved(destX: 0, destY: 0),
+        TerminalOpened(
+          challengeId: CodeRef(CodeChallengeId.values.first),
+          terminalX: 0,
+          terminalY: 0,
+        ),
+        TerminalClosed(),
+        RoomLeft(),
+        UserSignedOut(),
+        MapEdited(action: MapEditAction.paintTile, x: 0, y: 0),
+        BotJoined(identity: 'bot-claude'),
+        BotLeft(),
+        ScreenShareToggled(started: true),
+        AvatarSelected(avatarId: 'wizard'),
+        MapEditorExited(applied: true),
+        CodeSubmitted(
+          challengeId: CodeChallengeId.values.first,
+          result: CodeSubmitResult.pass,
+        ),
+        LiveKitDisconnected(),
+        HelpRequested(challengeId: CodeRef(CodeChallengeId.values.first)),
+        MediaEnabled(),
+        RemoteDoorUnlocked(doorX: 0, doorY: 0),
+      ];
+
+      // Cardinality assertion: if a new subtype is added, the switch
+      // above will refuse to compile until it's classified, AND this
+      // count must be bumped to match — keeping representatives in sync
+      // with the declared subtypes. This is a tripwire, not a proof.
+      expect(events.length, 34);
+
+      for (final event in events) {
+        check(event);
+      }
+    });
+  });
+
   group('AppEvent.containsPii', () {
     // -------------------------------------------------------------------
     // Positive cases — events that MUST be marked PII=true.
