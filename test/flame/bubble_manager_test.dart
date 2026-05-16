@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tech_world/diagnostics/diagnostics_service.dart';
+import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
@@ -807,6 +808,214 @@ void main() {
           bubbleType: AvBubbleType.unknown,
         );
         expect(event.toJson()['bubbleType'], 'unknown');
+      });
+    });
+
+    group('_replaceBubble lifecycle dispatch', () {
+      // Spiral F7 from PR #465. Locks in that every slot mutation routes
+      // through the single-owner helper, so AvBubbleCreated /
+      // AvBubbleRemoved events fan to consumers for upgrades AND downgrades
+      // — not just the initial create/exit-proximity edges.
+
+      late List<AppEvent> captured;
+      late DiagnosticsService diagnostics;
+      late MockLiveKitService mockLiveKit;
+      late List<Component> addedComponents;
+      late PlayerComponent localPlayer;
+      late Map<String, PlayerComponent> remotePlayers;
+
+      MockRemoteParticipant remoteWithVideo() {
+        final pub = MockRemoteVideoTrackPublication();
+        final track = MockRemoteVideoTrack();
+        when(() => pub.track).thenReturn(track);
+        when(() => pub.subscribed).thenReturn(true);
+        final p = MockRemoteParticipant();
+        when(() => p.videoTrackPublications).thenReturn([pub]);
+        return p;
+      }
+
+      setUp(() {
+        clearSinks();
+        captured = [];
+        registerSink(captured.add);
+
+        diagnostics = DiagnosticsService(
+          avEnabled: true,
+          errorLoggingEnabled: true,
+        );
+
+        addedComponents = [];
+        mockLiveKit = MockLiveKitService();
+        when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.localParticipant).thenReturn(null);
+
+        localPlayer = PlayerComponent(
+          position: Vector2(160, 160),
+          id: 'local-user',
+          displayName: 'Local',
+        );
+        remotePlayers = {};
+      });
+
+      tearDown(clearSinks);
+
+      test(
+          'upgrade (player -> video) dispatches AvBubbleRemoved then '
+          'AvBubbleCreated for the same participant', () {
+        // Start with a remote player but NO video track — first update
+        // yields a PlayerBubbleComponent.
+        final remote = PlayerComponent(
+          position: Vector2(192, 160), // 1 grid square away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+        when(() => mockLiveKit.getParticipant('remote-1')).thenReturn(null);
+
+        final manager = BubbleManager(
+          localPlayer: localPlayer,
+          addComponent: addedComponents.add,
+          remotePlayers: remotePlayers,
+          bots: {},
+          diagnostics: diagnostics,
+        );
+        manager.setLiveKitService(mockLiveKit);
+        manager.update(0.016);
+
+        // Baseline: at least one AvBubbleCreated for remote-1 (no Removed
+        // yet — there was no prior occupant in that slot).
+        final initialRemoteCreates = captured
+            .whereType<AvBubbleCreated>()
+            .where((e) => e.participant == 'remote-1')
+            .toList();
+        expect(initialRemoteCreates, hasLength(1));
+        expect(initialRemoteCreates.single.bubbleType,
+            equals(AvBubbleType.player));
+        expect(
+          captured
+              .whereType<AvBubbleRemoved>()
+              .where((e) => e.participant == 'remote-1'),
+          isEmpty,
+          reason: 'no prior occupant means no Removed event yet',
+        );
+
+        // Now the video track lands. Calling refreshBubbleForPlayer
+        // triggers the upgrade path — old PlayerBubbleComponent goes
+        // away, new VideoBubbleComponent takes its place.
+        captured.clear();
+        final videoParticipant = remoteWithVideo();
+        when(() => mockLiveKit.getParticipant('remote-1'))
+            .thenReturn(videoParticipant);
+        manager.refreshBubbleForPlayer('remote-1');
+
+        // _replaceBubble contract: Removed then Created, in that order.
+        final remoteEvents = captured
+            .where((e) =>
+                (e is AvBubbleCreated && e.participant == 'remote-1') ||
+                (e is AvBubbleRemoved && e.participant == 'remote-1'))
+            .toList();
+        expect(remoteEvents, hasLength(2),
+            reason: 'upgrade is one Removed + one Created pair');
+        expect(remoteEvents[0], isA<AvBubbleRemoved>());
+        expect(remoteEvents[1], isA<AvBubbleCreated>());
+        expect(
+          (remoteEvents[1] as AvBubbleCreated).bubbleType,
+          equals(AvBubbleType.video),
+          reason: 'upgraded bubble carries the video type marker',
+        );
+      });
+
+      test(
+          'downgrade (video -> player) dispatches AvBubbleRemoved then '
+          'AvBubbleCreated for the same participant', () {
+        // Start with a remote player that HAS a video track — first
+        // update yields a VideoBubbleComponent.
+        final remote = PlayerComponent(
+          position: Vector2(192, 160),
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+        final videoParticipant = remoteWithVideo();
+        when(() => mockLiveKit.getParticipant('remote-1'))
+            .thenReturn(videoParticipant);
+
+        final manager = BubbleManager(
+          localPlayer: localPlayer,
+          addComponent: addedComponents.add,
+          remotePlayers: remotePlayers,
+          bots: {},
+          diagnostics: diagnostics,
+        );
+        manager.setLiveKitService(mockLiveKit);
+        manager.update(0.016);
+
+        // Baseline: one AvBubbleCreated with type=video.
+        final initialCreate = captured
+            .whereType<AvBubbleCreated>()
+            .firstWhere((e) => e.participant == 'remote-1');
+        expect(initialCreate.bubbleType, equals(AvBubbleType.video));
+
+        // Track went away or device lost — caller invokes downgrade.
+        captured.clear();
+        manager.downgradeVideoBubble('remote-1');
+
+        // Same Removed+Created pair, but Created now carries .player.
+        final remoteEvents = captured
+            .where((e) =>
+                (e is AvBubbleCreated && e.participant == 'remote-1') ||
+                (e is AvBubbleRemoved && e.participant == 'remote-1'))
+            .toList();
+        expect(remoteEvents, hasLength(2));
+        expect(remoteEvents[0], isA<AvBubbleRemoved>());
+        expect(remoteEvents[1], isA<AvBubbleCreated>());
+        expect(
+          (remoteEvents[1] as AvBubbleCreated).bubbleType,
+          equals(AvBubbleType.player),
+          reason: 'downgraded bubble carries the player type marker',
+        );
+      });
+
+      test('removeBubble dispatches AvBubbleRemoved (single-owner coverage)',
+          () {
+        // Seed a bubble via the normal create path.
+        final remote = PlayerComponent(
+          position: Vector2(192, 160),
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+        when(() => mockLiveKit.getParticipant('remote-1')).thenReturn(null);
+
+        final manager = BubbleManager(
+          localPlayer: localPlayer,
+          addComponent: addedComponents.add,
+          remotePlayers: remotePlayers,
+          bots: {},
+          diagnostics: diagnostics,
+        );
+        manager.setLiveKitService(mockLiveKit);
+        manager.update(0.016);
+
+        // Drop the bubble explicitly — must produce AvBubbleRemoved.
+        captured.clear();
+        manager.removeBubble('remote-1');
+
+        expect(
+          captured
+              .whereType<AvBubbleRemoved>()
+              .where((e) => e.participant == 'remote-1'),
+          hasLength(1),
+          reason: 'removeBubble must route through the lifecycle owner',
+        );
+        // And no spurious Created.
+        expect(
+          captured
+              .whereType<AvBubbleCreated>()
+              .where((e) => e.participant == 'remote-1'),
+          isEmpty,
+        );
       });
     });
   });
