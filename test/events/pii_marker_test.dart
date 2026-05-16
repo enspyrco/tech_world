@@ -5,13 +5,20 @@ import 'package:tech_world/events/types.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
 
-/// Verifies the `AppEvent.containsPii` type-system gate.
+/// Verifies the `AppEvent.piiPolicy` type-system gate.
 ///
-/// Why a test, not just a marker: the value of `containsPii` is the gate
+/// Why a test, not just a marker: the value of `piiPolicy` is the gate
 /// to remote sinks. Forgetting to override on a new PII-carrying event
 /// silently re-introduces the leak the gate exists to prevent. This test
 /// is the dual-control invariant — every PII event must announce itself
 /// here AND in the type definition.
+///
+/// Graduated from `bool containsPii` to `PiiPolicy` enum to apply
+/// `feedback_typed_primitives_at_boundary` — a 2-element closed set is
+/// still a closed set, and naming it now means future cases (`redact`,
+/// `offDeviceAllowed`, retention-tier) land as one enum value plus
+/// compile errors at every exhaustive switch, rather than touching
+/// every callsite.
 void main() {
   // ---------------------------------------------------------------------
   // Exhaustive sealed-class switch — the compiler-enforced classification.
@@ -27,12 +34,12 @@ void main() {
   //
   //   (2) RUN-TIME, by the test:
   //       For every representative instance in the `events` list, this
-  //       test asserts `event.containsPii` matches the value declared by
+  //       test asserts `event.piiPolicy` matches the value declared by
   //       the switch arm for that runtime type.
   //
   // What is NOT proven: that the `events` list contains a representative
   // of every subtype. A future subtype could land with a switch arm
-  // added AND the `containsPii` override added AND the representative
+  // added AND the `piiPolicy` override added AND the representative
   // forgotten — the build would succeed and this test would pass while
   // the new subtype's override goes uncompared. The runtimeType-dedup
   // assertion below catches at least the "two entries of the same type"
@@ -45,53 +52,58 @@ void main() {
   // runtime classification of representatives explicit and pins them to
   // the declared switch values.
   // ---------------------------------------------------------------------
-  group('AppEvent.containsPii (exhaustive sealed switch)', () {
+  group('AppEvent.piiPolicy (exhaustive sealed switch)', () {
     // Helper: assert the expected value AND prove the compiler walked
     // every subtype. `event` is bound by the case pattern, so each arm
     // asserts on a known concrete type.
-    void check(AppEvent event) {
-      final expected = switch (event) {
+    void check(AppEvent event, PiiPolicy expected) {
+      final declared = switch (event) {
         // PII subtypes (15)
-        SpellCastFailed() => true,
-        RoomJoined() => true,
-        UserSignedIn() => true,
-        ProfileUpdated() => true,
-        PlayerEnteredProximity() => true,
-        PlayerLeftProximity() => true,
-        MapEditorEntered() => true,
-        RoomCreated() => true,
-        RoomMapSaved() => true,
-        RoomDeleted() => true,
-        LiveKitConnected() => true,
-        BotSpoke() => true,
-        GroupMessageSent() => true,
-        DmSent() => true,
-        AppLogRecord() => true,
+        SpellCastFailed() => PiiPolicy.pii,
+        RoomJoined() => PiiPolicy.pii,
+        UserSignedIn() => PiiPolicy.pii,
+        ProfileUpdated() => PiiPolicy.pii,
+        PlayerEnteredProximity() => PiiPolicy.pii,
+        PlayerLeftProximity() => PiiPolicy.pii,
+        MapEditorEntered() => PiiPolicy.pii,
+        RoomCreated() => PiiPolicy.pii,
+        RoomMapSaved() => PiiPolicy.pii,
+        RoomDeleted() => PiiPolicy.pii,
+        LiveKitConnected() => PiiPolicy.pii,
+        BotSpoke() => PiiPolicy.pii,
+        GroupMessageSent() => PiiPolicy.pii,
+        DmSent() => PiiPolicy.pii,
+        AppLogRecord() => PiiPolicy.pii,
         // Non-PII subtypes (19)
-        WordLearned() => false,
-        ChallengeCompleted() => false,
-        DoorUnlocked() => false,
-        PlayerMoved() => false,
-        TerminalOpened() => false,
-        TerminalClosed() => false,
-        RoomLeft() => false,
-        UserSignedOut() => false,
-        MapEdited() => false,
-        BotJoined() => false,
-        BotLeft() => false,
-        ScreenShareToggled() => false,
-        AvatarSelected() => false,
-        MapEditorExited() => false,
-        CodeSubmitted() => false,
-        LiveKitDisconnected() => false,
-        HelpRequested() => false,
-        MediaEnabled() => false,
-        RemoteDoorUnlocked() => false,
+        WordLearned() => PiiPolicy.none,
+        ChallengeCompleted() => PiiPolicy.none,
+        DoorUnlocked() => PiiPolicy.none,
+        PlayerMoved() => PiiPolicy.none,
+        TerminalOpened() => PiiPolicy.none,
+        TerminalClosed() => PiiPolicy.none,
+        RoomLeft() => PiiPolicy.none,
+        UserSignedOut() => PiiPolicy.none,
+        MapEdited() => PiiPolicy.none,
+        BotJoined() => PiiPolicy.none,
+        BotLeft() => PiiPolicy.none,
+        ScreenShareToggled() => PiiPolicy.none,
+        AvatarSelected() => PiiPolicy.none,
+        MapEditorExited() => PiiPolicy.none,
+        CodeSubmitted() => PiiPolicy.none,
+        LiveKitDisconnected() => PiiPolicy.none,
+        HelpRequested() => PiiPolicy.none,
+        MediaEnabled() => PiiPolicy.none,
+        RemoteDoorUnlocked() => PiiPolicy.none,
       };
+      // Cross-check: the caller's expectation, the exhaustive switch,
+      // and the live override must all agree.
+      expect(declared, expected,
+          reason: 'Test bug: expected vs switch arm disagree for '
+              '${event.runtimeType}.');
       expect(
-        event.containsPii,
+        event.piiPolicy,
         expected,
-        reason: '${event.runtimeType}.containsPii disagrees with the '
+        reason: '${event.runtimeType}.piiPolicy disagrees with the '
             'classification declared in this exhaustive switch. Either '
             'fix the override in lib/events/types.dart or update the '
             'arm above (and think carefully about which is correct — '
@@ -106,7 +118,7 @@ void main() {
       // until an arm is added. The representative MUST then be added
       // here for the runtime classification to be pinned — see the
       // group comment above for what this list does and does not prove.
-      final events = <AppEvent>[
+      final piiEvents = <AppEvent>[
         // PII (15)
         SpellCastFailed(
           reason: CastFailureReason.noMatch,
@@ -130,6 +142,8 @@ void main() {
           severity: LogSeverity.info,
           message: 'm',
         ),
+      ];
+      final nonPiiEvents = <AppEvent>[
         // Non-PII (19)
         WordLearned(
           wordId: WordId.values.first,
@@ -164,6 +178,8 @@ void main() {
         RemoteDoorUnlocked(doorX: 0, doorY: 0),
       ];
 
+      final events = [...piiEvents, ...nonPiiEvents];
+
       // Dedup check: no two representatives share a runtime type.
       // Catches the "copy-paste a representative line and forget to
       // change the type" failure mode. Does NOT catch a missing type;
@@ -181,16 +197,21 @@ void main() {
       // honest against the same expected subtype count. Bump together
       // when adding a new subtype.
       expect(events.length, 34);
+      expect(piiEvents.length, 15);
+      expect(nonPiiEvents.length, 19);
 
-      for (final event in events) {
-        check(event);
+      for (final event in piiEvents) {
+        check(event, PiiPolicy.pii);
+      }
+      for (final event in nonPiiEvents) {
+        check(event, PiiPolicy.none);
       }
     });
   });
 
-  group('AppEvent.containsPii', () {
+  group('AppEvent.piiPolicy', () {
     // -------------------------------------------------------------------
-    // Positive cases — events that MUST be marked PII=true.
+    // Positive cases — events that MUST be classified PiiPolicy.pii.
     // Add a case here when you add a new PII-carrying event.
     // -------------------------------------------------------------------
 
@@ -199,47 +220,48 @@ void main() {
         SpellCastFailed(
           reason: CastFailureReason.noMatch,
           transcript: 'ignis maxima',
-        ).containsPii,
-        isTrue,
+        ).piiPolicy,
+        PiiPolicy.pii,
       );
     });
 
     test('BotSpoke (bot reply text) is PII', () {
       expect(
         BotSpoke(text: 'Try a for loop', context: BotSpokeContext.help)
-            .containsPii,
-        isTrue,
+            .piiPolicy,
+        PiiPolicy.pii,
       );
     });
 
     test('UserSignedIn (userId + displayName) is PII', () {
       expect(
-        UserSignedIn(userId: 'u1', displayName: 'Alice').containsPii,
-        isTrue,
+        UserSignedIn(userId: 'u1', displayName: 'Alice').piiPolicy,
+        PiiPolicy.pii,
       );
     });
 
     test('ProfileUpdated (displayName) is PII', () {
-      expect(ProfileUpdated(displayName: 'Alice').containsPii, isTrue);
+      expect(ProfileUpdated(displayName: 'Alice').piiPolicy, PiiPolicy.pii);
     });
 
     test('DmSent (peerId + conversationId) is PII', () {
       expect(
-        DmSent(peerId: 'peer1', conversationId: 'c1').containsPii,
-        isTrue,
+        DmSent(peerId: 'peer1', conversationId: 'c1').piiPolicy,
+        PiiPolicy.pii,
       );
     });
 
     test('GroupMessageSent (references user-typed content) is PII', () {
-      expect(GroupMessageSent(messageId: 'm1').containsPii, isTrue);
+      expect(GroupMessageSent(messageId: 'm1').piiPolicy, PiiPolicy.pii);
     });
 
     test('PlayerEnteredProximity (player identity) is PII', () {
-      expect(PlayerEnteredProximity(playerId: 'p1').containsPii, isTrue);
+      expect(
+          PlayerEnteredProximity(playerId: 'p1').piiPolicy, PiiPolicy.pii);
     });
 
     test('PlayerLeftProximity (player identity) is PII', () {
-      expect(PlayerLeftProximity(playerId: 'p1').containsPii, isTrue);
+      expect(PlayerLeftProximity(playerId: 'p1').piiPolicy, PiiPolicy.pii);
     });
 
     test('AppLogRecord (free-form message) is PII', () {
@@ -248,41 +270,46 @@ void main() {
           loggerName: 'X',
           severity: LogSeverity.info,
           message: 'anything could be in here',
-        ).containsPii,
-        isTrue,
+        ).piiPolicy,
+        PiiPolicy.pii,
       );
     });
 
     test('RoomJoined (user-named room) is PII', () {
-      expect(RoomJoined(roomId: 'r', roomName: 'Alice\'s room').containsPii,
-          isTrue);
+      expect(
+        RoomJoined(roomId: 'r', roomName: 'Alice\'s room').piiPolicy,
+        PiiPolicy.pii,
+      );
     });
 
     test('RoomCreated (user-named room) is PII', () {
-      expect(RoomCreated(roomId: 'r', roomName: 'X').containsPii, isTrue);
+      expect(
+        RoomCreated(roomId: 'r', roomName: 'X').piiPolicy, PiiPolicy.pii);
     });
 
     test('RoomMapSaved (user-named room) is PII', () {
-      expect(RoomMapSaved(roomId: 'r', roomName: 'X').containsPii, isTrue);
+      expect(
+        RoomMapSaved(roomId: 'r', roomName: 'X').piiPolicy, PiiPolicy.pii);
     });
 
     test('RoomDeleted (user-named room) is PII', () {
-      expect(RoomDeleted(roomId: 'r', roomName: 'X').containsPii, isTrue);
+      expect(
+        RoomDeleted(roomId: 'r', roomName: 'X').piiPolicy, PiiPolicy.pii);
     });
 
     test('LiveKitConnected (user-named room) is PII', () {
-      expect(LiveKitConnected(roomName: 'X').containsPii, isTrue);
+      expect(LiveKitConnected(roomName: 'X').piiPolicy, PiiPolicy.pii);
     });
 
     test('MapEditorEntered (user-named map) is PII', () {
       expect(
-        MapEditorEntered(mapId: 'm', mapName: 'X').containsPii,
-        isTrue,
+        MapEditorEntered(mapId: 'm', mapName: 'X').piiPolicy,
+        PiiPolicy.pii,
       );
     });
 
     // -------------------------------------------------------------------
-    // Negative cases — events that MUST be marked PII=false.
+    // Negative cases — events that MUST be classified PiiPolicy.none.
     // No user identity, no user-typed content, no transcripts.
     // -------------------------------------------------------------------
 
@@ -291,8 +318,8 @@ void main() {
         WordLearned(
           wordId: WordId.values.first,
           challengeId: PromptChallengeId.values.first,
-        ).containsPii,
-        isFalse,
+        ).piiPolicy,
+        PiiPolicy.none,
       );
     });
 
@@ -300,21 +327,22 @@ void main() {
       expect(
         ChallengeCompleted(
           challengeId: CodeRef(CodeChallengeId.values.first),
-        ).containsPii,
-        isFalse,
+        ).piiPolicy,
+        PiiPolicy.none,
       );
     });
 
     test('DoorUnlocked is not PII', () {
-      expect(DoorUnlocked(doorX: 1, doorY: 2).containsPii, isFalse);
+      expect(DoorUnlocked(doorX: 1, doorY: 2).piiPolicy, PiiPolicy.none);
     });
 
     test('RemoteDoorUnlocked is not PII', () {
-      expect(RemoteDoorUnlocked(doorX: 1, doorY: 2).containsPii, isFalse);
+      expect(
+        RemoteDoorUnlocked(doorX: 1, doorY: 2).piiPolicy, PiiPolicy.none);
     });
 
     test('PlayerMoved is not PII', () {
-      expect(PlayerMoved(destX: 1, destY: 2).containsPii, isFalse);
+      expect(PlayerMoved(destX: 1, destY: 2).piiPolicy, PiiPolicy.none);
     });
 
     test('TerminalOpened is not PII', () {
@@ -323,48 +351,48 @@ void main() {
           challengeId: CodeRef(CodeChallengeId.values.first),
           terminalX: 0,
           terminalY: 0,
-        ).containsPii,
-        isFalse,
+        ).piiPolicy,
+        PiiPolicy.none,
       );
     });
 
     test('TerminalClosed is not PII', () {
-      expect(TerminalClosed().containsPii, isFalse);
+      expect(TerminalClosed().piiPolicy, PiiPolicy.none);
     });
 
     test('RoomLeft is not PII', () {
-      expect(RoomLeft().containsPii, isFalse);
+      expect(RoomLeft().piiPolicy, PiiPolicy.none);
     });
 
     test('UserSignedOut is not PII', () {
-      expect(UserSignedOut().containsPii, isFalse);
+      expect(UserSignedOut().piiPolicy, PiiPolicy.none);
     });
 
     test('MapEdited is not PII', () {
       expect(
-        MapEdited(action: MapEditAction.paintTile, x: 0, y: 0).containsPii,
-        isFalse,
+        MapEdited(action: MapEditAction.paintTile, x: 0, y: 0).piiPolicy,
+        PiiPolicy.none,
       );
     });
 
     test('BotJoined is not PII', () {
-      expect(BotJoined(identity: 'bot-claude').containsPii, isFalse);
+      expect(BotJoined(identity: 'bot-claude').piiPolicy, PiiPolicy.none);
     });
 
     test('BotLeft is not PII', () {
-      expect(BotLeft().containsPii, isFalse);
+      expect(BotLeft().piiPolicy, PiiPolicy.none);
     });
 
     test('ScreenShareToggled is not PII', () {
-      expect(ScreenShareToggled(started: true).containsPii, isFalse);
+      expect(ScreenShareToggled(started: true).piiPolicy, PiiPolicy.none);
     });
 
     test('AvatarSelected is not PII', () {
-      expect(AvatarSelected(avatarId: 'wizard').containsPii, isFalse);
+      expect(AvatarSelected(avatarId: 'wizard').piiPolicy, PiiPolicy.none);
     });
 
     test('MapEditorExited is not PII', () {
-      expect(MapEditorExited(applied: true).containsPii, isFalse);
+      expect(MapEditorExited(applied: true).piiPolicy, PiiPolicy.none);
     });
 
     test('CodeSubmitted is not PII', () {
@@ -372,25 +400,25 @@ void main() {
         CodeSubmitted(
           challengeId: CodeChallengeId.values.first,
           result: CodeSubmitResult.pass,
-        ).containsPii,
-        isFalse,
+        ).piiPolicy,
+        PiiPolicy.none,
       );
     });
 
     test('LiveKitDisconnected is not PII', () {
-      expect(LiveKitDisconnected().containsPii, isFalse);
+      expect(LiveKitDisconnected().piiPolicy, PiiPolicy.none);
     });
 
     test('HelpRequested is not PII', () {
       expect(
         HelpRequested(challengeId: CodeRef(CodeChallengeId.values.first))
-            .containsPii,
-        isFalse,
+            .piiPolicy,
+        PiiPolicy.none,
       );
     });
 
     test('MediaEnabled is not PII', () {
-      expect(MediaEnabled().containsPii, isFalse);
+      expect(MediaEnabled().piiPolicy, PiiPolicy.none);
     });
   });
 
@@ -453,8 +481,8 @@ void main() {
   // Async variant — same gate, same invariant. Carnot caught the
   // coverage gap on PR #459: the sync helper had three tests, the
   // async helper had zero. A future edit could invert the async
-  // `if (event.containsPii) return;` and the test file would still
-  // pass. Mirror the sync coverage here.
+  // gate's drop-condition and the test file would still pass.
+  // Mirror the sync coverage here.
   // ---------------------------------------------------------------------
 
   group('registerRemoteAsyncSink', () {

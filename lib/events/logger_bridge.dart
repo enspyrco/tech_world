@@ -16,8 +16,9 @@ import 'package:tech_world/events/types.dart';
 /// 1. **PII safety.** FINE-level call sites carry raw player speech —
 ///    `stt_service_web.dart` logs raw STT transcripts at FINE, and
 ///    `oracle_service.dart` logs oracle replies at FINE. These strings
-///    are PII. The `AppEvent.containsPii` gate (PR #459) keeps them
-///    out of remote sinks, but local file sinks (`file_sink.dart`)
+///    are PII. The `AppEvent.piiPolicy` gate (PR #459, graduated from
+///    `bool containsPii` to `PiiPolicy` enum in the follow-up) keeps
+///    them out of remote sinks, but local file sinks (`file_sink.dart`)
 ///    still write everything they receive to `events.log` on disk.
 /// 2. **Belt-and-braces.** A future maintainer setting
 ///    `Logger.root.level = Level.ALL` (debugging, a misconfigured
