@@ -215,9 +215,7 @@ class BubbleManager {
         if (!_playerBubbles.containsKey(playerId)) {
           final bubble = _createBubbleForPlayer(playerId, playerComponent);
           bubble.position = playerComponent.position + _bubbleOffset;
-          _playerBubbles[playerId] = bubble;
-          _addComponent(bubble);
-          _dispatchBubbleCreated(playerId, bubble);
+          _replaceBubble(playerId, bubble, 'remote-player-entered-proximity');
         }
 
         _setBubbleOpacity(_playerBubbles[playerId]!, distance);
@@ -248,9 +246,8 @@ class BubbleManager {
           }
           bubble.position =
               dreamfinderComponent!.position + _bubbleOffset;
-          _playerBubbles[dreamfinderIdentity] = bubble;
-          _addComponent(bubble);
-          _dispatchBubbleCreated(dreamfinderIdentity, bubble);
+          _replaceBubble(
+              dreamfinderIdentity, bubble, 'dreamfinder-entered-proximity');
         }
       }
     }
@@ -269,9 +266,7 @@ class BubbleManager {
         if (!_playerBubbles.containsKey(botId)) {
           final bubble = BotBubbleComponent(botStatus: _botStatus);
           bubble.position = botComp.position + _bubbleOffset;
-          _playerBubbles[botId] = bubble;
-          _addComponent(bubble);
-          _dispatchBubbleCreated(botId, bubble);
+          _replaceBubble(botId, bubble, 'bot-entered-proximity');
         }
       }
     }
@@ -281,8 +276,8 @@ class BubbleManager {
       if (!_playerBubbles.containsKey(_localPlayerBubbleKey)) {
         final localBubble = _createLocalPlayerBubble();
         localBubble.position = _localPlayer.position + _bubbleOffset;
-        _playerBubbles[_localPlayerBubbleKey] = localBubble;
-        _addComponent(localBubble);
+        _replaceBubble(
+            _localPlayerBubbleKey, localBubble, 'local-player-bubble-shown');
       }
       _setBubbleOpacity(
           _playerBubbles[_localPlayerBubbleKey]!, closestDistance);
@@ -293,15 +288,11 @@ class BubbleManager {
     final toRemove = <String>[];
     for (final playerId in _playerBubbles.keys) {
       if (!nearbyPlayerIds.contains(playerId)) {
-        _playerBubbles[playerId]?.removeFromParent();
         toRemove.add(playerId);
       }
     }
     for (final playerId in toRemove) {
-      _playerBubbles.remove(playerId);
-      if (avDiagnosticsEnabled) {
-        dispatch([AvBubbleRemoved(participant: playerId)]);
-      }
+      _replaceBubble(playerId, null, 'participant-left-proximity');
     }
 
     _updateBubblePositions(dt);
@@ -326,12 +317,11 @@ class BubbleManager {
           (!hasCanvasCapture && _dreamfinderAvatarBridge?.isReady == true);
 
       if (needsUpgrade) {
-        existingBubble?.removeFromParent();
         final videoBubble = _createDreamfinderVideoBubble(dfParticipant);
         videoBubble.position =
             dreamfinderComponent!.position + _bubbleOffset;
-        _playerBubbles[playerId] = videoBubble;
-        _addComponent(videoBubble);
+        _replaceBubble(
+            playerId, videoBubble, 'dreamfinder-bubble-upgraded-to-video');
       }
       return;
     }
@@ -344,12 +334,9 @@ class BubbleManager {
     final playerComponent = _remotePlayers[playerId];
     if (playerComponent == null) return;
 
-    existingBubble.removeFromParent();
-
     final newBubble = _createBubbleForPlayer(playerId, playerComponent);
     newBubble.position = playerComponent.position + _bubbleOffset;
-    _playerBubbles[playerId] = newBubble;
-    _addComponent(newBubble);
+    _replaceBubble(playerId, newBubble, 'player-bubble-refreshed');
   }
 
   /// Refresh the local player's bubble (e.g. after camera comes online).
@@ -361,12 +348,10 @@ class BubbleManager {
 
     _log.fine('Refreshing local player bubble after camera enabled');
 
-    existingBubble.removeFromParent();
-
     final newBubble = _createLocalPlayerBubble();
     newBubble.position = _localPlayer.position + _bubbleOffset;
-    _playerBubbles[_localPlayerBubbleKey] = newBubble;
-    _addComponent(newBubble);
+    _replaceBubble(_localPlayerBubbleKey, newBubble,
+        'local-player-bubble-refreshed');
   }
 
   /// Downgrade a video bubble to a static placeholder.
@@ -377,7 +362,6 @@ class BubbleManager {
     if (existingBubble is! VideoBubbleComponent) return;
 
     final position = existingBubble.position.clone();
-    existingBubble.removeFromParent();
 
     if (isDreamfinderIdentity(playerId)) {
       final botBubble = BotBubbleComponent(
@@ -385,8 +369,8 @@ class BubbleManager {
         bubbleSize: 64,
       );
       botBubble.position = position;
-      _playerBubbles[playerId] = botBubble;
-      _addComponent(botBubble);
+      _replaceBubble(
+          playerId, botBubble, 'dreamfinder-video-downgraded-to-bot');
     } else {
       final playerComponent = _remotePlayers[playerId];
       if (playerComponent != null) {
@@ -395,10 +379,11 @@ class BubbleManager {
           playerId: playerId,
         );
         newBubble.position = position;
-        _playerBubbles[playerId] = newBubble;
-        _addComponent(newBubble);
+        _replaceBubble(
+            playerId, newBubble, 'player-video-downgraded-to-static');
       } else {
-        _playerBubbles.remove(playerId);
+        _replaceBubble(playerId, null,
+            'player-video-downgraded-no-player-component');
       }
     }
   }
@@ -447,18 +432,19 @@ class BubbleManager {
 
   /// Remove a single bubble by player ID.
   void removeBubble(String playerId) {
-    final bubble = _playerBubbles.remove(playerId);
-    bubble?.removeFromParent();
-    _mergeGroupDirty = true;
+    _replaceBubble(playerId, null, 'remove-bubble-api');
   }
 
   /// Remove all bubbles and reset state. Safe to call multiple times.
   void clear() {
-    for (final bubble in _playerBubbles.values) {
-      bubble.removeFromParent();
+    // Drain via _replaceBubble so each removal dispatches a lifecycle
+    // event under avDiagnosticsEnabled — otherwise a teardown would
+    // silently strand "still-present" entries in the diagnostic stream.
+    // Snapshot keys first since _replaceBubble mutates the map.
+    final ids = List<String>.from(_playerBubbles.keys);
+    for (final id in ids) {
+      _replaceBubble(id, null, 'bubble-manager-cleared');
     }
-    _playerBubbles.clear();
-    _mergeGroupDirty = true;
     _bubbleDisplacements.clear();
     _bubbleField?.removeFromParent();
     _bubbleField = null;
@@ -880,11 +866,60 @@ class BubbleManager {
   // Private — AV diagnostics
   // ═══════════════════════════════════════════════════════════════════════════
 
-  void _dispatchBubbleCreated(String playerId, PositionComponent bubble) {
-    if (!avDiagnosticsEnabled) return;
-    dispatch([
-      AvBubbleCreated(participant: playerId, bubbleType: classifyBubble(bubble))
-    ]);
+  /// Single owner of bubble-slot mutation. Removes any prior occupant
+  /// (component-tree detach + lifecycle event) and installs [newBubble]
+  /// (or leaves the slot empty when [newBubble] is null).
+  ///
+  /// Every direct write to [_playerBubbles] should route through here —
+  /// the helper guarantees three invariants:
+  ///   1. removed bubbles always detach from the component tree
+  ///   2. created bubbles always attach to the component tree
+  ///   3. `AvBubbleCreated`/`AvBubbleRemoved` events fire whenever the
+  ///      slot's occupancy changes, gated by [avDiagnosticsEnabled]
+  ///
+  /// [reason] is a short kebab-case breadcrumb (logged at FINE level)
+  /// that names the trigger — useful when replaying logs to understand
+  /// which call site moved a bubble.
+  ///
+  /// An upgrade or downgrade (both old and new non-null) emits
+  /// `AvBubbleRemoved` then `AvBubbleCreated` in that order — the
+  /// pair documents the full transition without inventing a new event
+  /// type. If the bubble type does not actually change, the events still
+  /// fire: the diagnostic stream tracks identity-by-instance, not
+  /// type-equality.
+  ///
+  /// Spiral F7 from PR #465 (same chord as the DiagnosticsService
+  /// extraction in #466 / #467, but at the lifecycle level rather than
+  /// the toggle level).
+  void _replaceBubble(
+      String id, PositionComponent? newBubble, String reason) {
+    final old = _playerBubbles[id];
+
+    if (old != null) {
+      old.removeFromParent();
+      if (avDiagnosticsEnabled) {
+        dispatch([AvBubbleRemoved(participant: id)]);
+      }
+    }
+
+    if (newBubble != null) {
+      _playerBubbles[id] = newBubble;
+      _addComponent(newBubble);
+      if (avDiagnosticsEnabled) {
+        dispatch([AvBubbleCreated(
+          participant: id,
+          bubbleType: classifyBubble(newBubble),
+        )]);
+      }
+    } else {
+      _playerBubbles.remove(id);
+    }
+
+    _mergeGroupDirty = true;
+
+    if (old != null || newBubble != null) {
+      _log.fine('bubble[$id] ${old == null ? "+" : (newBubble == null ? "-" : "~")} $reason');
+    }
   }
 
   /// Maps a bubble `PositionComponent` to its [AvBubbleType] for AV
