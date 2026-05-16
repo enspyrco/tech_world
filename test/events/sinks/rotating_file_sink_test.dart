@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -159,6 +160,55 @@ void main() {
       }
       await sink.flushed();
       expect(File('${tmp.path}/events.log').existsSync(), isFalse);
+    });
+
+    test(
+        'backpressure: pending stays bounded when writes are slow; '
+        'excess events dropped and summarized once', () async {
+      // A blocked writer — every write awaits a Completer we control.
+      // Until we release the gate, all enqueued writes pile up on `_chain`.
+      var gate = Completer<void>();
+      var writeAttempts = 0;
+      Future<void> blockedWriter(String line) async {
+        writeAttempts++;
+        await gate.future;
+      }
+
+      const threshold = 50;
+      final sink = RotatingFileSink(
+        logFile: File('${tmp.path}/events.log'),
+        maxPending: threshold,
+        writer: blockedWriter,
+      );
+
+      // Enqueue many more than the threshold while I/O is stalled.
+      const enqueued = 500;
+      for (var i = 0; i < enqueued; i++) {
+        sink(_seq(i));
+      }
+
+      // Yield once so the chain has a chance to schedule its first
+      // continuation (it would block on `gate.future` immediately).
+      await Future<void>.delayed(Duration.zero);
+
+      // Pending must stay at or below the threshold; the rest dropped.
+      expect(sink.pending, lessThanOrEqualTo(threshold),
+          reason: 'in-flight writes must be bounded by maxPending');
+      expect(sink.droppedSinceLastReport, equals(enqueued - threshold),
+          reason:
+              'every enqueue beyond the threshold should increment the drop counter');
+
+      // Release the gate so queued writes resolve, then drain.
+      gate.complete();
+      await sink.flushed();
+
+      // After full drain: pending back to zero, the summary fired (counter reset).
+      expect(sink.pending, equals(0));
+      expect(sink.droppedSinceLastReport, equals(0),
+          reason: 'breach summary should reset the drop counter on drain');
+      // Sanity: only `threshold` writes ever reached the writer — the rest
+      // were dropped at the gate.
+      expect(writeAttempts, equals(threshold));
     });
 
     test('filter excludes non-matching events', () async {
