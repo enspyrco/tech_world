@@ -7,7 +7,8 @@ import 'package:flutter/material.dart' show Color, Colors;
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 
-import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, ValueNotifier, visibleForTesting;
 
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
@@ -881,14 +882,27 @@ class BubbleManager {
 
   void _dispatchBubbleCreated(String playerId, PositionComponent bubble) {
     if (!avDiagnosticsEnabled) return;
-    final type = switch (bubble) {
-      VideoBubbleComponent() => AvBubbleType.video,
-      PlayerBubbleComponent() => AvBubbleType.player,
-      BotBubbleComponent() => AvBubbleType.bot,
-      _ => AvBubbleType.player,
-    };
-    dispatch([AvBubbleCreated(participant: playerId, bubbleType: type)]);
+    dispatch([
+      AvBubbleCreated(participant: playerId, bubbleType: classifyBubble(bubble))
+    ]);
   }
+
+  /// Maps a bubble `PositionComponent` to its [AvBubbleType] for AV
+  /// diagnostic events. The three known concrete bubble types map to
+  /// their named enum values; anything else flows to
+  /// [AvBubbleType.unknown] rather than silently being misreported as
+  /// [AvBubbleType.player] (the pre-#466 catch-all).
+  ///
+  /// Exposed `@visibleForTesting` so the unknown-fallback case can be
+  /// pinned with a sentinel `PositionComponent` subclass without
+  /// reaching into the private dispatch path.
+  @visibleForTesting
+  static AvBubbleType classifyBubble(PositionComponent bubble) => switch (bubble) {
+        VideoBubbleComponent() => AvBubbleType.video,
+        PlayerBubbleComponent() => AvBubbleType.player,
+        BotBubbleComponent() => AvBubbleType.bot,
+        _ => AvBubbleType.unknown,
+      };
 
   void _dispatchPipelineSnapshots() {
     final playerGrid = _localPlayer.miniGridPosition;
@@ -977,13 +991,7 @@ class BubbleManager {
       framesDropped = bubble.diagnosticFramesDropped;
     }
 
-    final bubbleType = switch (bubble) {
-      VideoBubbleComponent() => AvBubbleType.video,
-      PlayerBubbleComponent() => AvBubbleType.player,
-      BotBubbleComponent() => AvBubbleType.bot,
-      null => null,
-      _ => AvBubbleType.player,
-    };
+    final bubbleType = bubble == null ? null : classifyBubble(bubble);
 
     return AvPipelineSnapshot(
       participant: playerId,

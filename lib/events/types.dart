@@ -961,6 +961,16 @@ enum AvBubbleType {
 
   /// Bot character bubble (BotBubbleComponent).
   bot,
+
+  /// Fallback for an unrecognised `PositionComponent` subclass — the
+  /// switch arms in `BubbleManager` enumerate the three known bubble
+  /// component types; anything else flows here. Previously [player] was
+  /// reused as the catch-all, which made AV diagnostic snapshots
+  /// (`AvPipelineSnapshot`, `AvBubbleCreated`) lie about what was on
+  /// screen for unknown subclasses. Explicit modelling per
+  /// `feedback_typed_primitives_at_boundary` — closed sets get named
+  /// values, not silent reuse of an unrelated one.
+  unknown,
 }
 
 /// Periodic per-participant pipeline state snapshot.

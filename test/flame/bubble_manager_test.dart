@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tech_world/diagnostics/diagnostics_service.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
@@ -770,5 +771,48 @@ void main() {
         expect(manager.avDiagnosticsEnabled, isFalse);
       });
     });
+
+    // ---------------------------------------------------------------------
+    // AvBubbleType classification — Carnot LOW from #466 cage-match.
+    //
+    // Pre-fix, both switch sites in BubbleManager fell back to
+    // `AvBubbleType.player` for any unrecognised PositionComponent
+    // subclass. That made AvBubbleCreated / AvPipelineSnapshot lie about
+    // what was on screen. The fix adds AvBubbleType.unknown and routes
+    // the fallback there. This group pins the classifier so a future
+    // edit cannot silently revert.
+    // ---------------------------------------------------------------------
+    group('classifyBubble (AvBubbleType fallback)', () {
+      // The named-type arms (video / player / bot) are covered indirectly
+      // by the existing lifecycle tests — bubbles get created and an
+      // AvBubbleCreated event is dispatched. The case the fix actually
+      // changes is the wildcard fallback, pinned below.
+      test('unknown PositionComponent subclass maps to AvBubbleType.unknown',
+          () {
+        final sentinel = _SentinelBubble();
+        expect(
+          BubbleManager.classifyBubble(sentinel),
+          AvBubbleType.unknown,
+          reason:
+              'Unknown PositionComponent subclasses must fall back to '
+              'AvBubbleType.unknown — using AvBubbleType.player as the '
+              'catch-all (the pre-#466 behaviour) makes AV diagnostic '
+              'events lie about what is on screen.',
+        );
+      });
+
+      test('AvBubbleCreated round-trips bubbleType.unknown through JSON', () {
+        final event = AvBubbleCreated(
+          participant: 'mystery',
+          bubbleType: AvBubbleType.unknown,
+        );
+        expect(event.toJson()['bubbleType'], 'unknown');
+      });
+    });
   });
 }
+
+/// Sentinel `PositionComponent` subclass for the unknown-fallback test.
+/// Not a bubble type BubbleManager knows about — exactly the case the
+/// switch's wildcard arm should handle.
+class _SentinelBubble extends PositionComponent {}
