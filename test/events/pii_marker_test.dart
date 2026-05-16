@@ -58,7 +58,7 @@ void main() {
     // asserts on a known concrete type.
     void check(AppEvent event, PiiPolicy expected) {
       final declared = switch (event) {
-        // PII subtypes (24)
+        // PII subtypes (25)
         SpellCastFailed() => PiiPolicy.pii,
         RoomJoined() => PiiPolicy.pii,
         UserSignedIn() => PiiPolicy.pii,
@@ -74,7 +74,7 @@ void main() {
         GroupMessageSent() => PiiPolicy.pii,
         DmSent() => PiiPolicy.pii,
         AppLogRecord() => PiiPolicy.pii,
-        // AV pipeline PII (9 — participant identity)
+        // AV pipeline PII (10 — participant identity)
         AvPipelineSnapshot() => PiiPolicy.pii,
         AvTrackSubscribed() => PiiPolicy.pii,
         AvTrackUnsubscribed() => PiiPolicy.pii,
@@ -130,7 +130,7 @@ void main() {
       // here for the runtime classification to be pinned — see the
       // group comment above for what this list does and does not prove.
       final piiEvents = <AppEvent>[
-        // PII (24)
+        // PII (25)
         SpellCastFailed(
           reason: CastFailureReason.noMatch,
           transcript: 'ignis',
@@ -188,7 +188,7 @@ void main() {
         AvFrameDecodeError(participant: 'alice', error: 'decode failed'),
       ];
       final nonPiiEvents = <AppEvent>[
-        // Non-PII (19)
+        // Non-PII (19 — no participant identity)
         WordLearned(
           wordId: WordId.values.first,
           challengeId: PromptChallengeId.values.first,

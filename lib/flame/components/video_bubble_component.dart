@@ -11,7 +11,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
 import '../../events/dispatch.dart';
-import '../../events/types.dart' show AvCaptureMethod, AvCaptureInitialized, AvCaptureInitFailed;
+import '../../events/types.dart' show AvCaptureMethod, AvCaptureInitialized, AvCaptureInitFailed, AvFrameDecodeError;
 import '../../native/frame_source.dart';
 import '../../native/video_frame_capture.dart' as ffi;
 import '../../native/direct_track_capture.dart' as direct_capture;
@@ -548,6 +548,10 @@ class VideoBubbleComponent extends PositionComponent {
       }
     } catch (e) {
       _framesDropped++;
+      dispatch([AvFrameDecodeError(
+        participant: participant.identity,
+        error: e.toString(),
+      )]);
     } finally {
       _nativeFrameInFlight = false;
     }
