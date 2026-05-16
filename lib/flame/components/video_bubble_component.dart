@@ -243,9 +243,15 @@ class VideoBubbleComponent extends PositionComponent {
       if (_timeSinceLastRetry >= _retryIntervalSeconds) {
         _timeSinceLastRetry = 0;
         _initializeCapture();
-        // Dispatch failure event when retries are exhausted.
-        if (_avEnabled &&
-            !_captureInitialized &&
+        // Dispatch failure event when retries are exhausted. NOT gated by
+        // `_avEnabled` — this is an *operational error*, not verbose
+        // diagnostic verbosity. The error sink (`errors.jsonl`) is always-on
+        // by design; gating operational-error producers behind the diagnostic
+        // toggle would mean failures only become visible to someone who
+        // already enabled diagnostics, which is exactly the wrong default
+        // for post-hoc debugging. (Flood control comes from the leading-edge
+        // latch landed in #467, not from the AV toggle.)
+        if (!_captureInitialized &&
             _captureRetryCount >= _maxCaptureRetries) {
           dispatch([AvCaptureInitFailed(
             participant: participant.identity,
@@ -567,12 +573,14 @@ class VideoBubbleComponent extends PositionComponent {
       }
     } catch (e) {
       _framesDropped++;
-      if (_avEnabled) {
-        dispatch([AvFrameDecodeError(
-          participant: participant.identity,
-          error: e.toString(),
-        )]);
-      }
+      // Operational error — NOT gated by `_avEnabled`. The error sink is
+      // always-on; flood control comes from the leading-edge latch in #467,
+      // not from the AV toggle. See gate-semantics comment near
+      // `AvCaptureInitFailed` above.
+      dispatch([AvFrameDecodeError(
+        participant: participant.identity,
+        error: e.toString(),
+      )]);
     } finally {
       _nativeFrameInFlight = false;
     }

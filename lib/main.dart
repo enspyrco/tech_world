@@ -113,12 +113,19 @@ void main() async {
 /// Guarded against duplicate registration on hot restart — sinks are
 /// global mutable state that persists across restarts.
 Future<void> _registerEventSinks() async {
-  if (sinksRegistered) return;
+  // DiagnosticsService registration is INTENTIONALLY outside the
+  // `sinksRegistered` guard. The two pieces of global state (the sinks
+  // list and the Locator's DiagnosticsService entry) live in different
+  // mutable singletons; if they ever diverge (hot restart wipes one but
+  // not the other), producers would call `Locator.maybeLocate` and get
+  // null, silently disabling all diagnostics. Belt-and-braces: ensure
+  // the service is present before returning, even when sinks are already
+  // wired. Idempotent: `maybeLocate` returns the existing instance if
+  // there is one, otherwise we load + add.
+  final diagnostics = Locator.maybeLocate<DiagnosticsService>() ??
+      await _bootstrapDiagnosticsService();
 
-  // Single owner of diagnostic toggle state. Registered before TechWorld
-  // is constructed so producers can locate it at startup.
-  final diagnostics = await DiagnosticsService.load();
-  Locator.add<DiagnosticsService>(diagnostics);
+  if (sinksRegistered) return;
 
   if (kDebugMode) {
     registerSink(consoleSink);
@@ -142,6 +149,15 @@ Future<void> _registerEventSinks() async {
       debugPrint('[events] File sink registration failed: $e');
     }
   }
+}
+
+/// Loads a fresh [DiagnosticsService] from persisted preferences and
+/// registers it with [Locator]. Called from [_registerEventSinks] when
+/// no service is yet registered.
+Future<DiagnosticsService> _bootstrapDiagnosticsService() async {
+  final svc = await DiagnosticsService.load();
+  Locator.add<DiagnosticsService>(svc);
+  return svc;
 }
 
 /// Teardown closure returned by [initLoggerBridge] — stored so the

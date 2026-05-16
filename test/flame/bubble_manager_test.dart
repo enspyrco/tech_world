@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
@@ -31,6 +33,15 @@ class MockRemoteVideoTrack extends Mock implements RemoteVideoTrack {}
 class MockLocalVideoTrack extends Mock implements LocalVideoTrack {}
 
 void main() {
+  // Required by the DiagnosticsService reader-side test group below
+  // (any test that calls `service.setAvEnabled` touches SharedPreferences).
+  // Idempotent — safe for tests that don't need it.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   group('BubbleManager', () {
     group('chebyshevDistance', () {
       test('returns max of x and y difference', () {
@@ -680,6 +691,83 @@ void main() {
                   (b) => b.participant is LocalParticipant,
                 );
         expect(localBubble.reduceMotion, isTrue);
+      });
+    });
+
+    group('reads avDiagnosticsEnabled from the injected DiagnosticsService', () {
+      // Locks in the architectural invariant that there is exactly one
+      // source of truth for the AV diagnostics toggle. Without this test,
+      // a future change that reintroduces a shadow `bool avDiagnosticsEnabled`
+      // field on BubbleManager would silently re-create the dual-write
+      // invariant the DiagnosticsService extraction exists to prevent.
+      // See `feedback_cross_cutting_toggle_needs_single_owner`.
+
+      test('initial value tracks service', () {
+        final service = DiagnosticsService(
+          avEnabled: true,
+          errorLoggingEnabled: true,
+        );
+        final manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2(160, 160),
+            id: 'local',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+          diagnostics: service,
+        );
+        expect(manager.avDiagnosticsEnabled, isTrue);
+      });
+
+      test('flipping the service flips the getter (live read, not snapshot)',
+          () async {
+        final service = DiagnosticsService(
+          avEnabled: false,
+          errorLoggingEnabled: true,
+        );
+        final manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2(160, 160),
+            id: 'local',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+          diagnostics: service,
+        );
+        expect(manager.avDiagnosticsEnabled, isFalse);
+
+        // Mutate the source. The manager's getter must reflect the new
+        // value without any propagation call — that's the single-owner
+        // contract. (Persistence is not asserted here; the explicit
+        // DiagnosticsService constructor bypasses SharedPreferences.)
+        service.avEnabled.addListener(() {}); // noop, just to be explicit
+        // Flip via the public setter equivalent — explicit constructor's
+        // ValueNotifier is private, so use setAvEnabled which both
+        // updates the notifier and persists. SharedPreferences mock
+        // is set up at top-level setUp.
+        await service.setAvEnabled(true);
+
+        expect(manager.avDiagnosticsEnabled, isTrue);
+      });
+
+      test('default constructor falls back to Locator lookup (null-safe)', () {
+        // No DiagnosticsService passed and none in Locator — manager must
+        // not crash; getter returns false (fail-safe default).
+        final manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2(160, 160),
+            id: 'local',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+        );
+        expect(manager.avDiagnosticsEnabled, isFalse);
       });
     });
   });
