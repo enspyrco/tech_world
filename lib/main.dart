@@ -18,6 +18,7 @@ import 'package:tech_world/avatar/avatar_selection_screen.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
 import 'package:tech_world/diagnostics/diagnostics_service.dart';
+import 'package:tech_world/widgets/diagnostics_menu.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/editor/challenge.dart';
@@ -1222,6 +1223,17 @@ class _MyAppState extends State<MyApp> {
                             const SizedBox(width: 8),
                             _ScreenShareButton(
                               liveKitService: _session?.liveKitService,
+                            ),
+                          ],
+                          if (kDebugMode) ...[
+                            const SizedBox(width: 8),
+                            Builder(
+                              builder: (_) {
+                                final svc =
+                                    Locator.maybeLocate<DiagnosticsService>();
+                                if (svc == null) return const SizedBox.shrink();
+                                return DiagnosticsMenu(diagnostics: svc);
+                              },
                             ),
                           ],
                           const SizedBox(width: 8),
