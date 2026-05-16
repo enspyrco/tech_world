@@ -17,6 +17,7 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/avatar_selection_screen.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
+import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/editor/challenge.dart';
@@ -97,43 +98,27 @@ void main() async {
   });
 }
 
-/// In-memory toggle states read synchronously by sinks. Loaded once at
-/// startup from [UserPreferences]; updated when the user flips a toggle.
-bool _avDiagnosticsEnabled = false;
-bool _errorLoggingEnabled = true;
-
-/// Whether AV diagnostics are currently enabled. Read by [BubbleManager]
-/// to start/stop the periodic snapshot timer.
-bool get avDiagnosticsEnabled => _avDiagnosticsEnabled;
-
-/// Toggle AV diagnostics at runtime. Persists to [UserPreferences],
-/// updates the in-memory flag that sinks check synchronously, and
-/// propagates to [BubbleManager] via [TechWorld] so the snapshot
-/// timer and BubbleManager-side event guards respond immediately.
-Future<void> setAvDiagnosticsEnabled(bool value) async {
-  _avDiagnosticsEnabled = value;
-  Locator.maybeLocate<TechWorld>()?.setAvDiagnosticsEnabled(value);
-  await UserPreferences.setAvDiagnosticsEnabled(value);
-}
-
-/// Toggle error logging at runtime.
-Future<void> setErrorLoggingEnabled(bool value) async {
-  _errorLoggingEnabled = value;
-  await UserPreferences.setErrorLoggingEnabled(value);
-}
-
 /// Register event sinks before the app starts. Console sink runs in
 /// debug mode only; file sink and diagnostic sinks run on native
 /// platforms (not web).
+///
+/// Also constructs and registers [DiagnosticsService] — the single
+/// owner of runtime toggle state for AV diagnostics and error logging.
+/// Sinks read `.value` from the service's listenables via their
+/// `enabledCheck` callbacks; producers (`BubbleManager`,
+/// `VideoBubbleComponent`, `LiveKitGameBridge`) read the same service
+/// to gate AV-event dispatches. Module-level globals retired per
+/// `feedback_cross_cutting_toggle_needs_single_owner`.
 ///
 /// Guarded against duplicate registration on hot restart — sinks are
 /// global mutable state that persists across restarts.
 Future<void> _registerEventSinks() async {
   if (sinksRegistered) return;
 
-  // Load toggle states from persisted preferences.
-  _avDiagnosticsEnabled = await UserPreferences.avDiagnosticsEnabled();
-  _errorLoggingEnabled = await UserPreferences.errorLoggingEnabled();
+  // Single owner of diagnostic toggle state. Registered before TechWorld
+  // is constructed so producers can locate it at startup.
+  final diagnostics = await DiagnosticsService.load();
+  Locator.add<DiagnosticsService>(diagnostics);
 
   if (kDebugMode) {
     registerSink(consoleSink);
@@ -144,12 +129,12 @@ Future<void> _registerEventSinks() async {
       registerSink(fileSink);
 
       final avSink = await createAvPipelineSink(
-        enabledCheck: () => _avDiagnosticsEnabled,
+        enabledCheck: () => diagnostics.avEnabled.value,
       );
       registerSink(avSink);
 
       final errSink = await createErrorSink(
-        enabledCheck: () => _errorLoggingEnabled,
+        enabledCheck: () => diagnostics.errorLoggingEnabled.value,
       );
       registerSink(errSink);
     } catch (e) {
@@ -478,7 +463,6 @@ class _MyAppState extends State<MyApp> {
             techWorld.setHideVideoBubbles(
                 await UserPreferences.hideVideoBubbles());
             techWorld.setReduceMotion(await UserPreferences.reduceMotion());
-            techWorld.setAvDiagnosticsEnabled(_avDiagnosticsEnabled);
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
             // Wire C: camera + mic (depends on server connection).
@@ -734,7 +718,6 @@ class _MyAppState extends State<MyApp> {
           tw.setBotStatus(_session!.chatService.botStatus);
           tw.setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
           tw.setReduceMotion(await UserPreferences.reduceMotion());
-          tw.setAvDiagnosticsEnabled(_avDiagnosticsEnabled);
           await tw.connectToLiveKit(userId, _currentDisplayName);
           await _session!.enableMedia();
           await _session!.chatService.loadHistory(room.id);

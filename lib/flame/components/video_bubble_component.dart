@@ -10,9 +10,11 @@ import 'package:logging/logging.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
+import '../../diagnostics/diagnostics_service.dart';
 import '../../events/dispatch.dart';
 import '../../events/types.dart' show AvCaptureMethod, AvCaptureInitialized, AvCaptureInitFailed, AvFrameDecodeError;
 import '../../native/frame_source.dart';
+import '../../utils/locator.dart';
 import '../../native/video_frame_capture.dart' as ffi;
 import '../../native/direct_track_capture.dart' as direct_capture;
 
@@ -48,10 +50,20 @@ class VideoBubbleComponent extends PositionComponent {
     this.targetFps = 15,
     this.externalVideoCapture,
     this.reduceMotion = false,
-  }) : super(
+    DiagnosticsService? diagnostics,
+  })  : _diagnostics =
+            diagnostics ?? Locator.maybeLocate<DiagnosticsService>(),
+        super(
           size: Vector2.all(bubbleSize),
           anchor: Anchor.bottomCenter,
         );
+
+  /// Single owner of the AV-diagnostics toggle. Dispatch sites read
+  /// `_avEnabled` rather than dispatching unconditionally — see
+  /// `feedback_cross_cutting_toggle_needs_single_owner`.
+  final DiagnosticsService? _diagnostics;
+
+  bool get _avEnabled => _diagnostics?.avEnabled.value ?? false;
 
   final Participant participant;
   final String displayName;
@@ -232,7 +244,8 @@ class VideoBubbleComponent extends PositionComponent {
         _timeSinceLastRetry = 0;
         _initializeCapture();
         // Dispatch failure event when retries are exhausted.
-        if (!_captureInitialized &&
+        if (_avEnabled &&
+            !_captureInitialized &&
             _captureRetryCount >= _maxCaptureRetries) {
           dispatch([AvCaptureInitFailed(
             participant: participant.identity,
@@ -326,11 +339,13 @@ class VideoBubbleComponent extends PositionComponent {
     capture.startCapture();
     _captureInitialized = true;
     _captureInitializing = false;
-    dispatch([AvCaptureInitialized(
-      participant: participant.identity,
-      method: AvCaptureMethod.directTrack,
-      retryCount: _captureRetryCount,
-    )]);
+    if (_avEnabled) {
+      dispatch([AvCaptureInitialized(
+        participant: participant.identity,
+        method: AvCaptureMethod.directTrack,
+        retryCount: _captureRetryCount,
+      )]);
+    }
   }
 
   /// Initialize capture for remote tracks using VideoElementCapture.
@@ -361,11 +376,13 @@ class VideoBubbleComponent extends PositionComponent {
         capture.startCapture();
         _captureInitialized = true;
         _captureInitializing = false;
-        dispatch([AvCaptureInitialized(
-          participant: participant.identity,
-          method: AvCaptureMethod.videoElement,
-          retryCount: _captureRetryCount,
-        )]);
+        if (_avEnabled) {
+          dispatch([AvCaptureInitialized(
+            participant: participant.identity,
+            method: AvCaptureMethod.videoElement,
+            retryCount: _captureRetryCount,
+          )]);
+        }
         return;
       }
 
@@ -403,11 +420,13 @@ class VideoBubbleComponent extends PositionComponent {
 
     if (_capture != null) {
       _captureInitialized = true;
-      dispatch([AvCaptureInitialized(
-        participant: participant.identity,
-        method: AvCaptureMethod.ffi,
-        retryCount: _captureRetryCount,
-      )]);
+      if (_avEnabled) {
+        dispatch([AvCaptureInitialized(
+          participant: participant.identity,
+          method: AvCaptureMethod.ffi,
+          retryCount: _captureRetryCount,
+        )]);
+      }
     }
   }
 
@@ -548,10 +567,12 @@ class VideoBubbleComponent extends PositionComponent {
       }
     } catch (e) {
       _framesDropped++;
-      dispatch([AvFrameDecodeError(
-        participant: participant.identity,
-        error: e.toString(),
-      )]);
+      if (_avEnabled) {
+        dispatch([AvFrameDecodeError(
+          participant: participant.identity,
+          error: e.toString(),
+        )]);
+      }
     } finally {
       _nativeFrameInFlight = false;
     }

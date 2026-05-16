@@ -19,10 +19,12 @@ import 'package:tech_world/flame/components/merged_video_bubble_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
+import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/utils/locator.dart';
 
 final _log = Logger('BubbleManager');
 
@@ -46,10 +48,12 @@ class BubbleManager {
     required Map<String, BotCharacterComponent> bots,
     this.hideVideoBubbles = false,
     this.reduceMotion = false,
+    DiagnosticsService? diagnostics,
   })  : _localPlayer = localPlayer,
         _addComponent = addComponent,
         _remotePlayers = remotePlayers,
-        _bots = bots;
+        _bots = bots,
+        _diagnostics = diagnostics ?? Locator.maybeLocate<DiagnosticsService>();
 
   /// When true, all proximity bubbles render as [PlayerBubbleComponent]
   /// (avatar-only) regardless of whether the underlying participant has a
@@ -119,10 +123,15 @@ class BubbleManager {
 
   // ── AV diagnostics ─────────────────────────────────────────────────────────
 
-  /// When true, the 5-second snapshot timer runs and AV state-transition
-  /// events are dispatched. Toggled at runtime from main.dart via
-  /// [setAvDiagnosticsEnabled].
-  bool avDiagnosticsEnabled = false;
+  /// Single owner of the AV-diagnostics toggle. Read via [avDiagnosticsEnabled]
+  /// — never via a shadow field. See `feedback_cross_cutting_toggle_needs_single_owner`.
+  final DiagnosticsService? _diagnostics;
+
+  /// Whether AV pipeline diagnostic events should be generated. Computed
+  /// from [_diagnostics.avEnabled.value] so there is no shadow field to
+  /// drift out of sync.
+  bool get avDiagnosticsEnabled =>
+      _diagnostics?.avEnabled.value ?? false;
 
   double _snapshotTimer = 0;
   static const double _snapshotIntervalSeconds = 5.0;
