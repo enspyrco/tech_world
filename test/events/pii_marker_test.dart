@@ -58,7 +58,7 @@ void main() {
     // asserts on a known concrete type.
     void check(AppEvent event, PiiPolicy expected) {
       final declared = switch (event) {
-        // PII subtypes (15)
+        // PII subtypes (25)
         SpellCastFailed() => PiiPolicy.pii,
         RoomJoined() => PiiPolicy.pii,
         UserSignedIn() => PiiPolicy.pii,
@@ -74,6 +74,17 @@ void main() {
         GroupMessageSent() => PiiPolicy.pii,
         DmSent() => PiiPolicy.pii,
         AppLogRecord() => PiiPolicy.pii,
+        // AV pipeline PII (10 — participant identity)
+        AvPipelineSnapshot() => PiiPolicy.pii,
+        AvTrackSubscribed() => PiiPolicy.pii,
+        AvTrackUnsubscribed() => PiiPolicy.pii,
+        AvCaptureInitialized() => PiiPolicy.pii,
+        AvCaptureInitFailed() => PiiPolicy.pii,
+        AvBubbleCreated() => PiiPolicy.pii,
+        AvBubbleRemoved() => PiiPolicy.pii,
+        AvAudioGateChanged() => PiiPolicy.pii,
+        AvSpeakingChanged() => PiiPolicy.pii,
+        AvFrameDecodeError() => PiiPolicy.pii,
         // Non-PII subtypes (19)
         WordLearned() => PiiPolicy.none,
         ChallengeCompleted() => PiiPolicy.none,
@@ -119,7 +130,7 @@ void main() {
       // here for the runtime classification to be pinned — see the
       // group comment above for what this list does and does not prove.
       final piiEvents = <AppEvent>[
-        // PII (15)
+        // PII (25)
         SpellCastFailed(
           reason: CastFailureReason.noMatch,
           transcript: 'ignis',
@@ -142,9 +153,42 @@ void main() {
           severity: LogSeverity.info,
           message: 'm',
         ),
+        // AV pipeline PII (9)
+        AvPipelineSnapshot(
+          participant: 'alice',
+          hasVideoTrack: true,
+          captureMethod: AvCaptureMethod.directTrack,
+          captureRetryCount: 0,
+          framesCaptured: 10,
+          framesDropped: 0,
+          bubbleType: AvBubbleType.video,
+          audioEnabled: true,
+          distance: 2,
+          isLocal: false,
+        ),
+        AvTrackSubscribed(participant: 'alice'),
+        AvTrackUnsubscribed(participant: 'alice'),
+        AvCaptureInitialized(
+          participant: 'alice',
+          method: AvCaptureMethod.directTrack,
+          retryCount: 1,
+        ),
+        AvCaptureInitFailed(participant: 'alice', maxRetries: 10),
+        AvBubbleCreated(
+          participant: 'alice',
+          bubbleType: AvBubbleType.video,
+        ),
+        AvBubbleRemoved(participant: 'alice'),
+        AvAudioGateChanged(
+          participant: 'alice',
+          enabled: true,
+          distance: 2,
+        ),
+        AvSpeakingChanged(participant: 'alice', speaking: true),
+        AvFrameDecodeError(participant: 'alice', error: 'decode failed'),
       ];
       final nonPiiEvents = <AppEvent>[
-        // Non-PII (19)
+        // Non-PII (19 — no participant identity)
         WordLearned(
           wordId: WordId.values.first,
           challengeId: PromptChallengeId.values.first,
@@ -196,8 +240,8 @@ void main() {
       // Cardinality cross-check: keeps this list and the switch above
       // honest against the same expected subtype count. Bump together
       // when adding a new subtype.
-      expect(events.length, 34);
-      expect(piiEvents.length, 15);
+      expect(events.length, 44);
+      expect(piiEvents.length, 25);
       expect(nonPiiEvents.length, 19);
 
       for (final event in piiEvents) {

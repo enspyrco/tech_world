@@ -78,6 +78,27 @@ void consoleSink(AppEvent event) {
     DmSent(:final peerId) => 'DmSent: → $peerId',
     BotSpoke(:final text, :final context) =>
       'BotSpoke [${context.name}]: "${text.length > 60 ? '${text.substring(0, 60)}...' : text}"',
+    // AV pipeline diagnostics
+    AvPipelineSnapshot(:final participant, :final hasVideoTrack, :final captureMethod, :final bubbleType, :final audioEnabled, :final distance) =>
+      'AvSnapshot: $participant track=${hasVideoTrack ? 'VIDEO' : 'NONE'} capture=${captureMethod?.name ?? 'NONE'} bubble=${bubbleType?.name ?? 'NONE'} audio=${audioEnabled ? 'ON' : 'OFF'} dist=$distance',
+    AvTrackSubscribed(:final participant) =>
+      'AvTrackSubscribed: $participant',
+    AvTrackUnsubscribed(:final participant) =>
+      'AvTrackUnsubscribed: $participant',
+    AvCaptureInitialized(:final participant, :final method, :final retryCount) =>
+      'AvCaptureInit: $participant method=${method.name} retries=$retryCount',
+    AvCaptureInitFailed(:final participant, :final maxRetries) =>
+      'AvCaptureInitFailed: $participant after $maxRetries retries',
+    AvBubbleCreated(:final participant, :final bubbleType) =>
+      'AvBubbleCreated: $participant type=${bubbleType.name}',
+    AvBubbleRemoved(:final participant) =>
+      'AvBubbleRemoved: $participant',
+    AvAudioGateChanged(:final participant, :final enabled, :final distance) =>
+      'AvAudioGate: $participant ${enabled ? 'ENABLED' : 'DISABLED'} dist=$distance',
+    AvFrameDecodeError(:final participant, :final error) =>
+      'AvFrameDecodeError: $participant $error',
+    AvSpeakingChanged(:final participant, :final speaking) =>
+      'AvSpeaking: $participant ${speaking ? 'START' : 'STOP'}',
     // Log bridge
     AppLogRecord(:final loggerName, :final severity, :final message) =>
       '${severity.name.toUpperCase()} $loggerName: $message',

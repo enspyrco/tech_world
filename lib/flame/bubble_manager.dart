@@ -19,8 +19,12 @@ import 'package:tech_world/flame/components/merged_video_bubble_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
+import 'package:tech_world/diagnostics/diagnostics_service.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/utils/locator.dart';
 
 final _log = Logger('BubbleManager');
 
@@ -44,10 +48,12 @@ class BubbleManager {
     required Map<String, BotCharacterComponent> bots,
     this.hideVideoBubbles = false,
     this.reduceMotion = false,
+    DiagnosticsService? diagnostics,
   })  : _localPlayer = localPlayer,
         _addComponent = addComponent,
         _remotePlayers = remotePlayers,
-        _bots = bots;
+        _bots = bots,
+        _diagnostics = diagnostics ?? Locator.maybeLocate<DiagnosticsService>();
 
   /// When true, all proximity bubbles render as [PlayerBubbleComponent]
   /// (avatar-only) regardless of whether the underlying participant has a
@@ -115,6 +121,21 @@ class BubbleManager {
   ui.FragmentProgram? _metaballShaderProgram;
   ui.FragmentProgram? _mergedVideoShaderProgram;
 
+  // ── AV diagnostics ─────────────────────────────────────────────────────────
+
+  /// Single owner of the AV-diagnostics toggle. Read via [avDiagnosticsEnabled]
+  /// — never via a shadow field. See `feedback_cross_cutting_toggle_needs_single_owner`.
+  final DiagnosticsService? _diagnostics;
+
+  /// Whether AV pipeline diagnostic events should be generated. Computed
+  /// from [_diagnostics.avEnabled.value] so there is no shadow field to
+  /// drift out of sync.
+  bool get avDiagnosticsEnabled =>
+      _diagnostics?.avEnabled.value ?? false;
+
+  double _snapshotTimer = 0;
+  static const double _snapshotIntervalSeconds = 5.0;
+
   // ── Constants ─────────────────────────────────────────────────────────────
 
   static const _localPlayerBubbleKey = '_local_player_';
@@ -156,6 +177,15 @@ class BubbleManager {
 
   /// Main per-frame entry point. Called from TechWorld.update().
   void update(double dt) {
+    // ── Periodic AV snapshot ──────────────────────────────────────────────
+    if (avDiagnosticsEnabled) {
+      _snapshotTimer += dt;
+      if (_snapshotTimer >= _snapshotIntervalSeconds) {
+        _snapshotTimer = 0;
+        _dispatchPipelineSnapshots();
+      }
+    }
+
     final playerGrid = _localPlayer.miniGridPosition;
 
     // Skip proximity re-evaluation if player hasn't moved to a new grid cell.
@@ -186,6 +216,7 @@ class BubbleManager {
           bubble.position = playerComponent.position + _bubbleOffset;
           _playerBubbles[playerId] = bubble;
           _addComponent(bubble);
+          _dispatchBubbleCreated(playerId, bubble);
         }
 
         _setBubbleOpacity(_playerBubbles[playerId]!, distance);
@@ -218,6 +249,7 @@ class BubbleManager {
               dreamfinderComponent!.position + _bubbleOffset;
           _playerBubbles[dreamfinderIdentity] = bubble;
           _addComponent(bubble);
+          _dispatchBubbleCreated(dreamfinderIdentity, bubble);
         }
       }
     }
@@ -238,6 +270,7 @@ class BubbleManager {
           bubble.position = botComp.position + _bubbleOffset;
           _playerBubbles[botId] = bubble;
           _addComponent(bubble);
+          _dispatchBubbleCreated(botId, bubble);
         }
       }
     }
@@ -265,6 +298,9 @@ class BubbleManager {
     }
     for (final playerId in toRemove) {
       _playerBubbles.remove(playerId);
+      if (avDiagnosticsEnabled) {
+        dispatch([AvBubbleRemoved(participant: playerId)]);
+      }
     }
 
     _updateBubblePositions(dt);
@@ -603,9 +639,23 @@ class BubbleManager {
     if (shouldHaveAudio && !hasAudio) {
       _audioEnabledParticipants.add(playerId);
       _liveKitService?.setParticipantAudioEnabled(playerId, true);
+      if (avDiagnosticsEnabled) {
+        dispatch([AvAudioGateChanged(
+          participant: playerId,
+          enabled: true,
+          distance: distance,
+        )]);
+      }
     } else if (!shouldHaveAudio && hasAudio) {
       _audioEnabledParticipants.remove(playerId);
       _liveKitService?.setParticipantAudioEnabled(playerId, false);
+      if (avDiagnosticsEnabled) {
+        dispatch([AvAudioGateChanged(
+          participant: playerId,
+          enabled: false,
+          distance: distance,
+        )]);
+      }
     }
   }
 
@@ -823,5 +873,125 @@ class BubbleManager {
     return largestGroup.length >= 2
         ? largestGroup.take(maxMergedBubbles).toList()
         : [];
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Private — AV diagnostics
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  void _dispatchBubbleCreated(String playerId, PositionComponent bubble) {
+    if (!avDiagnosticsEnabled) return;
+    final type = switch (bubble) {
+      VideoBubbleComponent() => AvBubbleType.video,
+      PlayerBubbleComponent() => AvBubbleType.player,
+      BotBubbleComponent() => AvBubbleType.bot,
+      _ => AvBubbleType.player,
+    };
+    dispatch([AvBubbleCreated(participant: playerId, bubbleType: type)]);
+  }
+
+  void _dispatchPipelineSnapshots() {
+    final playerGrid = _localPlayer.miniGridPosition;
+    final events = <AppEvent>[];
+
+    for (final entry in _remotePlayers.entries) {
+      final playerId = entry.key;
+      final playerComponent = entry.value;
+      final distance =
+          chebyshevDistance(playerGrid, playerComponent.miniGridPosition);
+      final bubble = _playerBubbles[playerId];
+      final participant = _liveKitService?.getParticipant(playerId);
+
+      events.add(_snapshotForParticipant(
+        playerId: playerId,
+        bubble: bubble,
+        participant: participant,
+        distance: distance,
+        isLocal: false,
+      ));
+    }
+
+    // Dreamfinder snapshot.
+    if (dreamfinderComponent != null) {
+      final dfDistance = chebyshevDistance(
+          playerGrid, dreamfinderComponent!.miniGridPosition);
+      events.add(_snapshotForParticipant(
+        playerId: dreamfinderIdentity,
+        bubble: _playerBubbles[dreamfinderIdentity],
+        participant: _liveKitService?.getParticipant(dreamfinderIdentity),
+        distance: dfDistance,
+        isLocal: false,
+      ));
+    }
+
+    // Bot snapshots.
+    for (final entry in _bots.entries) {
+      final botDistance =
+          chebyshevDistance(playerGrid, entry.value.miniGridPosition);
+      events.add(_snapshotForParticipant(
+        playerId: entry.key,
+        bubble: _playerBubbles[entry.key],
+        participant: _liveKitService?.getParticipant(entry.key),
+        distance: botDistance,
+        isLocal: false,
+      ));
+    }
+
+    // Local player snapshot (publish state).
+    final localBubble = _playerBubbles[_localPlayerBubbleKey];
+    final localParticipant = _liveKitService?.localParticipant;
+    events.add(_snapshotForParticipant(
+      playerId: _localPlayerBubbleKey,
+      bubble: localBubble,
+      participant: localParticipant,
+      distance: 0,
+      isLocal: true,
+    ));
+
+    if (events.isNotEmpty) dispatch(events);
+  }
+
+  AvPipelineSnapshot _snapshotForParticipant({
+    required String playerId,
+    required PositionComponent? bubble,
+    required Participant? participant,
+    required int distance,
+    required bool isLocal,
+  }) {
+    final hasVideoTrack =
+        participant != null ? _hasVideoTrack(participant) : false;
+
+    AvCaptureMethod? captureMethod;
+    int captureRetryCount = 0;
+    int framesCaptured = 0;
+    int framesDropped = 0;
+
+    if (bubble is VideoBubbleComponent) {
+      captureMethod = bubble.diagnosticCaptureMethod;
+      captureRetryCount = bubble.diagnosticCaptureRetryCount;
+      framesCaptured = bubble.diagnosticFramesCaptured;
+      framesDropped = bubble.diagnosticFramesDropped;
+    }
+
+    final bubbleType = switch (bubble) {
+      VideoBubbleComponent() => AvBubbleType.video,
+      PlayerBubbleComponent() => AvBubbleType.player,
+      BotBubbleComponent() => AvBubbleType.bot,
+      null => null,
+      _ => AvBubbleType.player,
+    };
+
+    return AvPipelineSnapshot(
+      participant: playerId,
+      hasVideoTrack: hasVideoTrack,
+      captureMethod: captureMethod,
+      captureRetryCount: captureRetryCount,
+      framesCaptured: framesCaptured,
+      framesDropped: framesDropped,
+      bubbleType: bubbleType,
+      audioEnabled: _audioEnabledParticipants.contains(playerId),
+      distance: distance,
+      isLocal: isLocal,
+    );
   }
 }

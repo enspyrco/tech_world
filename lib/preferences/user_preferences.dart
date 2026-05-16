@@ -87,4 +87,36 @@ abstract final class UserPreferences {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(proximityRadiusKey, clamped);
   }
+
+  // ── AV diagnostics ─────────────────────────────────────────────────────
+
+  /// Whether to write AV pipeline diagnostic events (periodic snapshots,
+  /// track lifecycle, capture init, bubble create/remove) to
+  /// `av-pipeline.jsonl`. Default off — toggle on when debugging
+  /// intermittent video/audio issues.
+  static const String avDiagnosticsEnabledKey = 'avDiagnosticsEnabled';
+
+  static Future<bool> avDiagnosticsEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(avDiagnosticsEnabledKey) ?? false;
+  }
+
+  static Future<void> setAvDiagnosticsEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(avDiagnosticsEnabledKey, value);
+  }
+
+  /// Whether to write error-level events (warning+) to `errors.jsonl`.
+  /// Default on — low volume, high signal, rarely a reason to disable.
+  static const String errorLoggingEnabledKey = 'errorLoggingEnabled';
+
+  static Future<bool> errorLoggingEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(errorLoggingEnabledKey) ?? true;
+  }
+
+  static Future<void> setErrorLoggingEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(errorLoggingEnabledKey, value);
+  }
 }

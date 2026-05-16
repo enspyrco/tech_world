@@ -17,6 +17,7 @@ import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/avatar_selection_screen.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
+import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/chat/chat_panel.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/editor/challenge.dart';
@@ -98,12 +99,34 @@ void main() async {
 }
 
 /// Register event sinks before the app starts. Console sink runs in
-/// debug mode only; file sink runs on native platforms (not web).
+/// debug mode only; file sink and diagnostic sinks run on native
+/// platforms (not web).
+///
+/// Also constructs and registers [DiagnosticsService] — the single
+/// owner of runtime toggle state for AV diagnostics and error logging.
+/// Sinks read `.value` from the service's listenables via their
+/// `enabledCheck` callbacks; producers (`BubbleManager`,
+/// `VideoBubbleComponent`, `LiveKitGameBridge`) read the same service
+/// to gate AV-event dispatches. Module-level globals retired per
+/// `feedback_cross_cutting_toggle_needs_single_owner`.
 ///
 /// Guarded against duplicate registration on hot restart — sinks are
 /// global mutable state that persists across restarts.
 Future<void> _registerEventSinks() async {
+  // DiagnosticsService registration is INTENTIONALLY outside the
+  // `sinksRegistered` guard. The two pieces of global state (the sinks
+  // list and the Locator's DiagnosticsService entry) live in different
+  // mutable singletons; if they ever diverge (hot restart wipes one but
+  // not the other), producers would call `Locator.maybeLocate` and get
+  // null, silently disabling all diagnostics. Belt-and-braces: ensure
+  // the service is present before returning, even when sinks are already
+  // wired. Idempotent: `maybeLocate` returns the existing instance if
+  // there is one, otherwise we load + add.
+  final diagnostics = Locator.maybeLocate<DiagnosticsService>() ??
+      await _bootstrapDiagnosticsService();
+
   if (sinksRegistered) return;
+
   if (kDebugMode) {
     registerSink(consoleSink);
   }
@@ -111,11 +134,30 @@ Future<void> _registerEventSinks() async {
     try {
       final fileSink = await createFileSink();
       registerSink(fileSink);
+
+      final avSink = await createAvPipelineSink(
+        enabledCheck: () => diagnostics.avEnabled.value,
+      );
+      registerSink(avSink);
+
+      final errSink = await createErrorSink(
+        enabledCheck: () => diagnostics.errorLoggingEnabled.value,
+      );
+      registerSink(errSink);
     } catch (e) {
       // path_provider failure — continue without file logging.
       debugPrint('[events] File sink registration failed: $e');
     }
   }
+}
+
+/// Loads a fresh [DiagnosticsService] from persisted preferences and
+/// registers it with [Locator]. Called from [_registerEventSinks] when
+/// no service is yet registered.
+Future<DiagnosticsService> _bootstrapDiagnosticsService() async {
+  final svc = await DiagnosticsService.load();
+  Locator.add<DiagnosticsService>(svc);
+  return svc;
 }
 
 /// Teardown closure returned by [initLoggerBridge] — stored so the

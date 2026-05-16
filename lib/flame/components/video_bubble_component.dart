@@ -10,7 +10,11 @@ import 'package:logging/logging.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
+import '../../diagnostics/diagnostics_service.dart';
+import '../../events/dispatch.dart';
+import '../../events/types.dart' show AvCaptureMethod, AvCaptureInitialized, AvCaptureInitFailed, AvFrameDecodeError;
 import '../../native/frame_source.dart';
+import '../../utils/locator.dart';
 import '../../native/video_frame_capture.dart' as ffi;
 import '../../native/direct_track_capture.dart' as direct_capture;
 
@@ -46,10 +50,20 @@ class VideoBubbleComponent extends PositionComponent {
     this.targetFps = 15,
     this.externalVideoCapture,
     this.reduceMotion = false,
-  }) : super(
+    DiagnosticsService? diagnostics,
+  })  : _diagnostics =
+            diagnostics ?? Locator.maybeLocate<DiagnosticsService>(),
+        super(
           size: Vector2.all(bubbleSize),
           anchor: Anchor.bottomCenter,
         );
+
+  /// Single owner of the AV-diagnostics toggle. Dispatch sites read
+  /// `_avEnabled` rather than dispatching unconditionally — see
+  /// `feedback_cross_cutting_toggle_needs_single_owner`.
+  final DiagnosticsService? _diagnostics;
+
+  bool get _avEnabled => _diagnostics?.avEnabled.value ?? false;
 
   final Participant participant;
   final String displayName;
@@ -140,6 +154,21 @@ class VideoBubbleComponent extends PositionComponent {
   double _timeSinceLastRetry = 0;
   static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
 
+  // ── Diagnostic getters (read by BubbleManager for AvPipelineSnapshot) ──
+
+  /// Which capture path is active, or null if not yet initialized.
+  AvCaptureMethod? get diagnosticCaptureMethod {
+    if (externalVideoCapture != null) return AvCaptureMethod.canvasCapture;
+    if (_capture != null) return AvCaptureMethod.ffi;
+    if (_webCapture != null) return AvCaptureMethod.directTrack;
+    if (_remoteWebCapture != null) return AvCaptureMethod.videoElement;
+    return null;
+  }
+
+  int get diagnosticCaptureRetryCount => _captureRetryCount;
+  int get diagnosticFramesCaptured => _framesCaptured;
+  int get diagnosticFramesDropped => _framesDropped;
+
   // Opacity for distance-based fading
   double _opacity = 1.0;
 
@@ -214,6 +243,21 @@ class VideoBubbleComponent extends PositionComponent {
       if (_timeSinceLastRetry >= _retryIntervalSeconds) {
         _timeSinceLastRetry = 0;
         _initializeCapture();
+        // Dispatch failure event when retries are exhausted. NOT gated by
+        // `_avEnabled` — this is an *operational error*, not verbose
+        // diagnostic verbosity. The error sink (`errors.jsonl`) is always-on
+        // by design; gating operational-error producers behind the diagnostic
+        // toggle would mean failures only become visible to someone who
+        // already enabled diagnostics, which is exactly the wrong default
+        // for post-hoc debugging. (Flood control comes from the leading-edge
+        // latch landed in #467, not from the AV toggle.)
+        if (!_captureInitialized &&
+            _captureRetryCount >= _maxCaptureRetries) {
+          dispatch([AvCaptureInitFailed(
+            participant: participant.identity,
+            maxRetries: _maxCaptureRetries,
+          )]);
+        }
       }
     }
 
@@ -301,6 +345,13 @@ class VideoBubbleComponent extends PositionComponent {
     capture.startCapture();
     _captureInitialized = true;
     _captureInitializing = false;
+    if (_avEnabled) {
+      dispatch([AvCaptureInitialized(
+        participant: participant.identity,
+        method: AvCaptureMethod.directTrack,
+        retryCount: _captureRetryCount,
+      )]);
+    }
   }
 
   /// Initialize capture for remote tracks using VideoElementCapture.
@@ -331,6 +382,13 @@ class VideoBubbleComponent extends PositionComponent {
         capture.startCapture();
         _captureInitialized = true;
         _captureInitializing = false;
+        if (_avEnabled) {
+          dispatch([AvCaptureInitialized(
+            participant: participant.identity,
+            method: AvCaptureMethod.videoElement,
+            retryCount: _captureRetryCount,
+          )]);
+        }
         return;
       }
 
@@ -368,6 +426,13 @@ class VideoBubbleComponent extends PositionComponent {
 
     if (_capture != null) {
       _captureInitialized = true;
+      if (_avEnabled) {
+        dispatch([AvCaptureInitialized(
+          participant: participant.identity,
+          method: AvCaptureMethod.ffi,
+          retryCount: _captureRetryCount,
+        )]);
+      }
     }
   }
 
@@ -508,6 +573,14 @@ class VideoBubbleComponent extends PositionComponent {
       }
     } catch (e) {
       _framesDropped++;
+      // Operational error — NOT gated by `_avEnabled`. The error sink is
+      // always-on; flood control comes from the leading-edge latch in #467,
+      // not from the AV toggle. See gate-semantics comment near
+      // `AvCaptureInitFailed` above.
+      dispatch([AvFrameDecodeError(
+        participant: participant.identity,
+        error: e.toString(),
+      )]);
     } finally {
       _nativeFrameInFlight = false;
     }

@@ -169,6 +169,17 @@ void main() {
         DmSent() => 'dm',
         BotSpoke() => 'bot',
         AppLogRecord() => 'log',
+        // AV pipeline diagnostics
+        AvPipelineSnapshot() => 'av_snapshot',
+        AvTrackSubscribed() => 'av_track_sub',
+        AvTrackUnsubscribed() => 'av_track_unsub',
+        AvCaptureInitialized() => 'av_capture_init',
+        AvCaptureInitFailed() => 'av_capture_fail',
+        AvBubbleCreated() => 'av_bubble_create',
+        AvBubbleRemoved() => 'av_bubble_remove',
+        AvAudioGateChanged() => 'av_audio_gate',
+        AvFrameDecodeError() => 'av_frame_error',
+        AvSpeakingChanged() => 'av_speaking',
       };
       expect(label, 'door');
     });
