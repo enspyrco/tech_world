@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 import 'dart:ui' as ui;
 
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -61,7 +60,7 @@ import 'package:tech_world/widgets/edit_profile_dialog.dart'
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
 import 'package:tech_world/events/dispatch.dart';
-import 'package:tech_world/events/logger_bridge.dart';
+import 'package:tech_world/events/logger_bridge_init.dart';
 import 'package:tech_world/events/sinks/console_sink.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/events/sinks/file_sink.dart'
@@ -119,36 +118,25 @@ Future<void> _registerEventSinks() async {
   }
 }
 
-/// Subscription for the root logger — stored so it can be cancelled if needed
-/// and to prevent accidental duplicates on hot restart.
-StreamSubscription<LogRecord>? _logSubscription;
+/// Teardown closure returned by [initLoggerBridge] — stored so the
+/// previous subscription can be cancelled on hot restart, preventing
+/// duplicate dispatches.
+void Function()? _loggerBridgeTeardown;
 
 /// Configure the root logger to route all log records to [developer.log]
 /// (which shows up in DevTools) AND to the event dispatch pipeline (which
 /// routes to JSONL file sinks on native platforms).
+///
+/// The wiring lives in `lib/events/logger_bridge_init.dart` as
+/// [initLoggerBridge] — a DI-seam function tested in
+/// `test/events/logger_bridge_init_test.dart`. The PII gate
+/// ([mapLogRecord] dropping FINE/FINER/FINEST) lives in
+/// `lib/events/logger_bridge.dart` and is tested in
+/// `test/events/logger_bridge_test.dart`.
 void _initLogging() {
   Logger.root.level = Level.INFO;
-  _logSubscription?.cancel();
-  _logSubscription = Logger.root.onRecord.listen((record) {
-    // DevTools / debug console (existing behaviour).
-    developer.log(
-      record.message,
-      time: record.time,
-      level: record.level.value,
-      name: record.loggerName,
-      error: record.error,
-      stackTrace: record.stackTrace,
-    );
-
-    // Bridge to event-sink pipeline (JSONL file, future Crashlytics).
-    // [mapLogRecord] drops anything below [Level.INFO] as a defensive
-    // belt-and-braces filter — FINE-level call sites carry raw STT
-    // transcripts and oracle replies (PII) which must never reach a
-    // persistent sink, even if `Logger.root.level` is ever lifted to
-    // [Level.ALL]. See `lib/events/logger_bridge.dart`.
-    final appRecord = mapLogRecord(record);
-    if (appRecord != null) dispatch([appRecord]);
-  });
+  _loggerBridgeTeardown?.call();
+  _loggerBridgeTeardown = initLoggerBridge();
 }
 
 final _log = Logger('Main');
