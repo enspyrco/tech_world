@@ -155,23 +155,26 @@ Enable AV diagnostics and leave them running. After the next failure, check:
 
 ## 6. How to toggle the logs on and off
 
-### Currently: code-level toggle
+### Currently: code-level toggle via `DiagnosticsService`
 
-AV diagnostics are **off by default** (low overhead, no disk writes). To enable:
+AV diagnostics are **off by default** (low overhead, no disk writes). To enable, locate the service and update the listenable:
 
 ```dart
-// In main.dart (or from any code with access):
-import 'package:tech_world/main.dart' show setAvDiagnosticsEnabled;
+import 'package:tech_world/diagnostics/diagnostics_service.dart';
+import 'package:tech_world/utils/locator.dart';
 
-await setAvDiagnosticsEnabled(true);   // starts writing av-pipeline.jsonl
-await setAvDiagnosticsEnabled(false);  // stops immediately
+final diagnostics = Locator.locate<DiagnosticsService>();
+await diagnostics.setAvEnabled(true);   // starts writing av-pipeline.jsonl
+await diagnostics.setAvEnabled(false);  // stops immediately
 ```
 
 Error logging is **on by default** (low volume, high signal):
 
 ```dart
-await setErrorLoggingEnabled(false);   // stops writing errors.jsonl
+await diagnostics.setErrorLoggingEnabled(false); // stops writing errors.jsonl
 ```
+
+Both toggles are exposed as `ValueListenable<bool>` (`diagnostics.avEnabled`, `diagnostics.errorLoggingEnabled`), so UI bindings via `ValueListenableBuilder` are trivial. Producers (`BubbleManager`, `VideoBubbleComponent`, `LiveKitGameBridge`) read `.value` to gate AV-event dispatches; sinks read `.value` from their `enabledCheck` callbacks. The single owner pattern eliminates the dual-write invariant the prior module-level globals had.
 
 The toggles are persisted in `SharedPreferences` and survive app restarts. The sinks check the toggle synchronously on every event, so flipping mid-session takes effect immediately — no restart needed.
 
@@ -186,7 +189,7 @@ If you need to toggle from outside the app (e.g., via a debug tool):
 
 ### Future: UI toggle
 
-A settings UI toggle is not yet built. When added, it should call `setAvDiagnosticsEnabled(bool)` from `main.dart`, which updates both the in-memory flag (instant effect) and SharedPreferences (survives restart).
+A settings UI toggle is not yet built. The architecture supports it trivially: bind a `Switch` widget to `Locator.locate<DiagnosticsService>().avEnabled` via `ValueListenableBuilder`, and call `setAvEnabled(bool)` on the service when the user flips it. Persistence is automatic via the service.
 
 ## 7. When the logs will be deleted
 

@@ -142,6 +142,16 @@ class VideoBubbleComponent extends PositionComponent {
   // Track stats for debugging
   int _framesCaptured = 0;
   int _framesDropped = 0;
+
+  /// Leading-edge latch for `AvFrameDecodeError`. Per
+  /// `feedback_error_rate_is_a_data_dimension`: a failure that recurs at
+  /// frame rate must dispatch on the leading edge only, not 1:1 with
+  /// occurrences. Cleared on the next successful frame.
+  bool _decodeErrorReported = false;
+
+  /// Leading-edge latch for `AvCaptureInitFailed`. Fires once when retries
+  /// are exhausted; stays latched until a successful capture clears it.
+  bool _captureFailedDispatched = false;
   double _timeSinceLastFrame = 0;
   static const double _minFrameIntervalSeconds = 0.05; // 20 fps cap
 
@@ -243,16 +253,18 @@ class VideoBubbleComponent extends PositionComponent {
       if (_timeSinceLastRetry >= _retryIntervalSeconds) {
         _timeSinceLastRetry = 0;
         _initializeCapture();
-        // Dispatch failure event when retries are exhausted. NOT gated by
-        // `_avEnabled` — this is an *operational error*, not verbose
-        // diagnostic verbosity. The error sink (`errors.jsonl`) is always-on
-        // by design; gating operational-error producers behind the diagnostic
-        // toggle would mean failures only become visible to someone who
-        // already enabled diagnostics, which is exactly the wrong default
-        // for post-hoc debugging. (Flood control comes from the leading-edge
-        // latch landed in #467, not from the AV toggle.)
+        // Dispatch terminal failure event ONCE when retries are exhausted.
+        // NOT gated by `_avEnabled` — this is an *operational error*, not
+        // verbose diagnostic verbosity. The error sink (`errors.jsonl`) is
+        // always-on by design; operational failures must surface even when
+        // diagnostics were off at the time of failure (otherwise post-hoc
+        // debugging is blind). Flood control comes from the leading-edge
+        // latch `_captureFailedDispatched`, not from the AV toggle. See
+        // `feedback_error_rate_is_a_data_dimension`.
         if (!_captureInitialized &&
+            !_captureFailedDispatched &&
             _captureRetryCount >= _maxCaptureRetries) {
+          _captureFailedDispatched = true;
           dispatch([AvCaptureInitFailed(
             participant: participant.identity,
             maxRetries: _maxCaptureRetries,
@@ -290,7 +302,7 @@ class VideoBubbleComponent extends PositionComponent {
         _initializeNativeCapture();
       } else {
         // Unsupported platform
-        _captureInitialized = true;
+        _markCaptureSucceeded();
       }
     } finally {
       _captureInitializing = false;
@@ -343,7 +355,7 @@ class VideoBubbleComponent extends PositionComponent {
     _webCapture = capture;
     _videoTrack = track;
     capture.startCapture();
-    _captureInitialized = true;
+    _markCaptureSucceeded();
     _captureInitializing = false;
     if (_avEnabled) {
       dispatch([AvCaptureInitialized(
@@ -380,7 +392,7 @@ class VideoBubbleComponent extends PositionComponent {
         _log.fine('VideoElementCapture created for remote track $displayName');
         _remoteWebCapture = capture;
         capture.startCapture();
-        _captureInitialized = true;
+        _markCaptureSucceeded();
         _captureInitializing = false;
         if (_avEnabled) {
           dispatch([AvCaptureInitialized(
@@ -425,7 +437,7 @@ class VideoBubbleComponent extends PositionComponent {
     );
 
     if (_capture != null) {
-      _captureInitialized = true;
+      _markCaptureSucceeded();
       if (_avEnabled) {
         dispatch([AvCaptureInitialized(
           participant: participant.identity,
@@ -434,6 +446,20 @@ class VideoBubbleComponent extends PositionComponent {
         )]);
       }
     }
+  }
+
+  /// Single owner of the capture-success state transition. Every code
+  /// path that flips `_captureInitialized` from false to true MUST go
+  /// through this helper so the failure latches reset symmetrically with
+  /// success. Without this, a transient failure that exhausted retries
+  /// would suppress all future terminal-failure events for the same
+  /// component lifetime, even if a later successful capture cycle
+  /// rebuilt the pipeline. Cage-match consensus finding (Maxwell +
+  /// Carnot, #467 round).
+  void _markCaptureSucceeded() {
+    _captureInitialized = true;
+    _captureFailedDispatched = false;
+    _decodeErrorReported = false;
   }
 
   void _disposeCapture() {
@@ -456,6 +482,10 @@ class VideoBubbleComponent extends PositionComponent {
 
     _videoTrack = null;
     _captureInitialized = false;
+    // Reset the failure latch so a fresh capture cycle (e.g. track
+    // resubscribed) can re-emit `AvCaptureInitFailed` if it fails again.
+    _captureFailedDispatched = false;
+    _decodeErrorReported = false;
   }
 
   void _checkForNewFrame() {
@@ -566,6 +596,9 @@ class VideoBubbleComponent extends PositionComponent {
       _currentFrame?.dispose();
       _currentFrame = image;
       _framesCaptured++;
+      // Clear the decode-error latch on a successful frame — the next
+      // failure is a new leading edge.
+      _decodeErrorReported = false;
 
       // First frame received - no longer loading
       if (_isLoading) {
@@ -573,14 +606,21 @@ class VideoBubbleComponent extends PositionComponent {
       }
     } catch (e) {
       _framesDropped++;
-      // Operational error — NOT gated by `_avEnabled`. The error sink is
-      // always-on; flood control comes from the leading-edge latch in #467,
-      // not from the AV toggle. See gate-semantics comment near
-      // `AvCaptureInitFailed` above.
-      dispatch([AvFrameDecodeError(
-        participant: participant.identity,
-        error: e.toString(),
-      )]);
+      // Operational error. NOT gated by `_avEnabled` — see gate-semantics
+      // comment near `AvCaptureInitFailed` above. Flood control comes from
+      // the leading-edge latch `_decodeErrorReported` (dispatch on the
+      // transition from "decoding fine" to "decoding broken", not 1:1 with
+      // failures), not from the AV toggle. At 30fps, unconditional dispatch
+      // would drop 30 events/sec/participant into errors.jsonl — denial of
+      // service against our own logging. See
+      // `feedback_error_rate_is_a_data_dimension`.
+      if (!_decodeErrorReported) {
+        _decodeErrorReported = true;
+        dispatch([AvFrameDecodeError(
+          participant: participant.identity,
+          error: e.toString(),
+        )]);
+      }
     } finally {
       _nativeFrameInFlight = false;
     }

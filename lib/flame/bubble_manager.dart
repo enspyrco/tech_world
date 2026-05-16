@@ -937,11 +937,15 @@ class BubbleManager {
       ));
     }
 
-    // Local player snapshot (publish state).
+    // Local player snapshot (publish state). Emit the real LiveKit identity
+    // in `participant` rather than the internal `_localPlayerBubbleKey`
+    // sentinel — the sentinel is a private map key, not a wire identity.
+    // `isLocal: true` already disambiguates for consumers. Falls back to
+    // the sentinel only when localParticipant has not yet attached.
     final localBubble = _playerBubbles[_localPlayerBubbleKey];
     final localParticipant = _liveKitService?.localParticipant;
     events.add(_snapshotForParticipant(
-      playerId: _localPlayerBubbleKey,
+      playerId: localParticipant?.identity ?? _localPlayerBubbleKey,
       bubble: localBubble,
       participant: localParticipant,
       distance: 0,
