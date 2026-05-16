@@ -107,6 +107,8 @@ Domain events (`lib/events/types.dart`) are dispatched via `dispatch()` (`lib/ev
 
 Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app documents). The full event catalogue is the sealed class hierarchy in `lib/events/types.dart`.
 
+**`developer.log` bypasses the logger bridge.** `dart:developer`'s `log()` function delivers records directly to DevTools without going through `Logger.root.onRecord`. The PR #461 FINE-level filter (in `lib/events/logger_bridge.dart`) doesn't apply. This is local-only today (DevTools is on-device), but if any future feature pipes `developer.log` output to a remote service, the PII gate must be re-evaluated. Same caveat applies to the `developer.log` call inside `initLoggerBridge` itself — that path is unfiltered by design (DevTools sees everything) but the dispatch fan-out it runs alongside IS gated.
+
 ### Communication (All via LiveKit)
 
 All 26 data-channel topics are typed via `LiveKitTopic` enum (`lib/livekit/livekit_topic.dart`). Use `LiveKitTopic.<name>.wire` at every publish/subscribe site. Categories: position, avatar, map, doors/terminals, speech, chat/DM/help, bot/oracle, infrastructure, connectivity.
