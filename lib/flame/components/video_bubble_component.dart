@@ -17,6 +17,7 @@ import '../../native/frame_source.dart';
 import '../../utils/locator.dart';
 import '../../native/video_frame_capture.dart' as ffi;
 import '../../native/direct_track_capture.dart' as direct_capture;
+import 'capture_latch_state_machine.dart';
 
 final _log = Logger('VideoBubbleComponent');
 
@@ -143,15 +144,13 @@ class VideoBubbleComponent extends PositionComponent {
   int _framesCaptured = 0;
   int _framesDropped = 0;
 
-  /// Leading-edge latch for `AvFrameDecodeError`. Per
-  /// `feedback_error_rate_is_a_data_dimension`: a failure that recurs at
-  /// frame rate must dispatch on the leading edge only, not 1:1 with
-  /// occurrences. Cleared on the next successful frame.
-  bool _decodeErrorReported = false;
-
-  /// Leading-edge latch for `AvCaptureInitFailed`. Fires once when retries
-  /// are exhausted; stays latched until a successful capture clears it.
-  bool _captureFailedDispatched = false;
+  /// Owner of the two leading-edge latches (`AvFrameDecodeError` and
+  /// `AvCaptureInitFailed`). Extracted to a pure-Dart state machine so
+  /// the latch logic is testable without `flutter_webrtc` / Flame
+  /// dependencies — this file stays coverage-excluded, but
+  /// `capture_latch_state_machine.dart` is covered. See
+  /// `feedback_error_rate_is_a_data_dimension`.
+  final CaptureLatchStateMachine _latches = CaptureLatchStateMachine();
   double _timeSinceLastFrame = 0;
   static const double _minFrameIntervalSeconds = 0.05; // 20 fps cap
 
@@ -262,9 +261,9 @@ class VideoBubbleComponent extends PositionComponent {
         // latch `_captureFailedDispatched`, not from the AV toggle. See
         // `feedback_error_rate_is_a_data_dimension`.
         if (!_captureInitialized &&
-            !_captureFailedDispatched &&
+            _latches.shouldDispatchCaptureFailed &&
             _captureRetryCount >= _maxCaptureRetries) {
-          _captureFailedDispatched = true;
+          _latches.markCaptureFailedDispatched();
           dispatch([AvCaptureInitFailed(
             participant: participant.identity,
             maxRetries: _maxCaptureRetries,
@@ -458,8 +457,7 @@ class VideoBubbleComponent extends PositionComponent {
   /// Carnot, #467 round).
   void _markCaptureSucceeded() {
     _captureInitialized = true;
-    _captureFailedDispatched = false;
-    _decodeErrorReported = false;
+    _latches.markCaptureSucceeded();
   }
 
   void _disposeCapture() {
@@ -482,10 +480,10 @@ class VideoBubbleComponent extends PositionComponent {
 
     _videoTrack = null;
     _captureInitialized = false;
-    // Reset the failure latch so a fresh capture cycle (e.g. track
-    // resubscribed) can re-emit `AvCaptureInitFailed` if it fails again.
-    _captureFailedDispatched = false;
-    _decodeErrorReported = false;
+    // Reset the failure latches so a fresh capture cycle (e.g. track
+    // resubscribed) can re-emit `AvCaptureInitFailed` / `AvFrameDecodeError`
+    // if it fails again.
+    _latches.reset();
   }
 
   void _checkForNewFrame() {
@@ -598,7 +596,7 @@ class VideoBubbleComponent extends PositionComponent {
       _framesCaptured++;
       // Clear the decode-error latch on a successful frame — the next
       // failure is a new leading edge.
-      _decodeErrorReported = false;
+      _latches.markFrameDecoded();
 
       // First frame received - no longer loading
       if (_isLoading) {
@@ -614,8 +612,8 @@ class VideoBubbleComponent extends PositionComponent {
       // would drop 30 events/sec/participant into errors.jsonl — denial of
       // service against our own logging. See
       // `feedback_error_rate_is_a_data_dimension`.
-      if (!_decodeErrorReported) {
-        _decodeErrorReported = true;
+      if (_latches.shouldDispatchDecodeError) {
+        _latches.markDecodeErrorDispatched();
         dispatch([AvFrameDecodeError(
           participant: participant.identity,
           error: e.toString(),
