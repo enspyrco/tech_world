@@ -107,6 +107,8 @@ Domain events (`lib/events/types.dart`) are dispatched via `dispatch()` (`lib/ev
 
 Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app documents). The full event catalogue is the sealed class hierarchy in `lib/events/types.dart`.
 
+**PII gate**. Every `AppEvent` declares `PiiPolicy get piiPolicy` (`lib/events/pii_policy.dart`) — abstract on `AppEvent`, so the analyzer fails the build if a new subtype forgets to classify itself. `registerRemoteSink` (and the async variant) wraps the sink in an exhaustive switch over `PiiPolicy`; `PiiPolicy.pii` events are dropped before reaching off-device sinks (Crashlytics, analytics, telemetry). Local sinks (JSONL on disk, debug console) bypass the gate via `registerSink` — they're inside the trust boundary. **Be conservative — when in doubt, mark `PiiPolicy.pii`.** The cost of marking a non-PII event as PII is a missing remote-sink line; the cost of missing a PII event is a leak. When a second axis emerges (`redact`, `offDeviceAllowed`, retention-tier), add a `PiiPolicy` case — the analyzer surfaces every consumer that needs an updated decision.
+
 **`developer.log` bypasses the logger bridge.** `dart:developer`'s `log()` function delivers records directly to DevTools without going through `Logger.root.onRecord`. The PR #461 FINE-level filter (in `lib/events/logger_bridge.dart`) doesn't apply. This is local-only today (DevTools is on-device), but if any future feature pipes `developer.log` output to a remote service, the PII gate must be re-evaluated. Same caveat applies to the `developer.log` call inside `initLoggerBridge` itself — that path is unfiltered by design (DevTools sees everything) but the dispatch fan-out it runs alongside IS gated.
 
 ### Communication (All via LiveKit)
@@ -175,7 +177,6 @@ Surfaced from PR cage-matches and session trawls — concrete items with a known
 
 ### Event-sink hardening (from PR #436 cage-match concerns)
 
-- **Add `containsPii` marker to `AppEvent`.** A `bool get containsPii => false;` overridden by `true` on `SpellCastFailed`, `BotSpoke`, `ProfileUpdated`, `DmSent` etc. makes the gate to remote sinks impossible to forget. Currently the gate is a code comment that future maintainers will ignore.
 - **`events.log` rotation / size cap on `file_sink.dart`.** Currently writes append-only with no rotation; OS-managed storage is not a retention policy. Decide between size-based (e.g. 10MB × 3 files), time-based (daily), or build-mode gating (release builds get no file sink). The platform-vs-content question — does retention belong to the platform or each world? — should be answered first.
 
 ### Refactor follow-ups (from PR #438 review)

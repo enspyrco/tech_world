@@ -1,6 +1,9 @@
 import 'package:tech_world/editor/challenge.dart';
+import 'package:tech_world/events/pii_policy.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/spellbook/word_of_power.dart';
+
+export 'package:tech_world/events/pii_policy.dart';
 
 /// Return type for business functions that produce events alongside a result.
 typedef WithEvents<T> = (T, List<AppEvent>);
@@ -69,27 +72,36 @@ sealed class AppEvent {
   /// its own fields; the `type` and `timestamp` are always present.
   Map<String, dynamic> toJson();
 
-  /// Whether this event carries personally-identifiable information
-  /// (user identifiers, display names, raw transcripts, free-form user
-  /// content, bot reply text, etc.).
+  /// Classification of this event for sink-routing purposes — whether it
+  /// carries personally-identifiable information (user identifiers,
+  /// display names, raw transcripts, free-form user content, bot reply
+  /// text, etc.).
   ///
   /// **Abstract on purpose.** There is no default — every subclass must
-  /// declare its classification explicitly. A default-`false` getter
-  /// would mean a new event subtype silently opts out of the gate; an
-  /// abstract getter forces the author to think and the analyzer to
+  /// declare its classification explicitly. A default-[PiiPolicy.none]
+  /// getter would mean a new event subtype silently opts out of the gate;
+  /// an abstract getter forces the author to think and the analyzer to
   /// fail the build if they don't. This is the type-system gate used
   /// by [registerRemoteSink] (see `lib/events/dispatch.dart`) to drop
   /// PII events before they reach any off-device sink (Crashlytics,
   /// analytics, telemetry).
   ///
-  /// Be conservative: when in doubt, return `true`. The cost of marking
-  /// a non-PII event as PII is a missing remote-sink line; the cost of
-  /// missing a PII event is a leak.
+  /// **Why an enum, not a bool.** Per `feedback_typed_primitives_at_boundary`:
+  /// closed-set values should be named, not primitive. A bool is a
+  /// 2-element closed set masquerading as a primitive. When a second
+  /// axis lands (`redact`, `offDeviceAllowed`, retention-tier), a new
+  /// [PiiPolicy] case becomes a one-line change here and a compile
+  /// error at every exhaustive switch in the dispatch layer. The bool
+  /// path would have touched every callsite.
+  ///
+  /// Be conservative: when in doubt, return [PiiPolicy.pii]. The cost
+  /// of marking a non-PII event as PII is a missing remote-sink line;
+  /// the cost of missing a PII event is a leak.
   ///
   /// Invariant: every subtype's classification is pinned by an
   /// exhaustive sealed-class switch in `test/events/pii_marker_test.dart`
   /// (dual control — compiler-enforced exhaustiveness AND value asserts).
-  bool get containsPii;
+  PiiPolicy get piiPolicy;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +130,7 @@ final class WordLearned extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// A player completed a challenge (code or prompt).
@@ -143,7 +155,7 @@ final class ChallengeCompleted extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Reason a door-cast failed.
@@ -152,7 +164,7 @@ enum CastFailureReason { noMatch, notLearned, wrongDoor }
 /// A voice-cast at a door failed.
 ///
 /// Note: [transcript] contains STT output of what the user spoke.
-/// Marked [containsPii] — `registerRemoteSink` will drop this event
+/// Marked [PiiPolicy.pii] — `registerRemoteSink` will drop this event
 /// before it reaches any off-device sink.
 final class SpellCastFailed extends AppEvent {
   SpellCastFailed({
@@ -176,7 +188,7 @@ final class SpellCastFailed extends AppEvent {
 
   /// PII: raw STT transcript of what the user spoke.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +217,7 @@ final class DoorUnlocked extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Player clicked to move to a destination.
@@ -230,7 +242,7 @@ final class PlayerMoved extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Player opened a code or prompt terminal.
@@ -258,7 +270,7 @@ final class TerminalOpened extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Player closed the terminal editor.
@@ -276,7 +288,7 @@ final class TerminalClosed extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +318,7 @@ final class RoomJoined extends AppEvent {
 
   /// PII: room names are user-typed free text.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// Player left a room.
@@ -326,7 +338,7 @@ final class RoomLeft extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 // ---------------------------------------------------------------------------
@@ -356,7 +368,7 @@ final class UserSignedIn extends AppEvent {
 
   /// PII: user identifier + display name.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// User signed out.
@@ -374,7 +386,7 @@ final class UserSignedOut extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// User updated their profile (display name or picture).
@@ -395,7 +407,7 @@ final class ProfileUpdated extends AppEvent {
 
   /// PII: display name.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 // ---------------------------------------------------------------------------
@@ -439,7 +451,7 @@ final class MapEdited extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 // ---------------------------------------------------------------------------
@@ -464,7 +476,7 @@ final class PlayerEnteredProximity extends AppEvent {
 
   /// PII: player identifier.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// Another player left proximity range.
@@ -485,7 +497,7 @@ final class PlayerLeftProximity extends AppEvent {
 
   /// PII: player identifier.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// A bot joined the room.
@@ -505,7 +517,7 @@ final class BotJoined extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// All bots left the room.
@@ -522,7 +534,7 @@ final class BotLeft extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Player toggled screen sharing.
@@ -542,7 +554,7 @@ final class ScreenShareToggled extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Player selected an avatar.
@@ -562,7 +574,7 @@ final class AvatarSelected extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Player entered the map editor.
@@ -585,7 +597,7 @@ final class MapEditorEntered extends AppEvent {
 
   /// PII: map names are user-typed free text.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// Player exited the map editor.
@@ -606,7 +618,7 @@ final class MapEditorExited extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// A room was created in Firestore.
@@ -629,7 +641,7 @@ final class RoomCreated extends AppEvent {
 
   /// PII: room names are user-typed free text.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// A room's map was saved to Firestore.
@@ -652,7 +664,7 @@ final class RoomMapSaved extends AppEvent {
 
   /// PII: room names are user-typed free text.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// A room was deleted by its owner.
@@ -675,7 +687,7 @@ final class RoomDeleted extends AppEvent {
 
   /// PII: room names are user-typed free text.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// Outcome of a code submission evaluation.
@@ -719,7 +731,7 @@ final class CodeSubmitted extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// LiveKit connected to a room.
@@ -740,7 +752,7 @@ final class LiveKitConnected extends AppEvent {
 
   /// PII: room names are user-typed free text.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// LiveKit disconnected from a room.
@@ -760,7 +772,7 @@ final class LiveKitDisconnected extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 // ---------------------------------------------------------------------------
@@ -793,7 +805,7 @@ final class BotSpoke extends AppEvent {
 
   /// PII: free-form bot reply text (may quote or reference user input).
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// Player requested a hint from Clawd.
@@ -813,7 +825,7 @@ final class HelpRequested extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Camera and microphone were enabled for the room.
@@ -831,7 +843,7 @@ final class MediaEnabled extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Another player unlocked a door (received via LiveKit).
@@ -856,7 +868,7 @@ final class RemoteDoorUnlocked extends AppEvent {
       };
 
   @override
-  bool get containsPii => false;
+  PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
 /// Player sent a group chat message.
@@ -884,13 +896,13 @@ final class GroupMessageSent extends AppEvent {
 
   /// PII: references a user-authored chat message (and the sender).
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// Player sent a DM to another player.
 ///
 /// Note: [peerId] and [conversationId] are written to the local JSONL log.
-/// Marked [containsPii] — `registerRemoteSink` will drop this event
+/// Marked [PiiPolicy.pii] — `registerRemoteSink` will drop this event
 /// before it reaches any off-device sink.
 final class DmSent extends AppEvent {
   DmSent({
@@ -914,7 +926,7 @@ final class DmSent extends AppEvent {
 
   /// PII: peer identifier and conversation identifier.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// Discriminator for [BotSpoke] origin.
@@ -933,7 +945,7 @@ enum BotSpokeContext { group, help }
 /// FINE-level call sites carry PII (raw STT transcripts, oracle
 /// replies). There is no `LogSeverity.fine` value — the type system
 /// enforces that no persistent sink can ever receive a fine-level
-/// log record. See PR #436 (cage-match origin), PR #459 (containsPii
+/// log record. See PR #436 (cage-match origin), PR #459 (containsPii bool
 /// gate), PR #461 (bridge-level filter).
 enum LogSeverity {
   /// [Level.INFO] — normal operational messages.
@@ -986,5 +998,5 @@ final class AppLogRecord extends AppEvent {
   /// records as PII conservatively — remote sinks must scrub or route
   /// through Crashlytics' own redaction layer, not the JSONL pipeline.
   @override
-  bool get containsPii => true;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }

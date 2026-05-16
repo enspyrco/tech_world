@@ -18,17 +18,23 @@ void registerAsyncSink(AsyncSink sink) => _asyncSinks.add(sink);
 /// Register a sink that ships events off-device (Crashlytics, analytics,
 /// telemetry, network-attached log aggregator, etc.).
 ///
-/// The wrapper short-circuits any [AppEvent] whose [AppEvent.containsPii]
-/// is `true` — the event never reaches [sink]. This makes the PII gate
-/// impossible to forget: the only way a remote sink sees a PII event is
-/// for someone to bypass this helper and call [registerSink] directly,
-/// which should fail code review.
+/// The wrapper short-circuits any [AppEvent] classified as
+/// [PiiPolicy.pii] — the event never reaches [sink]. This makes the PII
+/// gate impossible to forget: the only way a remote sink sees a PII
+/// event is for someone to bypass this helper and call [registerSink]
+/// directly, which should fail code review.
+///
+/// **Exhaustive switch is intentional.** When a second axis lands
+/// (`PiiPolicy.redact`, `PiiPolicy.offDeviceAllowed`, retention-tier),
+/// this switch becomes a compile error. The drop-decision per case is
+/// then a deliberate edit, not a silent default — Dart's analyzer
+/// surfaces every consumer the moment the policy grows.
 ///
 /// Local-only sinks (JSONL on disk, debug console) bypass this filter
 /// via [registerSink] — they're already inside the trust boundary.
 void registerRemoteSink(Sink sink) {
   registerSink((event) {
-    if (event.containsPii) return;
+    if (_shouldDropForRemote(event.piiPolicy)) return;
     sink(event);
   });
 }
@@ -36,10 +42,18 @@ void registerRemoteSink(Sink sink) {
 /// Async variant of [registerRemoteSink].
 void registerRemoteAsyncSink(AsyncSink sink) {
   registerAsyncSink((event) async {
-    if (event.containsPii) return;
+    if (_shouldDropForRemote(event.piiPolicy)) return;
     await sink(event);
   });
 }
+
+/// Drop-decision for a remote (off-device) sink. Exhaustive over
+/// [PiiPolicy] — a new case here becomes a compile error, forcing a
+/// deliberate choice rather than a silent default.
+bool _shouldDropForRemote(PiiPolicy policy) => switch (policy) {
+      PiiPolicy.none => false,
+      PiiPolicy.pii => true,
+    };
 
 /// Whether any sinks have been registered. Used to guard against
 /// duplicate registration on hot restart.
