@@ -1222,10 +1222,11 @@ final class AvFrameDecodeError extends AppEvent {
         'timestamp': timestamp.toIso8601String(),
       };
 
-  /// No PII: participant identity is a LiveKit system identifier here,
-  /// and the error string is a platform exception message.
+  /// PII: participant identity. Platform exception messages from WebRTC
+  /// can contain SDP fragments or stream IDs. Conservative per CLAUDE.md:
+  /// "when in doubt, mark pii."
   @override
-  PiiPolicy get piiPolicy => PiiPolicy.none;
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
 /// Speaker detection state changed for a participant.

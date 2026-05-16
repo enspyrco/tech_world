@@ -240,6 +240,7 @@ class BubbleManager {
               dreamfinderComponent!.position + _bubbleOffset;
           _playerBubbles[dreamfinderIdentity] = bubble;
           _addComponent(bubble);
+          _dispatchBubbleCreated(dreamfinderIdentity, bubble);
         }
       }
     }
@@ -260,6 +261,7 @@ class BubbleManager {
           bubble.position = botComp.position + _bubbleOffset;
           _playerBubbles[botId] = bubble;
           _addComponent(bubble);
+          _dispatchBubbleCreated(botId, bubble);
         }
       }
     }
@@ -896,6 +898,32 @@ class BubbleManager {
         bubble: bubble,
         participant: participant,
         distance: distance,
+        isLocal: false,
+      ));
+    }
+
+    // Dreamfinder snapshot.
+    if (dreamfinderComponent != null) {
+      final dfDistance = chebyshevDistance(
+          playerGrid, dreamfinderComponent!.miniGridPosition);
+      events.add(_snapshotForParticipant(
+        playerId: dreamfinderIdentity,
+        bubble: _playerBubbles[dreamfinderIdentity],
+        participant: _liveKitService?.getParticipant(dreamfinderIdentity),
+        distance: dfDistance,
+        isLocal: false,
+      ));
+    }
+
+    // Bot snapshots.
+    for (final entry in _bots.entries) {
+      final botDistance =
+          chebyshevDistance(playerGrid, entry.value.miniGridPosition);
+      events.add(_snapshotForParticipant(
+        playerId: entry.key,
+        bubble: _playerBubbles[entry.key],
+        participant: _liveKitService?.getParticipant(entry.key),
+        distance: botDistance,
         isLocal: false,
       ));
     }

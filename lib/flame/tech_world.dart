@@ -380,6 +380,13 @@ class TechWorld extends World with TapCallbacks {
     _bubbleManager.reduceMotion = value;
   }
 
+  /// Toggle AV pipeline diagnostics (periodic snapshots, bubble lifecycle,
+  /// audio gate events). The sink-side toggle in main.dart controls file
+  /// writes; this controls event generation inside BubbleManager.
+  void setAvDiagnosticsEnabled(bool value) {
+    _bubbleManager.avDiagnosticsEnabled = value;
+  }
+
   /// Set the local player's avatar. Also broadcasts to other participants.
   void setLocalAvatar(Avatar avatar) {
     _localAvatar = avatar;

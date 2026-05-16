@@ -71,9 +71,10 @@ bool _isAvEvent(AppEvent event) => switch (event) {
     };
 
 bool _isErrorEvent(AppEvent event) => switch (event) {
-      // AV errors (always included in error log)
+      // AV errors (always included in error log, regardless of AV toggle)
       AvCaptureInitFailed() => true,
       AvFrameDecodeError() => true,
+      AvTrackUnsubscribed() => true,
       // Log bridge records at warning or above
       AppLogRecord(:final severity) => switch (severity) {
           LogSeverity.warning => true,

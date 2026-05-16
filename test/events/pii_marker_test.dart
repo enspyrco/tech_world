@@ -84,7 +84,8 @@ void main() {
         AvBubbleRemoved() => PiiPolicy.pii,
         AvAudioGateChanged() => PiiPolicy.pii,
         AvSpeakingChanged() => PiiPolicy.pii,
-        // Non-PII subtypes (20)
+        AvFrameDecodeError() => PiiPolicy.pii,
+        // Non-PII subtypes (19)
         WordLearned() => PiiPolicy.none,
         ChallengeCompleted() => PiiPolicy.none,
         DoorUnlocked() => PiiPolicy.none,
@@ -104,7 +105,6 @@ void main() {
         HelpRequested() => PiiPolicy.none,
         MediaEnabled() => PiiPolicy.none,
         RemoteDoorUnlocked() => PiiPolicy.none,
-        AvFrameDecodeError() => PiiPolicy.none,
       };
       // Cross-check: the caller's expectation, the exhaustive switch,
       // and the live override must all agree.
@@ -185,9 +185,10 @@ void main() {
           distance: 2,
         ),
         AvSpeakingChanged(participant: 'alice', speaking: true),
+        AvFrameDecodeError(participant: 'alice', error: 'decode failed'),
       ];
       final nonPiiEvents = <AppEvent>[
-        // Non-PII (20)
+        // Non-PII (19)
         WordLearned(
           wordId: WordId.values.first,
           challengeId: PromptChallengeId.values.first,
@@ -219,7 +220,6 @@ void main() {
         HelpRequested(challengeId: CodeRef(CodeChallengeId.values.first)),
         MediaEnabled(),
         RemoteDoorUnlocked(doorX: 0, doorY: 0),
-        AvFrameDecodeError(participant: 'alice', error: 'decode failed'),
       ];
 
       final events = [...piiEvents, ...nonPiiEvents];
@@ -241,8 +241,8 @@ void main() {
       // honest against the same expected subtype count. Bump together
       // when adding a new subtype.
       expect(events.length, 44);
-      expect(piiEvents.length, 24);
-      expect(nonPiiEvents.length, 20);
+      expect(piiEvents.length, 25);
+      expect(nonPiiEvents.length, 19);
 
       for (final event in piiEvents) {
         check(event, PiiPolicy.pii);

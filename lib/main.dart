@@ -106,10 +106,13 @@ bool _errorLoggingEnabled = true;
 /// to start/stop the periodic snapshot timer.
 bool get avDiagnosticsEnabled => _avDiagnosticsEnabled;
 
-/// Toggle AV diagnostics at runtime. Persists to [UserPreferences] and
-/// updates the in-memory flag that sinks check synchronously.
+/// Toggle AV diagnostics at runtime. Persists to [UserPreferences],
+/// updates the in-memory flag that sinks check synchronously, and
+/// propagates to [BubbleManager] via [TechWorld] so the snapshot
+/// timer and BubbleManager-side event guards respond immediately.
 Future<void> setAvDiagnosticsEnabled(bool value) async {
   _avDiagnosticsEnabled = value;
+  Locator.maybeLocate<TechWorld>()?.setAvDiagnosticsEnabled(value);
   await UserPreferences.setAvDiagnosticsEnabled(value);
 }
 
@@ -475,6 +478,7 @@ class _MyAppState extends State<MyApp> {
             techWorld.setHideVideoBubbles(
                 await UserPreferences.hideVideoBubbles());
             techWorld.setReduceMotion(await UserPreferences.reduceMotion());
+            techWorld.setAvDiagnosticsEnabled(_avDiagnosticsEnabled);
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
             // Wire C: camera + mic (depends on server connection).
@@ -730,6 +734,7 @@ class _MyAppState extends State<MyApp> {
           tw.setBotStatus(_session!.chatService.botStatus);
           tw.setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
           tw.setReduceMotion(await UserPreferences.reduceMotion());
+          tw.setAvDiagnosticsEnabled(_avDiagnosticsEnabled);
           await tw.connectToLiveKit(userId, _currentDisplayName);
           await _session!.enableMedia();
           await _session!.chatService.loadHistory(room.id);
