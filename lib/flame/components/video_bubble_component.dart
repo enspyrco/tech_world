@@ -302,7 +302,7 @@ class VideoBubbleComponent extends PositionComponent {
         _initializeNativeCapture();
       } else {
         // Unsupported platform
-        _captureInitialized = true;
+        _markCaptureSucceeded();
       }
     } finally {
       _captureInitializing = false;
@@ -355,7 +355,7 @@ class VideoBubbleComponent extends PositionComponent {
     _webCapture = capture;
     _videoTrack = track;
     capture.startCapture();
-    _captureInitialized = true;
+    _markCaptureSucceeded();
     _captureInitializing = false;
     if (_avEnabled) {
       dispatch([AvCaptureInitialized(
@@ -392,7 +392,7 @@ class VideoBubbleComponent extends PositionComponent {
         _log.fine('VideoElementCapture created for remote track $displayName');
         _remoteWebCapture = capture;
         capture.startCapture();
-        _captureInitialized = true;
+        _markCaptureSucceeded();
         _captureInitializing = false;
         if (_avEnabled) {
           dispatch([AvCaptureInitialized(
@@ -437,7 +437,7 @@ class VideoBubbleComponent extends PositionComponent {
     );
 
     if (_capture != null) {
-      _captureInitialized = true;
+      _markCaptureSucceeded();
       if (_avEnabled) {
         dispatch([AvCaptureInitialized(
           participant: participant.identity,
@@ -446,6 +446,20 @@ class VideoBubbleComponent extends PositionComponent {
         )]);
       }
     }
+  }
+
+  /// Single owner of the capture-success state transition. Every code
+  /// path that flips `_captureInitialized` from false to true MUST go
+  /// through this helper so the failure latches reset symmetrically with
+  /// success. Without this, a transient failure that exhausted retries
+  /// would suppress all future terminal-failure events for the same
+  /// component lifetime, even if a later successful capture cycle
+  /// rebuilt the pipeline. Cage-match consensus finding (Maxwell +
+  /// Carnot, #467 round).
+  void _markCaptureSucceeded() {
+    _captureInitialized = true;
+    _captureFailedDispatched = false;
+    _decodeErrorReported = false;
   }
 
   void _disposeCapture() {

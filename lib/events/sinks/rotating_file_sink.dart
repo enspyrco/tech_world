@@ -53,10 +53,18 @@ class RotatingFileSink {
   /// so the i+1th operation only begins after the ith resolves.
   Future<void> _chain = Future.value();
 
-  /// Test seam: awaiting this completes when all queued writes (and any
-  /// rotation triggered by the most recent write) have resolved.
+  /// Test seam: returns a Future that resolves when every write enqueued
+  /// **before this call** has flushed. Snapshot semantics — invoke after
+  /// the final `call()` you care about, then await once. A previously-
+  /// returned future does NOT wait for writes enqueued in the meantime,
+  /// by design.
+  ///
+  /// Originally a getter; Carnot caught the footgun where reading early
+  /// and awaiting late looks like a flush but isn't. Method form encodes
+  /// the snapshot-at-call-time semantics in the type signature. See
+  /// #467 cage-match.
   @visibleForTesting
-  Future<void> get flushed => _chain;
+  Future<void> flushed() => _chain;
 
   /// The sink function to register with [registerSink].
   void call(AppEvent event) {

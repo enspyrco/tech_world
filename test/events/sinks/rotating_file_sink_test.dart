@@ -51,7 +51,7 @@ void main() {
       for (var i = 0; i < 200; i++) {
         sink(_seq(i));
       }
-      await sink.flushed;
+      await sink.flushed();
 
       final seqs = await _readSeqs(File('${tmp.path}/events.log'));
       expect(seqs.length, 200);
@@ -74,7 +74,7 @@ void main() {
       for (var i = 0; i < 200; i++) {
         sink(_seq(i));
       }
-      await sink.flushed;
+      await sink.flushed();
 
       // Collect every persisted seq across current + rotation files.
       // Rotation discards the oldest generation by design once we exceed
@@ -131,7 +131,7 @@ void main() {
       for (var i = 0; i < 100; i++) {
         sink(_seq(i));
       }
-      await sink.flushed;
+      await sink.flushed();
 
       for (final candidate in [
         File('${tmp.path}/events.log'),
@@ -157,7 +157,7 @@ void main() {
       for (var i = 0; i < 10; i++) {
         sink(_seq(i));
       }
-      await sink.flushed;
+      await sink.flushed();
       expect(File('${tmp.path}/events.log').existsSync(), isFalse);
     });
 
@@ -169,7 +169,7 @@ void main() {
       for (var i = 0; i < 10; i++) {
         sink(_seq(i));
       }
-      await sink.flushed;
+      await sink.flushed();
       final seqs = await _readSeqs(File('${tmp.path}/events.log'));
       expect(seqs, equals([0, 2, 4, 6, 8]));
     });
