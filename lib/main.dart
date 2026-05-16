@@ -97,13 +97,41 @@ void main() async {
   });
 }
 
+/// In-memory toggle states read synchronously by sinks. Loaded once at
+/// startup from [UserPreferences]; updated when the user flips a toggle.
+bool _avDiagnosticsEnabled = false;
+bool _errorLoggingEnabled = true;
+
+/// Whether AV diagnostics are currently enabled. Read by [BubbleManager]
+/// to start/stop the periodic snapshot timer.
+bool get avDiagnosticsEnabled => _avDiagnosticsEnabled;
+
+/// Toggle AV diagnostics at runtime. Persists to [UserPreferences] and
+/// updates the in-memory flag that sinks check synchronously.
+Future<void> setAvDiagnosticsEnabled(bool value) async {
+  _avDiagnosticsEnabled = value;
+  await UserPreferences.setAvDiagnosticsEnabled(value);
+}
+
+/// Toggle error logging at runtime.
+Future<void> setErrorLoggingEnabled(bool value) async {
+  _errorLoggingEnabled = value;
+  await UserPreferences.setErrorLoggingEnabled(value);
+}
+
 /// Register event sinks before the app starts. Console sink runs in
-/// debug mode only; file sink runs on native platforms (not web).
+/// debug mode only; file sink and diagnostic sinks run on native
+/// platforms (not web).
 ///
 /// Guarded against duplicate registration on hot restart — sinks are
 /// global mutable state that persists across restarts.
 Future<void> _registerEventSinks() async {
   if (sinksRegistered) return;
+
+  // Load toggle states from persisted preferences.
+  _avDiagnosticsEnabled = await UserPreferences.avDiagnosticsEnabled();
+  _errorLoggingEnabled = await UserPreferences.errorLoggingEnabled();
+
   if (kDebugMode) {
     registerSink(consoleSink);
   }
@@ -111,6 +139,16 @@ Future<void> _registerEventSinks() async {
     try {
       final fileSink = await createFileSink();
       registerSink(fileSink);
+
+      final avSink = await createAvPipelineSink(
+        enabledCheck: () => _avDiagnosticsEnabled,
+      );
+      registerSink(avSink);
+
+      final errSink = await createErrorSink(
+        enabledCheck: () => _errorLoggingEnabled,
+      );
+      registerSink(errSink);
     } catch (e) {
       // path_provider failure — continue without file logging.
       debugPrint('[events] File sink registration failed: $e');

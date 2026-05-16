@@ -10,6 +10,8 @@ import 'package:logging/logging.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:livekit_client/livekit_client.dart';
 
+import '../../events/dispatch.dart';
+import '../../events/types.dart' show AvCaptureMethod, AvCaptureInitialized, AvCaptureInitFailed;
 import '../../native/frame_source.dart';
 import '../../native/video_frame_capture.dart' as ffi;
 import '../../native/direct_track_capture.dart' as direct_capture;
@@ -140,6 +142,21 @@ class VideoBubbleComponent extends PositionComponent {
   double _timeSinceLastRetry = 0;
   static const double _retryIntervalSeconds = 0.5; // Retry every 500ms
 
+  // ── Diagnostic getters (read by BubbleManager for AvPipelineSnapshot) ──
+
+  /// Which capture path is active, or null if not yet initialized.
+  AvCaptureMethod? get diagnosticCaptureMethod {
+    if (externalVideoCapture != null) return AvCaptureMethod.canvasCapture;
+    if (_capture != null) return AvCaptureMethod.ffi;
+    if (_webCapture != null) return AvCaptureMethod.directTrack;
+    if (_remoteWebCapture != null) return AvCaptureMethod.videoElement;
+    return null;
+  }
+
+  int get diagnosticCaptureRetryCount => _captureRetryCount;
+  int get diagnosticFramesCaptured => _framesCaptured;
+  int get diagnosticFramesDropped => _framesDropped;
+
   // Opacity for distance-based fading
   double _opacity = 1.0;
 
@@ -214,6 +231,14 @@ class VideoBubbleComponent extends PositionComponent {
       if (_timeSinceLastRetry >= _retryIntervalSeconds) {
         _timeSinceLastRetry = 0;
         _initializeCapture();
+        // Dispatch failure event when retries are exhausted.
+        if (!_captureInitialized &&
+            _captureRetryCount >= _maxCaptureRetries) {
+          dispatch([AvCaptureInitFailed(
+            participant: participant.identity,
+            maxRetries: _maxCaptureRetries,
+          )]);
+        }
       }
     }
 
@@ -301,6 +326,11 @@ class VideoBubbleComponent extends PositionComponent {
     capture.startCapture();
     _captureInitialized = true;
     _captureInitializing = false;
+    dispatch([AvCaptureInitialized(
+      participant: participant.identity,
+      method: AvCaptureMethod.directTrack,
+      retryCount: _captureRetryCount,
+    )]);
   }
 
   /// Initialize capture for remote tracks using VideoElementCapture.
@@ -331,6 +361,11 @@ class VideoBubbleComponent extends PositionComponent {
         capture.startCapture();
         _captureInitialized = true;
         _captureInitializing = false;
+        dispatch([AvCaptureInitialized(
+          participant: participant.identity,
+          method: AvCaptureMethod.videoElement,
+          retryCount: _captureRetryCount,
+        )]);
         return;
       }
 
@@ -368,6 +403,11 @@ class VideoBubbleComponent extends PositionComponent {
 
     if (_capture != null) {
       _captureInitialized = true;
+      dispatch([AvCaptureInitialized(
+        participant: participant.identity,
+        method: AvCaptureMethod.ffi,
+        retryCount: _captureRetryCount,
+      )]);
     }
   }
 

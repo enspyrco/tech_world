@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/infra/infra_health_service.dart';
@@ -156,6 +158,10 @@ class LiveKitGameBridge {
     _speakingSub = _liveKitService.speakingChanged.listen((event) {
       final (participant, isSpeaking) = event;
       _bubbleManager.updateSpeakingState(participant.identity, isSpeaking);
+      dispatch([AvSpeakingChanged(
+        participant: participant.identity,
+        speaking: isSpeaking,
+      )]);
     });
 
     _trackSubscribedSub = _liveKitService.trackSubscribed.listen((event) {
@@ -163,6 +169,7 @@ class LiveKitGameBridge {
       if (track.kind == TrackType.VIDEO) {
         _log.fine('Video track subscribed for ${participant.identity}');
         _bubbleManager.refreshBubbleForPlayer(participant.identity);
+        dispatch([AvTrackSubscribed(participant: participant.identity)]);
       }
       _bubbleManager.notifyTrackReady(participant.identity);
     });
@@ -173,6 +180,7 @@ class LiveKitGameBridge {
       if (track.kind == TrackType.VIDEO) {
         _log.info('Video track unsubscribed for ${participant.identity}');
         _bubbleManager.downgradeVideoBubble(participant.identity);
+        dispatch([AvTrackUnsubscribed(participant: participant.identity)]);
       }
     });
 

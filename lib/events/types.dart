@@ -933,6 +933,328 @@ final class DmSent extends AppEvent {
 enum BotSpokeContext { group, help }
 
 // ---------------------------------------------------------------------------
+// AV pipeline diagnostic events
+// ---------------------------------------------------------------------------
+
+/// How a video frame is being captured for a participant's bubble.
+enum AvCaptureMethod {
+  /// macOS FFI shared-memory capture via RTCVideoRenderer.
+  ffi,
+
+  /// Chrome MediaStreamTrackProcessor (fast, no DOM).
+  directTrack,
+
+  /// HTMLVideoElement fallback (all browsers).
+  videoElement,
+
+  /// Three.js iframe canvas capture (Dreamfinder avatar).
+  canvasCapture,
+}
+
+/// The type of proximity bubble rendered for a participant.
+enum AvBubbleType {
+  /// Video feed bubble (VideoBubbleComponent).
+  video,
+
+  /// Avatar-initial placeholder (PlayerBubbleComponent).
+  player,
+
+  /// Bot character bubble (BotBubbleComponent).
+  bot,
+}
+
+/// Periodic per-participant pipeline state snapshot.
+///
+/// Dispatched every ~5 seconds by [BubbleManager] for each remote participant
+/// (and the local player when they have a bubble). This is the single most
+/// important diagnostic event — it tells you exactly where each participant
+/// sits in the AV pipeline at a glance.
+final class AvPipelineSnapshot extends AppEvent {
+  AvPipelineSnapshot({
+    required this.participant,
+    required this.hasVideoTrack,
+    required this.captureMethod,
+    required this.captureRetryCount,
+    required this.framesCaptured,
+    required this.framesDropped,
+    required this.bubbleType,
+    required this.audioEnabled,
+    required this.distance,
+    required this.isLocal,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  final bool hasVideoTrack;
+
+  /// Null when capture not yet initialized.
+  final AvCaptureMethod? captureMethod;
+  final int captureRetryCount;
+  final int framesCaptured;
+  final int framesDropped;
+
+  /// Null when no bubble exists for this participant.
+  final AvBubbleType? bubbleType;
+  final bool audioEnabled;
+
+  /// Chebyshev grid distance, or -1 if unknown.
+  final int distance;
+  final bool isLocal;
+
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_pipeline_snapshot',
+        'participant': participant,
+        'hasVideoTrack': hasVideoTrack,
+        if (captureMethod != null) 'captureMethod': captureMethod!.name,
+        'captureRetryCount': captureRetryCount,
+        'framesCaptured': framesCaptured,
+        'framesDropped': framesDropped,
+        if (bubbleType != null) 'bubbleType': bubbleType!.name,
+        'audioEnabled': audioEnabled,
+        'distance': distance,
+        'isLocal': isLocal,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// A video track was subscribed from LiveKit for a participant.
+final class AvTrackSubscribed extends AppEvent {
+  AvTrackSubscribed({required this.participant, DateTime? timestamp})
+      : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_track_subscribed',
+        'participant': participant,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// A video track was unsubscribed (lost) for a participant.
+final class AvTrackUnsubscribed extends AppEvent {
+  AvTrackUnsubscribed({required this.participant, DateTime? timestamp})
+      : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_track_unsubscribed',
+        'participant': participant,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// Video frame capture was successfully initialized for a participant.
+final class AvCaptureInitialized extends AppEvent {
+  AvCaptureInitialized({
+    required this.participant,
+    required this.method,
+    required this.retryCount,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  final AvCaptureMethod method;
+  final int retryCount;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_capture_initialized',
+        'participant': participant,
+        'method': method.name,
+        'retryCount': retryCount,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// Video frame capture exhausted all retries for a participant.
+final class AvCaptureInitFailed extends AppEvent {
+  AvCaptureInitFailed({
+    required this.participant,
+    required this.maxRetries,
+    this.lastError,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  final int maxRetries;
+  final String? lastError;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_capture_init_failed',
+        'participant': participant,
+        'maxRetries': maxRetries,
+        if (lastError != null) 'lastError': lastError,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// A proximity bubble was created for a participant.
+final class AvBubbleCreated extends AppEvent {
+  AvBubbleCreated({
+    required this.participant,
+    required this.bubbleType,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  final AvBubbleType bubbleType;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_bubble_created',
+        'participant': participant,
+        'bubbleType': bubbleType.name,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// A proximity bubble was removed for a participant.
+final class AvBubbleRemoved extends AppEvent {
+  AvBubbleRemoved({required this.participant, DateTime? timestamp})
+      : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_bubble_removed',
+        'participant': participant,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// Audio gating changed for a participant (proximity crossed audio threshold).
+final class AvAudioGateChanged extends AppEvent {
+  AvAudioGateChanged({
+    required this.participant,
+    required this.enabled,
+    required this.distance,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  final bool enabled;
+  final int distance;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_audio_gate_changed',
+        'participant': participant,
+        'enabled': enabled,
+        'distance': distance,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// A video frame failed to decode.
+final class AvFrameDecodeError extends AppEvent {
+  AvFrameDecodeError({
+    required this.participant,
+    required this.error,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  final String error;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_frame_decode_error',
+        'participant': participant,
+        'error': error,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// No PII: participant identity is a LiveKit system identifier here,
+  /// and the error string is a platform exception message.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.none;
+}
+
+/// Speaker detection state changed for a participant.
+final class AvSpeakingChanged extends AppEvent {
+  AvSpeakingChanged({
+    required this.participant,
+    required this.speaking,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  final bool speaking;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_speaking_changed',
+        'participant': participant,
+        'speaking': speaking,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+// ---------------------------------------------------------------------------
 // Log bridge events
 // ---------------------------------------------------------------------------
 
