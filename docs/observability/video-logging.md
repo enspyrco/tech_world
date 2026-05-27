@@ -155,41 +155,43 @@ Enable AV diagnostics and leave them running. After the next failure, check:
 
 ## 6. How to toggle the logs on and off
 
-### Currently: code-level toggle via `DiagnosticsService`
+### Default: both on
 
-AV diagnostics are **off by default** (low overhead, no disk writes). To enable, locate the service and update the listenable:
+AV diagnostics and error logging are **both on by default**. Logs rotate at 5MB × 3 files per sink, so the disk footprint is bounded (~60MB worst case across all three sinks). No UI toggle exists — diagnostics is an operator-tier concern, not a player surface.
+
+### Disabling temporarily
+
+To silence AV logging for a specific session, call the service directly from code:
 
 ```dart
 import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
 final diagnostics = Locator.locate<DiagnosticsService>();
-await diagnostics.setAvEnabled(true);   // starts writing av-pipeline.jsonl
-await diagnostics.setAvEnabled(false);  // stops immediately
+await diagnostics.setAvEnabled(false);    // stops AV pipeline writes
+await diagnostics.setErrorLoggingEnabled(false); // stops error writes
 ```
 
-Error logging is **on by default** (low volume, high signal):
+Or ask Claude — the operator-tier admin path goes through the AI rather than UI. Claude can flip the SharedPreferences key from the shell, or edit the persisted value directly.
 
-```dart
-await diagnostics.setErrorLoggingEnabled(false); // stops writing errors.jsonl
-```
+Both toggles are exposed as `ValueListenable<bool>` (`diagnostics.avEnabled`, `diagnostics.errorLoggingEnabled`). Producers (`BubbleManager`, `VideoBubbleComponent`, `LiveKitGameBridge`) read `.value` to gate AV-event dispatches; sinks read `.value` from their `enabledCheck` callbacks. The single owner pattern eliminates the dual-write invariant the prior module-level globals had.
 
-Both toggles are exposed as `ValueListenable<bool>` (`diagnostics.avEnabled`, `diagnostics.errorLoggingEnabled`), so UI bindings via `ValueListenableBuilder` are trivial. Producers (`BubbleManager`, `VideoBubbleComponent`, `LiveKitGameBridge`) read `.value` to gate AV-event dispatches; sinks read `.value` from their `enabledCheck` callbacks. The single owner pattern eliminates the dual-write invariant the prior module-level globals had.
-
-The toggles are persisted in `SharedPreferences` and survive app restarts. The sinks check the toggle synchronously on every event, so flipping mid-session takes effect immediately — no restart needed.
+The toggles are persisted in `SharedPreferences` and survive app restarts. Sinks check the toggle synchronously on every event, so flipping mid-session takes effect immediately — no restart needed.
 
 ### SharedPreferences keys
 
-If you need to toggle from outside the app (e.g., via a debug tool):
+If you need to flip from outside the app (e.g., shell pre-launch):
 
 | Key | Type | Default | Effect |
 |-----|------|---------|--------|
-| `avDiagnosticsEnabled` | `bool` | `false` | Controls AV pipeline sink + 5-second snapshot timer |
+| `avDiagnosticsEnabled` | `bool` | `true` | Controls AV pipeline sink + 5-second snapshot timer |
 | `errorLoggingEnabled` | `bool` | `true` | Controls error sink |
 
-### Future: UI toggle
+### Why no UI toggle
 
-A settings UI toggle is not yet built. The architecture supports it trivially: bind a `Switch` widget to `Locator.locate<DiagnosticsService>().avEnabled` via `ValueListenableBuilder`, and call `setAvEnabled(bool)` on the service when the user flips it. Persistence is automatic via the service.
+The diagnostic data captures other participants' LiveKit identities, audio gate states, frame counts, and proximity timings. While the logs are local-only (never transmitted off-device) and the events are inside the trust boundary by design, exposing the toggle as a consumer-tier button invited the failure mode where any user could collect this data about others without thinking about it. Routing the admin path through Claude keeps the data flowing for operator debugging without creating a player-facing surface.
+
+When Tech World ships publicly, the privacy policy should disclose local diagnostic logging: "this app maintains local diagnostic logs on your device for debugging purposes; logs are not transmitted off-device; rotation caps usage at ~60 MB."
 
 ## 7. When the logs will be deleted
 

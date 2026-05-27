@@ -10,9 +10,9 @@ void main() {
   });
 
   group('DiagnosticsService', () {
-    test('defaults: AV off, error-logging on', () async {
+    test('defaults: AV on, error-logging on', () async {
       final svc = await DiagnosticsService.load();
-      expect(svc.avEnabled.value, isFalse);
+      expect(svc.avEnabled.value, isTrue);
       expect(svc.errorLoggingEnabled.value, isTrue);
     });
 
@@ -21,14 +21,15 @@ void main() {
       var notifications = 0;
       svc.avEnabled.addListener(() => notifications++);
 
-      await svc.setAvEnabled(true);
+      // Default is true, so flip to false to observe propagation.
+      await svc.setAvEnabled(false);
 
-      expect(svc.avEnabled.value, isTrue);
+      expect(svc.avEnabled.value, isFalse);
       expect(notifications, 1);
 
       // Persistence: a fresh service constructed afterward sees the same value.
       final reloaded = await DiagnosticsService.load();
-      expect(reloaded.avEnabled.value, isTrue);
+      expect(reloaded.avEnabled.value, isFalse);
     });
 
     test('setErrorLoggingEnabled propagates and persists', () async {

@@ -92,13 +92,14 @@ abstract final class UserPreferences {
 
   /// Whether to write AV pipeline diagnostic events (periodic snapshots,
   /// track lifecycle, capture init, bubble create/remove) to
-  /// `av-pipeline.jsonl`. Default off — toggle on when debugging
-  /// intermittent video/audio issues.
+  /// `av-pipeline.jsonl`. Default on — local-only logs, rotates at
+  /// 5MB x 3 files. Override via `DiagnosticsService.setAvEnabled(false)`
+  /// when a session needs to be untraced.
   static const String avDiagnosticsEnabledKey = 'avDiagnosticsEnabled';
 
   static Future<bool> avDiagnosticsEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(avDiagnosticsEnabledKey) ?? false;
+    return prefs.getBool(avDiagnosticsEnabledKey) ?? true;
   }
 
   static Future<void> setAvDiagnosticsEnabled(bool value) async {
