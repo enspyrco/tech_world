@@ -51,7 +51,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.41.7'
       - name: Install dependencies
         run: flutter pub get
       - name: Analyze code
@@ -95,7 +95,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.41.7'
       - name: Install dependencies
         run: flutter pub get
       - run: flutter build web --wasm --pwa-strategy=none --dart-define="DREAMFINDER_API_KEY=$DREAMFINDER_API_KEY"
