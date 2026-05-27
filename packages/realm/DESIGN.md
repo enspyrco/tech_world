@@ -38,7 +38,7 @@ Realm engine, reference worlds (Tech World, repo-body, foyer), and reference pro
 
 Rationale:
 - **AGPL's network-use clause deters competitive cloud clones.** Anyone hosting modified Realm-as-a-service must release their changes. Handles the "Amazon problem" that drove MongoDB to SSPL — without resorting to source-available licenses that fracture community trust.
-- **AGPL is dual-license-friendly.** Copyright stays with enspyrco. Enterprises whose lawyers reject AGPL can pay for a commercial license — revenue path preserved.
+- **AGPL is dual-license-friendly.** Copyright stays with enspyrco *for first-party code*. Enterprises whose lawyers reject AGPL can pay for a commercial license — revenue path preserved. **External contributions require a Contributor License Agreement (CLA)** assigning copyright (or granting a sufficiently broad license) to enspyrco for the dual-license model to remain viable. Without CLA assignment, third-party contributions would be AGPL-only forever and couldn't be included in any commercial edition. The CLA is a governance commitment, not a legal nicety: contribution pipeline (PR template + automated CLA-bot gate) must be in place before accepting any external PR that materially adds code. DCO sign-off alone is insufficient — DCO grants license to upstream, but doesn't enable relicensing.
 - **AGPL is OSI-approved.** Genuine open source, not source-available. Avoids the HashiCorp/Elastic-style community backlash from later license-pivot moves.
 - **AGPL is more aggressive about openness than MIT/Apache** — fits the federation goal, where shared-protocol interoperability matters more than maximum adoption.
 
@@ -141,61 +141,153 @@ The five engine-level interfaces. Every one must obey the **no-leak rule**: no b
 
 ### 1. `AuthProvider`
 
+Sign-in operations take a sealed `AuthMethod` rather than provider-specific methods. Adding a new provider means adding a subtype to `AuthMethod`, not adding a method to every `AuthProvider` implementation. (Closed-set-as-method-names is the same anti-pattern as closed-set-as-Strings; this design rejects both.)
+
 ```dart
 abstract interface class AuthProvider {
   Stream<RealmUser?> userChanges();
   RealmUser? get currentUser;
-  Future<RealmUser> signInWithGoogle();
-  Future<RealmUser> signInWithApple();
-  Future<RealmUser> signInWithGitHub();   // new for repo-body
+  Future<RealmUser> signIn(AuthMethod method);
   Future<void> signOut();
-  Future<String> getIdToken({bool forceRefresh = false});
+  Future<RealmCredential> getCredential({bool forceRefresh = false});
+}
+
+sealed class AuthMethod {
+  const AuthMethod();
+}
+class GoogleAuth extends AuthMethod {
+  const GoogleAuth();
+}
+class AppleAuth extends AuthMethod {
+  const AppleAuth();
+}
+class GitHubAuth extends AuthMethod {
+  const GitHubAuth({this.scopes = const []});
+  final List<String> scopes;
+}
+class EmailPassword extends AuthMethod {
+  const EmailPassword({required this.email, required this.password});
+  final String email;
+  final String password;
+}
+class MagicLink extends AuthMethod {
+  const MagicLink({required this.email});
+  final String email;
+}
+class Passkey extends AuthMethod {
+  const Passkey();
+}
+class Anonymous extends AuthMethod {
+  const Anonymous();
 }
 
 class RealmUser {
-  final String id;            // stable, opaque to engine
-  final String? displayName;
-  final String? email;        // PII — engine must treat as such
+  final UserId id;                    // branded type, stable, opaque to engine
+  final String? displayName;          // PII — engine treats as such
+  final String? email;                // PII — engine treats as such
+  final String? username;             // PII — common across most providers
   final Uri? avatarUrl;
-  final Map<String, Object?> claims;  // provider-specific, opaque
+  final bool emailVerified;
+  final Set<AuthProviderId> providerIds;
+  final Map<String, Object?> extraClaims;  // ⚠️ Provider-specific data.
+  // extraClaims is the escape hatch — accessing it couples the consumer to
+  // the provider's shape. Use typed fields above where possible.
+  // Allowed only inside `packages/realm_<provider>/` plugins; flagged
+  // elsewhere by the no-leak lint.
+}
+
+/// Engine-defined credential token. Translation from provider-native tokens
+/// (Firebase ID token, GitHub access token, etc.) happens server-side at
+/// the `LiveKitTokenEndpoint`. Engine never sees provider-native tokens.
+class RealmCredential {
+  const RealmCredential({required this.token, required this.expiresAt});
+  final String token;
+  final DateTime expiresAt;
 }
 ```
 
-Must NOT leak: `firebase_auth.User`, `IdTokenResult`, provider SDK exceptions.
+Must NOT leak: `firebase_auth.User`, `IdTokenResult`, GitHub access tokens, provider SDK exceptions. The engine defines `RealmAuthException` (with subtypes `RealmAuthCancelled`, `RealmAuthNetworkError`, `RealmAuthRateLimited`, `RealmAuthCredentialInvalid`); implementations catch provider exceptions and translate.
 
 Ships in Realm:
-- `FirebaseAuthProvider`
-- `GitHubOAuthProvider` (likely needed for repo-body, written during extraction)
+- `realm_firebase`: `FirebaseAuthProvider` (handles Google, Apple, email/password via Firebase Auth)
+- `realm_github_oauth`: `GitHubAuthProvider` (needed for repo-body; translates GitHub OAuth access tokens to `RealmCredential`)
+
+Provider plugins are responsible for the translation from native tokens to `RealmCredential`. This is the "GitHub OAuth ≠ OIDC ID token" issue resolved: each provider plugin emits a Realm-defined credential token; the `LiveKitTokenEndpoint` only verifies Realm credentials, not raw native ones.
 
 ### 2. `RoomConfigStore`
 
 ```dart
 abstract interface class RoomConfigStore {
-  Future<List<RoomDescriptor>> listRooms({String? ownedBy});
-  Future<RoomDescriptor?> getRoom(String roomId);
-  Stream<RoomDescriptor> watchRoom(String roomId);
+  Future<List<RoomDescriptor>> listRooms({
+    UserId? ownedBy,
+    FoyerVisibility? minVisibility,  // null = no filter
+  });
+  Future<RoomDescriptor?> getRoom(RoomId roomId);
+  Stream<RoomDescriptor> watchRoom(RoomId roomId);
   Future<RoomDescriptor> createRoom(NewRoomSpec spec);
-  Future<void> updateRoomConfig(String roomId, Map<String, Object?> patch);
+  Future<void> updateRoomConfig(RoomId roomId, Map<String, Object?> patch);
 }
 
 class RoomDescriptor {
-  final String id;
+  final RoomId id;
   final String displayName;
-  final String worldType;                // 'tech_world', 'repo_body', 'foyer', ...
-  final Map<String, Object?> worldConfig; // opaque to engine, parsed by World
+  final WorldTypeId worldType;             // branded — registered worlds only
+  final Map<String, Object?> worldConfig;  // opaque to engine; each World owns parseConfig()
   final RealmUser? owner;
-  final List<String> editorIds;
-  final FoyerVisibility foyerVisibility;  // public | unlisted | private
-  final List<RoomRef>? connectedTo;       // reserved for v2 federation; null in v1
+  final List<UserId> editorIds;
+  final FoyerVisibility foyerVisibility;
+  final List<RoomRef>? connectedTo;        // reserved for v2 federation; null in v1
 }
 
-enum FoyerVisibility { public, unlisted, private }
+/// Branded type for room IDs. Globally unique (UUID-shaped, not <org>:<slug>)
+/// so cross-instance federation can collide-resist later.
+extension type const RoomId(String value) {}
+
+/// Branded type for user IDs. Opaque to the engine; meaning lives in
+/// the AuthProvider that minted it.
+extension type const UserId(String value) {}
+
+/// Branded type for world-type identifiers. Open set (external Worlds can
+/// register their own type) but validated at construction via the
+/// WorldTypeRegistry — a typo can't become a live worldType.
+extension type const WorldTypeId._(String value) {
+  factory WorldTypeId.parse(String wire) {
+    if (!WorldTypeRegistry.isRegistered(wire)) {
+      throw ArgumentError('Unknown worldType: $wire');
+    }
+    return WorldTypeId._(wire);
+  }
+}
+
+/// Each World registers its type id + factory at app startup. The engine
+/// looks up Worlds via the registry, not via a hardcoded switch.
+class WorldTypeRegistry {
+  static final Map<String, World Function(RoomDescriptor)> _registered = {};
+  static void register(String wire, World Function(RoomDescriptor) factory) {
+    _registered[wire] = factory;
+  }
+  static bool isRegistered(String wire) => _registered.containsKey(wire);
+  static World instantiate(RoomDescriptor desc) =>
+      _registered[desc.worldType.value]!(desc);
+}
+
+enum FoyerVisibility {
+  public('public'),
+  unlisted('unlisted'),
+  private('private');
+
+  const FoyerVisibility(this.wire);
+  final String wire;
+  static FoyerVisibility parse(String wire) =>
+      values.firstWhere((v) => v.wire == wire,
+                       orElse: () => FoyerVisibility.private);  // fail-closed
+}
 ```
 
 Must NOT leak: `DocumentSnapshot`, `QuerySnapshot`, `Timestamp`, Firestore `Reference`.
 
 Ships in Realm:
-- `FirestoreRoomConfigStore`
+- `realm_firebase`: `FirestoreRoomConfigStore`
 - (LiveKit-metadata-only variant possible later as a self-host-friendly option that needs no separate database.)
 
 ### 3. `StorageProvider`
@@ -209,86 +301,207 @@ abstract interface class StorageProvider {
 }
 
 class BlobRef {
-  final String backend;   // 'firebase', 's3', 'local', etc.
-  final String path;      // opaque within backend
+  final StorageBackendId backend;  // branded — registered backends only
+  final String path;                // opaque within backend
+}
+
+/// Branded type for storage backends. Open set (operators can register
+/// their own backend) but validated. Same pattern as WorldTypeId.
+extension type const StorageBackendId._(String value) {
+  factory StorageBackendId.parse(String wire) {
+    if (!StorageBackendRegistry.isRegistered(wire)) {
+      throw ArgumentError('Unknown storage backend: $wire');
+    }
+    return StorageBackendId._(wire);
+  }
+  static const firebase = StorageBackendId._('firebase');
+  static const s3 = StorageBackendId._('s3');
+  static const local = StorageBackendId._('local');
 }
 ```
 
 Must NOT leak: `firebase_storage.Reference`, `gs://` URLs as the canonical form, provider-specific metadata types.
 
 Ships in Realm:
-- `FirebaseStorageProvider`
+- `realm_firebase`: `FirebaseStorageProvider`
 
 ### 4. `LiveKitTokenEndpoint`
 
-This is a **deployment contract**, not a Dart interface. The engine consumes an HTTP endpoint URL plus an auth strategy. Implementations:
-- The Cloud Function we ship today (Firebase deploy)
-- A self-hoster's Node/Go/Rust service
-- (For the open-source ship: a reference implementation in `examples/livekit-token-server/`)
+This is a **deployment-shape contract**, surfaced to the engine as a thin Dart config value. The engine holds a config (URL + auth strategy); the real implementation is whatever HTTP service stands at that URL. Reference implementations live in `examples/livekit-token-server/` (Node, Go, Rust variants); the production endpoint we ship is a Firebase Cloud Function.
 
 ```dart
 class LiveKitTokenEndpoint {
+  const LiveKitTokenEndpoint({required this.url, required this.authStrategy});
   final Uri url;
-  final AuthStrategy authStrategy; // bearer-id-token, signed-request, etc.
+  final TokenEndpointAuthStrategy authStrategy;
+}
+
+sealed class TokenEndpointAuthStrategy {
+  const TokenEndpointAuthStrategy();
+}
+/// Engine sends `Authorization: Bearer <RealmCredential.token>` with each request.
+class BearerCredential extends TokenEndpointAuthStrategy {
+  const BearerCredential();
+}
+/// Engine signs the request body with a shared HMAC secret.
+class SignedRequest extends TokenEndpointAuthStrategy {
+  const SignedRequest({required this.secret});
+  final String secret;
 }
 ```
 
-The engine calls this endpoint with the current `AuthProvider`'s ID token; the endpoint returns a LiveKit access token. Token contents (room grants, embedded agent dispatch, metadata) are the endpoint's concern.
+The engine sends the current user's `RealmCredential` to this endpoint; the endpoint validates the credential (using whatever provider verification logic it needs server-side), then returns a LiveKit access token. Token contents (room grants, embedded agent dispatch, metadata) are the endpoint's concern.
+
+Why this isn't strictly a Dart interface: the engine never *calls a method* on this endpoint via a Dart interface — it sends an HTTP request. But the URL + auth strategy must be Dart-configurable, so they live as a value type in the engine package.
 
 ### 5. `PresenceService`
 
 The "watch a room's participants without joining it" primitive. Powers the foyer's cross-room presence display (avatars of who's in each visible room) and, eventually, federation's cross-instance presence layer.
 
+**Critical PII boundary**: presence data includes user IDs, display names, and join times — all classified as PII by the existing `pii_policy.dart`. A naive cross-room watch API would broadcast that PII to any caller who can name a room. This interface uses **typed sealed projections** to enforce audience-appropriate shapes: full-fidelity presence is available only inside a room you've joined; cross-room (foyer) watching exposes a public projection that reveals less.
+
 ```dart
 abstract interface class PresenceService {
-  Stream<List<PeerPresence>> watchPresence(String roomId);
-  Future<List<PeerPresence>> currentPresence(String roomId);
+  /// Watch the high-fidelity presence stream for a room the caller is in.
+  /// Caller must be present in the room — implementations check membership.
+  /// Returns FullProjection (userId, displayName, avatarUrl).
+  Stream<Set<PeerPresence>> watchInRoom(RoomId roomId, RealmUser viewer);
+
+  /// Watch the low-fidelity presence stream for a room the caller is NOT in.
+  /// Only emits for rooms whose foyerVisibility = public (private/unlisted
+  /// rooms refuse). Returns PublicProjection (count + opaque hashed avatars).
+  Stream<Set<PeerPresence>> watchFromFoyer(RoomId roomId, RealmUser viewer);
 }
 
-class PeerPresence {
-  final String userId;
-  final String? displayName;
-  final Uri? avatarUrl;
+/// Sealed projection. The projection level is determined by the caller's
+/// relationship to the room, NOT by the producer's preference. The engine
+/// guarantees: a caller who isn't in the room can never receive a FullProjection,
+/// even if a buggy World tries to emit one. The PresenceService implementation
+/// enforces this; downstream consumers can pattern-match exhaustively.
+sealed class PeerPresence {
+  const PeerPresence({required this.joinedAt});
   final DateTime joinedAt;
-  final Map<String, Object?> worldMetadata; // opaque to engine, parsed by World
+}
+
+class FullProjection extends PeerPresence {
+  const FullProjection({
+    required this.userId,
+    required this.displayName,
+    required this.avatarUrl,
+    required super.joinedAt,
+    this.worldMetadata = const {},
+  });
+  final UserId userId;            // PII — in-room visibility only
+  final String? displayName;      // PII — in-room visibility only
+  final Uri? avatarUrl;
+  final Map<String, Object?> worldMetadata;  // opaque, parsed by World
+}
+
+class PublicProjection extends PeerPresence {
+  const PublicProjection({
+    required this.userIdHash,     // stable per-room SHA256(roomId || userId)[:8]
+    required this.opaqueAvatarRef,  // optional opaque ref the foyer can render
+    required super.joinedAt,
+  });
+  final String userIdHash;        // NOT user-identifying across rooms
+  final Uri? opaqueAvatarRef;     // optional; absent if user opted out
 }
 ```
 
-Cheap by design: no media subscription, no data-channel subscription, no voice. Just identity + avatar + join-time, updated when the room's participant list changes. The foyer can watch N rooms simultaneously at near-zero cost.
+`Set` semantics (not `List`): participants are unique per room; ordering is meaningless; equality is on `userIdHash` (PublicProjection) or `userId` (FullProjection).
+
+**Authorization rules** (enforced by `PresenceService` implementations):
+- `watchInRoom` succeeds only if `viewer` is currently present in `roomId` (LiveKit participant check).
+- `watchFromFoyer` succeeds only if `roomId.foyerVisibility == public`. Unlisted and private rooms refuse — the foyer cannot enumerate them at all.
+- Users may opt out of `opaqueAvatarRef` exposure (a per-user setting); `userIdHash` is always emitted because the foyer needs *some* token to render a presence indicator (otherwise it can't tell "3 people inside" from "0 people inside").
+- The hash uses the room ID as salt so the same user appears different across rooms — prevents cross-room user identification via the public projection.
+
+Cheap by design: no media subscription, no data-channel subscription, no voice. Updated when the room's participant list changes.
 
 Must NOT leak: LiveKit's `RemoteParticipant`, `Track`, or `TrackPublication` types.
 
 Ships in Realm:
-- `LiveKitPresenceService` (server-side fan-out: a small service polls LiveKit REST API and broadcasts via Firestore or similar)
+- `realm_firebase`: `LiveKitPresenceService` (server-side fan-out: a small service polls LiveKit REST API + enforces the projection-by-audience rule + broadcasts via Firestore or similar)
 - Reference implementation in `examples/presence-server/` for self-hosters
 
-**Why an engine interface, not a World concern**: presence-of-others is foundational substrate. Every World wants it (foyer especially, but also "see who's online in adjacent rooms"). Building it once in the engine prevents N different presence implementations per World.
+**Why an engine interface, not a World concern**: presence-of-others is foundational substrate. Every World wants it (foyer especially, but also "see who's online in adjacent rooms"). Building it once in the engine prevents N different presence implementations per World — *and* prevents N different projection-by-audience policies, where one bug becomes a privacy leak.
 
-### Engine-level `World` lifecycle additions
+### Engine-level `World` lifecycle
 
-The `World` base class declares two methods relevant to the engine contract:
+`World` is an **`abstract interface class`** — not a base class — for one decisive reason: existing `TechWorld` already `extends Flame.World with TapCallbacks`. Dart single-inheritance means TechWorld cannot extend two base classes. Making the engine's `World` an interface (which classes can `implements`) is the only structurally valid path:
 
 ```dart
-abstract class World {
-  // …existing lifecycle (onEnter, onLeave, onPeerJoin, onPeerLeave)…
+abstract interface class World {
+  RoomId get roomId;
+  RoomDescriptor get descriptor;
 
-  /// Optional: render a thumbnail/snapshot of this room's current state,
-  /// styled and sized for display in a foyer window. Default impl returns
-  /// the world's icon + participant count.
-  Widget previewSnapshot() => DefaultRoomPreview(roomId: roomId);
+  /// Called once when the user enters the room. Implementations subscribe
+  /// to LiveKit, register listeners, initialize world-specific state.
+  Future<void> onEnter();
 
-  /// Called when a user leaves the room. Reason enum distinguishes
-  /// user-initiated departures from system events. v1 uses .userLeft
-  /// and .disconnect; .portalTransit reserved for v2 federation.
-  void onLeave(LeaveReason reason);
+  /// Called when a peer joins the room (their LiveKit participant connected).
+  void onPeerJoin(RealmUser peer);
+
+  /// Called when a peer leaves the room. The viewer remains.
+  void onPeerLeave(UserId peerId);
+
+  /// Called when the current user leaves the room. Reason enum distinguishes
+  /// user-initiated departures from system events. v1 uses .userLeft and
+  /// .disconnect; .portalTransit is reserved for v2 federation.
+  Future<void> onLeave(LeaveReason reason);
+
+  /// Render a renderer-neutral snapshot of this room's current state for
+  /// the foyer. Returns null if this World shouldn't appear in foyers
+  /// (FoyerWorld returns null — foyers don't appear in foyers).
+  /// **No Flutter types in the return value** — the foyer wraps RoomPreview
+  /// in its own renderer. This keeps the engine portable across rendering
+  /// stacks (Flame, raw CustomPainter, future 3D, text-mode bots, etc.).
+  Future<RoomPreview?> previewSnapshot();
 }
 
-enum LeaveReason { userLeft, disconnect, portalTransit }
+enum LeaveReason {
+  userLeft('user_left'),
+  disconnect('disconnect'),
+  portalTransit('portal_transit');  // reserved for v2 federation
+
+  const LeaveReason(this.wire);
+  final String wire;
+}
+
+/// Renderer-neutral preview value. The foyer renders this however it wants.
+/// World implementations populate either `image` (raster snapshot of state)
+/// or `vector` (a list of opaque shapes the foyer can interpret) — never
+/// both. `worldHints` carries non-rendering metadata the foyer wants for
+/// labels and badges.
+class RoomPreview {
+  const RoomPreview({
+    this.image,
+    this.vector,
+    required this.worldHints,
+  });
+  final Uint8List? image;             // optional raster (PNG / WebP bytes)
+  final List<PreviewShape>? vector;   // optional shape list
+  final PreviewHints worldHints;
+}
+
+class PreviewHints {
+  const PreviewHints({
+    required this.participantCount,
+    this.activityLabel,       // 'live coding', 'DM running', 'quiet'
+    this.voiceActive = false,
+  });
+  final int participantCount;
+  final String? activityLabel;
+  final bool voiceActive;
+}
+
+/// Opaque shape primitive for vector previews. Foyer renders these.
+sealed class PreviewShape { /* circle, rect, text — defined in engine */ }
 ```
 
-`previewSnapshot()` is what the foyer renders inside each room-window. `TechWorld` returns a tilemap thumbnail with avatar dots. `RepoBodyWorld` returns a silhouette of the plaza. `FoyerWorld` returns nothing (foyers don't appear in foyers).
+`TechWorld` becomes: `class TechWorld extends flame.World with TapCallbacks implements World`. `RepoBodyWorld` and `FoyerWorld` choose their own renderer base independently — they don't have to extend Flame's World at all.
 
-`onLeave(LeaveReason)` is the v1-shaped API for departure. The enum reserves `.portalTransit` so v2 federation can add cross-room transit without changing the lifecycle contract — additive evolution.
+**Contract versioning**: adding a new method to the `World` interface IS a breaking change for every implementing World — the analyzer will flag missing implementations at compile time. To support additive evolution, new methods land as **default-impl mixins** the interface promises to combine: e.g., `mixin WorldFederationHooks on World` (added in v2) provides default no-op `onPortalTransit()` so v1 Worlds compile against v2 engine. The contract evolution rule: never add abstract methods to `World` after v1.0; always add via mixins consumed by the interface.
 
 ## What is NOT in the engine
 
@@ -299,6 +512,7 @@ Explicitly excluded from the Realm contract. These are world-internal:
 - **Game-loop specifics.** Flame's `FlameGame` and `flame.World` are Tech-World-specific framings. The engine doesn't mandate Flame. A `World` subclass could be built on Flame (Tech World), on raw Flutter `CustomPainter` (the Foyer might), on `flutter_3d_controller`, on anything. The engine just hosts the World and provides substrate primitives.
 - **Animation/render systems.** Bubbles, metaballs, video shaders — all Tech World.
 - **AI agent integrations.** Clawd, Gremlin, Dreamfinder — Tech World. A world that wants AI participants registers them via its own LiveKit room logic; the engine has no opinion.
+- **Rendering modality (visual / audio / text / haptic).** The engine state must be expressible to *any* renderer — that's why `previewSnapshot()` returns `RoomPreview` (renderer-neutral) rather than `Widget`. Accessibility, alternative-modality rendering, screen-reader integration, and keyboard navigation all live in the rendering layer of each World (or in render-layer plugins shared across Worlds). The engine's responsibility is to keep state modality-neutral; the rendering layer's responsibility is to interpret that state for any sense.
 The rule: **if you can describe it without mentioning rooms, identity, presence, voice, channels, or blob storage, it's not engine.**
 
 But "not engine" doesn't always mean "World vocabulary" — there's a middle tier worth naming.
@@ -424,7 +638,7 @@ A single mechanical refactor PR can't do this — too much surface. The path:
 3. **Engine interface PR**. Define `AuthProvider`, `RoomConfigStore`, `StorageProvider`, `LiveKitTokenEndpoint`, `PresenceService` in `packages/realm/`, plus the `World` abstract base class. No implementations yet. CI green.
 4. **Provider plugin PR**. Implement Firebase-backed versions in `packages/realm_firebase/`: `FirebaseAuthProvider`, `FirestoreRoomConfigStore`, `FirebaseStorageProvider`. Tech World still calls Firebase directly. CI green.
 5. **Consumer migration PRs** (one per consumer, parallel-safe). Move `AuthService` callers to `AuthProvider`. Move Firestore room reads to `RoomConfigStore`. Move `firebase_storage` calls to `StorageProvider`. Each PR is small, cage-matchable.
-6. **`TechWorld` wrap PR**. Refactor `TechWorld` → `class TechWorld extends World`. `RoomSession` reads `worldType` from `RoomConfigStore`, dispatches to World factory. Code moves from `lib/` to `worlds/tech_world/lib/`. CI green; zero behavior change for existing users.
+6. **`TechWorld` wrap PR**. Refactor `TechWorld` → `class TechWorld extends flame.World with TapCallbacks implements World` (per the single-inheritance constraint — World is an interface, not a base class). `RoomSession` reads `worldType` from `RoomConfigStore`, dispatches via `WorldTypeRegistry`. Code moves from `lib/` to `worlds/tech_world/lib/`. CI green. **Behavior change is limited to native bundle paths**: iOS `cc.imagineering.techWorld` bundle ID and Firebase config tied to that ID are preserved; `pubspec.yaml` asset paths require adjustment; `lib/main.dart` stays as a thin shell at the workspace root that wires up worlds. The claim is NOT "zero behavior change for everything" — it's "zero gameplay behavior change for existing Tech World users, with documented native-bundle changes contained to a sub-step (6.5: bundle-path migration)".
 7. **`FoyerWorld` + `PresenceService` impl PR**. Add `worlds/foyer/`. Implement `LiveKitPresenceService` (or initial Firestore-backed version). Make Foyer the default landing experience on app start. Existing rooms appear as windows in the foyer.
 8. **`RepoBodyWorld` stub PR**. Add `worlds/repo_body/` with placeholder body rendering. Create one Firestore room with `worldType: repo_body`. Verify it appears as a window in the foyer and the placeholder loads when entered.
 9. **`RepoBodyWorld` flesh PRs** (many, parallel-safe). `realm_github_oauth` plugin. GitHub repo fetch. Centrality analysis. Body renderer. Plaza layout. Heartbeat (CI). Circulation (commits). Wounds (issues). Time axis (history scrub). Each is its own design-pinned PR.
@@ -436,7 +650,7 @@ Each PR after step 1 is cage-match-worthy because every one of them touches a bo
 These are not blockers for the design note but must be answered before the corresponding PR:
 
 1. **Workspace tooling.** Dart workspaces are supported as of 3.6.0 (we're on 3.6). Confirm that `flutter test` runs all member packages from the root, that `flutter analyze --fatal-infos` works workspace-wide, that the existing CI workflow needs minimal change.
-2. **iOS/Android Firebase coupling.** `firebase_options.dart` is committed; iOS/Android Firebase SDKs are linked. The engine probably shouldn't depend on `firebase_core` at all — only `realm_firebase` (a future sub-package?) does. For phase 1, the simpler move is `packages/realm/` depending on `firebase_core` and shipping the Firebase implementations bundled. Phase 2 considers separating implementations into their own packages.
+2. **iOS/Android Firebase coupling.** `firebase_options.dart` is committed; iOS/Android Firebase SDKs are linked. **Resolved**: `packages/realm/` does NOT depend on `firebase_core` — that dependency is inverted relative to the three-tier model and the no-leak rule. From the first extracted commit, Firebase implementations live in `packages/realm_firebase/`. The engine package's `pubspec.yaml` whitelist (Flutter SDK, `livekit_client`, `http`, branded-type support utilities) is enforced by a `dart pub deps` check in CI — anything else added to the engine package fails the check. The "simpler" phase-1 shortcut (bundle Firebase into the engine) is rejected because day-1 dependency direction is the load-bearing decision; convenience compromises today become the engine's architecture forever.
 3. **`World` base class shape.** Abstract class with template methods? Sealed class? Interface with mixin defaults? Mockability for testing matters; so does ease of writing a new World. Resolve when writing the engine interface PR.
 4. **Per-world `worldConfig` schema.** `Map<String, Object?>` is opaque-on-purpose at the engine, but each World wants typed access. Pattern: each World declares a `parseConfig(Map) → TypedConfig` method, and `worldConfig` is validated at room creation. Same shape as `LiveKitTopic.parse(String)`. Probably uncontroversial.
 5. **Existing `RoomSession` API stability.** It's been heavily DI'd recently. The engine's room-lifecycle abstraction may want to absorb it, or `RoomSession` may stay as a Tech-World-specific orchestrator on top of engine primitives. Resolve when writing the `TechWorld` wrap PR.
@@ -466,7 +680,26 @@ Three increasingly ambitious federation models, named for vocabulary, none imple
 
 **The four v1 constraints that preserve federation as a future capability:**
 
-1. **`RoomDescriptor.connectedTo: List<RoomRef>?` is reserved, even if always null in v1.** Adding the field later forces a schema migration; reserving it costs nothing.
+1. **`RoomDescriptor.connectedTo: List<RoomRef>?` is reserved, even if always null in v1.** Adding the field later forces a schema migration; reserving it costs nothing. `RoomRef` is defined as a sealed type from v1 so federation can add operator-spanning references without breaking the contract:
+
+   ```dart
+   sealed class RoomRef {
+     const RoomRef();
+   }
+   /// Same-operator room reference (v1 + v2).
+   class LocalRoomRef extends RoomRef {
+     const LocalRoomRef(this.roomId);
+     final RoomId roomId;
+   }
+   /// Cross-operator federation reference (v2 only; v1 never emits).
+   class FederatedRoomRef extends RoomRef {
+     const FederatedRoomRef({required this.operatorUri, required this.roomId});
+     final Uri operatorUri;
+     final RoomId roomId;
+   }
+   ```
+
+   v1 only constructs `LocalRoomRef`. v2 adds `FederatedRoomRef` as an additive subtype; existing exhaustive switches must opt in to handle it. **Important caveat from cage-match**: reserving fields without consumers also adds contract surface and potential authorization mistakes. We're reserving the *type definition* (cheap, no consumer) but the `connectedTo` field on `RoomDescriptor` stays `null` in v1 — no listing API exposes it, no foyer reads from it. The reservation cost is bounded to the type def; the consumer surface arrives in v2 only.
 2. **Presence is engine-owned, not LiveKit-direct.** `PresenceService` is the engine abstraction over participant lists. v1 implementations read from LiveKit room metadata, but the abstraction means future cross-room or cross-instance presence layers don't require rewriting every consumer.
 3. **`World.onLeave(LeaveReason)` carries an enum.** v1 reasons: `userLeft`, `disconnect`. Reserved: `portalTransit`. The enum being there from day one means model B can be added without changing the lifecycle contract.
 4. **Room IDs are globally unique, not org-namespaced.** If federation eventually crosses operators, room IDs must collide-resist across operators. Use a UUID-shaped opaque ID, not `<org>:<slug>`.
