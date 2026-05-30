@@ -98,9 +98,23 @@ jobs:
           flutter-version: '3.41.7'
       - name: Install dependencies
         run: flutter pub get
-      - run: flutter build web --wasm --pwa-strategy=none --dart-define="DREAMFINDER_API_KEY=$DREAMFINDER_API_KEY"
+      - name: Capture build SHA
+        id: build_sha
+        run: echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - run: flutter build web --wasm --pwa-strategy=none --dart-define="DREAMFINDER_API_KEY=$DREAMFINDER_API_KEY" --dart-define="APP_BUILD_SHA=${APP_BUILD_SHA}"
         env:
           DREAMFINDER_API_KEY: ${{ secrets.DREAMFINDER_API_KEY }}
+          APP_BUILD_SHA: ${{ steps.build_sha.outputs.sha }}
+      - name: Stamp cache-busting query string into index.html
+        # web/index.html ships with `flutter_bootstrap.js?v=BUILD_SHA`; rewrite
+        # the literal to the actual commit SHA so the served HTML carries a
+        # unique URL per deploy. Browsers treat the new query string as a
+        # different resource and refetch, sidestepping any cached main.dart.js.
+        run: |
+          SHA="${{ steps.build_sha.outputs.sha }}"
+          sed -i "s|flutter_bootstrap.js?v=BUILD_SHA|flutter_bootstrap.js?v=${SHA}|g" build/web/index.html
+          echo "Stamped index.html with build SHA ${SHA}"
+          grep -o "flutter_bootstrap.js?v=[a-f0-9]*" build/web/index.html || (echo "ERROR: cache-buster not present in built index.html" && exit 1)
       - name: Deploy to world.imagineering.cc
         run: |
           mkdir -p ~/.ssh

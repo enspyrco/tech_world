@@ -175,6 +175,13 @@
             });
         </script>
 
-        <script src="flutter_bootstrap.js" async></script>
+        <!--
+            The ?v=BUILD_SHA query string is rewritten by the deploy workflow
+            (.github/workflows/deploy.yml) to the commit SHA. Combined with the
+            no-cache header on /flutter_bootstrap.js in Caddy, this guarantees
+            browsers fetch the freshly-deployed bundle instead of serving a
+            stale cached main.dart.js. See docs/deploy/cache-busting.md.
+        -->
+        <script src="flutter_bootstrap.js?v=BUILD_SHA" async></script>
     </body>
 </html>
