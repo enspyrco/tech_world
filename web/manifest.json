@@ -1,7 +1,9 @@
 {
     "name": "Tech World",
     "short_name": "Tech World",
-    "start_url": ".",
+    "start_url": "https://world.imagineering.cc/",
+    "scope": "https://world.imagineering.cc/",
+    "id": "https://world.imagineering.cc/",
     "display": "standalone",
     "background_color": "#000000",
     "theme_color": "#000000",

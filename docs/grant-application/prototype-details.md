@@ -11,7 +11,7 @@
 | | |
 |---|---|
 | **Platform** | Web (browser-based, no download required) |
-| **URL** | https://adventures-in-tech.world |
+| **URL** | https://world.imagineering.cc |
 | **Recommended browsers** | Google Chrome 100+ or Microsoft Edge 100+ |
 | **Also works on** | Safari 16+, Firefox 110+ (Chrome/Edge recommended for voice features) |
 | **Cost to play** | Free — no account creation fees, no in-app purchases |
@@ -37,7 +37,7 @@
 
 ### 1. Open the prototype
 
-Navigate to **https://adventures-in-tech.world** in Chrome or Edge.
+Navigate to **https://world.imagineering.cc** in Chrome or Edge.
 
 You'll see a loading screen with a progress bar while the game initialises.
 
@@ -187,4 +187,4 @@ For technical issues accessing the prototype during assessment:
 
 **Studio:** Enspyr Pty Ltd
 **Email:** nick@enspyr.co
-**Web:** https://adventures-in-tech.world
+**Web:** https://world.imagineering.cc
