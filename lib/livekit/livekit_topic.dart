@@ -51,7 +51,19 @@ enum LiveKitTopic {
 
   // ── Connectivity ──────────────────────────────────────────────────────────
   ping('ping'),
-  pong('pong');
+  pong('pong'),
+
+  // ── Diagnostics ───────────────────────────────────────────────────────────
+  /// One-shot self-report sent by every client immediately after connect.
+  ///
+  /// Surfaces the client's actual `ConnectOptions` (notably `adaptiveStream`
+  /// and `dynacast`) plus SDK/build/version metadata so the bot can warn when
+  /// a client connects with a configuration known to break Tech World video
+  /// or audio forwarding. Reliable delivery.
+  ///
+  /// Wire string follows the kebab-case convention used by every other
+  /// LiveKit topic in this enum (matches bot-side `AGENT_HELLO`).
+  agentHello('agent-hello');
 
   const LiveKitTopic(this.wire);
 
