@@ -88,9 +88,10 @@ void main() {
       expect(LiveKitTopic.pong.wire, 'pong');
     });
 
-    test('agentHello wire is "agent_hello"', () {
-      // snake_case is deliberate — wire contract with bot's AGENT_HELLO.
-      expect(LiveKitTopic.agentHello.wire, 'agent_hello');
+    test('agentHello wire is "agent-hello"', () {
+      // kebab-case for consistency with every other topic in the enum;
+      // wire contract pairs with bot-side `AGENT_HELLO = 'agent-hello'`.
+      expect(LiveKitTopic.agentHello.wire, 'agent-hello');
     });
   });
 

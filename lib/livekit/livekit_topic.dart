@@ -61,10 +61,9 @@ enum LiveKitTopic {
   /// a client connects with a configuration known to break Tech World video
   /// or audio forwarding. Reliable delivery.
   ///
-  /// Wire string is snake_case (`agent_hello`) by deliberate brief — the
-  /// surrounding topics are kebab-case; this one is treated as the inbound
-  /// channel-name for the agent fleet (matches bot-side `AGENT_HELLO`).
-  agentHello('agent_hello');
+  /// Wire string follows the kebab-case convention used by every other
+  /// LiveKit topic in this enum (matches bot-side `AGENT_HELLO`).
+  agentHello('agent-hello');
 
   const LiveKitTopic(this.wire);
 
