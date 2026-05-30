@@ -67,6 +67,8 @@ import 'package:tech_world/events/types.dart';
 import 'package:tech_world/events/sinks/file_sink.dart'
     if (dart.library.js_interop) 'package:tech_world/events/sinks/file_sink_stub.dart';
 import 'package:tech_world/utils/locator.dart';
+import 'package:tech_world/version/update_available_banner.dart';
+import 'package:tech_world/version/version_check_service.dart';
 
 void main() async {
   runZonedGuarded(() async {
@@ -285,6 +287,22 @@ class _MyAppState extends State<MyApp> {
     Locator.add<AuthService>(authService);
     Locator.add<TechWorld>(techWorld);
     Locator.add<TechWorldGame>(techWorldGame);
+
+    // Background poll for newer deployed bundles. The banner widget in
+    // build() listens to `updateAvailable` and renders when it flips.
+    // `APP_BUILD_SHA` is injected by CI via --dart-define at build time;
+    // `dev` is the local-build fallback. On native platforms the poll
+    // still runs but the "Refresh" button no-ops (see reload_page_stub).
+    if (Locator.maybeLocate<VersionCheckService>() == null) {
+      const runtimeBuild =
+          String.fromEnvironment('APP_BUILD_SHA', defaultValue: 'dev');
+      final versionCheck = VersionCheckService(
+        runtimeBuild: runtimeBuild,
+        versionJsonUrl: 'version.json',
+      );
+      Locator.add<VersionCheckService>(versionCheck);
+      versionCheck.start();
+    }
 
     // Listen for auth changes to set up LiveKit when user signs in
     _authSubscription = authService.authStateChanges.listen(_onAuthStateChanged);
@@ -939,9 +957,20 @@ class _MyAppState extends State<MyApp> {
 
     return MaterialApp(
       home: Scaffold(
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            return Stack(
+        body: Column(
+          children: [
+            // Update-available banner — shows when CI has deployed a newer
+            // bundle than the one this client is running. Subtle amber bar
+            // above the toolbar; per-session dismissible. See
+            // `lib/version/version_check_service.dart`.
+            UpdateAvailableBanner(
+              updateAvailable:
+                  locate<VersionCheckService>().updateAvailable,
+            ),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return Stack(
               children: [
                 Row(
                   children: [
@@ -1492,7 +1521,10 @@ class _MyAppState extends State<MyApp> {
                   ),
               ],
             );
-          },
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
