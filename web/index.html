@@ -117,6 +117,31 @@
         </div>
 
         <script>
+            // Bypass Flutter's keyboard interception for browser reload
+            // shortcuts. Flutter web's engine calls preventDefault on the
+            // Flame canvas keyboard events, which swallows Cmd+R /
+            // Cmd+Shift+R (hard refresh) and F5. Without this, users can't
+            // refresh from the page, and "hard refresh" advice (e.g. when we
+            // ship a new bundle) becomes impossible to follow.
+            //
+            // We register at the CAPTURE phase so we run before Flutter's
+            // bubble-phase listener, then stopImmediatePropagation to
+            // prevent Flutter from ever seeing the event. Browser native
+            // reload then fires because nobody calls preventDefault.
+            window.addEventListener(
+                "keydown",
+                function (e) {
+                    var k = e.key;
+                    var mod = e.metaKey || e.ctrlKey;
+                    // F5: always a reload.
+                    // Cmd/Ctrl + R: reload (Cmd/Ctrl + Shift + R = hard reload).
+                    if (k === "F5" || (mod && (k === "r" || k === "R"))) {
+                        e.stopImmediatePropagation();
+                    }
+                },
+                true
+            );
+
             // Loading progress management
             var progressBar = null;
             var loadingText = null;
