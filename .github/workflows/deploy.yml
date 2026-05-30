@@ -101,6 +101,15 @@ jobs:
       - name: Capture build SHA
         id: build_sha
         run: echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Write version.json (build SHA + deploy timestamp)
+        # Consumed by VersionCheckService at runtime to detect when the
+        # deployed bundle is newer than the running one. Must be written
+        # BEFORE `flutter build web` so it gets copied into build/web.
+        run: |
+          DEPLOYED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          printf '{"build":"%s","deployedAt":"%s"}\n' \
+            "$GITHUB_SHA" "$DEPLOYED_AT" > web/version.json
+          cat web/version.json
       - run: flutter build web --wasm --pwa-strategy=none --dart-define="DREAMFINDER_API_KEY=$DREAMFINDER_API_KEY" --dart-define="APP_BUILD_SHA=${APP_BUILD_SHA}"
         env:
           DREAMFINDER_API_KEY: ${{ secrets.DREAMFINDER_API_KEY }}
