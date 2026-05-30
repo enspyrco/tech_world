@@ -151,7 +151,72 @@ last-modified date, the deploy did not take — re-run Step 2 with
 
 ---
 
-## Step 4 — Alternative: hard disable (if redirect rejected)
+## Step 4 — Apply the cors.json change to the Storage bucket
+
+**⚠️ Critical — this step is NOT done by merging the PR.** The `cors.json`
+file in the repo is documentation of *intent* — `firebase deploy` does NOT
+push it to Firebase Storage. The bucket policy is applied separately via
+`gcloud` (or legacy `gsutil`).
+
+**Sequence rule**: apply this AFTER the redirect from Step 2 is live and
+verified by Step 3's curls. If you apply the new CORS allowlist before
+the redirect is in place, any user still loading the app from a stale
+host will hit silent Storage failures (avatar uploads, custom map
+imports, profile pictures) — the exact failure mode the redirect strategy
+is meant to prevent. Real consumers of the bucket are in
+`lib/auth/profile_picture_service.dart` and
+`lib/flame/tiles/tileset_storage_service.dart`.
+
+```bash
+# Apply the canonical-only CORS allowlist from the repo's cors.json.
+# Run from the tech_world repo root so cors.json is current.
+cd ~/path/to/tech_world
+
+# Modern gcloud syntax (preferred):
+gcloud storage buckets update gs://adventures-in-tech-world-0.firebasestorage.app \
+  --cors-file=cors.json
+
+# Or legacy gsutil:
+# gsutil cors set cors.json gs://adventures-in-tech-world-0.firebasestorage.app
+```
+
+**Verify**:
+
+```bash
+# Read back the live CORS config; expect ONLY world.imagineering.cc as origin.
+gcloud storage buckets describe gs://adventures-in-tech-world-0.firebasestorage.app \
+  --format='value(cors_config)' | head -20
+
+# Real-traffic check from canonical (preflight expected to succeed):
+curl -sI -X OPTIONS \
+  -H "Origin: https://world.imagineering.cc" \
+  -H "Access-Control-Request-Method: GET" \
+  "https://firebasestorage.googleapis.com/v0/b/adventures-in-tech-world-0.firebasestorage.app/o" \
+  | grep -iE "access-control|http"
+# Expect: access-control-allow-origin: https://world.imagineering.cc
+
+# Stale-origin preflight should now be denied (this is the desired outcome
+# AFTER the redirect is live — users hitting stale hosts get the 301
+# before they reach Storage).
+curl -sI -X OPTIONS \
+  -H "Origin: https://adventures-in-tech-world-0.web.app" \
+  -H "Access-Control-Request-Method: GET" \
+  "https://firebasestorage.googleapis.com/v0/b/adventures-in-tech-world-0.firebasestorage.app/o" \
+  | grep -iE "access-control|http"
+# Expect: no access-control-allow-origin header (CORS denied)
+```
+
+If either canonical check fails, roll back by re-applying the prior
+allowlist (keep a copy of the old `cors.json` before this step):
+
+```bash
+gcloud storage buckets update gs://adventures-in-tech-world-0.firebasestorage.app \
+  --cors-file=cors-prev.json
+```
+
+---
+
+## Step 5 — Alternative: hard disable (if redirect rejected)
 
 Skip Step 2 entirely and run:
 
@@ -162,9 +227,13 @@ firebase hosting:disable --project adventures-in-tech-world-0 --site adventures-
 This puts up Firebase's "Site Not Found" page on all three hosts. Verify
 with the same curl commands as Step 3 — expect HTTP 404.
 
+Step 4 (apply `cors.json` to the bucket) still applies on the disable
+path — `firebase hosting:disable` only touches Hosting, not Storage
+CORS.
+
 ---
 
-## Step 5 — Update external references
+## Step 6 — Update external references
 
 The codebase scan (2026-05-30) found these in-repo URL references; all
 have been updated to canonical in this PR:
@@ -194,7 +263,7 @@ Out-of-repo references for Nick to sweep manually after the redirect lands:
 
 ---
 
-## Step 6 — Don't break Firebase Auth
+## Step 7 — Don't break Firebase Auth
 
 The Firebase Auth callback at
 `adventures-in-tech-world-0.firebaseapp.com/__/auth/handler` is the OAuth
