@@ -16,11 +16,45 @@ import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
+import 'package:tech_world/livekit/agent_hello.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
+import 'package:tech_world/livekit/platform_info.dart';
 
 /// Protocol version stamped on every outgoing LiveKit data-channel message.
 /// Bump when a wire-format change requires receivers to upgrade.
 const kProtocolVersion = 1;
+
+/// Whether this client requests adaptive streaming from the SFU.
+///
+/// MUST stay `false` for Tech World: adaptive streaming requires LiveKit's
+/// `VideoTrackRenderer` widget to signal demand. We render LiveKit frames
+/// through the Flame canvas, which never signals, so the SFU stops
+/// forwarding video (and can pause audio too).
+///
+/// Read by both the `RoomOptions` constructor and the `agent_hello`
+/// diagnostic so the value is reported truthfully if it ever changes.
+const bool kAdaptiveStream = false;
+
+/// Whether this client requests dynacast from the SFU.
+///
+/// Kept off for the same canvas-rendering reasons as [kAdaptiveStream].
+const bool kDynacast = false;
+
+/// Build SHA threaded in at build time via `--dart-define=APP_BUILD_SHA=...`.
+/// CI sets this; local `flutter run` falls back to `'dev'`.
+const String kAppBuildSha =
+    String.fromEnvironment('APP_BUILD_SHA', defaultValue: 'dev');
+
+/// App version reported in the agent-hello payload. Manually mirrored from
+/// `pubspec.yaml`. Trading a build-time read for one source of duplication so
+/// the field stays a plain `const` and is reachable in tests.
+const String kAppVersion = '0.0.0+1';
+
+/// LiveKit Dart SDK version. Manually mirrored from `pubspec.lock` (kept on
+/// the published version line). One line to update on SDK bump — the
+/// alternative (reading lock at build time) is a lot of plumbing for a
+/// diagnostic field.
+const String kLiveKitSdkVersion = '2.7.0';
 
 /// Result of a [LiveKitService.connect] attempt.
 enum ConnectionResult {
@@ -292,8 +326,8 @@ class LiveKitService {
           // Adaptive streaming requires LiveKit's VideoTrackRenderer widget
           // to signal "I'm rendering this track." We render via Flame canvas,
           // so the SDK never signals demand and the SFU stops forwarding.
-          adaptiveStream: false,
-          dynacast: false,
+          adaptiveStream: kAdaptiveStream,
+          dynacast: kDynacast,
           defaultCameraCaptureOptions: CameraCaptureOptions(
             maxFrameRate: 30,
             params: VideoParametersPresets.h540_169,
@@ -333,6 +367,11 @@ class LiveKitService {
       _connectionState = _ConnectionState.connected;
       _log.info('Connected to LiveKit room "$roomName"');
       dispatch([LiveKitConnected(roomName: roomName)]);
+
+      // Fire-and-forget agent-hello so the bot can detect mis-configured
+      // clients (e.g. adaptiveStream:true). Failure here MUST NOT bubble out
+      // — diagnostics shouldn't break a successful connect.
+      unawaited(_publishAgentHello());
 
       // Notify about existing participants
       for (final participant in _room!.remoteParticipants.values) {
@@ -481,6 +520,39 @@ class LiveKitService {
     }
 
     return _room!.remoteParticipants[identity];
+  }
+
+  /// Publish a one-shot agent-hello payload to the room.
+  ///
+  /// Carries the connect-time configuration (adaptiveStream, dynacast) plus
+  /// SDK/build/version/platform metadata so the bot can warn when a client
+  /// is connected with a known-bad setup. Reliable delivery — diagnostic
+  /// shouldn't be dropped under packet loss.
+  ///
+  /// Pure-builder is in `agent_hello.dart`; this method is just the seam
+  /// between the live `Room` and the bytes-to-send.
+  Future<void> _publishAgentHello() async {
+    try {
+      final payload = buildAgentHelloPayload(
+        clientSdkVersion: kLiveKitSdkVersion,
+        buildSha: kAppBuildSha,
+        appVersion: kAppVersion,
+        adaptiveStream: kAdaptiveStream,
+        dynacast: kDynacast,
+        platform: agentHelloPlatform(),
+        userAgent: agentHelloUserAgent(),
+      );
+      final bytes = encodeAgentHelloPayload(payload);
+      await publishData(
+        bytes,
+        reliable: true,
+        topic: LiveKitTopic.agentHello.wire,
+      );
+      _log.fine('Published agent_hello');
+    } catch (e, st) {
+      // Diagnostic — don't propagate. Log and move on.
+      _log.warning('Failed to publish agent_hello', e, st);
+    }
   }
 
   /// Publish data to the room via data channel.

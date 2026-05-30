@@ -87,6 +87,11 @@ void main() {
     test('pong wire is "pong"', () {
       expect(LiveKitTopic.pong.wire, 'pong');
     });
+
+    test('agentHello wire is "agent_hello"', () {
+      // snake_case is deliberate — wire contract with bot's AGENT_HELLO.
+      expect(LiveKitTopic.agentHello.wire, 'agent_hello');
+    });
   });
 
   // ── Exhaustiveness guard ─────────────────────────────────────────────────
