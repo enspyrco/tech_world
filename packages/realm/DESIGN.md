@@ -191,6 +191,25 @@ class Anonymous implements AuthMethod {
 /// gatekeep — the set is opaque-string by design, parallel to how the
 /// architecture treats World types and storage backends as registry-
 /// validated open sets.
+///
+/// **CRITICAL: `AuthProviderId` is a display-and-routing hint, NOT a trust
+/// primitive.** A malicious plugin can ship `AuthProviderId('google')` for
+/// non-Google authentication; the engine does not and cannot prevent this.
+/// Trust is established at the credential-exchange endpoint (see the
+/// "Credential exchange boundary" section above): the exchange endpoint
+/// verifies native credentials against the *real* provider's signing
+/// authority, so a plugin claiming `AuthProviderId('google')` for non-Google
+/// auth FAILS Google's verification and never produces a valid
+/// `RealmCredential`.
+///
+/// **Consumer policy** (engine commitment + future `realm_lints` rule):
+/// - Display surfaces ("Signed in with Google") MAY read `providerIds`.
+/// - Trust / access-control / authorization decisions MUST NOT read
+///   `providerIds`. Use `RealmCredential` provenance (which IS
+///   exchange-verified) for trust decisions.
+/// - A `realm_lints` rule (tracked under open questions) will flag any
+///   consumer code path that branches on `providerIds.contains(...)` for
+///   access-control decisions.
 extension type const AuthProviderId(String value) {
   static const google = AuthProviderId('google');
   static const apple = AuthProviderId('apple');
@@ -472,9 +491,16 @@ class BearerCredential implements TokenEndpointAuthStrategy {
 }
 ```
 
-**Server-side strategies live outside the engine package.** Round-2 attempted to keep `SignedRequest({required String secret})` in the engine with a "server-only" prose annotation, but round-3 cage-match noted that *the engine IS the client package* — any type declared in `packages/realm/` is shipped to every Flutter web/mobile/desktop client. A prose annotation is not enforcement. The chord move (unseal `TokenEndpointAuthStrategy`) makes this a *package* decision rather than a *prose* decision: HMAC-signed-request, mTLS, IP-allowlist, and any other server-side strategies ship in `examples/livekit-token-server/lib/` (reference implementations) or a future `realm_server` package. None of them live in `packages/realm/`. The `dart pub deps` whitelist for the engine package (named under "open questions") MUST reject signing/HMAC primitives — that's the structural enforcement.
+**Server-side strategies live outside the engine package.** Round-2 attempted to keep `SignedRequest({required String secret})` in the engine with a "server-only" prose annotation, but round-3 cage-match noted that *the engine IS the client package* — any type declared in `packages/realm/` is shipped to every Flutter web/mobile/desktop client. A prose annotation is not enforcement. The chord move (unseal `TokenEndpointAuthStrategy`) makes this a *package* decision rather than a *prose* decision.
 
-Example of a server-side strategy living outside the engine (illustrative, in `examples/livekit-token-server/lib/signed_request.dart`):
+**Two enforcement artifacts are required to make the package boundary structural rather than aspirational** (both are v1 BLOCKERS, tracked under open questions):
+
+1. **`examples/livekit-token-server/` is a workspace member with its own `pubspec.yaml`** that imports `packages/realm/` but is NOT imported by it. Migration step 2 (workspace scaffold) creates this directory as a real Dart package.
+2. **The engine package's transitive deps are whitelisted in CI.** A `dart pub deps --json` check fails the build if `packages/realm/`'s resolved dependency tree contains any signing/HMAC/crypto primitive (e.g. `crypto`, `cryptography`, `pointycastle`, `package:crypto/...`). Migration step 4 (provider plugin PR) wires this check.
+
+Until both artifacts land, the relocation below is *intentional aspirational discipline* — the doc commits to the post-state without claiming the structural enforcement is yet in place. The compensating control in the interim is the cage-match grep: reviewers MUST grep `SignedRequest(` in any new Flutter-reachable code path and reject any hit.
+
+Example of a server-side strategy living outside the engine (illustrative; lands in migration step 2 at `examples/livekit-token-server/lib/signed_request.dart`):
 
 ```dart
 import 'package:realm/realm.dart' show TokenEndpointAuthStrategy;
@@ -663,15 +689,32 @@ class PreviewHints {
 /// Open extension point for vector preview shapes. The engine ships three
 /// concrete defaults that worlds CAN use as conveniences, but worlds wanting
 /// bezier curves, SVG paths, raster patches, glyph runs, or anything else
-/// ship their own `implements PreviewShape` types in their own package. The
-/// foyer renders shapes via `switch (shape)` with a `default:` branch that
-/// falls back to a placeholder — non-exhaustive by design, because the set
-/// of shapes is open.
+/// ship their own `implements PreviewShape` types in their own package.
 ///
 /// `PreviewShape` is deliberately NOT sealed: sealing would commit the engine
 /// to a closed vector-graphics vocabulary, contradicting the "engine has no
 /// rendering opinion" rule directly above. See
 /// `feedback_seal_matches_architecture.md` for the principle.
+///
+/// **Foyer fallback contract** (binding on every `PresenceService.watchFromFoyer`
+/// consumer, not just the reference foyer renderer):
+///   1. **Per-shape skip, not per-preview discard.** Unknown shapes within a
+///      `VectorPreview` are SKIPPED INDIVIDUALLY. Known sibling shapes inside
+///      the same preview MUST still render. The foyer never discards a whole
+///      preview because one shape is unrecognized.
+///   2. **Telemetry, not error.** Encountering an unknown shape emits an
+///      `UnknownPreviewShapeEncountered` event via the engine's event sink
+///      (PII policy: `nonPii`; goes to remote telemetry). Operators detect
+///      worlds shipping shapes their foyer can't render by watching for these
+///      events.
+///   3. **No exceptions cross the foyer boundary.** Previews render during
+///      foyer scroll; one bad shape MUST NOT propagate an exception that
+///      halts the foyer. Renderers wrap individual shape rendering in a
+///      try/catch and treat any rendering error as a skip with a separate
+///      `PreviewShapeRenderFailed` event.
+/// These three rules together define the degradation semantics. A foyer that
+/// implements `PresenceService.watchFromFoyer` consumption without honoring
+/// them is non-conformant.
 abstract interface class PreviewShape {}
 
 class CirclePreviewShape implements PreviewShape {
@@ -715,7 +758,13 @@ class TechWorld extends flame.World with TapCallbacks
 
 The contract evolution rule: **never add abstract methods to `World` after v1.0; always add a new sibling interface**. This applies to every engine interface (`AuthProvider`, `RoomConfigStore`, `StorageProvider`, `PresenceService`), not just `World`.
 
-**Sealed types and enums are a separate evolution surface**. Adding a subtype to a sealed hierarchy (`AuthMethod`, `RoomRef`, `RoomPreview`, `PeerPresence`, `LeaveReason`, `TokenEndpointAuthStrategy`) or a value to an enum (`FoyerVisibility`) **is a breaking change for downstream code that pattern-matches exhaustively** — the analyzer will flag every non-exhaustive switch. This is the deliberate cost of sealed-type discipline: consumers benefit from exhaustiveness today, but additions land as **minor-version bumps with a migration note**, not as "additive" changes in the SemVer-minor sense. The engine commits to publishing a changelog entry every time a sealed family or enum grows, so consumers know to expect compiler errors at upgrade time and what to switch on.
+**Sealed types and enums are a separate evolution surface**. Adding a subtype to a sealed hierarchy or a value to an enum **is a breaking change for downstream code that pattern-matches exhaustively** — the analyzer will flag every non-exhaustive switch. Two categories must be distinguished:
+
+**Audience-bounded sealed surfaces (managed-breaking):** `LeaveReason`, `FoyerVisibility`, `PeerPresence` (the sealed projection), `RoomPreview` (the sealed kind XOR — `RasterPreview` | `VectorPreview` | `EmptyPreview`), `RoomRef`. These types' variant sets live entirely within the engine's audience contract. Adding a variant is a **breaking change** for consumers' exhaustive switches; the engine commits to publishing a changelog entry every time one grows, so consumers know to expect compiler errors at upgrade time and what to switch on. This is the deliberate cost of sealed-type discipline: consumers benefit from exhaustiveness today; additions land as **minor-version bumps with a migration note**, not as "additive" changes in the SemVer-minor sense.
+
+**Plugin-extension interfaces (additive-non-breaking):** `AuthMethod`, `TokenEndpointAuthStrategy`, `PreviewShape`, plus the registry-validated branded ID open sets (`WorldTypeId`, `StorageBackendId`, `AuthProviderId`). These types are **interfaces**, not sealed. Adding a new implementation is non-breaking by design — no changelog entry, no version bump, no migration note. Consumers branching on these types do so non-exhaustively (`switch` with `default:`, or `is`-checks for the variants they understand). Anyone re-sealing one of these types under the misunderstanding that they're sealed surfaces violates the round-3 chord principle — see `feedback_seal_matches_architecture.md`.
+
+The two categories must never be confused. Anything in the first category is an engine-internal closed vocabulary; anything in the second is an extension point the architecture promises will stay open.
 
 ## What is NOT in the engine
 
@@ -848,9 +897,9 @@ Stub-first ship: render a single placeholder body, no GitHub fetch yet. Just eno
 A single mechanical refactor PR can't do this — too much surface. The path:
 
 1. **Design note + cage-match** (this doc). Pin the contract.
-2. **Workspace scaffold PR**. Create `packages/realm/`, `packages/realm_firebase/`, `worlds/tech_world/` (initially empty), set up Dart workspace, ensure `flutter test` + `flutter analyze --fatal-infos` run across all members. No code moves yet. CI green.
+2. **Workspace scaffold PR**. Create `packages/realm/`, `packages/realm_firebase/`, `worlds/tech_world/` (initially empty), AND `examples/livekit-token-server/` as a workspace member with its own `pubspec.yaml` (importing `packages/realm/` but not imported by it). Set up Dart workspace, ensure `flutter test` + `flutter analyze --fatal-infos` run across all members. No code moves yet. CI green. **Note**: the `examples/livekit-token-server/` member is the F2 enforcement artifact — until it exists as a real package, the engine-vs-server-package boundary the design pin claims is aspirational.
 3. **Engine interface PR**. Define `AuthProvider`, `RoomConfigStore`, `StorageProvider`, `LiveKitTokenEndpoint`, `PresenceService` in `packages/realm/`, plus the `World` abstract interface class (and the `WorldTypeRegistry` + `StorageBackendRegistry` instance types the engine entry point threads through). No implementations yet. CI green.
-4. **Provider plugin PR**. Implement Firebase-backed versions in `packages/realm_firebase/`: `FirebaseAuthProvider`, `FirestoreRoomConfigStore`, `FirebaseStorageProvider`. Tech World still calls Firebase directly. CI green.
+4. **Provider plugin PR**. Implement Firebase-backed versions in `packages/realm_firebase/`: `FirebaseAuthProvider`, `FirestoreRoomConfigStore`, `FirebaseStorageProvider`. Tech World still calls Firebase directly. Wire the **engine-package dependency whitelist** into CI: a `dart pub deps --json` check that fails the build if `packages/realm/`'s resolved transitive deps contain any signing/HMAC/crypto primitive (e.g. `crypto`, `cryptography`, `pointycastle`). This is the F2 enforcement artifact — the structural mechanism that prevents a future PR from re-adding `SignedRequest` or any other secret-bearing strategy to the engine package. CI green.
 5. **Consumer migration PRs** (one per consumer, parallel-safe). Move `AuthService` callers to `AuthProvider`. Move Firestore room reads to `RoomConfigStore`. Move `firebase_storage` calls to `StorageProvider`. Each PR is small, cage-matchable.
 6. **`TechWorld` wrap PR**. Refactor `TechWorld` → `class TechWorld extends flame.World with TapCallbacks implements World` (per the single-inheritance constraint — World is an interface, not a base class). `RoomSession` reads `worldType` from `RoomConfigStore`, dispatches via `WorldTypeRegistry`. Code moves from `lib/` to `worlds/tech_world/lib/`. CI green. **Behavior change is limited to native bundle paths**: iOS `cc.imagineering.techWorld` bundle ID and Firebase config tied to that ID are preserved; `pubspec.yaml` asset paths require adjustment; `lib/main.dart` stays as a thin shell at the workspace root that wires up worlds. The claim is NOT "zero behavior change for everything" — it's "zero gameplay behavior change for existing Tech World users, with documented native-bundle changes contained to a sub-step (6.5: bundle-path migration)".
 7. **`FoyerWorld` + `PresenceService` impl PR**. Add `worlds/foyer/`. Implement `LiveKitPresenceService` (or initial Firestore-backed version). Make Foyer the default landing experience on app start. Existing rooms appear as windows in the foyer.
@@ -894,18 +943,20 @@ Three increasingly ambitious federation models, named for vocabulary, none imple
 
 **The four v1 constraints that preserve federation as a future capability:**
 
-1. **`RoomRef` is defined as a sealed type from v1.** The type definition is cheap to reserve (zero consumers in v1, no listing API exposes it, no foyer reads from it). The `connectedTo` field on `RoomDescriptor` is deliberately **not** in v1 — adding a field to a public listing-API return type IS part of the v1 contract surface and would already need v1 authorization decisions. v2 adds `connectedTo` to `RoomDescriptor` as a minor-version bump along with `FederationGraphStore`; consumers see a typed-shape addition at a known cadence.
+1. **`RoomRef` is defined as a sealed type from v1, with BOTH variants present from day one.** The sealed family IS the contract surface — if `FederatedRoomRef` weren't in the v1 family, adding it in v2 would be a sealed-add break (every consumer's exhaustive switch breaks at the upgrade). Instead, v1 reserves `FederatedRoomRef` as a *declared-but-never-emitted* variant: the type exists in the sealed family, but no v1 implementation constructs it. Consumers' exhaustive switches must already include a `FederatedRoomRef` arm (typically a "should not occur in v1; assert or skip" branch). v2 lights up emission inside `FederationGraphStore` implementations without changing the sealed surface — no breaking change, no migration note, no version bump for the type family itself. The `connectedTo` field on `RoomDescriptor` is similarly deliberate: **not** in v1, added in v2 alongside `FederationGraphStore` as a minor-version field addition (per the versioning section above).
 
    ```dart
    sealed class RoomRef {
      const RoomRef();
    }
-   /// Same-operator room reference (v1 + v2).
+   /// Same-operator room reference. v1 emits; v2 also emits.
    class LocalRoomRef extends RoomRef {
      const LocalRoomRef(this.roomId);
      final RoomId roomId;
    }
-   /// Cross-operator federation reference (v2 only; v1 never emits).
+   /// Cross-operator federation reference. **Declared in v1, emitted only in v2.**
+   /// v1 implementations MUST NOT construct this; v1 consumers MUST handle it
+   /// in exhaustive switches (typically as a "should not occur" branch).
    class FederatedRoomRef extends RoomRef {
      const FederatedRoomRef({required this.operatorUri, required this.roomId});
      final Uri operatorUri;
@@ -913,12 +964,14 @@ Three increasingly ambitious federation models, named for vocabulary, none imple
    }
    ```
 
-   v1 only constructs `LocalRoomRef`. v2 introduces `FederatedRoomRef`; per the versioning section above, that sealed-add IS breaking for downstream exhaustive switches — it lands as a minor-version bump with a changelog entry, not as a silently "additive" change. The discipline cost is acknowledged and accepted: exhaustiveness today is worth the migration today at v2 cut.
+   The choice here is "reserve in the family, defer emission" rather than "add the variant later." The former preserves consumers' exhaustive switches across v1↔v2; the latter would break them. The discipline cost — v1 consumers writing a `case FederatedRoomRef()` arm for a thing that doesn't happen — is the price of a sealed family that remains stable across federation rollout.
 2. **Presence is engine-owned, not LiveKit-direct.** `PresenceService` is the engine abstraction over participant lists. v1 implementations read from LiveKit room metadata, but the abstraction means future cross-room or cross-instance presence layers don't require rewriting every consumer.
-3. **`World.onLeave(LeaveReason)` carries an enum.** v1 reasons: `userLeft`, `disconnect`. Reserved: `portalTransit`. The enum being there from day one means model B can be added with a single minor-version bump (enum-add breaks exhaustive switches, per the versioning section — same discipline as sealed-add).
+3. **`World.onLeave(LeaveReason)` carries an enum with `portalTransit` reserved from day one.** v1 emits only `userLeft` and `disconnect`; `portalTransit` is declared-but-never-emitted (the same reserve-in-the-family pattern as `FederatedRoomRef`). v1 consumers' exhaustive switches must include a `portalTransit` arm (typically "should not occur in v1; treat as disconnect"). v2 lights up `portalTransit` emission inside `WorldFederationHooks` without changing the enum surface — no enum-add break, no migration note required.
 4. **Room IDs are globally unique, not org-namespaced.** If federation eventually crosses operators, room IDs must collide-resist across operators. Use a UUID-shaped opaque ID, not `<org>:<slug>`.
 
-If we honor those four, federation lands as a v2 minor-version bump: new `FederationGraphStore` interface, `connectedTo` field added to `RoomDescriptor`, sibling `WorldFederationHooks` interface that Worlds opt into, new presence broadcasting layer — all without re-litigating v1's core shapes. Every breaking-but-bounded change (enum-add, sealed-add, `RoomDescriptor` field-add) ships with a changelog entry and a migration note.
+If we honor those four, federation lands as a v2 minor-version bump that's largely non-breaking: new `FederationGraphStore` interface (additive — open extension point), sibling `WorldFederationHooks` interface (additive — Worlds opt in via `implements`), new presence broadcasting layer (additive), v2 emission of the already-declared `FederatedRoomRef`, and v2 emission of the already-declared `LeaveReason.portalTransit`. v1 consumers' exhaustive switches on `RoomRef` and `LeaveReason` already contain arms for both `FederatedRoomRef` and `portalTransit` (declared-but-never-emitted from day one — that's what reserve-in-the-family means), so v2 emission does not break them.
+
+The one v2 cut that IS breaking-but-bounded is the **`RoomDescriptor.connectedTo` field-add** — adding a field to a public value class changes the constructor signature for consumers who instantiate `RoomDescriptor` themselves (rare; usually only `RoomConfigStore` implementations do this). That ships with a changelog entry and a migration note. The pattern across all four constraints: declare the future in v1's contract surface, defer emission until v2; the only true sealed-add / enum-add discipline cost is when the v1 surface DIDN'T declare the future, which we deliberately avoided here.
 
 ## Naming and prior art
 
