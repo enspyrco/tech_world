@@ -141,7 +141,9 @@ The five engine-level interfaces. Every one must obey the **no-leak rule**: no b
 
 ### 1. `AuthProvider`
 
-Sign-in operations take a sealed `AuthMethod` rather than provider-specific methods. Adding a new provider means adding a subtype to `AuthMethod`, not adding a method to every `AuthProvider` implementation. (Closed-set-as-method-names is the same anti-pattern as closed-set-as-Strings; this design rejects both.)
+Sign-in operations take an `AuthMethod` interface rather than provider-specific methods. Adding a new provider means shipping a new `AuthMethod` implementation in a plugin — no engine PR required. (Closed-set-as-method-names is the same anti-pattern as closed-set-as-Strings; this design rejects both.)
+
+`AuthMethod` is deliberately **`abstract interface class`, not `sealed class`** — the plugin ecosystem is an open set by design. A future `realm_discord_auth` plugin ships `class DiscordAuth implements AuthMethod`; no engine code changes. The engine and its consumers branch on `AuthMethod` subtypes via `if (method is GoogleAuth)` or `switch (method)` with a default branch, accepting that no exhaustive switch is possible. This is the correct posture for an extension point — see `feedback_seal_matches_architecture.md` for the principle.
 
 ```dart
 abstract interface class AuthProvider {
@@ -152,33 +154,51 @@ abstract interface class AuthProvider {
   Future<RealmCredential> getCredential({bool forceRefresh = false});
 }
 
-sealed class AuthMethod {
-  const AuthMethod();
-}
-class GoogleAuth extends AuthMethod {
+/// Open extension point. Plugins introduce their own variants by
+/// `implements AuthMethod`. Engine ships seven concrete defaults below
+/// covering the common providers; nothing else is privileged.
+abstract interface class AuthMethod {}
+
+class GoogleAuth implements AuthMethod {
   const GoogleAuth();
 }
-class AppleAuth extends AuthMethod {
+class AppleAuth implements AuthMethod {
   const AppleAuth();
 }
-class GitHubAuth extends AuthMethod {
+class GitHubAuth implements AuthMethod {
   const GitHubAuth({this.scopes = const []});
   final List<String> scopes;
 }
-class EmailPassword extends AuthMethod {
+class EmailPassword implements AuthMethod {
   const EmailPassword({required this.email, required this.password});
   final String email;
   final String password;
 }
-class MagicLink extends AuthMethod {
+class MagicLink implements AuthMethod {
   const MagicLink({required this.email});
   final String email;
 }
-class Passkey extends AuthMethod {
+class Passkey implements AuthMethod {
   const Passkey();
 }
-class Anonymous extends AuthMethod {
+class Anonymous implements AuthMethod {
   const Anonymous();
+}
+
+/// Open extension point for auth provider identity. Plugins mint their
+/// own (`AuthProviderId('discord')`, `AuthProviderId('steam')`). Engine
+/// ships canonical constants for the common providers but does NOT
+/// gatekeep — the set is opaque-string by design, parallel to how the
+/// architecture treats World types and storage backends as registry-
+/// validated open sets.
+extension type const AuthProviderId(String value) {
+  static const google = AuthProviderId('google');
+  static const apple = AuthProviderId('apple');
+  static const github = AuthProviderId('github');
+  static const firebase = AuthProviderId('firebase');
+  static const emailPassword = AuthProviderId('email_password');
+  static const passkey = AuthProviderId('passkey');
+  static const anonymous = AuthProviderId('anonymous');
 }
 
 class RealmUser {
@@ -331,16 +351,26 @@ enum FoyerVisibility {
 
   /// Parse strictly. Unknown wire strings throw rather than silently
   /// downgrading to `.private` — a typo in the wire format should surface
-  /// loudly, not quietly change a room's visibility. Callers at trust
-  /// boundaries (Firestore reads, LiveKit metadata reads) should catch
-  /// this and decide their own fallback policy explicitly — e.g.
-  /// `try { FoyerVisibility.parse(wire) } catch (_) { return FoyerVisibility.private; }`
-  /// with an accompanying event-sink log so the silent downgrade is at
-  /// least visible to operators.
+  /// loudly, not quietly change a room's visibility. Use this when you
+  /// want a non-nullable result and an explicit exception on miss.
   static FoyerVisibility parse(String wire) =>
       values.firstWhere((v) => v.wire == wire,
                        orElse: () => throw ArgumentError.value(
                            wire, 'wire', 'Unknown FoyerVisibility'));
+
+  /// Try-parse variant: returns null on miss instead of throwing. Idiomatic
+  /// at trust boundaries (Firestore reads, LiveKit metadata reads) where the
+  /// caller wants to decide their own fallback policy without try/catch:
+  /// `FoyerVisibility.tryParse(wire) ?? FoyerVisibility.private`. Both
+  /// `parse` and `tryParse` ship together — see
+  /// `feedback_seal_matches_architecture.md` for the "two doors at the
+  /// boundary" principle.
+  static FoyerVisibility? tryParse(String wire) {
+    for (final v in values) {
+      if (v.wire == wire) return v;
+    }
+    return null;
+  }
 }
 ```
 
@@ -424,33 +454,36 @@ class LiveKitTokenEndpoint {
   final TokenEndpointAuthStrategy authStrategy;
 }
 
-sealed class TokenEndpointAuthStrategy {
-  const TokenEndpointAuthStrategy();
-}
+/// Open extension point. The engine ships exactly ONE concrete strategy —
+/// `BearerCredential` — because that's the only one safe to instantiate in
+/// client code. Server-side strategies (HMAC-signed request, mTLS,
+/// IP-allowlist) ship in separate packages or example servers, never as
+/// engine-package types. The interface itself is intentionally NOT sealed:
+/// sealing forces every variant into the engine's library, and the engine's
+/// library is shipped to clients. See `feedback_seal_matches_architecture.md`.
+abstract interface class TokenEndpointAuthStrategy {}
+
 /// Engine sends `Authorization: Bearer <RealmCredential.token>` with each request.
-/// This is the only auth strategy safe to instantiate in client code (Flutter
-/// web / mobile / desktop). The bearer is the per-user RealmCredential, which
-/// is short-lived and scoped — extracting it from a client gives an attacker
-/// at most that user's session.
-class BearerCredential extends TokenEndpointAuthStrategy {
+/// This is the only auth strategy the engine ships. The bearer is the per-user
+/// `RealmCredential`, which is short-lived and scoped — extracting it from a
+/// client gives an attacker at most that user's session.
+class BearerCredential implements TokenEndpointAuthStrategy {
   const BearerCredential();
 }
+```
 
-/// ⚠️ **SERVER-SIDE REFERENCE-IMPLEMENTATION USE ONLY.** Engine signs the request
-/// body with a shared HMAC secret. Do NOT instantiate this in client code —
-/// the secret would be extractable from any Flutter bundle (web `main.dart.js`
-/// strings dump, mobile binary `strings` scan, or runtime decompilation), and
-/// any extractor can then mint LiveKit-token requests against your operator.
-///
-/// This type exists in the engine package so reference server implementations
-/// (the Node/Go/Rust token servers under `examples/livekit-token-server/`)
-/// can express the contract in shared Dart code without a separate package.
-/// A future analyzer plugin (`realm_lints`) or compile-time guard should
-/// flag instantiation of `SignedRequest` in any path reachable from
-/// `package:flutter` — until then, this prose annotation IS the contract.
-/// Reviewers cage-matching new client integrations MUST grep for
-/// `SignedRequest(` and reject any hit in Flutter-reachable code.
-class SignedRequest extends TokenEndpointAuthStrategy {
+**Server-side strategies live outside the engine package.** Round-2 attempted to keep `SignedRequest({required String secret})` in the engine with a "server-only" prose annotation, but round-3 cage-match noted that *the engine IS the client package* — any type declared in `packages/realm/` is shipped to every Flutter web/mobile/desktop client. A prose annotation is not enforcement. The chord move (unseal `TokenEndpointAuthStrategy`) makes this a *package* decision rather than a *prose* decision: HMAC-signed-request, mTLS, IP-allowlist, and any other server-side strategies ship in `examples/livekit-token-server/lib/` (reference implementations) or a future `realm_server` package. None of them live in `packages/realm/`. The `dart pub deps` whitelist for the engine package (named under "open questions") MUST reject signing/HMAC primitives — that's the structural enforcement.
+
+Example of a server-side strategy living outside the engine (illustrative, in `examples/livekit-token-server/lib/signed_request.dart`):
+
+```dart
+import 'package:realm/realm.dart' show TokenEndpointAuthStrategy;
+
+/// Engine signs the request body with a shared HMAC secret.
+/// Server-side use only — the secret would be extractable from any client
+/// bundle. This class lives in a server-only package so it cannot reach
+/// client code by import.
+class SignedRequest implements TokenEndpointAuthStrategy {
   const SignedRequest({required this.secret});
   final String secret;
 }
@@ -627,8 +660,37 @@ class PreviewHints {
   final bool voiceActive;
 }
 
-/// Opaque shape primitive for vector previews. Foyer renders these.
-sealed class PreviewShape { /* circle, rect, text — defined in engine */ }
+/// Open extension point for vector preview shapes. The engine ships three
+/// concrete defaults that worlds CAN use as conveniences, but worlds wanting
+/// bezier curves, SVG paths, raster patches, glyph runs, or anything else
+/// ship their own `implements PreviewShape` types in their own package. The
+/// foyer renders shapes via `switch (shape)` with a `default:` branch that
+/// falls back to a placeholder — non-exhaustive by design, because the set
+/// of shapes is open.
+///
+/// `PreviewShape` is deliberately NOT sealed: sealing would commit the engine
+/// to a closed vector-graphics vocabulary, contradicting the "engine has no
+/// rendering opinion" rule directly above. See
+/// `feedback_seal_matches_architecture.md` for the principle.
+abstract interface class PreviewShape {}
+
+class CirclePreviewShape implements PreviewShape {
+  const CirclePreviewShape({required this.center, required this.radius});
+  final ({double x, double y}) center;
+  final double radius;
+}
+
+class RectPreviewShape implements PreviewShape {
+  const RectPreviewShape({required this.origin, required this.size});
+  final ({double x, double y}) origin;
+  final ({double width, double height}) size;
+}
+
+class TextPreviewShape implements PreviewShape {
+  const TextPreviewShape({required this.text, required this.origin});
+  final String text;
+  final ({double x, double y}) origin;
+}
 ```
 
 `TechWorld` becomes: `class TechWorld extends flame.World with TapCallbacks implements World`. `RepoBodyWorld` and `FoyerWorld` choose their own renderer base independently — they don't have to extend Flame's World at all.
