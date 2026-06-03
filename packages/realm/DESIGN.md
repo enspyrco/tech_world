@@ -207,9 +207,10 @@ class Anonymous implements AuthMethod {
 /// - Trust / access-control / authorization decisions MUST NOT read
 ///   `providerIds`. Use `RealmCredential` provenance (which IS
 ///   exchange-verified) for trust decisions.
-/// - A `realm_lints` rule (tracked under open questions) will flag any
-///   consumer code path that branches on `providerIds.contains(...)` for
-///   access-control decisions.
+/// - A `realm_lints` rule will flag any consumer code path that branches
+///   on `providerIds.contains(...)` for access-control decisions. The
+///   `realm_lints` package is tracked as Open Question #9; the specific
+///   rule for AuthProviderId is named there as item (a).
 extension type const AuthProviderId(String value) {
   static const google = AuthProviderId('google');
   static const apple = AuthProviderId('apple');
@@ -493,7 +494,7 @@ class BearerCredential implements TokenEndpointAuthStrategy {
 
 **Server-side strategies live outside the engine package.** Round-2 attempted to keep `SignedRequest({required String secret})` in the engine with a "server-only" prose annotation, but round-3 cage-match noted that *the engine IS the client package* — any type declared in `packages/realm/` is shipped to every Flutter web/mobile/desktop client. A prose annotation is not enforcement. The chord move (unseal `TokenEndpointAuthStrategy`) makes this a *package* decision rather than a *prose* decision.
 
-**Two enforcement artifacts are required to make the package boundary structural rather than aspirational** (both are v1 BLOCKERS, tracked under open questions):
+**Two enforcement artifacts are required to make the package boundary structural rather than aspirational** (both are v1 BLOCKERS, named in Migration plan steps 2 and 4; the deps-whitelist mechanism is further specified in Open Question #2):
 
 1. **`examples/livekit-token-server/` is a workspace member with its own `pubspec.yaml`** that imports `packages/realm/` but is NOT imported by it. Migration step 2 (workspace scaffold) creates this directory as a real Dart package.
 2. **The engine package's transitive deps are whitelisted in CI.** A `dart pub deps --json` check fails the build if `packages/realm/`'s resolved dependency tree contains any signing/HMAC/crypto primitive (e.g. `crypto`, `cryptography`, `pointycastle`, `package:crypto/...`). Migration step 4 (provider plugin PR) wires this check.
@@ -696,8 +697,16 @@ class PreviewHints {
 /// rendering opinion" rule directly above. See
 /// `feedback_seal_matches_architecture.md` for the principle.
 ///
-/// **Foyer fallback contract** (binding on every `PresenceService.watchFromFoyer`
-/// consumer, not just the reference foyer renderer):
+/// **VectorPreview rendering contract** — binding on every consumer of
+/// `RoomPreview` that switches on `VectorPreview` and walks `shapes`. This
+/// is the foyer renderer's consumption surface (the foyer fetches each
+/// room's `RoomPreview` via `World.previewSnapshot()`), but the rule
+/// generalises to operator-built foyers, debug tooling, and any other
+/// consumer of `RoomPreview` that handles `VectorPreview`. It does NOT
+/// bind `PresenceService.watchFromFoyer` consumers — those see
+/// `PublicProjection`, which carries `opaqueAvatarRef` not `PreviewShape`.
+/// (Round-6 cage-match correction: the round-5 spiral pinned this contract
+/// at the wrong consumer surface.)
 ///   1. **Per-shape skip, not per-preview discard.** Unknown shapes within a
 ///      `VectorPreview` are SKIPPED INDIVIDUALLY. Known sibling shapes inside
 ///      the same preview MUST still render. The foyer never discards a whole
@@ -712,9 +721,19 @@ class PreviewHints {
 ///      halts the foyer. Renderers wrap individual shape rendering in a
 ///      try/catch and treat any rendering error as a skip with a separate
 ///      `PreviewShapeRenderFailed` event.
-/// These three rules together define the degradation semantics. A foyer that
-/// implements `PresenceService.watchFromFoyer` consumption without honoring
-/// them is non-conformant.
+///
+/// **Enforcement artifacts** (named per `feedback_name_the_enforcing_artifact.md`):
+///   - The engine ships a `realm_test::vectorPreviewConformance(consumer)`
+///     contract test (lands at migration step 3 alongside the engine
+///     interfaces). Foyer implementations and any other `VectorPreview`
+///     consumer run the conformance test; CI failure on miss.
+///   - The engine ships a `RoomPreviewRenderer` mixin (also step 3) with a
+///     default `renderShapes(List<PreviewShape>)` that implements all three
+///     rules. Consumers MAY use the mixin (cheap path) OR implement their
+///     own renderer and run the conformance test (full-control path).
+///   - Until both artifacts ship, this contract is prose-grade; the
+///     compensating control is cage-match review of any new
+///     `VectorPreview` consumer.
 abstract interface class PreviewShape {}
 
 class CirclePreviewShape implements PreviewShape {
@@ -897,9 +916,9 @@ Stub-first ship: render a single placeholder body, no GitHub fetch yet. Just eno
 A single mechanical refactor PR can't do this — too much surface. The path:
 
 1. **Design note + cage-match** (this doc). Pin the contract.
-2. **Workspace scaffold PR**. Create `packages/realm/`, `packages/realm_firebase/`, `worlds/tech_world/` (initially empty), AND `examples/livekit-token-server/` as a workspace member with its own `pubspec.yaml` (importing `packages/realm/` but not imported by it). Set up Dart workspace, ensure `flutter test` + `flutter analyze --fatal-infos` run across all members. No code moves yet. CI green. **Note**: the `examples/livekit-token-server/` member is the F2 enforcement artifact — until it exists as a real package, the engine-vs-server-package boundary the design pin claims is aspirational.
+2. **Workspace scaffold PR**. Create `packages/realm/`, `packages/realm_firebase/`, `worlds/tech_world/` (initially empty), AND `examples/livekit-token-server/` as a workspace member with its own `pubspec.yaml` (importing `packages/realm/` but not imported by it). Set up Dart workspace, ensure `flutter test` + `flutter analyze --fatal-infos` run across all members. No code moves yet. CI green. **Note**: the `examples/livekit-token-server/` member is one of the two structural artifacts that make the engine-vs-server-package boundary real (the other lands in step 4 below). Until both exist, the boundary the design pin claims is aspirational.
 3. **Engine interface PR**. Define `AuthProvider`, `RoomConfigStore`, `StorageProvider`, `LiveKitTokenEndpoint`, `PresenceService` in `packages/realm/`, plus the `World` abstract interface class (and the `WorldTypeRegistry` + `StorageBackendRegistry` instance types the engine entry point threads through). No implementations yet. CI green.
-4. **Provider plugin PR**. Implement Firebase-backed versions in `packages/realm_firebase/`: `FirebaseAuthProvider`, `FirestoreRoomConfigStore`, `FirebaseStorageProvider`. Tech World still calls Firebase directly. Wire the **engine-package dependency whitelist** into CI: a `dart pub deps --json` check that fails the build if `packages/realm/`'s resolved transitive deps contain any signing/HMAC/crypto primitive (e.g. `crypto`, `cryptography`, `pointycastle`). This is the F2 enforcement artifact — the structural mechanism that prevents a future PR from re-adding `SignedRequest` or any other secret-bearing strategy to the engine package. CI green.
+4. **Provider plugin PR**. Implement Firebase-backed versions in `packages/realm_firebase/`: `FirebaseAuthProvider`, `FirestoreRoomConfigStore`, `FirebaseStorageProvider`. Tech World still calls Firebase directly. Wire the **engine-package dependency whitelist** into CI: a `dart pub deps --json` check that fails the build if `packages/realm/`'s resolved transitive deps contain any signing/HMAC/crypto primitive (e.g. `crypto`, `cryptography`, `pointycastle`). This is the second structural artifact for the engine-vs-server-package boundary (paired with `examples/livekit-token-server/` from step 2) — the structural mechanism that prevents a future PR from re-adding `SignedRequest` or any other secret-bearing strategy to the engine package. CI green.
 5. **Consumer migration PRs** (one per consumer, parallel-safe). Move `AuthService` callers to `AuthProvider`. Move Firestore room reads to `RoomConfigStore`. Move `firebase_storage` calls to `StorageProvider`. Each PR is small, cage-matchable.
 6. **`TechWorld` wrap PR**. Refactor `TechWorld` → `class TechWorld extends flame.World with TapCallbacks implements World` (per the single-inheritance constraint — World is an interface, not a base class). `RoomSession` reads `worldType` from `RoomConfigStore`, dispatches via `WorldTypeRegistry`. Code moves from `lib/` to `worlds/tech_world/lib/`. CI green. **Behavior change is limited to native bundle paths**: iOS `cc.imagineering.techWorld` bundle ID and Firebase config tied to that ID are preserved; `pubspec.yaml` asset paths require adjustment; `lib/main.dart` stays as a thin shell at the workspace root that wires up worlds. The claim is NOT "zero behavior change for everything" — it's "zero gameplay behavior change for existing Tech World users, with documented native-bundle changes contained to a sub-step (6.5: bundle-path migration)".
 7. **`FoyerWorld` + `PresenceService` impl PR**. Add `worlds/foyer/`. Implement `LiveKitPresenceService` (or initial Firestore-backed version). Make Foyer the default landing experience on app start. Existing rooms appear as windows in the foyer.
@@ -920,6 +939,8 @@ These are not blockers for the design note but must be answered before the corre
 6. **PII gate ownership.** The PII gate (`lib/events/pii_policy.dart`) is currently Tech-World-resident. It's substrate-shaped (every world will want it). Move to engine or duplicate per-world? Almost certainly engine. Confirm during interface PR.
 7. **`developer.log` bypass note** (from CLAUDE.md) needs to migrate with the PII gate doc.
 8. **Test infrastructure.** `RoomSession` uses `@visibleForTesting` DI seams (the LiveKit + Firestore stubs in `room_session_test.dart`). The engine should keep the same testability discipline. The `_FakeLiveKit` pattern is reusable across the engine surface.
+9. **`realm_lints` analyzer-plugin package.** Several enforcement claims in this doc point at this package, but it doesn't yet exist. Scope at v1: (a) flag any consumer code path that branches on `RealmUser.providerIds.contains(...)` for trust-relevant access-control decisions (per the AuthProviderId display-only policy); (b) flag instantiation of any `TokenEndpointAuthStrategy` other than `BearerCredential` in code reachable from `package:flutter` (per the SignedRequest server-side-only policy); (c) flag direct construction of `FederatedRoomRef` in v1 (per the reserve-in-the-family pattern). Until `realm_lints` ships, the compensating control for each is cage-match grep — named at each site. The package can land as a separate PR or merged into migration step 3 (engine interface PR); decide at the start of step 3.
+10. **`realm_test` conformance test package.** The `VectorPreview` rendering contract (per-shape skip / telemetry event / no exception) is named as "binding on every consumer" but currently has no structural artifact. The conformance test package would ship a `vectorPreviewConformance(consumer)` test that operator-built foyers run in CI; the reference foyer runs it by default. Lands at migration step 3 alongside the engine interface package. The `RoomPreviewRenderer` mixin (default implementation of all three rules) is the convenience companion — consumers may use the mixin OR implement their own renderer and run the conformance test.
 
 ## Non-goals for v1
 
@@ -955,16 +976,49 @@ Three increasingly ambitious federation models, named for vocabulary, none imple
      final RoomId roomId;
    }
    /// Cross-operator federation reference. **Declared in v1, emitted only in v2.**
-   /// v1 implementations MUST NOT construct this; v1 consumers MUST handle it
-   /// in exhaustive switches (typically as a "should not occur" branch).
+   /// v1 implementations MUST NOT construct this; the assertion below catches
+   /// accidental construction in dev/debug builds. v2 disables the assertion
+   /// inside `FederationGraphStore` via a `@FederationCapability` annotation
+   /// + an analyzer rule (see `realm_lints` open question).
+   /// v1 consumers MUST handle this in exhaustive switches; canonical pattern
+   /// for the v1 branch is shown below the code block.
    class FederatedRoomRef extends RoomRef {
-     const FederatedRoomRef({required this.operatorUri, required this.roomId});
+     FederatedRoomRef({required this.operatorUri, required this.roomId})
+         : assert(_federationActive, 'FederatedRoomRef cannot be constructed in v1 — '
+             'reserved-but-never-emitted per the v1 federation constraints. '
+             'If you see this in a v2 stack trace, the federation capability '
+             'token was not set before construction.');
      final Uri operatorUri;
      final RoomId roomId;
    }
+   /// Top-level capability flag flipped by v2's `FederationGraphStore` at
+   /// init. v1 never flips it. The assert above gives v1 dev/debug builds
+   /// a loud failure on accidental construction; release-mode v1 builds
+   /// still pay the discipline cost in `realm_lints` rule (c).
+   bool _federationActive = false;
    ```
 
    The choice here is "reserve in the family, defer emission" rather than "add the variant later." The former preserves consumers' exhaustive switches across v1↔v2; the latter would break them. The discipline cost — v1 consumers writing a `case FederatedRoomRef()` arm for a thing that doesn't happen — is the price of a sealed family that remains stable across federation rollout.
+
+   **Canonical v1 runtime pattern for reserve-in-the-family branches** (applies to both `FederatedRoomRef` in `RoomRef` switches and `LeaveReason.portalTransit` in `LeaveReason` switches): **fail-fast with telemetry**, NOT silent absorption. Silent absorption is what bit the round-1 chord (doc-violates-own-discipline) — bugs that should surface get swallowed.
+
+   ```dart
+   // Canonical v1 consumer pattern:
+   final label = switch (ref) {
+     LocalRoomRef(:final roomId) => 'Room: ${roomId.value}',
+     FederatedRoomRef() => () {
+       // Fail-fast: this should not occur in v1. Log via event sink for
+       // operator visibility; throw to surface the engine bug at the call site.
+       dispatch(EngineInvariantViolation(
+         message: 'FederatedRoomRef emitted in v1',
+         site: 'RoomRef switch',
+       ));
+       throw StateError('FederatedRoomRef cannot occur in v1');
+     }(),
+   };
+   ```
+
+   For `LeaveReason.portalTransit` the same pattern: dispatch `EngineInvariantViolation`, then `throw StateError`. Consumers who want softer degradation (treat as `.disconnect`) MAY do so but must document the choice explicitly with reasoning — the default is fail-fast.
 2. **Presence is engine-owned, not LiveKit-direct.** `PresenceService` is the engine abstraction over participant lists. v1 implementations read from LiveKit room metadata, but the abstraction means future cross-room or cross-instance presence layers don't require rewriting every consumer.
 3. **`World.onLeave(LeaveReason)` carries an enum with `portalTransit` reserved from day one.** v1 emits only `userLeft` and `disconnect`; `portalTransit` is declared-but-never-emitted (the same reserve-in-the-family pattern as `FederatedRoomRef`). v1 consumers' exhaustive switches must include a `portalTransit` arm (typically "should not occur in v1; treat as disconnect"). v2 lights up `portalTransit` emission inside `WorldFederationHooks` without changing the enum surface — no enum-add break, no migration note required.
 4. **Room IDs are globally unique, not org-namespaced.** If federation eventually crosses operators, room IDs must collide-resist across operators. Use a UUID-shaped opaque ID, not `<org>:<slug>`.
