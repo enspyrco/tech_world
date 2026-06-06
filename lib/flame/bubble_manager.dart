@@ -104,7 +104,9 @@ class BubbleManager {
   final Map<String, PositionComponent> _playerBubbles = {};
   final Map<String, Vector2> _bubbleDisplacements = {};
   final Set<String> _audioEnabledParticipants = {};
-  Point<int>? _lastPlayerGridPosition;
+  /// Last reported local-player proximity to Dreamfinder, so the df-proximity
+  /// signal is published only on enter/exit transitions, not every frame.
+  bool _wasNearDreamfinder = false;
 
   // ── Rendering components ─────────────────────────────────────────────────
 
@@ -141,7 +143,14 @@ class BubbleManager {
 
   static const _localPlayerBubbleKey = '_local_player_';
   static const int _visualThreshold = 5; // grid squares — bubbles visible
-  static const int _audioThreshold = 2; // grid squares — audio enabled
+  // Audio gate with hysteresis so standing at the boundary doesn't flap the
+  // SFU forward on/off. Audio enables when a participant is within
+  // [_audioEnableThreshold] and only cuts once they drift past
+  // [_audioDisableThreshold]. The enable distance sits just inside the visual
+  // range (5) so you can hear almost anyone whose bubble you can see — closing
+  // the old see-but-can't-hear dead zone (audio was ≤2 while bubbles were ≤5).
+  static const int _audioEnableThreshold = 4; // grid squares — audio turns on
+  static const int _audioDisableThreshold = 5; // grid squares — audio cuts off
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
   static const double _mergeThreshold = 96.0; // 1.5× bubble diameter
@@ -189,12 +198,15 @@ class BubbleManager {
 
     final playerGrid = _localPlayer.miniGridPosition;
 
-    // Skip proximity re-evaluation if player hasn't moved to a new grid cell.
-    if (_lastPlayerGridPosition == playerGrid) {
-      _updateBubblePositions(dt);
-      return;
-    }
-    _lastPlayerGridPosition = playerGrid;
+    // Recompute proximity every frame. A previous optimisation skipped this
+    // whenever the LOCAL player hadn't changed grid cell — but remote players
+    // and Dreamfinder (which wanders autonomously) move too, and that changes
+    // distances. Skipping on local-stillness left the audio gate stale: a peer
+    // could walk back into range and stay inaudible until the local player
+    // happened to move (the "can't hear you until I move" bug). At meetup-scale
+    // participant counts the per-frame recompute is cheap — a handful of
+    // Chebyshev distances; bubble creation/removal is still transition-guarded,
+    // and the audio enable/disable is a no-op when the gate state is unchanged.
 
     // Check each other player for proximity.
     final nearbyPlayerIds = <String>{};
@@ -282,6 +294,18 @@ class BubbleManager {
       _setBubbleOpacity(
           _playerBubbles[_localPlayerBubbleKey]!, closestDistance);
       nearbyPlayerIds.add(_localPlayerBubbleKey);
+    }
+
+    // Notify Dreamfinder when the local player enters/exits its range so the
+    // bot can gate whose speech it hears. DF is in [nearbyPlayerIds] exactly
+    // when within visual range (the same threshold that shows its bubble), so
+    // "DF can hear you" lines up with "DF's bubble is up for you". Published on
+    // transition only — the bot holds the state between signals.
+    final nearDf = dreamfinderComponent != null &&
+        nearbyPlayerIds.contains(dreamfinderIdentity);
+    if (nearDf != _wasNearDreamfinder) {
+      _wasNearDreamfinder = nearDf;
+      _liveKitService?.publishDfProximity(near: nearDf);
     }
 
     // Remove bubbles for players no longer nearby.
@@ -451,7 +475,7 @@ class BubbleManager {
     _mergedBubble?.removeFromParent();
     _mergedBubble = null;
     _audioEnabledParticipants.clear();
-    _lastPlayerGridPosition = null;
+    _wasNearDreamfinder = false;
     _liveKitService = null;
     _dreamfinderAvatarBridge?.dispose();
     _dreamfinderAvatarBridge = null;
@@ -620,10 +644,16 @@ class BubbleManager {
   }
 
   void _updateParticipantAudio(String playerId, int distance) {
-    final shouldHaveAudio = distance <= _audioThreshold;
     final hasAudio = _audioEnabledParticipants.contains(playerId);
 
-    if (shouldHaveAudio && !hasAudio) {
+    // Hysteresis: enable when within the (tighter) enable threshold, disable
+    // only once past the (looser) disable threshold. Between the two, hold the
+    // current state so a participant hovering at the boundary doesn't toggle
+    // the SFU forward on and off every frame.
+    final shouldEnable = !hasAudio && distance <= _audioEnableThreshold;
+    final shouldDisable = hasAudio && distance > _audioDisableThreshold;
+
+    if (shouldEnable) {
       _audioEnabledParticipants.add(playerId);
       _liveKitService?.setParticipantAudioEnabled(playerId, true);
       if (avDiagnosticsEnabled) {
@@ -633,7 +663,7 @@ class BubbleManager {
           distance: distance,
         )]);
       }
-    } else if (!shouldHaveAudio && hasAudio) {
+    } else if (shouldDisable) {
       _audioEnabledParticipants.remove(playerId);
       _liveKitService?.setParticipantAudioEnabled(playerId, false);
       if (avDiagnosticsEnabled) {

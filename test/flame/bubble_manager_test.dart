@@ -241,14 +241,14 @@ void main() {
             .called(1);
       });
 
-      test('disables audio beyond threshold', () {
+      test('does not enable audio beyond the enable threshold', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
             .thenReturn(null);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
 
-        // Place player 4 squares away (beyond audio threshold)
+        // Place player 6 squares away — beyond the enable threshold (4).
         remotePlayers['remote-1'] = PlayerComponent(
-          position: Vector2(288, 160), // 4 away
+          position: Vector2(352, 160), // 6 away
           id: 'remote-1',
           displayName: 'Remote',
         );
@@ -257,6 +257,37 @@ void main() {
 
         verifyNever(() =>
             mockLiveKit.setParticipantAudioEnabled('remote-1', true));
+      });
+
+      test('hysteresis: stays enabled between thresholds, cuts past disable', () {
+        when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
+
+        final remote = PlayerComponent(
+          position: Vector2(256, 160), // 3 away — within enable threshold (4)
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+
+        // Enters enable range → audio turns on.
+        manager.update(0.016);
+        verify(() => mockLiveKit.setParticipantAudioEnabled('remote-1', true))
+            .called(1);
+
+        // Drifts to 5 — inside the hysteresis band (> enable 4, ≤ disable 5).
+        // Audio must NOT cut: no further enable/disable calls.
+        remote.position = Vector2(320, 160); // 5 away
+        manager.update(0.016);
+        verifyNever(
+            () => mockLiveKit.setParticipantAudioEnabled('remote-1', false));
+
+        // Drifts past the disable threshold (6 > 5) → audio cuts.
+        remote.position = Vector2(352, 160); // 6 away
+        manager.update(0.016);
+        verify(() => mockLiveKit.setParticipantAudioEnabled('remote-1', false))
+            .called(1);
       });
     });
 

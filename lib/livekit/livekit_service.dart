@@ -652,6 +652,20 @@ class LiveKitService {
     );
   }
 
+  /// Tell Dreamfinder whether the local player is within its range.
+  ///
+  /// Published on enter/exit transitions only (not every frame). Reliable,
+  /// because a missed enter would leave DF unable to hear a nearby player and a
+  /// missed exit would leave DF listening to someone who walked away. The bot
+  /// gates whose speech it responds to on this signal (near OR named).
+  Future<void> publishDfProximity({required bool near}) async {
+    await publishJson(
+      {'playerId': userId, 'near': near},
+      topic: LiveKitTopic.dfProximity.wire,
+      reliable: true,
+    );
+  }
+
   Timer? _heartbeatTimer;
 
   /// Last grid position sent via heartbeat, used to avoid duplicate sends.

@@ -620,6 +620,9 @@ class FakeLiveKitService implements LiveKitService {
   Future<void> publishAvatar(Avatar avatar) async {}
 
   @override
+  Future<void> publishDfProximity({required bool near}) async {}
+
+  @override
   Future<DataChannelMessage?> sendPing({
     Duration timeout = const Duration(seconds: 5),
   }) async =>
