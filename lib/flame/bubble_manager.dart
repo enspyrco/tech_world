@@ -151,6 +151,7 @@ class BubbleManager {
   // the old see-but-can't-hear dead zone (audio was ≤2 while bubbles were ≤5).
   static const int _audioEnableThreshold = 4; // grid squares — audio turns on
   static const int _audioDisableThreshold = 5; // grid squares — audio cuts off
+  static const int _audioFullVolumeDistance = 1; // ≤ this = full volume; fades out to _audioDisableThreshold
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
   static const double _mergeThreshold = 96.0; // 1.5× bubble diameter
@@ -674,6 +675,24 @@ class BubbleManager {
         )]);
       }
     }
+
+    // Distance fade: while the track is subscribed, ramp playback volume by
+    // distance so voices fade with range instead of cutting. The hard
+    // enable/disable above is the outer subscription boundary (and the
+    // bandwidth saver); this is the smooth gradient inside it. Web-only effect
+    // today — a no-op elsewhere (see LiveKitService.setParticipantAudioVolume).
+    if (_audioEnabledParticipants.contains(playerId)) {
+      _liveKitService?.setParticipantAudioVolume(
+          playerId, _volumeForDistance(distance));
+    }
+  }
+
+  /// Linear volume curve for the distance fade: full within
+  /// [_audioFullVolumeDistance], ramping to silence at [_audioDisableThreshold].
+  double _volumeForDistance(int distance) {
+    if (distance <= _audioFullVolumeDistance) return 1.0;
+    final span = _audioDisableThreshold - _audioFullVolumeDistance;
+    return ((_audioDisableThreshold - distance) / span).clamp(0.0, 1.0);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

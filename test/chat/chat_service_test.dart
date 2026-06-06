@@ -1109,6 +1109,9 @@ class FakeLiveKitService implements LiveKitService {
   void setParticipantAudioEnabled(String identity, bool enabled) {}
 
   @override
+  void setParticipantAudioVolume(String identity, double volume) {}
+
+  @override
   final ValueNotifier<bool> dreamfinderSilenced = ValueNotifier<bool>(false);
 
   @override

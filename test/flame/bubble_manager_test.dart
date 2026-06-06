@@ -289,6 +289,31 @@ void main() {
         verify(() => mockLiveKit.setParticipantAudioEnabled('remote-1', false))
             .called(1);
       });
+
+      test('fades volume by distance while subscribed', () {
+        when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
+
+        // distance 3 → linear volume (5-3)/(5-1) = 0.5
+        final remote = PlayerComponent(
+          position: Vector2(256, 160), // 3 away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+        manager.update(0.016);
+        verify(() => mockLiveKit.setParticipantAudioVolume('remote-1', 0.5))
+            .called(1);
+
+        // distance 1 → full volume.
+        remote.position = Vector2(192, 160); // 1 away
+        manager.update(0.016);
+        verify(() => mockLiveKit.setParticipantAudioVolume('remote-1', 1.0))
+            .called(1);
+      });
     });
 
     group('clear', () {

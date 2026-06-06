@@ -19,6 +19,7 @@ import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/agent_hello.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/livekit/platform_info.dart';
+import 'package:tech_world/livekit/set_track_volume.dart';
 
 /// Protocol version stamped on every outgoing LiveKit data-channel message.
 /// Bump when a wire-format change requires receivers to upgrade.
@@ -484,6 +485,23 @@ class LiveKitService {
       } else {
         publication.disable();
       }
+    }
+  }
+
+  /// Set the playback volume (0.0–1.0) for a remote participant's audio.
+  ///
+  /// Used by the proximity layer to fade voices by distance instead of hard
+  /// cutting. Distinct from [setParticipantAudioEnabled], which is a server-side
+  /// subscription toggle (binary forward/don't-forward) — this is a local
+  /// playback gain applied while the track is subscribed. Web-only effect today
+  /// (see [setTrackVolume]); a safe no-op on other platforms.
+  void setParticipantAudioVolume(String identity, double volume) {
+    final participant = _room?.remoteParticipants[identity];
+    if (participant == null) return;
+
+    for (final publication in participant.audioTrackPublications) {
+      final track = publication.track;
+      if (track != null) setTrackVolume(track.getCid(), volume);
     }
   }
 
