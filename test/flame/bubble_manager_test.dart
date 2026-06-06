@@ -206,6 +206,8 @@ void main() {
 
       setUp(() {
         mockLiveKit = MockLiveKitService();
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(true);
         localPlayer = PlayerComponent(
           position: Vector2(160, 160),
           id: 'local-user',
@@ -294,7 +296,7 @@ void main() {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
             .thenReturn(null);
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
 
         // distance 3 → linear volume (5-3)/(5-1) = 0.5
@@ -314,6 +316,37 @@ void main() {
         verify(() => mockLiveKit.setParticipantAudioVolume('remote-1', 1.0))
             .called(1);
       });
+
+      test('does not cache volume until a track is actually addressed', () {
+        when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
+        // Track not subscribed yet → setParticipantAudioVolume returns false.
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(false);
+
+        final remote = PlayerComponent(
+          position: Vector2(256, 160), // 3 away → volume 0.5
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+
+        // Two frames at the same distance: because the volume never landed, it
+        // must be retried every frame (NOT cached after the first no-op).
+        manager.update(0.016);
+        manager.update(0.016);
+        verify(() => mockLiveKit.setParticipantAudioVolume('remote-1', 0.5))
+            .called(2);
+
+        // Track subscribes → call now succeeds; next frame caches and stops.
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(true);
+        manager.update(0.016);
+        manager.update(0.016);
+        verify(() => mockLiveKit.setParticipantAudioVolume('remote-1', 0.5))
+            .called(1); // landed once, then cached
+      });
     });
 
     group('Dreamfinder proximity signal', () {
@@ -322,6 +355,8 @@ void main() {
 
       setUp(() {
         mockLiveKit = MockLiveKitService();
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(true);
         when(() => mockLiveKit.publishDfProximity(near: any(named: 'near')))
             .thenAnswer((_) async {});
         manager = BubbleManager(
@@ -585,6 +620,8 @@ void main() {
         addedComponents = [];
         remotePlayers = {};
         mockLiveKit = MockLiveKitService();
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
             .thenReturn(null);
         localPlayer = PlayerComponent(
@@ -723,6 +760,8 @@ void main() {
         addedComponents = [];
         remotePlayers = {};
         mockLiveKit = MockLiveKitService();
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
             .thenReturn(null);
         localPlayer = PlayerComponent(
@@ -972,6 +1011,8 @@ void main() {
 
         addedComponents = [];
         mockLiveKit = MockLiveKitService();
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
             .thenReturn(null);
         when(() => mockLiveKit.localParticipant).thenReturn(null);

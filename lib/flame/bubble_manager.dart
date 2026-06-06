@@ -456,6 +456,11 @@ class BubbleManager {
 
   /// Remove a single bubble by player ID.
   void removeBubble(String playerId) {
+    // A peer that vanishes (ungraceful disconnect) while inside audio range
+    // never crosses the disable threshold in the proximity loop, so drop their
+    // audio bookkeeping here to avoid leaking map entries until teardown.
+    _audioEnabledParticipants.remove(playerId);
+    _audioVolumes.remove(playerId);
     _replaceBubble(playerId, null, 'remove-bubble-api');
   }
 
@@ -698,8 +703,12 @@ class BubbleManager {
     if (_audioEnabledParticipants.contains(playerId)) {
       final volume = _volumeForDistance(distance);
       if (_audioVolumes[playerId] != volume) {
-        _audioVolumes[playerId] = volume;
-        service.setParticipantAudioVolume(playerId, volume);
+        // Cache only if the volume actually landed on a track. If the track
+        // hasn't subscribed yet the call no-ops; caching anyway would suppress
+        // the retry and leave the late track stuck at default volume.
+        if (service.setParticipantAudioVolume(playerId, volume)) {
+          _audioVolumes[playerId] = volume;
+        }
       }
     }
   }

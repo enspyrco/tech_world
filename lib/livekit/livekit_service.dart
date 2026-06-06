@@ -495,14 +495,25 @@ class LiveKitService {
   /// subscription toggle (binary forward/don't-forward) — this is a local
   /// playback gain applied while the track is subscribed. Web-only effect today
   /// (see [setTrackVolume]); a safe no-op on other platforms.
-  void setParticipantAudioVolume(String identity, double volume) {
+  ///
+  /// Returns true iff at least one subscribed track was actually addressed.
+  /// Callers cache the applied volume — caching on a no-op (e.g. the audio
+  /// publication exists but [RemoteTrackPublication.track] hasn't subscribed
+  /// yet) would suppress the retry, leaving the track at default volume once it
+  /// finally subscribes.
+  bool setParticipantAudioVolume(String identity, double volume) {
     final participant = _room?.remoteParticipants[identity];
-    if (participant == null) return;
+    if (participant == null) return false;
 
+    var applied = false;
     for (final publication in participant.audioTrackPublications) {
       final track = publication.track;
-      if (track != null) setTrackVolume(track.getCid(), volume);
+      if (track != null) {
+        setTrackVolume(track.getCid(), volume);
+        applied = true;
+      }
     }
+    return applied;
   }
 
   /// Whether Dreamfinder's audio is currently silenced for the local player.
