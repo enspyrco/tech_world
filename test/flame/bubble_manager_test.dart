@@ -316,6 +316,76 @@ void main() {
       });
     });
 
+    group('Dreamfinder proximity signal', () {
+      late BubbleManager manager;
+      late MockLiveKitService mockLiveKit;
+
+      setUp(() {
+        mockLiveKit = MockLiveKitService();
+        when(() => mockLiveKit.publishDfProximity(near: any(named: 'near')))
+            .thenAnswer((_) async {});
+        manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2(160, 160),
+            id: 'local-user',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+        );
+        manager.setLiveKitService(mockLiveKit);
+      });
+
+      test('enters at the enable threshold, exits past the disable threshold',
+          () {
+        // d=4 ≤ enable(4) → enter.
+        manager.debugUpdateDreamfinderProximity(4);
+        verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
+
+        // d=5 — inside the hysteresis band (> enable 4, ≤ disable 5). No re-emit.
+        manager.debugUpdateDreamfinderProximity(5);
+        // d=6 > disable(5) → exit.
+        manager.debugUpdateDreamfinderProximity(6);
+        verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
+        // Exactly one enter + one exit across the whole sweep.
+        verifyNever(() => mockLiveKit.publishDfProximity(near: any(named: 'near')));
+      });
+
+      test('DF absent (null distance) forces an exit', () {
+        manager.debugUpdateDreamfinderProximity(2); // near
+        verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
+        manager.debugUpdateDreamfinderProximity(null); // DF gone → exit
+        verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
+      });
+
+      test('null service does NOT latch — re-fires once the service is set', () {
+        // Fresh manager with no service set yet (_liveKitService is null).
+        final noService = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2(160, 160),
+            id: 'local-user',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+        );
+        noService.debugUpdateDreamfinderProximity(2); // can't emit, must not latch
+        // Now the service is available; the SAME distance must still fire enter.
+        noService.setLiveKitService(mockLiveKit);
+        noService.debugUpdateDreamfinderProximity(2);
+        verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
+      });
+
+      test('clear() emits a final exit when the player was near DF', () {
+        manager.debugUpdateDreamfinderProximity(1); // near
+        verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
+        manager.clear();
+        verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
+      });
+    });
+
     group('clear', () {
       late BubbleManager manager;
       late List<Component> addedComponents;

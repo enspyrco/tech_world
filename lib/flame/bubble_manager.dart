@@ -104,6 +104,9 @@ class BubbleManager {
   final Map<String, PositionComponent> _playerBubbles = {};
   final Map<String, Vector2> _bubbleDisplacements = {};
   final Set<String> _audioEnabledParticipants = {};
+  /// Last volume pushed to LiveKit per participant, so the per-frame fade only
+  /// writes when the value actually changes (distance is an int → rarely).
+  final Map<String, double> _audioVolumes = {};
   /// Last reported local-player proximity to Dreamfinder, so the df-proximity
   /// signal is published only on enter/exit transitions, not every frame.
   bool _wasNearDreamfinder = false;
@@ -298,16 +301,12 @@ class BubbleManager {
     }
 
     // Notify Dreamfinder when the local player enters/exits its range so the
-    // bot can gate whose speech it hears. DF is in [nearbyPlayerIds] exactly
-    // when within visual range (the same threshold that shows its bubble), so
-    // "DF can hear you" lines up with "DF's bubble is up for you". Published on
-    // transition only — the bot holds the state between signals.
-    final nearDf = dreamfinderComponent != null &&
-        nearbyPlayerIds.contains(dreamfinderIdentity);
-    if (nearDf != _wasNearDreamfinder) {
-      _wasNearDreamfinder = nearDf;
-      _liveKitService?.publishDfProximity(near: nearDf);
-    }
+    // bot can gate whose speech it hears. null distance == DF not present.
+    _updateDreamfinderProximity(
+      dreamfinderComponent == null
+          ? null
+          : chebyshevDistance(playerGrid, dreamfinderComponent!.miniGridPosition),
+    );
 
     // Remove bubbles for players no longer nearby.
     final toRemove = <String>[];
@@ -476,6 +475,13 @@ class BubbleManager {
     _mergedBubble?.removeFromParent();
     _mergedBubble = null;
     _audioEnabledParticipants.clear();
+    _audioVolumes.clear();
+    // Emit a final exit so Dreamfinder doesn't hold a stale near:true after we
+    // tear down while the player was in range (cage match PR #481 — Carnot).
+    // Best-effort; the bot also self-heals on our ParticipantDisconnected.
+    if (_wasNearDreamfinder) {
+      _liveKitService?.publishDfProximity(near: false);
+    }
     _wasNearDreamfinder = false;
     _liveKitService = null;
     _dreamfinderAvatarBridge?.dispose();
@@ -645,6 +651,12 @@ class BubbleManager {
   }
 
   void _updateParticipantAudio(String playerId, int distance) {
+    // No LiveKit service yet (pre-connect / post-teardown) → don't mutate the
+    // gate state. Latching a state change we couldn't actually send leaves the
+    // gate stuck once the service comes up (the next frame sees "no change").
+    final service = _liveKitService;
+    if (service == null) return;
+
     final hasAudio = _audioEnabledParticipants.contains(playerId);
 
     // Hysteresis: enable when within the (tighter) enable threshold, disable
@@ -656,7 +668,7 @@ class BubbleManager {
 
     if (shouldEnable) {
       _audioEnabledParticipants.add(playerId);
-      _liveKitService?.setParticipantAudioEnabled(playerId, true);
+      service.setParticipantAudioEnabled(playerId, true);
       if (avDiagnosticsEnabled) {
         dispatch([AvAudioGateChanged(
           participant: playerId,
@@ -666,7 +678,8 @@ class BubbleManager {
       }
     } else if (shouldDisable) {
       _audioEnabledParticipants.remove(playerId);
-      _liveKitService?.setParticipantAudioEnabled(playerId, false);
+      _audioVolumes.remove(playerId); // re-set volume on next enable
+      service.setParticipantAudioEnabled(playerId, false);
       if (avDiagnosticsEnabled) {
         dispatch([AvAudioGateChanged(
           participant: playerId,
@@ -679,21 +692,56 @@ class BubbleManager {
     // Distance fade: while the track is subscribed, ramp playback volume by
     // distance so voices fade with range instead of cutting. The hard
     // enable/disable above is the outer subscription boundary (and the
-    // bandwidth saver); this is the smooth gradient inside it. Web-only effect
-    // today — a no-op elsewhere (see LiveKitService.setParticipantAudioVolume).
+    // bandwidth saver); this is the per-square ramp inside it. Only push to
+    // LiveKit when the value actually changes — `distance` is an int, so for a
+    // stationary peer this is most frames, and the web path is a DOM write.
     if (_audioEnabledParticipants.contains(playerId)) {
-      _liveKitService?.setParticipantAudioVolume(
-          playerId, _volumeForDistance(distance));
+      final volume = _volumeForDistance(distance);
+      if (_audioVolumes[playerId] != volume) {
+        _audioVolumes[playerId] = volume;
+        service.setParticipantAudioVolume(playerId, volume);
+      }
     }
   }
 
-  /// Linear volume curve for the distance fade: full within
-  /// [_audioFullVolumeDistance], ramping to silence at [_audioDisableThreshold].
+  /// Volume curve for the distance fade: full within [_audioFullVolumeDistance],
+  /// then a linear step-down per grid square to silence at
+  /// [_audioDisableThreshold]. Stepwise (distance is an int), not continuous.
   double _volumeForDistance(int distance) {
     if (distance <= _audioFullVolumeDistance) return 1.0;
     final span = _audioDisableThreshold - _audioFullVolumeDistance;
     return ((_audioDisableThreshold - distance) / span).clamp(0.0, 1.0);
   }
+
+  /// Emit the `df-proximity` enter/exit signal to Dreamfinder. [dfDistance] is
+  /// null when DF isn't present (forces an exit).
+  ///
+  /// Hardened per the PR #481 cage match (Kelvin + Carnot):
+  /// - **Hysteresis** — enter within [_audioEnableThreshold]; once near, stay
+  ///   near until past [_audioDisableThreshold]. Stops a peer hovering at the
+  ///   boundary from spamming the reliable channel.
+  /// - **Null-service safety** — if the service isn't ready we do NOT latch
+  ///   [_wasNearDreamfinder]; the transition simply re-fires next frame once it
+  ///   is. Latching-without-sending was the "signal lost forever" bug.
+  void _updateDreamfinderProximity(int? dfDistance) {
+    final near = dfDistance != null &&
+        (_wasNearDreamfinder
+            ? dfDistance <= _audioDisableThreshold
+            : dfDistance <= _audioEnableThreshold);
+    if (near == _wasNearDreamfinder) return;
+    final service = _liveKitService;
+    if (service == null) return; // can't emit — don't latch; retry next frame
+    _wasNearDreamfinder = near;
+    service.publishDfProximity(near: near);
+  }
+
+  /// Test seam for the DF proximity emission logic — exercising it through the
+  /// real update loop would require a fully-constructed [DreamfinderComponent]
+  /// (sprite + path harness). Pass the Chebyshev distance to DF, or null for
+  /// "DF absent".
+  @visibleForTesting
+  void debugUpdateDreamfinderProximity(int? dfDistance) =>
+      _updateDreamfinderProximity(dfDistance);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Private — physics and rendering
