@@ -19,6 +19,7 @@ import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/agent_hello.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/livekit/platform_info.dart';
+import 'package:tech_world/livekit/set_track_volume.dart';
 
 /// Protocol version stamped on every outgoing LiveKit data-channel message.
 /// Bump when a wire-format change requires receivers to upgrade.
@@ -487,6 +488,34 @@ class LiveKitService {
     }
   }
 
+  /// Set the playback volume (0.0–1.0) for a remote participant's audio.
+  ///
+  /// Used by the proximity layer to fade voices by distance instead of hard
+  /// cutting. Distinct from [setParticipantAudioEnabled], which is a server-side
+  /// subscription toggle (binary forward/don't-forward) — this is a local
+  /// playback gain applied while the track is subscribed. Web-only effect today
+  /// (see [setTrackVolume]); a safe no-op on other platforms.
+  ///
+  /// Returns true iff the volume actually landed on at least one track — i.e.
+  /// [setTrackVolume] reported it wrote the value, not merely that a
+  /// [RemoteTrackPublication.track] exists. The track can be subscribed a frame
+  /// or two before its web audio element is appended, so this distinction is
+  /// what lets the caller retry instead of caching a silent no-op (which would
+  /// strand the late track at default volume).
+  bool setParticipantAudioVolume(String identity, double volume) {
+    final participant = _room?.remoteParticipants[identity];
+    if (participant == null) return false;
+
+    var applied = false;
+    for (final publication in participant.audioTrackPublications) {
+      final track = publication.track;
+      if (track != null && setTrackVolume(track.getCid(), volume)) {
+        applied = true;
+      }
+    }
+    return applied;
+  }
+
   /// Whether Dreamfinder's audio is currently silenced for the local player.
   ///
   /// Server-side disable (via [setParticipantAudioEnabled]) — DF still
@@ -649,6 +678,20 @@ class LiveKitService {
       message,
       topic: LiveKitTopic.position.wire,
       reliable: false, // Positions can use unreliable for lower latency
+    );
+  }
+
+  /// Tell Dreamfinder whether the local player is within its range.
+  ///
+  /// Published on enter/exit transitions only (not every frame). Reliable,
+  /// because a missed enter would leave DF unable to hear a nearby player and a
+  /// missed exit would leave DF listening to someone who walked away. The bot
+  /// gates whose speech it responds to on this signal (near OR named).
+  Future<void> publishDfProximity({required bool near}) async {
+    await publishJson(
+      {'playerId': userId, 'near': near},
+      topic: LiveKitTopic.dfProximity.wire,
+      reliable: true,
     );
   }
 

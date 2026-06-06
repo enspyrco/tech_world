@@ -43,6 +43,12 @@ enum LiveKitTopic {
   oracleRequest('oracle-request'),
   oracleResponse('oracle-response'),
 
+  /// Local player's proximity to Dreamfinder, published on enter/exit of DF's
+  /// range. The client owns DF's on-screen position, so it is the authority on
+  /// proximity; the bot gates whose speech DF responds to on this signal (near
+  /// OR addressed-by-name). Payload `{near: bool}`, reliable.
+  dfProximity('df-proximity'),
+
   // ── Infrastructure ────────────────────────────────────────────────────────
   infraHealth('infra-health'),
   infraHeal('infra-heal'),

@@ -1109,6 +1109,9 @@ class FakeLiveKitService implements LiveKitService {
   void setParticipantAudioEnabled(String identity, bool enabled) {}
 
   @override
+  bool setParticipantAudioVolume(String identity, double volume) => true;
+
+  @override
   final ValueNotifier<bool> dreamfinderSilenced = ValueNotifier<bool>(false);
 
   @override
@@ -1157,6 +1160,9 @@ class FakeLiveKitService implements LiveKitService {
 
   @override
   Future<void> publishAvatar(Avatar avatar) async {}
+
+  @override
+  Future<void> publishDfProximity({required bool near}) async {}
 
   @override
   Future<DataChannelMessage?> sendPing({
