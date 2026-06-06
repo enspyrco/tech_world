@@ -5,4 +5,7 @@
 /// this is a deliberate no-op. The distance fade is therefore web-only today;
 /// the proximity enable/disable gate still works everywhere. A native fade
 /// (via `flutter_webrtc`'s `Helper.setVolume`) can be implemented here later.
-void setTrackVolume(String cid, double volume) {}
+///
+/// Returns true so callers treat the (intentional) no-op as "applied" and don't
+/// retry every frame forever — there is no element to appear on these platforms.
+bool setTrackVolume(String cid, double volume) => true;

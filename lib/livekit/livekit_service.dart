@@ -496,11 +496,12 @@ class LiveKitService {
   /// playback gain applied while the track is subscribed. Web-only effect today
   /// (see [setTrackVolume]); a safe no-op on other platforms.
   ///
-  /// Returns true iff at least one subscribed track was actually addressed.
-  /// Callers cache the applied volume — caching on a no-op (e.g. the audio
-  /// publication exists but [RemoteTrackPublication.track] hasn't subscribed
-  /// yet) would suppress the retry, leaving the track at default volume once it
-  /// finally subscribes.
+  /// Returns true iff the volume actually landed on at least one track — i.e.
+  /// [setTrackVolume] reported it wrote the value, not merely that a
+  /// [RemoteTrackPublication.track] exists. The track can be subscribed a frame
+  /// or two before its web audio element is appended, so this distinction is
+  /// what lets the caller retry instead of caching a silent no-op (which would
+  /// strand the late track at default volume).
   bool setParticipantAudioVolume(String identity, double volume) {
     final participant = _room?.remoteParticipants[identity];
     if (participant == null) return false;
@@ -508,8 +509,7 @@ class LiveKitService {
     var applied = false;
     for (final publication in participant.audioTrackPublications) {
       final track = publication.track;
-      if (track != null) {
-        setTrackVolume(track.getCid(), volume);
+      if (track != null && setTrackVolume(track.getCid(), volume)) {
         applied = true;
       }
     }

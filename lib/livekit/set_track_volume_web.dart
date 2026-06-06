@@ -20,8 +20,13 @@ import 'package:web/web.dart' as web;
 /// livekit_client's audio-element id prefix (`_audio_html.dart`).
 const _audioElementPrefix = 'livekit_audio_';
 
-void setTrackVolume(String cid, double volume) {
+/// Returns true iff the audio element was found and its volume written. A track
+/// can be subscribed (`publication.track != null`) a frame or two before
+/// livekit_client appends its `HTMLAudioElement`, so a `false` here tells the
+/// caller "not applied — retry" rather than silently caching a no-op.
+bool setTrackVolume(String cid, double volume) {
   final element = web.document.getElementById('$_audioElementPrefix$cid');
-  if (element == null || !element.isA<web.HTMLAudioElement>()) return;
+  if (element == null || !element.isA<web.HTMLAudioElement>()) return false;
   (element as web.HTMLAudioElement).volume = volume.clamp(0.0, 1.0);
+  return true;
 }
