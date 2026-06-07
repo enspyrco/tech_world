@@ -106,8 +106,15 @@ class LiveKitService {
   final String roomName;
   final Future<String?> Function()? _tokenRetriever;
 
-  // LiveKit server URL
-  static const _serverUrl = 'wss://livekit.imagineering.cc';
+  // LiveKit server URL. Overridable at build time via
+  // `--dart-define=LIVEKIT_URL=...` so the integration harness (and any future
+  // staging env) can point a real client at a local livekit-server. The default
+  // is the production SFU, so a normal build is byte-identical to before.
+  // See docs/integration-harness.md (seam S1).
+  static const _serverUrl = String.fromEnvironment(
+    'LIVEKIT_URL',
+    defaultValue: 'wss://livekit.imagineering.cc',
+  );
 
   Room? _room;
   EventsListener<RoomEvent>? _listener;
