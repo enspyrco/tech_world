@@ -18,6 +18,8 @@ import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/agent_hello.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
+import 'package:tech_world/harness/harness_probe.dart';
+import 'package:tech_world/livekit/harness_token.dart';
 import 'package:tech_world/livekit/platform_info.dart';
 import 'package:tech_world/livekit/set_track_volume.dart';
 
@@ -493,6 +495,7 @@ class LiveKitService {
         publication.disable();
       }
     }
+    harnessSetAudioEnabled(identity, enabled); // S3 observation seam (no-op in prod)
   }
 
   /// Set the playback volume (0.0–1.0) for a remote participant's audio.
@@ -519,6 +522,9 @@ class LiveKitService {
       if (track != null && setTrackVolume(track.getCid(), volume)) {
         applied = true;
       }
+    }
+    if (applied) {
+      harnessSetVolume(identity, volume); // S3 observation seam (no-op in prod)
     }
     return applied;
   }
@@ -695,6 +701,7 @@ class LiveKitService {
   /// missed exit would leave DF listening to someone who walked away. The bot
   /// gates whose speech it responds to on this signal (near OR named).
   Future<void> publishDfProximity({required bool near}) async {
+    harnessSetDfProximity(near); // S3 observation seam (no-op in prod)
     await publishJson(
       {'playerId': userId, 'near': near},
       topic: LiveKitTopic.dfProximity.wire,
@@ -822,6 +829,17 @@ class LiveKitService {
   }
 
   Future<_TokenResult> _retrieveToken() async {
+    // S2 (integration harness): mint a local-server token client-side instead
+    // of calling the Cloud Function. Returns null in every normal build, so
+    // production falls through to the paths below unchanged. See
+    // harness_token.dart and docs/integration-harness.md.
+    final harnessToken = mintHarnessToken(
+      identity: userId,
+      room: roomName,
+      name: displayName,
+    );
+    if (harnessToken != null) return _TokenResult.success(harnessToken);
+
     if (_tokenRetriever != null) {
       final token = await _tokenRetriever();
       return token != null
