@@ -44,6 +44,22 @@ only thing faked is the *driving* (Playwright moves avatars) and the *room*
 (local server, throwaway room). Everything the bugs live in — DOM, LiveKit JS
 client, BubbleManager, the data channel — is real.
 
+### Test pyramid — the rig is for the boundary, not the logic (decided 2026-06-07)
+
+The four bugs split by where their terminal layer lives, and they get **different
+test tiers** accordingly (a hybrid, not "everything through Playwright"):
+
+- **#1 (df-proximity publish) + #2 (volume DOM-write)** — terminal layer is the
+  real SFU message / the real browser DOM. These NEED the Playwright two-tab rig.
+- **#3 (remote-move gate) + #4 (hysteresis)** — terminal layer is BubbleManager's
+  own audio-enable decision, pure in-process Dart. These are **fast hermetic
+  `flutter test` unit tests** that drive `BubbleManager.update()` with synthetic
+  participant positions — NO browser, NO SFU. Routing them through Playwright
+  would make them slow + flaky for zero fidelity gain (violates the test pyramid).
+
+Same terminal-layer discipline everywhere; the right tool per layer. The
+expensive Playwright rig is reserved for the DOM/SFU boundary it alone can reach.
+
 **Why black-box two-tab (the chosen shape):** maximal production fidelity; both
 peers are identical real clients; reuses the existing `playwright` CLI. The cost
 we accept: driving avatars through the canvas UI is brittle (mitigated below),
@@ -54,7 +70,7 @@ and two of four signals need a small observation seam.
 | Seam | Change | Why it's safe / independently good |
 |---|---|---|
 | **S1 — env LiveKit URL** | `_serverUrl` (livekit_service.dart:110) → `String.fromEnvironment('LIVEKIT_URL', defaultValue: 'wss://livekit.imagineering.cc')` | Already on the CLAUDE.md TODO ("LiveKit URL hardcoded… add --dart-define env selection"). Default unchanged ⇒ prod byte-identical. |
-| **S2 — local token path** | When `LIVEKIT_URL` is local, mint the join token locally (a tiny dev token endpoint or a `--dart-define` test token) instead of calling the `retrieveLiveKitToken` Cloud Function (livekit_service.dart:827) | Gated on the non-default URL; the Cloud Function path is untouched in prod. |
+| **S2 — local token path** | In harness mode the app reads its join token from a **URL query param** (`?lk_token=…`) instead of calling the `retrieveLiveKitToken` Cloud Function (livekit_service.dart:827). The **harness orchestrator** mints the per-identity tokens (`lk token create` against the local server's dev key) and injects one per tab. | **Decided 2026-06-07 (revises the original client-side mint):** keeps ALL credential-generation logic OUT of the Dart client tree — no JWT-signing code or dev secret in the app bundle, even tree-shaken. The app-side seam is a ~5-line URL-param read, gated on the non-default URL. ⚠️ The committed `harness_token.dart` (client-side mint) is to be **replaced** by this at the smoke phase. |
 | **S3 — observation object** | Under `bool.fromEnvironment('TW_HARNESS')`, populate `window.twHarness` with `{ dfProximityNear, audioEnabledCids, participantVolumes }` from existing internal state | Flag-gated; absent in every normal build. Reads a *published surface*, doesn't let the test reach into Dart internals (keeps it black-box). |
 
 `window.twHarness` is updated at the same points the internal state already
@@ -94,11 +110,11 @@ Each scenario is an **ATDD acceptance test**: write it red against the
 ## Build phases (ATDD; each phase ends green)
 
 0. **This spec.** ✅ (acceptance contract above.)
-1. **Seams S1–S3** behind flags. `flutter analyze` + existing tests green; prod default path unchanged (verify `LIVEKIT_URL` default + `TW_HARNESS` absent ⇒ identical bytes).
-2. **Green smoke.** Local livekit-server up; serve the web app with `--dart-define LIVEKIT_URL=ws://localhost:7880 TW_HARNESS=true`; Playwright joins two tabs (anonymous auth) to one room and asserts a data message crosses A→B. *This proves the rig before any bug scenario.*
-3. **Port scenario #2** (volume DOM-write) first — it's the highest-value bug and its terminal layer (DOM `.volume`) is the most directly readable. Red against reverted fix → green.
-4. **Port #1, #3, #4.** Each red-then-green.
-5. **CI.** A workflow that runs the harness on PRs touching `bubble_manager.dart`, `livekit_service.dart`, `set_track_volume_web.dart`, or `proximity_service.dart`. Needs Chromium + a livekit-server container + the Playwright CLI. If CI cost is prohibitive, gate it as a label-triggered job, but **log loudly** when skipped (no silent coverage gaps).
+1. **Seams.** S1 (env URL) ✅ + S3 (`window.twHarness`) ✅ done. **S2 rework:** replace the committed client-side `harness_token.dart` mint with the URL-param token read (app side) + `lk token create` in the harness orchestrator (decided 2026-06-07). `flutter analyze` + existing tests green; prod path unchanged.
+2. **Pyramid base first (cheap, no infra): #3 + #4 as pure-Dart tests.** Make `BubbleManager.update()` drivable with synthetic positions; write the remote-move (#3) and hysteresis (#4) regressions as `flutter test` unit tests — red against the reverted fix, then green. This lands fast and de-risks (proves BubbleManager is testable headless).
+3. **Green smoke (the rig).** Local livekit-server up; serve the web app with `--dart-define LIVEKIT_URL=ws://localhost:7880 TW_HARNESS=true`; harness mints two tokens (`lk token create`) and opens two Playwright tabs to one room; assert a data message crosses A→B. *Proves the rig before any browser bug scenario.*
+4. **Port #2 then #1 through the rig** (the DOM/SFU-bound bugs). #2 (volume DOM-write) first — highest value, terminal layer (DOM `.volume`) directly readable. Each red-then-green.
+5. **CI.** Pure-Dart #3/#4 run in the normal `flutter test` job (always on, cheap). The Playwright rig (#1/#2) runs on PRs touching `bubble_manager.dart`, `livekit_service.dart`, `set_track_volume_web.dart`, or `proximity_service.dart` — needs Chromium + a livekit-server container + the Playwright CLI. If that job's cost is prohibitive, gate it as label-triggered, but **log loudly** when skipped (no silent coverage gaps).
 
 ## Open questions (resolve as we build, not before)
 
