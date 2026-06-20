@@ -38,6 +38,14 @@ class ScaffoldSnackbar {
 /// The mode of the current auth session, either [AuthMode.login] or [AuthMode.register].
 enum AuthMode { login, register }
 
+/// Lifecycle of web-only Google Identity Services initialization.
+///
+/// `initializing` → spinner, `ready` → render the GIS button, `failed` → a
+/// retry control. A one-way "ready" bool would strand the user on a permanent
+/// spinner if `initialize()` ever threw — the `failed` state makes that
+/// recoverable.
+enum _GoogleWebStatus { initializing, ready, failed }
+
 extension on AuthMode {
   String get label => this == AuthMode.login ? 'Sign in' : 'Register';
 }
@@ -60,9 +68,9 @@ class _AuthGateState extends State<AuthGate> {
   Timer? _errorTimer;
   StreamSubscription<GoogleSignInAuthenticationEvent>? _googleAuthSubscription;
 
-  /// Web only: true once `GoogleSignIn.instance.initialize()` has completed,
-  /// so the GIS `renderButton()` has an initialized client to talk to.
-  bool _googleWebReady = false;
+  /// Web only: where GIS initialization currently stands. Drives which
+  /// Google control [_buildGoogleSignIn] renders.
+  _GoogleWebStatus _googleWebStatus = _GoogleWebStatus.initializing;
 
   AuthMode mode = AuthMode.login;
 
@@ -79,9 +87,17 @@ class _AuthGateState extends State<AuthGate> {
   /// On web, initialize GoogleSignIn and listen for auth events from
   /// the GIS renderButton (since programmatic authenticate() is unsupported).
   Future<void> _initGoogleSignInWeb() async {
+    // Cancel any prior subscription so a retry after a partial init can't leak.
+    await _googleAuthSubscription?.cancel();
+    _googleAuthSubscription = null;
+    if (mounted) {
+      setState(() => _googleWebStatus = _GoogleWebStatus.initializing);
+    }
     try {
       await locate<AuthService>().initializeGoogleSignIn();
-      if (mounted) setState(() => _googleWebReady = true);
+      if (mounted) {
+        setState(() => _googleWebStatus = _GoogleWebStatus.ready);
+      }
 
       _googleAuthSubscription = GoogleSignIn.instance.authenticationEvents
           .listen((GoogleSignInAuthenticationEvent event) async {
@@ -100,6 +116,9 @@ class _AuthGateState extends State<AuthGate> {
       });
     } catch (e) {
       debugPrint('Google Sign-In init failed: $e');
+      if (mounted) {
+        setState(() => _googleWebStatus = _GoogleWebStatus.failed);
+      }
     }
   }
 
@@ -441,16 +460,23 @@ class _AuthGateState extends State<AuthGate> {
   /// `GoogleSignIn.instance.authenticate()`.
   Widget _buildGoogleSignIn() {
     if (kIsWeb) {
-      if (!_googleWebReady) {
-        return const SizedBox(
-          height: 50,
-          child: Center(child: CircularProgressIndicator.adaptive()),
-        );
-      }
-      // GIS renders its own fixed-size button; centre it to match the column.
       return SizedBox(
         height: 50,
-        child: Center(child: googleSignInButton()),
+        child: Center(
+          child: switch (_googleWebStatus) {
+            _GoogleWebStatus.initializing =>
+              const CircularProgressIndicator.adaptive(),
+            // GIS renders its own fixed-size button.
+            _GoogleWebStatus.ready => googleSignInButton(),
+            // Init failed — don't strand the user on a spinner. Offer a retry;
+            // email/password sign-in above remains fully usable meanwhile.
+            _GoogleWebStatus.failed => TextButton.icon(
+                onPressed: _initGoogleSignInWeb,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Google sign-in unavailable — retry'),
+              ),
+          },
+        ),
       );
     }
 

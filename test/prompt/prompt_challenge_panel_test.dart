@@ -68,15 +68,21 @@ void main() {
 
     testWidgets('is disabled when there are no spell slots, even with text',
         (tester) async {
-      slots.consumeSlot(cost: 3); // drain all 3 slots
-      await pumpPanel(tester);
+      slots.consumeSlot(cost: 3); // drain all 3 slots → starts a regen timer
+      // try/finally so a failed expectation still cancels the regen timer,
+      // otherwise a pending Timer would cascade into a noisier failure that
+      // masks the real assertion.
+      try {
+        await pumpPanel(tester);
 
-      await tester.enterText(find.byType(TextField), 'Some incantation');
-      await tester.pump();
+        await tester.enterText(find.byType(TextField), 'Some incantation');
+        await tester.pump();
 
-      expect(castButtonEnabled(tester), isFalse,
-          reason: 'no slots means no cast regardless of prompt text');
-      slots.dispose(); // cancels the regen timer started by consumeSlot
+        expect(castButtonEnabled(tester), isFalse,
+            reason: 'no slots means no cast regardless of prompt text');
+      } finally {
+        slots.dispose(); // cancels the regen timer started by consumeSlot
+      }
     });
   });
 }
