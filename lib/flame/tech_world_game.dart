@@ -1,5 +1,10 @@
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
+import 'package:flame/input.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' show KeyEventResult;
+import 'package:tech_world/flame/shared/keyboard_movement.dart';
+import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
 import 'package:tech_world/flame/tiles/tileset_registry.dart';
 
@@ -7,13 +12,41 @@ class SnapshotComponent extends PositionComponent with Snapshot {}
 
 /// We extend FlameGame where we set the world component, load texture images
 /// and setup the camera.
-class TechWorldGame extends FlameGame {
+///
+/// The [KeyboardEvents] mixin adds WASD / arrow-key player movement: a movement
+/// key-down is translated to a [Direction] and forwarded to [TechWorld], which
+/// routes it through the same tap-to-move path (pathfind → move → broadcast).
+/// Tap-to-move is unaffected, and keystrokes are ignored while a text field is
+/// focused so typing in chat / prompt / DM inputs never walks the avatar.
+class TechWorldGame extends FlameGame with KeyboardEvents {
   TechWorldGame({required super.world});
 
   late final SnapshotComponent root;
 
   /// Registry for loading and accessing tileset sprite sheets.
   late final TilesetRegistry tilesetRegistry;
+
+  @override
+  KeyEventResult onKeyEvent(
+    KeyEvent event,
+    Set<LogicalKeyboardKey> keysPressed,
+  ) {
+    // Only act on key-down (discrete step per press; OS key-repeat handles
+    // held keys). Key-up / repeat synthesised events are ignored here.
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    // Never capture movement keys while the user is typing.
+    if (isTextFieldFocused()) return KeyEventResult.ignored;
+
+    final direction = directionForKey(event.logicalKey);
+    if (direction == null) return KeyEventResult.ignored;
+
+    final techWorld = world;
+    if (techWorld is! TechWorld) return KeyEventResult.ignored;
+
+    techWorld.moveInDirection(direction);
+    return KeyEventResult.handled;
+  }
 
   @override
   Future<void> onLoad() async {
