@@ -245,6 +245,17 @@ class _PromptChallengePanelState extends State<PromptChallengePanel> {
   }
 
   Widget _buildCastButton() {
+    // Rebuild whenever either the spell slots change (regen / consume) or the
+    // prompt text changes — both feed `canCast`. Without listening to the
+    // controller the button would stay disabled forever, because nothing else
+    // rebuilds this subtree as the player types.
+    return ListenableBuilder(
+      listenable: Listenable.merge([widget.spellSlotService, _promptController]),
+      builder: (context, _) => _castButton(),
+    );
+  }
+
+  Widget _castButton() {
     final canCast = widget.spellSlotService.canCast &&
         _promptController.text.trim().isNotEmpty &&
         !_isCasting;
