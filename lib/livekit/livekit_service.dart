@@ -18,6 +18,7 @@ import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/agent_hello.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
+import 'package:tech_world/timer/room_timer_message.dart';
 import 'package:tech_world/livekit/platform_info.dart';
 import 'package:tech_world/livekit/set_track_volume.dart';
 
@@ -694,6 +695,32 @@ class LiveKitService {
       reliable: true,
     );
   }
+
+  /// Broadcast a shared-timer start or cancel to every participant.
+  ///
+  /// Reliable: a missed start or cancel desyncs the timer across clients. The
+  /// sender's own identity is stamped as `startedBy` so receivers (and the
+  /// sender, via its own echo) know who triggered it.
+  Future<void> publishRoomTimer(RoomTimerMessage message) async {
+    await publishJson(
+      message.toJson(),
+      topic: LiveKitTopic.roomTimer.wire,
+      reliable: true,
+    );
+  }
+
+  /// Stream of shared-timer messages from the room.
+  ///
+  /// Filters [dataReceived] for the `room-timer` topic and parses into a typed
+  /// [RoomTimerMessage]. Unlike position/avatar streams this does NOT drop the
+  /// local sender's own messages: the starter needs to see its own countdown,
+  /// and a single authoritative path (everyone reacts to the broadcast) keeps
+  /// every client — including the one that pressed the button — in lock-step.
+  Stream<RoomTimerMessage> get roomTimerReceived => dataReceived
+      .where((msg) => msg.topic == LiveKitTopic.roomTimer.wire)
+      .map((msg) => RoomTimerMessage.tryParse(msg.json))
+      .where((m) => m != null)
+      .cast<RoomTimerMessage>();
 
   Timer? _heartbeatTimer;
 

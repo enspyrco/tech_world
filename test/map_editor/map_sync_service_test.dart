@@ -12,6 +12,7 @@ import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/timer/room_timer_message.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 import 'package:tech_world/map_editor/map_sync_service.dart';
@@ -621,6 +622,12 @@ class FakeLiveKitService implements LiveKitService {
 
   @override
   Future<void> publishDfProximity({required bool near}) async {}
+
+  @override
+  Stream<RoomTimerMessage> get roomTimerReceived => const Stream.empty();
+
+  @override
+  Future<void> publishRoomTimer(RoomTimerMessage message) async {}
 
   @override
   Future<DataChannelMessage?> sendPing({
