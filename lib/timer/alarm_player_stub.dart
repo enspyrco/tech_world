@@ -11,6 +11,10 @@ class AlarmPlayer {
   /// platform alert is fire-and-forget (no stoppable handle).
   bool get isPlaying => false;
 
+  /// No-op on native — the platform alert needs no gesture-driven audio
+  /// context (that's a web-only constraint). Present for interface parity.
+  void prime() {}
+
   /// Play a short alarm: three spaced platform alert sounds.
   void playAlarm() {
     SystemSound.play(SystemSoundType.alert);

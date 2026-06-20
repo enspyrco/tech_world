@@ -24,7 +24,8 @@ void main() {
   });
 
   group('RoomTimerMessage start round-trip', () {
-    test('toJson → tryParse preserves all fields', () {
+    test('toJson → tryParse preserves all fields and yields a Start variant',
+        () {
       final msg = RoomTimerMessage.start(
         durationSeconds: 300,
         startedAtMillis: 1700000000000,
@@ -32,35 +33,33 @@ void main() {
       );
       final parsed = RoomTimerMessage.tryParse(msg.toJson());
 
-      expect(parsed, isNotNull);
-      expect(parsed!.action, TimerAction.start);
-      expect(parsed.durationSeconds, 300);
-      expect(parsed.startedAtMillis, 1700000000000);
-      expect(parsed.startedBy, 'user-42');
+      expect(parsed, isA<StartRoomTimerMessage>());
+      final start = parsed! as StartRoomTimerMessage;
+      expect(start.action, TimerAction.start);
+      expect(start.durationSeconds, 300);
+      expect(start.startedAtMillis, 1700000000000);
+      expect(start.startedBy, 'user-42');
     });
 
-    test('start factory sets the start action', () {
-      expect(
-        RoomTimerMessage.start(
-          durationSeconds: 60,
-          startedAtMillis: 0,
-          startedBy: 'a',
-        ).action,
-        TimerAction.start,
+    test('start factory builds a StartRoomTimerMessage', () {
+      final msg = RoomTimerMessage.start(
+        durationSeconds: 60,
+        startedAtMillis: 0,
+        startedBy: 'a',
       );
+      expect(msg, isA<StartRoomTimerMessage>());
+      expect(msg.action, TimerAction.start);
     });
   });
 
   group('RoomTimerMessage cancel round-trip', () {
-    test('toJson → tryParse preserves canceller', () {
+    test('toJson → tryParse yields a Cancel variant with the canceller', () {
       final msg = RoomTimerMessage.cancel(startedBy: 'user-7');
       final parsed = RoomTimerMessage.tryParse(msg.toJson());
 
-      expect(parsed, isNotNull);
+      expect(parsed, isA<CancelRoomTimerMessage>());
       expect(parsed!.action, TimerAction.cancel);
       expect(parsed.startedBy, 'user-7');
-      expect(parsed.durationSeconds, isNull);
-      expect(parsed.startedAtMillis, isNull);
     });
   });
 
@@ -106,9 +105,37 @@ void main() {
     test('start tolerates a missing startedAtMillis', () {
       final parsed = RoomTimerMessage.tryParse(
           {'action': 'start', 'durationSeconds': 120});
-      expect(parsed, isNotNull);
-      expect(parsed!.durationSeconds, 120);
-      expect(parsed.startedAtMillis, isNull);
+      expect(parsed, isA<StartRoomTimerMessage>());
+      final start = parsed! as StartRoomTimerMessage;
+      expect(start.durationSeconds, 120);
+      expect(start.startedAtMillis, isNull);
+    });
+
+    // Hostile / newer-client wire shapes must yield null, never throw and tear
+    // down the subscription stream.
+    test('non-string action does not throw, returns null', () {
+      expect(RoomTimerMessage.tryParse({'action': 42}), isNull);
+      expect(RoomTimerMessage.tryParse({'action': true}), isNull);
+      expect(
+        RoomTimerMessage.tryParse({'action': ['start']}),
+        isNull,
+      );
+    });
+
+    test('non-string startedBy is ignored rather than throwing', () {
+      final parsed = RoomTimerMessage.tryParse(
+        {'action': 'start', 'durationSeconds': 30, 'startedBy': 99},
+      );
+      expect(parsed, isA<StartRoomTimerMessage>());
+      expect(parsed!.startedBy, isNull);
+    });
+
+    test('non-int startedAtMillis is ignored rather than throwing', () {
+      final parsed = RoomTimerMessage.tryParse(
+        {'action': 'start', 'durationSeconds': 30, 'startedAtMillis': 'soon'},
+      );
+      expect(parsed, isA<StartRoomTimerMessage>());
+      expect((parsed! as StartRoomTimerMessage).startedAtMillis, isNull);
     });
   });
 }

@@ -17,10 +17,17 @@ final _log = Logger('TimerService');
 ///  * the pure countdown logic ([CountdownTimerState]),
 ///  * the alarm ([AlarmPlayer]).
 ///
-/// Every client — including the one that pressed the button — reacts to the
-/// broadcast, so all clients stay in lock-step (last-writer-wins on a fresh
-/// start). The UI never mutates [CountdownTimerState] directly; it calls
-/// [start]/[cancel] (which publish) and watches [state] for rendering.
+/// LiveKit does NOT loop a participant's own `publishData` back to itself
+/// (`DataReceivedEvent` fires only for *other* participants — the same reason
+/// `ChatService` adds the local user's message optimistically before
+/// publishing). So [start]/[cancel] apply the change locally *and* broadcast
+/// it; remote participants apply it when the broadcast arrives via
+/// [LiveKitService.roomTimerReceived]. Both paths funnel through [_apply], so
+/// the starter and everyone else run the same transition. Last-writer-wins on a
+/// fresh start.
+///
+/// The UI never mutates [CountdownTimerState] directly; it calls
+/// [start]/[cancel] and watches [state] / [alarmActive] for rendering.
 ///
 /// Lifecycle mirrors the other room services: created in `RoomSession.create`,
 /// registered in the `Locator`, disposed on `leave`.
@@ -31,7 +38,7 @@ class TimerService {
   })  : _liveKit = liveKitService,
         _alarm = alarmPlayer ?? AlarmPlayer() {
     state = CountdownTimerState(onFinished: _onFinished);
-    _sub = _liveKit.roomTimerReceived.listen(_onMessage);
+    _sub = _liveKit.roomTimerReceived.listen(_apply);
   }
 
   final LiveKitService _liveKit;
@@ -50,25 +57,27 @@ class TimerService {
 
   /// Start (or replace) the shared countdown for everyone in the room.
   ///
-  /// Publishes a `start` message; the local countdown begins when the message
-  /// echoes back through [roomTimerReceived], keeping the starter in step with
-  /// everyone else.
+  /// Applies locally immediately (LiveKit won't echo our own message back) and
+  /// broadcasts a `start` to everyone else. Also primes the alarm so the web
+  /// audio context is created/resumed from this user-gesture call rather than
+  /// at fire-time (browsers leave a gesture-less `AudioContext` suspended).
   Future<void> start(int durationSeconds) async {
     if (durationSeconds <= 0) return;
-    await _liveKit.publishRoomTimer(
-      RoomTimerMessage.start(
-        durationSeconds: durationSeconds,
-        startedAtMillis: DateTime.now().millisecondsSinceEpoch,
-        startedBy: _liveKit.userId,
-      ),
+    _alarm.prime();
+    final message = StartRoomTimerMessage(
+      durationSeconds: durationSeconds,
+      startedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      startedBy: _liveKit.userId,
     );
+    _apply(message);
+    await _liveKit.publishRoomTimer(message);
   }
 
   /// Cancel any running shared countdown for everyone in the room.
   Future<void> cancel() async {
-    await _liveKit.publishRoomTimer(
-      RoomTimerMessage.cancel(startedBy: _liveKit.userId),
-    );
+    final message = CancelRoomTimerMessage(startedBy: _liveKit.userId);
+    _apply(message);
+    await _liveKit.publishRoomTimer(message);
   }
 
   /// Silence the alarm locally and clear the "Time's up!" banner.
@@ -77,20 +86,20 @@ class TimerService {
     alarmActive.value = false;
   }
 
-  void _onMessage(RoomTimerMessage message) {
-    switch (message.action) {
-      case TimerAction.start:
-        final duration = message.durationSeconds;
-        if (duration == null || duration <= 0) return; // already gated at parse
+  /// Apply a timer transition — from our own [start]/[cancel] or a remote
+  /// broadcast. The single source of truth for both paths.
+  void _apply(RoomTimerMessage message) {
+    switch (message) {
+      case StartRoomTimerMessage(:final durationSeconds, :final startedBy):
         dismissAlarm(); // a new timer clears any lingering alarm/banner
-        state.start(duration);
+        state.start(durationSeconds);
         _startTicker();
-        _log.fine('Room timer started: ${duration}s by ${message.startedBy}');
-      case TimerAction.cancel:
+        _log.fine('Room timer started: ${durationSeconds}s by $startedBy');
+      case CancelRoomTimerMessage(:final startedBy):
         dismissAlarm();
         state.cancel();
         _stopTicker();
-        _log.fine('Room timer cancelled by ${message.startedBy}');
+        _log.fine('Room timer cancelled by $startedBy');
     }
   }
 

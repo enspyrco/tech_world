@@ -14,6 +14,10 @@ class _FakeLiveKit extends Mock implements LiveKitService {}
 class _SpyAlarm extends AlarmPlayer {
   int playCount = 0;
   int stopCount = 0;
+  int primeCount = 0;
+
+  @override
+  void prime() => primeCount++;
 
   @override
   void playAlarm() => playCount++;
@@ -62,22 +66,34 @@ void main() {
       await service.start(300);
       expect(published, hasLength(1));
       final msg = published.single;
-      expect(msg.action, TimerAction.start);
-      expect(msg.durationSeconds, 300);
-      expect(msg.startedBy, 'user-me');
-      expect(msg.startedAtMillis, isNotNull);
+      expect(msg, isA<StartRoomTimerMessage>());
+      final start = msg as StartRoomTimerMessage;
+      expect(start.durationSeconds, 300);
+      expect(start.startedBy, 'user-me');
+      expect(start.startedAtMillis, isNotNull);
     });
 
-    test('start does not begin the countdown until the echo arrives', () async {
+    test('start applies locally immediately (LiveKit does not self-echo)',
+        () async {
       await service.start(300);
-      // No echo yet — local state untouched (single authoritative path).
-      expect(service.state.running, isFalse);
+      // The starter must see its own countdown without waiting for an echo
+      // that LiveKit never delivers to the sender.
+      expect(service.state.running, isTrue);
+      expect(service.state.remaining, const Duration(seconds: 300));
     });
 
-    test('cancel publishes a cancel message', () async {
+    test('start primes the alarm (web audio gesture unlock)', () async {
+      await service.start(60);
+      expect(alarm.primeCount, 1);
+    });
+
+    test('cancel publishes a cancel message and stops locally', () async {
+      await service.start(60);
+      expect(service.state.running, isTrue);
       await service.cancel();
-      expect(published.single.action, TimerAction.cancel);
-      expect(published.single.startedBy, 'user-me');
+      expect(published.last.action, TimerAction.cancel);
+      expect(published.last.startedBy, 'user-me');
+      expect(service.state.running, isFalse);
     });
 
     test('an incoming start message begins the local countdown', () async {
