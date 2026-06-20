@@ -266,6 +266,12 @@ class BubbleManager {
               dreamfinderIdentity, bubble, 'dreamfinder-entered-proximity');
         }
       }
+
+      // Proximity-gate DF audio symmetric with its video bubble — you hear
+      // Dreamfinder only when close enough for the bubble to work. Runs every
+      // frame (near OR far) so the gate is the single per-frame owner of DF
+      // audio state. See [_updateDreamfinderAudio].
+      _updateDreamfinderAudio(dfDistance);
     }
 
     // Check proximity to all bot characters.
@@ -751,6 +757,31 @@ class BubbleManager {
   @visibleForTesting
   void debugUpdateDreamfinderProximity(int? dfDistance) =>
       _updateDreamfinderProximity(dfDistance);
+
+  /// Proximity-gate Dreamfinder's audio symmetric with its video bubble: you
+  /// hear DF only when within audio range, via the same [_updateParticipantAudio]
+  /// gate (enable/disable + hysteresis + volume fade) used for remote players.
+  ///
+  /// The manual silence button ([LiveKitService.dreamfinderSilenced]) ALWAYS
+  /// wins: when silenced we feed the gate a beyond-range distance so DF stays
+  /// muted regardless of how close you stand. Because this runs every frame,
+  /// the gate is the single per-frame writer of DF audio state and
+  /// self-reconciles with the manual path (which also disables the track
+  /// directly) within one frame.
+  void _updateDreamfinderAudio(int dfDistance) {
+    final silenced = _liveKitService?.dreamfinderSilenced.value ?? false;
+    _updateParticipantAudio(
+      dreamfinderIdentity,
+      silenced ? _audioDisableThreshold + 1 : dfDistance,
+    );
+  }
+
+  /// Test seam for [_updateDreamfinderAudio] — see
+  /// [debugUpdateDreamfinderProximity] for why the real loop can't be driven
+  /// without a fully-constructed [DreamfinderComponent].
+  @visibleForTesting
+  void debugUpdateDreamfinderAudio(int dfDistance) =>
+      _updateDreamfinderAudio(dfDistance);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Private — physics and rendering
