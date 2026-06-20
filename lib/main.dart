@@ -52,6 +52,8 @@ import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
 import 'package:tech_world/preferences/user_preferences.dart';
 import 'package:tech_world/rooms/room_session.dart';
+import 'package:tech_world/timer/countdown_timer_state.dart';
+import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/widgets/auth_menu.dart';
 import 'package:tech_world/widgets/join_overlay.dart';
 import 'package:tech_world/widgets/map_selector.dart';
@@ -1258,6 +1260,8 @@ class _MyAppState extends State<MyApp> {
                             liveKitService: _session?.liveKitService,
                           ),
                           const SizedBox(width: 8),
+                          _TimerButton(timerService: _session?.timerService),
+                          const SizedBox(width: 8),
                           _SpellbookButton(
                             open: _spellbookOpen,
                             activePromptChallenge:
@@ -1277,6 +1281,22 @@ class _MyAppState extends State<MyApp> {
                     },
                   );
                     },
+                  ),
+                // Shared countdown timer overlay — visible to everyone in the
+                // room while a timer is running. Top-centre so it clears the
+                // top-right toolbar.
+                if (_session?.timerService != null)
+                  Positioned(
+                    top: 16,
+                    left: 0,
+                    right: 0,
+                    child: SafeArea(
+                      child: Center(
+                        child: _TimerOverlay(
+                          timerService: _session!.timerService,
+                        ),
+                      ),
+                    ),
                   ),
                 // Code editor modal overlay — only for code-mode terminals.
                 if (_currentRoom != null &&
@@ -1746,6 +1766,144 @@ class _DreamfinderSilenceButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Toolbar button that opens a small picker to start the shared room timer.
+///
+/// Any participant can press it; the chosen duration starts the countdown for
+/// everyone. While a timer is running the button offers a cancel action
+/// instead. The trigger lives in the toolbar (not a world entity) because the
+/// "world is the listener" rule governs *casting/magic* affordances, not
+/// generic UI like a timer.
+class _TimerButton extends StatelessWidget {
+  const _TimerButton({required this.timerService});
+
+  final TimerService? timerService;
+
+  /// Preset durations offered in the picker, in minutes.
+  static const _presetMinutes = [1, 3, 5, 10];
+
+  @override
+  Widget build(BuildContext context) {
+    final service = timerService;
+    if (service == null) {
+      return const SizedBox.shrink();
+    }
+    return ListenableBuilder(
+      listenable: service.state,
+      builder: (context, _) {
+        final running = service.state.running;
+        return PopupMenuButton<int>(
+          tooltip: running ? 'Shared timer' : 'Start a shared timer',
+          icon: Icon(
+            running ? Icons.timer : Icons.timer_outlined,
+            color: running ? Colors.amber.shade300 : Colors.white70,
+            size: 20,
+          ),
+          color: const Color(0xFF2A2A2A),
+          itemBuilder: (context) => [
+            for (final mins in _presetMinutes)
+              PopupMenuItem<int>(
+                value: mins * 60,
+                child: Text(
+                  '$mins min',
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            if (running)
+              const PopupMenuItem<int>(
+                value: 0,
+                child: Text(
+                  'Cancel timer',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+              ),
+          ],
+          onSelected: (seconds) {
+            if (seconds == 0) {
+              service.cancel();
+            } else {
+              service.start(seconds);
+            }
+          },
+        );
+      },
+    );
+  }
+}
+
+/// On-screen countdown shown to every participant while the shared timer runs.
+///
+/// Renders `mm:ss` from [TimerService.state]. When the countdown reaches zero
+/// the alarm plays (handled in [TimerService]) and a brief "Time's up!" banner
+/// with a dismiss button replaces the count until dismissed.
+class _TimerOverlay extends StatelessWidget {
+  const _TimerOverlay({required this.timerService});
+
+  final TimerService timerService;
+
+  @override
+  Widget build(BuildContext context) {
+    final CountdownTimerState state = timerService.state;
+    return ListenableBuilder(
+      listenable: Listenable.merge([state, timerService.alarmActive]),
+      builder: (context, _) {
+        final running = state.running;
+        final finished = !running && timerService.alarmActive.value;
+        // Show only while counting down or while the alarm banner is active.
+        if (!running && !finished) {
+          return const SizedBox.shrink();
+        }
+        return Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: finished
+                    ? Colors.redAccent
+                    : Colors.amber.shade300.withValues(alpha: 0.6),
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  finished ? Icons.alarm : Icons.timer,
+                  color: finished ? Colors.redAccent : Colors.amber.shade300,
+                  size: 22,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  finished ? "Time's up!" : state.formatted,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: const [ui.FontFeature.tabularFigures()],
+                    letterSpacing: finished ? 0 : 2,
+                  ),
+                ),
+                if (finished) ...[
+                  const SizedBox(width: 12),
+                  IconButton(
+                    onPressed: timerService.dismissAlarm,
+                    icon: const Icon(Icons.close,
+                        color: Colors.white70, size: 20),
+                    tooltip: 'Dismiss alarm',
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

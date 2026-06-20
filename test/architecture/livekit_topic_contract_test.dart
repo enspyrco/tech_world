@@ -93,6 +93,11 @@ void main() {
       // wire contract pairs with bot-side `AGENT_HELLO = 'agent-hello'`.
       expect(LiveKitTopic.agentHello.wire, 'agent-hello');
     });
+
+    test('roomTimer wire is "room-timer"', () {
+      // Flutter-only shared countdown timer; no bot mirror.
+      expect(LiveKitTopic.roomTimer.wire, 'room-timer');
+    });
   });
 
   // ── Exhaustiveness guard ─────────────────────────────────────────────────

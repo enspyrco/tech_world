@@ -25,6 +25,7 @@ import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/timer/room_timer_message.dart';
 
 
 Future<void> pumpEventQueue() => Future<void>.delayed(Duration.zero);
@@ -1066,6 +1067,12 @@ class FakeLiveKitService implements LiveKitService {
 
   @override
   Stream<AvatarUpdate> get avatarReceived => const Stream.empty();
+
+  @override
+  Stream<RoomTimerMessage> get roomTimerReceived => const Stream.empty();
+
+  @override
+  Future<void> publishRoomTimer(RoomTimerMessage message) async {}
 
   @override
   Room? get room => null;

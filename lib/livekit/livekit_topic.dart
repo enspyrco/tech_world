@@ -59,6 +59,16 @@ enum LiveKitTopic {
   ping('ping'),
   pong('pong'),
 
+  // ── Shared room timer ─────────────────────────────────────────────────────
+  /// A shared countdown timer that any participant can start or cancel; every
+  /// client renders the same remaining time and plays an alarm at zero.
+  ///
+  /// Flutter-only — the bot does not participate. Payload is a [TimerAction]
+  /// (`start` / `cancel`) plus, for `start`, the duration, start timestamp, and
+  /// who started it (see `lib/timer/room_timer_message.dart`). Reliable, since
+  /// a missed start/cancel desyncs the timer across clients.
+  roomTimer('room-timer'),
+
   // ── Diagnostics ───────────────────────────────────────────────────────────
   /// One-shot self-report sent by every client immediately after connect.
   ///

@@ -12,6 +12,7 @@ import 'package:tech_world/services/dreamfinder_client.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/spellbook/oracle_service.dart';
+import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
 final _log = Logger('RoomSession');
@@ -37,6 +38,7 @@ class RoomSession {
     required this.chatService,
     required this.chatMessageRepository,
     required this.proximityService,
+    required this.timerService,
     required this.room,
     required this.userId,
     required this.displayName,
@@ -57,6 +59,10 @@ class RoomSession {
   final ChatService chatService;
   final ChatMessageRepository chatMessageRepository;
   final ProximityService proximityService;
+
+  /// Controller for the shared room countdown timer (publish/subscribe +
+  /// countdown + alarm). Registered in the [Locator] for the UI to drive.
+  final TimerService timerService;
   final RoomData room;
   final String userId;
   final String displayName;
@@ -151,15 +157,19 @@ class RoomSession {
         ? ProximityService()
         : ProximityService(proximityThreshold: proximityRadius);
 
+    final timer = TimerService(liveKitService: liveKit);
+
     Locator.add<LiveKitService>(liveKit);
     Locator.add<ChatService>(chat);
     Locator.add<ProximityService>(proximity);
+    Locator.add<TimerService>(timer);
 
     return RoomSession._(
       liveKitService: liveKit,
       chatService: chat,
       chatMessageRepository: chatRepo,
       proximityService: proximity,
+      timerService: timer,
       room: room,
       userId: userId,
       displayName: displayName,
@@ -337,6 +347,7 @@ class RoomSession {
 
     chatService.dispose();
     proximityService.dispose();
+    timerService.dispose();
     await liveKitService.dispose();
     _oracleService = null;
 
@@ -346,5 +357,6 @@ class RoomSession {
     Locator.remove<LiveKitService>();
     Locator.remove<ChatService>();
     Locator.remove<ProximityService>();
+    Locator.remove<TimerService>();
   }
 }

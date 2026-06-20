@@ -22,6 +22,7 @@ class _FakeLiveKit extends Mock implements LiveKitService {}
   final lostCtrl = StreamController<String?>.broadcast();
   when(() => fake.connectionLost).thenAnswer((_) => lostCtrl.stream);
   when(() => fake.dataReceived).thenAnswer((_) => const Stream.empty());
+  when(() => fake.roomTimerReceived).thenAnswer((_) => const Stream.empty());
   when(() => fake.participantJoined).thenAnswer((_) => const Stream.empty());
   when(() => fake.participantLeft).thenAnswer((_) => const Stream.empty());
   when(() => fake.remoteParticipants).thenReturn({});
