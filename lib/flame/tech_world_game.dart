@@ -31,8 +31,10 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
     KeyEvent event,
     Set<LogicalKeyboardKey> keysPressed,
   ) {
-    // Only act on key-down (discrete step per press; OS key-repeat handles
-    // held keys). Key-up / repeat synthesised events are ignored here.
+    // One cell per physical key-press. We deliberately ignore KeyRepeatEvent
+    // (OS auto-repeat) and KeyUpEvent: each per-cell move runs a 0.2s animation,
+    // and letting fast auto-repeat restart it mid-flight would stutter. Holding
+    // a key therefore takes one step; continuous-while-held is a future refinement.
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
 
     // Never capture movement keys while the user is typing.

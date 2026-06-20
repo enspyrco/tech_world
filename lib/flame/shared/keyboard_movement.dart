@@ -13,7 +13,9 @@ import 'package:tech_world/flame/shared/direction.dart';
 ///
 /// v1 is intentionally **single-axis**: each key maps to one of up/down/left/
 /// right. Diagonals are never produced (W+A pressed together yields two
-/// independent single-axis steps via OS key-repeat, not a combined diagonal).
+/// independent single-axis steps, not a combined diagonal). Movement is one
+/// cell per physical key-press; see [TechWorldGame.onKeyEvent] for the
+/// discrete-step rationale.
 
 /// Map a [LogicalKeyboardKey] to the movement [Direction] it requests.
 ///
