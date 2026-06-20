@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:tech_world/auth/auth_service.dart';
+import 'package:tech_world/auth/google_sign_in_button.dart';
 import 'package:tech_world/utils/locator.dart';
 
 /// Helper class to show a snackbar using the passed context.
@@ -59,6 +60,10 @@ class _AuthGateState extends State<AuthGate> {
   Timer? _errorTimer;
   StreamSubscription<GoogleSignInAuthenticationEvent>? _googleAuthSubscription;
 
+  /// Web only: true once `GoogleSignIn.instance.initialize()` has completed,
+  /// so the GIS `renderButton()` has an initialized client to talk to.
+  bool _googleWebReady = false;
+
   AuthMode mode = AuthMode.login;
 
   bool isLoading = false;
@@ -76,6 +81,7 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _initGoogleSignInWeb() async {
     try {
       await locate<AuthService>().initializeGoogleSignIn();
+      if (mounted) setState(() => _googleWebReady = true);
 
       _googleAuthSubscription = GoogleSignIn.instance.authenticationEvents
           .listen((GoogleSignInAuthenticationEvent event) async {
@@ -297,27 +303,9 @@ class _AuthGateState extends State<AuthGate> {
                                 onPressed: _signInWithApple,
                               ),
                             ),
-                          // Show Google Sign In on all platforms
+                          // Show Google Sign In on all platforms.
                           if (_isApplePlatform) const SizedBox(height: 10),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: ElevatedButton.icon(
-                              onPressed: isLoading ? null : _signInWithGoogle,
-                              icon: Image.network(
-                                'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-                                height: 24,
-                                width: 24,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    const Icon(Icons.g_mobiledata),
-                              ),
-                              label: const Text('Sign in with Google'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: Colors.black87,
-                              ),
-                            ),
-                          ),
+                          _buildGoogleSignIn(),
                         ],
                       ),
                     ),
@@ -440,31 +428,56 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
-  Future<void> _signInWithGoogle() async {
+  /// Google sign-in entry point.
+  ///
+  /// Web: render the official Google Identity Services button — GIS only
+  /// starts the interactive flow from its own button, and the resulting
+  /// auth event is handled by the `authenticationEvents` listener wired in
+  /// [_initGoogleSignInWeb]. The button is shown only once
+  /// [GoogleSignIn.initialize] has completed ([_googleWebReady]); until then
+  /// a disabled placeholder holds the slot so layout doesn't jump.
+  ///
+  /// Native: a custom button wired to [_signInWithGoogle] →
+  /// `GoogleSignIn.instance.authenticate()`.
+  Widget _buildGoogleSignIn() {
     if (kIsWeb) {
-      // On web, attemptLightweightAuthentication triggers One Tap / FedCM.
-      // The result arrives via authenticationEvents (subscribed in initState).
-      // Returns null on web when the prompt is shown asynchronously.
-      try {
-        await locate<AuthService>().initializeGoogleSignIn();
-        final account =
-            GoogleSignIn.instance.attemptLightweightAuthentication();
-        if (account != null) {
-          final user = await account;
-          if (user != null) {
-            await locate<AuthService>()
-                .handleGoogleAuthEvent(user.authentication);
-            return;
-          }
-        }
-        // null means One Tap prompt shown — result via authenticationEvents
-      } catch (e) {
-        debugPrint('Google sign-in (web) trigger error: $e');
-        _setError('Google sign-in failed. Please try again.');
+      if (!_googleWebReady) {
+        return const SizedBox(
+          height: 50,
+          child: Center(child: CircularProgressIndicator.adaptive()),
+        );
       }
-      return;
+      // GIS renders its own fixed-size button; centre it to match the column.
+      return SizedBox(
+        height: 50,
+        child: Center(child: googleSignInButton()),
+      );
     }
 
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: ElevatedButton.icon(
+        onPressed: isLoading ? null : _signInWithGoogle,
+        icon: Image.network(
+          'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+          height: 24,
+          width: 24,
+          errorBuilder: (context, error, stackTrace) =>
+              const Icon(Icons.g_mobiledata),
+        ),
+        label: const Text('Sign in with Google'),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black87,
+        ),
+      ),
+    );
+  }
+
+  /// Native-only Google sign-in. On web the GIS-rendered button drives the
+  /// flow instead (see [_buildGoogleSignIn]).
+  Future<void> _signInWithGoogle() async {
     setIsLoading();
     try {
       await locate<AuthService>().signInWithGoogle();

@@ -22,6 +22,9 @@ dependencies:
   sign_in_with_apple: ^7.0.1
   crypto: ^3.0.6
   google_sign_in: ^7.2.0
+  # Web-only: direct dependency so we can import web_only.dart's renderButton()
+  # (the GIS-rendered button is the only way to start interactive sign-in on web).
+  google_sign_in_web: ^1.1.3
   firebase_storage: ^13.0.5
   file_picker: ^8.0.0
   image_picker: ^1.1.2
