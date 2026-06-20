@@ -533,9 +533,16 @@ class LiveKitService {
     dreamfinderSilenced.value = silenced;
     final room = _room;
     if (room == null) return;
+    // Silencing mutes DF immediately. UN-silencing does NOT force-enable here:
+    // the per-frame proximity gate (BubbleManager._updateDreamfinderAudio) is
+    // the SOLE enabler, so DF only becomes audible again when you are actually
+    // in range. Force-enabling on un-silence re-enabled DF for every matching
+    // participant regardless of distance, leaving it audible from anywhere
+    // until the next near→far transition (the #594 / PR #485 leak).
+    if (!silenced) return;
     for (final participant in room.remoteParticipants.values) {
       if (isDreamfinderIdentity(participant.identity)) {
-        setParticipantAudioEnabled(participant.identity, !silenced);
+        setParticipantAudioEnabled(participant.identity, false);
       }
     }
   }

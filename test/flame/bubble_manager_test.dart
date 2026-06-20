@@ -489,6 +489,21 @@ void main() {
         verify(() => mockLiveKit.setParticipantAudioEnabled(
             manager.dreamfinderIdentity, false)).called(1);
       });
+
+      // Regression for the cage-match #594/#485 leak: the gate is the SOLE
+      // enabler. Even right after un-silencing, if you're out of range the gate
+      // must not enable DF — so an un-silence-while-far can never leave DF
+      // audible (the silence button no longer force-enables; see
+      // LiveKitService.setDreamfinderSilenced).
+      test('does not enable DF when far, even immediately after un-silencing',
+          () {
+        silenced.value = true;
+        manager.debugUpdateDreamfinderAudio(1); // silenced + near → stays off
+        silenced.value = false; // un-silence...
+        manager.debugUpdateDreamfinderAudio(6); // ...but now out of range
+        verifyNever(() => mockLiveKit.setParticipantAudioEnabled(
+            manager.dreamfinderIdentity, true));
+      });
     });
 
     group('clear', () {
