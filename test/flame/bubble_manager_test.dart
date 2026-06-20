@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -418,6 +419,75 @@ void main() {
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
         manager.clear();
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
+      });
+    });
+
+    group('Dreamfinder audio gate', () {
+      late BubbleManager manager;
+      late MockLiveKitService mockLiveKit;
+      late ValueNotifier<bool> silenced;
+
+      setUp(() {
+        mockLiveKit = MockLiveKitService();
+        silenced = ValueNotifier<bool>(false);
+        when(() => mockLiveKit.dreamfinderSilenced).thenReturn(silenced);
+        when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(true);
+        when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
+        manager = BubbleManager(
+          localPlayer: PlayerComponent(
+            position: Vector2(160, 160),
+            id: 'local-user',
+            displayName: 'Local',
+          ),
+          addComponent: (_) {},
+          remotePlayers: {},
+          bots: {},
+        );
+        manager.setLiveKitService(mockLiveKit);
+      });
+
+      tearDown(() => silenced.dispose());
+
+      test('enables DF audio when within the enable threshold', () {
+        manager.debugUpdateDreamfinderAudio(2); // ≤ enable (4)
+        verify(() => mockLiveKit.setParticipantAudioEnabled(
+            manager.dreamfinderIdentity, true)).called(1);
+      });
+
+      test('does not enable DF audio beyond the enable threshold', () {
+        manager.debugUpdateDreamfinderAudio(6); // > disable (5)
+        verifyNever(() => mockLiveKit.setParticipantAudioEnabled(
+            manager.dreamfinderIdentity, true));
+      });
+
+      test('cuts DF audio once past the disable threshold', () {
+        manager.debugUpdateDreamfinderAudio(2); // within → on
+        verify(() => mockLiveKit.setParticipantAudioEnabled(
+            manager.dreamfinderIdentity, true)).called(1);
+        manager.debugUpdateDreamfinderAudio(6); // past disable → off
+        verify(() => mockLiveKit.setParticipantAudioEnabled(
+            manager.dreamfinderIdentity, false)).called(1);
+      });
+
+      test('manual silence vetoes proximity — DF stays muted even when close',
+          () {
+        silenced.value = true;
+        manager.debugUpdateDreamfinderAudio(1); // as close as possible
+        verifyNever(() => mockLiveKit.setParticipantAudioEnabled(
+            manager.dreamfinderIdentity, true));
+      });
+
+      test('silencing while near forces DF audio off', () {
+        manager.debugUpdateDreamfinderAudio(1); // on
+        verify(() => mockLiveKit.setParticipantAudioEnabled(
+            manager.dreamfinderIdentity, true)).called(1);
+        silenced.value = true;
+        manager.debugUpdateDreamfinderAudio(1); // near but silenced → off
+        verify(() => mockLiveKit.setParticipantAudioEnabled(
+            manager.dreamfinderIdentity, false)).called(1);
       });
     });
 
