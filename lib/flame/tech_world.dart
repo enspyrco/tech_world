@@ -39,6 +39,8 @@ import 'package:tech_world/flame/maps/terminal_mode.dart';
 import 'package:tech_world/prompt/predefined_prompt_challenges.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 import 'package:tech_world/flame/shared/constants.dart';
+import 'package:tech_world/flame/shared/direction.dart';
+import 'package:tech_world/flame/shared/keyboard_movement.dart';
 import 'package:tech_world/flame/shared/speaker_role.dart';
 import 'package:tech_world/flame/tiles/tileset_cache_provider.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
@@ -1154,6 +1156,17 @@ class TechWorld extends World with TapCallbacks {
     int miniGridX = (worldPosition.x / gridSquareSize).floor();
     int miniGridY = (worldPosition.y / gridSquareSize).floor();
 
+    movePlayerToCell(miniGridX, miniGridY);
+  }
+
+  /// Pathfind the local player to the grid cell `(miniGridX, miniGridY)`, enact
+  /// the move, and broadcast the new position over LiveKit.
+  ///
+  /// This is the single move-intent path shared by every input device: the tap
+  /// handler ([onTapDown]) and keyboard movement ([moveInDirection]) both route
+  /// through here, so a keyboard step pathfinds, collides, animates, and
+  /// broadcasts identically to a tap. There is no separate keyboard wire path.
+  void movePlayerToCell(int miniGridX, int miniGridY) {
     final pathComponent = _pathComponent;
     if (pathComponent == null) return;
 
@@ -1170,6 +1183,20 @@ class TechWorld extends World with TapCallbacks {
     );
 
     dispatch([PlayerMoved(destX: miniGridX, destY: miniGridY)]);
+  }
+
+  /// Move the local player one grid cell in [direction], reusing the shared
+  /// tap-to-move path ([movePlayerToCell]).
+  ///
+  /// Called by [TechWorldGame]'s keyboard handler. A no-op for [Direction.none].
+  /// Out-of-bounds targets are clamped by [PathComponent.calculatePath], and
+  /// barriers are routed around by the same pathfinder tap uses, so keyboard
+  /// movement inherits every existing movement constraint for free.
+  void moveInDirection(Direction direction) {
+    if (direction == Direction.none) return;
+    final (targetX, targetY) =
+        targetCellForDirection(_userPlayerComponent.miniGridTuple, direction);
+    movePlayerToCell(targetX, targetY);
   }
 
   /// Handle terminal interaction - check proximity before opening editor.
