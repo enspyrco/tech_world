@@ -26,8 +26,8 @@ void main() {
       );
     });
 
-    tearDown(() {
-      service.dispose();
+    tearDown(() async {
+      await service.dispose();
     });
 
     // The disable-on-subscribe path is now UNCONDITIONAL for DF audio (the
@@ -109,8 +109,8 @@ void main() {
       );
     });
 
-    tearDown(() {
-      service.dispose();
+    tearDown(() async {
+      await service.dispose();
     });
 
     test('silence(true) disables every DF participant in the room', () {

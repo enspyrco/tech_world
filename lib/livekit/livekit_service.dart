@@ -102,17 +102,17 @@ class LiveKitService {
     @visibleForTesting Future<String?> Function()? tokenRetriever,
     @visibleForTesting void Function(String identity)? silenceParticipantAudio,
     @visibleForTesting Iterable<String> Function()? remoteParticipantIdentities,
-  })  : _tokenRetriever = tokenRetriever,
-        // Seams for unit-testing the DF-silence logic without faking the
-        // LiveKit SDK. Default to the real server-side disable / the live
-        // `Room`'s participant set. The late-init dance is because the default
-        // closures capture `this`.
-        _silenceParticipantAudio = silenceParticipantAudio,
-        _remoteParticipantIdentities = remoteParticipantIdentities {
-    _silenceParticipantAudio ??=
-        (identity) => setParticipantAudioEnabled(identity, false);
-    _remoteParticipantIdentities ??=
-        () => _room?.remoteParticipants.values.map((p) => p.identity) ?? const [];
+  }) : _tokenRetriever = tokenRetriever {
+    // Seams for unit-testing the DF-silence logic without faking the LiveKit
+    // SDK. Default to the real server-side disable / the live `Room`'s
+    // participant set. Assigned in the constructor body (not the initializer
+    // list) because the default closures capture `this` — which lets the fields
+    // be `late final` rather than nullable, encoding "set once, never null".
+    _silenceParticipantAudio = silenceParticipantAudio ??
+        ((identity) => setParticipantAudioEnabled(identity, false));
+    _remoteParticipantIdentities = remoteParticipantIdentities ??
+        (() =>
+            _room?.remoteParticipants.values.map((p) => p.identity) ?? const []);
   }
 
   final String userId;
@@ -124,13 +124,13 @@ class LiveKitService {
   ///
   /// Injectable so tests can observe which identities get silenced without a
   /// live LiveKit `Room`. Defaults to [setParticipantAudioEnabled]`(id, false)`.
-  void Function(String identity)? _silenceParticipantAudio;
+  late final void Function(String identity) _silenceParticipantAudio;
 
   /// Source of the current remote participant identities.
   ///
   /// Injectable so [setDreamfinderSilenced]'s iteration is unit-testable
   /// without a live `Room`. Defaults to reading `_room.remoteParticipants`.
-  Iterable<String> Function()? _remoteParticipantIdentities;
+  late final Iterable<String> Function() _remoteParticipantIdentities;
 
   // LiveKit server URL
   static const _serverUrl = 'wss://livekit.imagineering.cc';
@@ -567,9 +567,9 @@ class LiveKitService {
   void setDreamfinderSilenced(bool silenced) {
     dreamfinderSilenced.value = silenced;
     if (!silenced) return;
-    for (final identity in _remoteParticipantIdentities!()) {
+    for (final identity in _remoteParticipantIdentities()) {
       if (isDreamfinderIdentity(identity)) {
-        _silenceParticipantAudio!(identity);
+        _silenceParticipantAudio(identity);
       }
     }
   }
@@ -603,7 +603,7 @@ class LiveKitService {
     required String identity,
   }) {
     if (isAudioTrack && isDreamfinderIdentity(identity)) {
-      _silenceParticipantAudio!(identity);
+      _silenceParticipantAudio(identity);
     }
   }
 
