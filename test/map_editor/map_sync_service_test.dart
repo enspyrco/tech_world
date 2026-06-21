@@ -724,4 +724,9 @@ class FakeLiveKitService implements LiveKitService {
   Future<void> dispose() async {
     _dataReceivedController.close();
   }
+
+  // Catch-all so growth of the LiveKitService interface doesn't break this
+  // hand-rolled fake (mirrors the other fakes' noSuchMethod pattern).
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
 }

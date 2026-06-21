@@ -100,12 +100,27 @@ class LiveKitService {
     required this.displayName,
     this.roomName = 'tech-world',
     @visibleForTesting Future<String?> Function()? tokenRetriever,
-  }) : _tokenRetriever = tokenRetriever;
+    @visibleForTesting void Function(String identity)? silenceParticipantAudio,
+  })  : _tokenRetriever = tokenRetriever,
+        // Seam for unit-testing the silence-on-subscribe logic without faking
+        // the LiveKit SDK. Defaults to the real server-side audio disable
+        // (see [applyDreamfinderSilenceOnSubscribe]). The late-init dance is
+        // because the default closure captures `this`.
+        _silenceParticipantAudio = silenceParticipantAudio {
+    _silenceParticipantAudio ??=
+        (identity) => setParticipantAudioEnabled(identity, false);
+  }
 
   final String userId;
   final String displayName;
   final String roomName;
   final Future<String?> Function()? _tokenRetriever;
+
+  /// Effect invoked to silence a participant's audio (server-side disable).
+  ///
+  /// Injectable so tests can observe which identities get silenced without a
+  /// live LiveKit `Room`. Defaults to [setParticipantAudioEnabled]`(id, false)`.
+  void Function(String identity)? _silenceParticipantAudio;
 
   // LiveKit server URL
   static const _serverUrl = 'wss://livekit.imagineering.cc';
@@ -548,6 +563,31 @@ class LiveKitService {
     }
   }
 
+  /// Silence a freshly-subscribed track if it belongs to a silenced
+  /// Dreamfinder.
+  ///
+  /// Called from the [TrackSubscribedEvent] handler. A DF audio track that
+  /// arrives *after* the local player has toggled silence (DF joining late, or
+  /// republishing its track) would otherwise leak audio — [setDreamfinderSilenced]
+  /// only iterates the participants present at toggle time. Disabling on
+  /// subscribe closes that gap.
+  ///
+  /// Only fires for audio tracks ([isAudioTrack] true) from a Dreamfinder
+  /// [identity] while [dreamfinderSilenced] is set. Extracted from the inline
+  /// handler so the branch logic is unit-testable via the
+  /// `silenceParticipantAudio` seam without a live `Room`.
+  @visibleForTesting
+  void applyDreamfinderSilenceOnSubscribe({
+    required bool isAudioTrack,
+    required String identity,
+  }) {
+    if (isAudioTrack &&
+        dreamfinderSilenced.value &&
+        isDreamfinderIdentity(identity)) {
+      _silenceParticipantAudio!(identity);
+    }
+  }
+
   /// Get a participant by their identity (userId)
   Participant? getParticipant(String identity) {
     if (_room == null) return null;
@@ -899,11 +939,10 @@ class LiveKitService {
         // Apply Dreamfinder silence to a freshly-subscribed DF audio track.
         // Without this, toggling silence before DF joins (or while DF is
         // republishing) would leave the new track audible.
-        if (event.track is AudioTrack &&
-            dreamfinderSilenced.value &&
-            isDreamfinderIdentity(event.participant.identity)) {
-          setParticipantAudioEnabled(event.participant.identity, false);
-        }
+        applyDreamfinderSilenceOnSubscribe(
+          isAudioTrack: event.track is AudioTrack,
+          identity: event.participant.identity,
+        );
       })
       ..on<TrackUnsubscribedEvent>((event) {
         _log.fine(
