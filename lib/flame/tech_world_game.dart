@@ -85,15 +85,19 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
   void update(double dt) {
     super.update(dt);
 
-    final direction = directionForKeys(_keysPressed);
-    if (direction == Direction.none) return;
-
-    // Gate the held-key cadence first so the ticker only advances while there is
-    // a live direction to walk (a fully-cancelled key set doesn't burn cooldown).
-    if (!_moveTicker.tick(dt)) return;
-
     final techWorld = world;
     if (techWorld is! TechWorld) return;
+
+    // The whole step decision (direction resolution + idle re-entrancy guard +
+    // cadence floor) lives in the pure [nextKeyboardStep] so it is unit-tested
+    // without a live TechWorld and the runtime/test paths can't drift.
+    final direction = nextKeyboardStep(
+      keysPressed: _keysPressed,
+      playerIsMoving: techWorld.isUserPlayerMoving,
+      ticker: _moveTicker,
+      dt: dt,
+    );
+    if (direction == null) return;
 
     techWorld.moveInDirection(direction);
   }

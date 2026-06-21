@@ -139,6 +139,35 @@ class MovementTicker {
   void reset() => _cooldown = 0;
 }
 
+/// Decide the cell-step (if any) to enact for one game tick of continuous
+/// keyboard movement, and advance [ticker] as a side-effect.
+///
+/// This is the pure, Flame-free decision the [TechWorldGame.update] loop runs
+/// each frame, factored out so the gate ordering is unit-testable without
+/// standing up a [TechWorld]. Returns the [Direction] to move, or `null` when no
+/// step should be issued this tick. The gate order is load-bearing:
+///
+/// 1. No live direction ([Direction.none]) → no step.
+/// 2. [playerIsMoving] → no step **and the ticker is not advanced**, so a step
+///    is ready on the very first tick after the move completes rather than one
+///    [MovementTicker.stepInterval] later. Move-completion is the real pacer;
+///    the ticker is only a lower bound on cadence. This is the re-entrancy guard
+///    that stops a step being re-issued mid-cell (which would abandon the
+///    in-flight [MoveEffect] and stutter).
+/// 3. [MovementTicker.tick] gates the cadence floor; only then do we step.
+Direction? nextKeyboardStep({
+  required Set<LogicalKeyboardKey> keysPressed,
+  required bool playerIsMoving,
+  required MovementTicker ticker,
+  required double dt,
+}) {
+  final direction = directionForKeys(keysPressed);
+  if (direction == Direction.none) return null;
+  if (playerIsMoving) return null;
+  if (!ticker.tick(dt)) return null;
+  return direction;
+}
+
 /// Compute the grid cell one step away from [current] in [direction].
 ///
 /// Cells are `(x, y)` tuples matching the a_star / pathfinding convention used

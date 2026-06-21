@@ -180,6 +180,95 @@ void main() {
       expect(ticker.tick(0.001), isTrue); // fresh press fires immediately again
     });
   });
+
+  group('nextKeyboardStep (idle re-entrancy gate)', () {
+    const interval = 0.2;
+    const frameDt = 1 / 60;
+
+    Set<LogicalKeyboardKey> held() => {LogicalKeyboardKey.keyD};
+
+    test('no step while the player is moving, even when the ticker would fire',
+        () {
+      final ticker = MovementTicker(stepInterval: interval);
+      // Drive many frames of held-key time with the player reported as moving.
+      // Without the gate the ticker would fire repeatedly; the gate must block
+      // every one of them.
+      for (var t = 0.0; t < 1.0; t += frameDt) {
+        final step = nextKeyboardStep(
+          keysPressed: held(),
+          playerIsMoving: true,
+          ticker: ticker,
+          dt: frameDt,
+        );
+        expect(step, isNull,
+            reason: 'must never re-issue a step mid-cell-move');
+      }
+    });
+
+    test('the moving gate does not advance the ticker (step ready on idle)', () {
+      final ticker = MovementTicker(stepInterval: interval);
+      // First step consumes the immediate fire.
+      expect(
+        nextKeyboardStep(
+          keysPressed: held(),
+          playerIsMoving: false,
+          ticker: ticker,
+          dt: frameDt,
+        ),
+        Direction.right,
+      );
+      // While moving, accumulate well over a full interval of frames. Because
+      // the gate returns BEFORE ticking, the cooldown does not advance...
+      for (var t = 0.0; t < interval * 3; t += frameDt) {
+        expect(
+          nextKeyboardStep(
+            keysPressed: held(),
+            playerIsMoving: true,
+            ticker: ticker,
+            dt: frameDt,
+          ),
+          isNull,
+        );
+      }
+      // ...so the next idle frame must still respect the cadence floor: a single
+      // small idle tick has not yet elapsed the interval, so no step yet.
+      expect(
+        nextKeyboardStep(
+          keysPressed: held(),
+          playerIsMoving: false,
+          ticker: ticker,
+          dt: frameDt,
+        ),
+        isNull,
+        reason: 'cooldown is preserved across the moving window',
+      );
+    });
+
+    test('once idle, the next eligible tick steps in the held direction', () {
+      final ticker = MovementTicker(stepInterval: interval);
+      // Fresh ticker fires immediately when idle with a live direction.
+      final step = nextKeyboardStep(
+        keysPressed: {LogicalKeyboardKey.keyW, LogicalKeyboardKey.keyD},
+        playerIsMoving: false,
+        ticker: ticker,
+        dt: frameDt,
+      );
+      expect(step, Direction.upRight, reason: 'diagonal resolves through gate');
+    });
+
+    test('no step when no movement key is held, regardless of idle state', () {
+      final ticker = MovementTicker(stepInterval: interval);
+      expect(
+        nextKeyboardStep(
+          keysPressed: {LogicalKeyboardKey.space},
+          playerIsMoving: false,
+          ticker: ticker,
+          dt: frameDt,
+        ),
+        isNull,
+      );
+    });
+  });
 }
 
 /// A single representative frame dt used in cadence tests.

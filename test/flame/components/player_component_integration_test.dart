@@ -231,6 +231,44 @@ void main() {
     );
 
     testWithGame<TestGameWithMockImages>(
+      'isMoving is false at rest, true mid-move, false after completion',
+      TestGameWithMockImages.new,
+      (game) async {
+        final player = PlayerComponent(
+          position: Vector2(0, 0),
+          id: 'test-player',
+          displayName: 'Test Player',
+        );
+
+        await game.world.add(player);
+        await game.ready();
+
+        // At rest: no move effect, so not moving.
+        expect(player.isMoving, isFalse, reason: 'idle at spawn');
+
+        // Start a single one-cell move (0.2s effect).
+        player.move([Direction.right], [Vector2(0, 0), Vector2(32, 0)]);
+
+        // Mid-move: advance less than the cell duration.
+        game.update(0.05);
+        expect(player.isMoving, isTrue,
+            reason: 'a MoveEffect is in flight mid-cell');
+
+        // Advance past the full cell duration so the effect completes and is
+        // removed (removeOnFinish defaults to true). Drive a couple of extra
+        // frames so the controller settles and the child is pruned.
+        for (var i = 0; i < 20; i++) {
+          game.update(0.016);
+        }
+
+        expect(player.isMoving, isFalse,
+            reason: 'effect completed -> back to idle');
+        expect(player.position.x, closeTo(32, 0.001),
+            reason: 'reached the target cell');
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
       'position changes during move effect update',
       TestGameWithMockImages.new,
       (game) async {

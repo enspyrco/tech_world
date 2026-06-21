@@ -160,6 +160,21 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
         position.y.round() ~/ gridSquareSize,
       );
 
+  /// Whether a cell-move is currently animating.
+  ///
+  /// A [MoveToEffect] is added per path segment by [move] and auto-removed on
+  /// completion (`removeOnFinish` defaults to `true`), so the presence of any
+  /// un-completed [MoveEffect] child is an authoritative "mid-move" signal —
+  /// independent of the animation `playing` flag, which flickers false for one
+  /// frame between multi-segment path effects.
+  ///
+  /// Keyboard auto-repeat ([TechWorldGame.update]) gates the next held-key step
+  /// on this so a step is never issued while a move is in flight (which would
+  /// abandon the in-flight effect mid-cell and stutter). Move-completion, not a
+  /// coincidental timer, becomes the cadence pacer.
+  bool get isMoving =>
+      children.whereType<MoveEffect>().any((e) => !e.controller.completed);
+
   /// Create a list of [MoveEffect]s that each add the next [MoveEffect]
   /// when the previous has finished.
   void move(List<Direction> directions, List<Vector2> largeGridPoints) {
