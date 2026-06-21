@@ -100,12 +100,37 @@ class LiveKitService {
     required this.displayName,
     this.roomName = 'tech-world',
     @visibleForTesting Future<String?> Function()? tokenRetriever,
-  }) : _tokenRetriever = tokenRetriever;
+    @visibleForTesting void Function(String identity)? silenceParticipantAudio,
+    @visibleForTesting Iterable<String> Function()? remoteParticipantIdentities,
+  }) : _tokenRetriever = tokenRetriever {
+    // Seams for unit-testing the DF-silence logic without faking the LiveKit
+    // SDK. Default to the real server-side disable / the live `Room`'s
+    // participant set. Assigned in the constructor body (not the initializer
+    // list) because the default closures capture `this` — which lets the fields
+    // be `late final` rather than nullable, encoding "set once, never null".
+    _silenceParticipantAudio = silenceParticipantAudio ??
+        ((identity) => setParticipantAudioEnabled(identity, false));
+    _remoteParticipantIdentities = remoteParticipantIdentities ??
+        (() =>
+            _room?.remoteParticipants.values.map((p) => p.identity) ?? const []);
+  }
 
   final String userId;
   final String displayName;
   final String roomName;
   final Future<String?> Function()? _tokenRetriever;
+
+  /// Effect invoked to silence a participant's audio (server-side disable).
+  ///
+  /// Injectable so tests can observe which identities get silenced without a
+  /// live LiveKit `Room`. Defaults to [setParticipantAudioEnabled]`(id, false)`.
+  late final void Function(String identity) _silenceParticipantAudio;
+
+  /// Source of the current remote participant identities.
+  ///
+  /// Injectable so [setDreamfinderSilenced]'s iteration is unit-testable
+  /// without a live `Room`. Defaults to reading `_room.remoteParticipants`.
+  late final Iterable<String> Function() _remoteParticipantIdentities;
 
   // LiveKit server URL
   static const _serverUrl = 'wss://livekit.imagineering.cc';
@@ -527,24 +552,58 @@ class LiveKitService {
 
   /// Toggle whether we receive Dreamfinder's audio.
   ///
-  /// Iterates current remote participants and disables/enables audio on
-  /// any matching [isDreamfinderIdentity]. Late-joining DF tracks are
-  /// caught in the [TrackSubscribedEvent] handler.
+  /// Silencing mutes every current DF participant immediately (server-side
+  /// disable via [_silenceParticipantAudio]). UN-silencing does NOT force-enable
+  /// here: the per-frame proximity gate ([BubbleManager._updateDreamfinderAudio])
+  /// is the SOLE enabler, so DF only becomes audible again when you are actually
+  /// in range. Force-enabling on un-silence re-enabled DF for every matching
+  /// participant regardless of distance, leaving it audible from anywhere until
+  /// the next near→far transition (the #594 / PR #485 leak).
+  ///
+  /// Iterates participants via the [_remoteParticipantIdentities] seam (live
+  /// `Room` in production), so the disable-all / never-enable behaviour is
+  /// unit-testable without a live SDK. Late-joining DF tracks are caught in the
+  /// [TrackSubscribedEvent] handler.
   void setDreamfinderSilenced(bool silenced) {
     dreamfinderSilenced.value = silenced;
-    final room = _room;
-    if (room == null) return;
-    // Silencing mutes DF immediately. UN-silencing does NOT force-enable here:
-    // the per-frame proximity gate (BubbleManager._updateDreamfinderAudio) is
-    // the SOLE enabler, so DF only becomes audible again when you are actually
-    // in range. Force-enabling on un-silence re-enabled DF for every matching
-    // participant regardless of distance, leaving it audible from anywhere
-    // until the next near→far transition (the #594 / PR #485 leak).
     if (!silenced) return;
-    for (final participant in room.remoteParticipants.values) {
-      if (isDreamfinderIdentity(participant.identity)) {
-        setParticipantAudioEnabled(participant.identity, false);
+    for (final identity in _remoteParticipantIdentities()) {
+      if (isDreamfinderIdentity(identity)) {
+        _silenceParticipantAudio(identity);
       }
+    }
+  }
+
+  /// Disable a freshly-subscribed Dreamfinder audio track.
+  ///
+  /// Called from the [TrackSubscribedEvent] handler. DF audio is proximity-
+  /// gated: the per-frame gate ([BubbleManager._updateDreamfinderAudio]) is the
+  /// SOLE enabler and only forwards DF audio when the local player is in range.
+  /// But that gate doesn't run until DF's `DreamfinderComponent` exists, which
+  /// is deferred to `gameReady` (it needs the path component). Between a DF
+  /// audio track subscribing and the gate's first tick, an *unsilenced* fresh
+  /// track would be audible from anywhere on the map — the deferred-component
+  /// window flagged in the PR #485 cage match.
+  ///
+  /// Fix: disable DF audio on subscribe **unconditionally** (not just when
+  /// silenced). The gate then enables it on the first near-frame. This is
+  /// consistent with the gate's own initial state — its `_audioEnabledParticipants`
+  /// set starts empty (it assumes the track begins disabled), so disabling on
+  /// subscribe simply makes the SFU match that assumption; the gate's
+  /// `shouldEnable = !hasAudio && near` transition still fires correctly when
+  /// the player walks into range. (Previously this only disabled when already
+  /// silenced, leaving the unsilenced-late-join window open.)
+  ///
+  /// Only fires for audio tracks ([isAudioTrack] true) from a Dreamfinder
+  /// [identity]. Extracted from the inline handler so the branch logic is
+  /// unit-testable via the `silenceParticipantAudio` seam without a live `Room`.
+  @visibleForTesting
+  void disableDreamfinderAudioOnSubscribe({
+    required bool isAudioTrack,
+    required String identity,
+  }) {
+    if (isAudioTrack && isDreamfinderIdentity(identity)) {
+      _silenceParticipantAudio(identity);
     }
   }
 
@@ -896,14 +955,14 @@ class LiveKitService {
           _trackSubscribedController
               .add((event.participant, event.track as VideoTrack));
         }
-        // Apply Dreamfinder silence to a freshly-subscribed DF audio track.
-        // Without this, toggling silence before DF joins (or while DF is
-        // republishing) would leave the new track audible.
-        if (event.track is AudioTrack &&
-            dreamfinderSilenced.value &&
-            isDreamfinderIdentity(event.participant.identity)) {
-          setParticipantAudioEnabled(event.participant.identity, false);
-        }
+        // Disable a freshly-subscribed DF audio track unconditionally; the
+        // per-frame proximity gate re-enables it when the local player is in
+        // range. Closes the deferred-component window where a fresh DF track
+        // would be audible from anywhere before the gate's first tick.
+        disableDreamfinderAudioOnSubscribe(
+          isAudioTrack: event.track is AudioTrack,
+          identity: event.participant.identity,
+        );
       })
       ..on<TrackUnsubscribedEvent>((event) {
         _log.fine(
