@@ -169,6 +169,14 @@ class ChatService {
   String _nextMessageId() =>
       DateTime.now().microsecondsSinceEpoch.toString();
 
+  /// Coerce an untrusted wire value to a `String`, or `null` otherwise.
+  ///
+  /// Used at the data-channel parse seam so a malformed value (wrong type)
+  /// drops the field instead of throwing inside the stream listener (which
+  /// would tear the subscription down).
+  static String? _stringOrNull(Object? value) =>
+      value is String ? value : null;
+
   /// Track a message ID for deduplication, trimming the oldest entries when
   /// the set exceeds [_maxSeenIds].
   void _markSeen(String id) {
@@ -286,6 +294,14 @@ class ChatService {
         '"${text.substring(0, text.length.clamp(0, 50))}..."');
 
     if (isDm) {
+      // Reply linkage + quote snapshot are display-only and parsed defensively
+      // (a malformed / wrong-type value drops the field, never throws). They do
+      // NOT affect the trust boundary below — the reply's sender is still the
+      // transport identity.
+      final replyToMessageId = _stringOrNull(json['replyToMessageId']);
+      final replyToText = _stringOrNull(json['replyToText']);
+      final replyToSenderName = _stringOrNull(json['replyToSenderName']);
+
       // Trust the transport-verified identity over the payload — prevents
       // a malicious peer from filing a DM under another user's UID by
       // spoofing senderId in the payload.
@@ -294,6 +310,9 @@ class ChatService {
         senderName: senderName,
         senderId: message.senderId ?? 'unknown',
         isResponse: message.topic == LiveKitTopic.dmResponse.wire,
+        replyToMessageId: replyToMessageId,
+        replyToText: replyToText,
+        replyToSenderName: replyToSenderName,
       );
     } else if (message.topic == LiveKitTopic.chatResponse.wire) {
       // Bot response — use sender info from payload (supports multiple bots).
@@ -331,11 +350,19 @@ class ChatService {
   }
 
   /// Handle an incoming DM or dm-response.
+  ///
+  /// [replyToMessageId] / [replyToText] / [replyToSenderName] are the optional
+  /// quote-reply snapshot, already coerced to `String?` at the wire seam by
+  /// the caller. They are display-only and never influence [senderId], which
+  /// remains the transport-verified identity.
   void _handleDmMessage({
     required String text,
     required String senderName,
     required String senderId,
     required bool isResponse,
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderName,
   }) {
     final localUid = _liveKitService.userId;
     final convId = Conversation.conversationIdFor(localUid, senderId);
@@ -347,6 +374,9 @@ class ChatService {
       conversationId: convId,
       participants: [localUid, senderId],
       isBot: isResponse,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      replyToSenderName: replyToSenderName,
     );
 
     // Ensure conversation exists, then update with new activity.
@@ -609,10 +639,19 @@ class ChatService {
   /// Send a private direct message to another user.
   ///
   /// Uses targeted LiveKit data channels so only the recipient sees it.
+  ///
+  /// To quote-reply to an earlier message, pass [replyTo] (the message being
+  /// replied to, for its display snapshot) together with [replyToMessageId]
+  /// (the wire ID of that message). The snapshot ([ChatMessage.replyToText] /
+  /// [ChatMessage.replyToSenderName]) is display-only — the *sender* of this
+  /// reply is still derived from the authenticated local identity, never from
+  /// the quoted message.
   Future<void> sendDm(
     String peerId,
     String text, {
     required String peerDisplayName,
+    ChatMessage? replyTo,
+    String? replyToMessageId,
   }) async {
     if (text.trim().isEmpty) return;
 
@@ -629,6 +668,10 @@ class ChatService {
     final messageId = _nextMessageId();
     _markSeen(messageId);
 
+    // Quote snapshot — display-only. Only set when a reply target is given.
+    final replyText = replyTo?.text;
+    final replySenderName = replyTo?.senderName;
+
     final localUid = _liveKitService.userId;
     final chatMessage = ChatMessage(
       text: text,
@@ -637,6 +680,9 @@ class ChatService {
       conversationId: convId,
       participants: [localUid, peerId],
       isLocalUser: true,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyText,
+      replyToSenderName: replySenderName,
     );
 
     // Ensure conversation exists, then update last activity.
@@ -669,6 +715,9 @@ class ChatService {
       'text': text,
       'senderName': _liveKitService.displayName,
       'senderId': _liveKitService.userId,
+      if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
+      if (replyText != null) 'replyToText': replyText,
+      if (replySenderName != null) 'replyToSenderName': replySenderName,
       'timestamp': DateTime.now().toIso8601String(),
     };
 

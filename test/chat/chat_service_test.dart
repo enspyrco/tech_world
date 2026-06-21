@@ -717,6 +717,116 @@ void main() {
             reason: 'senderId must come from transport, not payload');
         expect(msgs.first.senderId, isNot(equals('victim-uid')));
       });
+
+      group('quote-reply', () {
+        test('sendDm with replyTo carries reply fields locally and on the wire',
+            () async {
+          fakeLiveKit.connected = true;
+
+          // The message being replied to (as it exists in the local thread).
+          final original = ChatMessage(
+            text: 'What do you think?',
+            senderName: 'Peer',
+            senderId: 'peer-uid',
+          );
+
+          await chatService.sendDm(
+            'peer-uid',
+            'I agree',
+            peerDisplayName: 'Peer',
+            replyTo: original,
+            replyToMessageId: 'orig-1',
+          );
+          await pumpEventQueue();
+
+          // Local copy carries the reply linkage + quote snapshot.
+          final convId =
+              Conversation.conversationIdFor('test-user-id', 'peer-uid');
+          final local = chatService.dmMessagesSnapshot('peer-uid');
+          expect(local, isNotEmpty);
+          expect(local.last.replyToMessageId, equals('orig-1'));
+          expect(local.last.replyToText, equals('What do you think?'));
+          expect(local.last.replyToSenderName, equals('Peer'));
+          expect(local.last.conversationId, equals(convId));
+
+          // Wire payload carries the reply fields.
+          final payload = fakeLiveKit.publishedMessages.last['payload']
+              as Map<String, dynamic>;
+          expect(payload['replyToMessageId'], equals('orig-1'));
+          expect(payload['replyToText'], equals('What do you think?'));
+          expect(payload['replyToSenderName'], equals('Peer'));
+        });
+
+        test('inbound DM reply parses reply fields from the wire', () async {
+          fakeLiveKit.connected = true;
+
+          fakeLiveKit.simulateDm('alice-uid', {
+            'text': 'Replying to you',
+            'id': 'dm-reply-1',
+            'senderName': 'Alice',
+            'senderId': 'alice-uid',
+            'replyToMessageId': 'orig-9',
+            'replyToText': 'original question',
+            'replyToSenderName': 'Test User',
+          });
+          await pumpEventQueue();
+
+          final msgs = chatService.dmMessagesSnapshot('alice-uid');
+          expect(msgs, isNotEmpty);
+          expect(msgs.last.replyToMessageId, equals('orig-9'));
+          expect(msgs.last.replyToText, equals('original question'));
+          expect(msgs.last.replyToSenderName, equals('Test User'));
+          expect(msgs.last.isReply, isTrue);
+        });
+
+        test('inbound DM reply with a non-string replyToMessageId is ignored',
+            () async {
+          // Defensive parse at the wire seam: a malformed reply field must not
+          // throw / tear down the stream — it just isn't treated as a reply.
+          fakeLiveKit.connected = true;
+
+          fakeLiveKit.simulateDm('alice-uid', {
+            'text': 'Malformed reply',
+            'id': 'dm-bad-1',
+            'senderName': 'Alice',
+            'senderId': 'alice-uid',
+            'replyToMessageId': 123, // wrong type
+          });
+          await pumpEventQueue();
+
+          final msgs = chatService.dmMessagesSnapshot('alice-uid');
+          expect(msgs, isNotEmpty);
+          expect(msgs.last.replyToMessageId, isNull);
+          expect(msgs.last.isReply, isFalse);
+        });
+
+        test('reply still derives senderId from transport, not payload',
+            () async {
+          // A reply must not become a spoof vector: the SENDER of the reply is
+          // still the transport identity, even though the quote snapshot is
+          // payload-sourced (display-only).
+          fakeLiveKit.connected = true;
+
+          fakeLiveKit.simulateDm('alice-uid', {
+            'text': 'Reply but spoofing sender',
+            'id': 'dm-spoof-reply',
+            'senderName': 'Victim',
+            'senderId': 'victim-uid', // spoofed
+            'replyToMessageId': 'orig-1',
+            'replyToText': 'something',
+            'replyToSenderName': 'Test User',
+          });
+          await pumpEventQueue();
+
+          final msgs = chatService.dmMessagesSnapshot('alice-uid');
+          expect(msgs, isNotEmpty);
+          expect(msgs.last.senderId, equals('alice-uid'),
+              reason: 'reply sender must come from transport, not payload');
+          expect(msgs.last.senderId, isNot(equals('victim-uid')));
+          // But the (display-only) quote snapshot is preserved.
+          expect(msgs.last.replyToMessageId, equals('orig-1'));
+        });
+      });
     });
 
     group('loadHistory (regression)', () {
