@@ -35,14 +35,21 @@ class TimerService {
   TimerService({
     required LiveKitService liveKitService,
     @visibleForTesting AlarmPlayer? alarmPlayer,
+    @visibleForTesting DateTime Function()? now,
   })  : _liveKit = liveKitService,
-        _alarm = alarmPlayer ?? AlarmPlayer() {
-    state = CountdownTimerState(onFinished: _onFinished);
+        _alarm = alarmPlayer ?? AlarmPlayer(),
+        _now = now ?? DateTime.now {
+    state = CountdownTimerState(onFinished: _onFinished, now: _now);
     _sub = _liveKit.roomTimerReceived.listen(_apply);
   }
 
   final LiveKitService _liveKit;
   final AlarmPlayer _alarm;
+
+  /// Injectable wall clock — shared with [state] so the whole service runs on
+  /// one notion of "now" in tests. Used to reconstruct the absolute end instant
+  /// of an incoming start (late-joiner catch-up).
+  final DateTime Function() _now;
 
   /// Observable countdown state for the overlay to render.
   late final CountdownTimerState state;
@@ -66,7 +73,7 @@ class TimerService {
     _alarm.prime();
     final message = StartRoomTimerMessage(
       durationSeconds: durationSeconds,
-      startedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      startedAtMillis: _now().millisecondsSinceEpoch,
       startedBy: _liveKit.userId,
     );
     _apply(message);
@@ -90,10 +97,36 @@ class TimerService {
   /// broadcast. The single source of truth for both paths.
   void _apply(RoomTimerMessage message) {
     switch (message) {
-      case StartRoomTimerMessage(:final durationSeconds, :final startedBy):
+      case StartRoomTimerMessage(
+          :final durationSeconds,
+          :final startedAtMillis,
+          :final startedBy,
+        ):
         dismissAlarm(); // a new timer clears any lingering alarm/banner
-        state.start(durationSeconds);
-        _startTicker();
+        // Late-joiner catch-up: reconstruct the absolute end instant from the
+        // sender's start time + duration and start from THAT, so a participant
+        // joining mid-countdown sees the real remaining time, not a fresh full
+        // duration. When the message carries no timestamp (legacy/skew-free),
+        // fall back to a fresh local countdown of [durationSeconds].
+        //
+        // Robust to a finished timer: if the reconstructed end is already in
+        // the past, CountdownTimerState.startAt fires onFinished immediately
+        // (alarm + banner), matching what an always-present client would show.
+        if (startedAtMillis != null) {
+          final endsAt = DateTime.fromMillisecondsSinceEpoch(startedAtMillis)
+              .add(Duration(seconds: durationSeconds));
+          state.startAt(endsAt);
+        } else {
+          state.start(durationSeconds);
+        }
+        // Only run the 1s ticker if the countdown is actually live — a
+        // late-joiner whose timer had already expired finishes synchronously
+        // inside startAt and needs no ticker.
+        if (state.running) {
+          _startTicker();
+        } else {
+          _stopTicker();
+        }
         _log.fine('Room timer started: ${durationSeconds}s by $startedBy');
       case CancelRoomTimerMessage(:final startedBy):
         dismissAlarm();
