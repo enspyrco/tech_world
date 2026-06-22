@@ -607,6 +607,15 @@ void main() {
         // The cap keeps the FIRST distinct UIDs (insertion order preserved).
         expect(parsed.first, equals('uid-0'));
       });
+
+      test('bounds the input SCAN even for a duplicate-stuffed hostile list',
+          () {
+        // 100k duplicates of one UID: only 1 distinct, but the scan must not
+        // walk the whole list — it stops at the scan cap and returns the UID.
+        final stuffed = List.filled(100000, 'spammer');
+        final parsed = ChatMessage.parseMentions(stuffed);
+        expect(parsed, equals(['spammer']));
+      });
     });
   });
 }
