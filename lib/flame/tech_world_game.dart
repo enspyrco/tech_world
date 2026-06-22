@@ -1,9 +1,9 @@
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
-import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/keyboard_movement.dart';
 import 'package:tech_world/flame/tech_world.dart';
@@ -21,16 +21,22 @@ class SnapshotComponent extends PositionComponent with Snapshot {}
 /// - [onKeyEvent] only maintains the set of currently-held movement keys
 ///   ([_keysPressed]); it does not move the player directly.
 /// - [update] re-resolves that set into a combined [Direction] (diagonals
-///   included via [directionForKeys]) on every tick and, on a cooldown matched
-///   to the per-cell animation ([PlayerComponent.cellMoveDuration]), forwards it
-///   to [TechWorld.moveInDirection] — which routes through the same tap-to-move
-///   path (pathfind → move → broadcast). Holding a key therefore walks
+///   included via [directionForKeys]) every tick and, whenever the player is
+///   idle, forwards it to [TechWorld.moveInDirection] — which routes through the
+///   same tap-to-move path (pathfind → move → broadcast). Holding a key walks
 ///   continuously; releasing it stops at the next cell boundary.
 ///
-/// The cooldown gives one cell-step per [PlayerComponent.cellMoveDuration]
-/// regardless of cardinal vs diagonal, so a diagonal is not √2 faster (no speed
-/// boost). Tap-to-move is unaffected, and keystrokes are ignored while a text
-/// field is focused so typing in chat / prompt / DM inputs never walks the
+/// The per-cell move animation *is* the cadence: a new step is issued only once
+/// the previous cell-move has finished, which both paces continuous movement
+/// (no idle gap) and prevents a re-entrant move that would abandon the in-flight
+/// effect mid-cell. There is no separate repeat timer. Movement is one cell per
+/// step in any direction (grid cadence); a diagonal cell covers more pixels than
+/// a cardinal one, so diagonals are not pixel-speed-matched — see
+/// [nextKeyboardStep].
+///
+/// Tap-to-move is unaffected, and movement is suppressed while a text field is
+/// focused (checked in *both* [onKeyEvent] and [update], because focus can move
+/// to a field by mouse/tap with no keyboard event) so typing never walks the
 /// avatar.
 class TechWorldGame extends FlameGame with KeyboardEvents {
   TechWorldGame({required super.world});
@@ -44,11 +50,11 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
   /// [update] each tick to drive continuous-while-held movement.
   final Set<LogicalKeyboardKey> _keysPressed = {};
 
-  /// Cooldown-gated cadence for held-key auto-repeat. Step interval matches the
-  /// per-cell move animation so the repeat rate stays in lock-step with motion
-  /// (and a diagonal is not √2 faster — one cell per interval either way).
-  final MovementTicker _moveTicker =
-      MovementTicker(stepInterval: PlayerComponent.cellMoveDuration);
+  /// Read-only view of the currently-held movement keys, for tests asserting the
+  /// focus-stranding guard clears them.
+  @visibleForTesting
+  Set<LogicalKeyboardKey> get heldMovementKeys =>
+      Set.unmodifiable(_keysPressed);
 
   @override
   KeyEventResult onKeyEvent(
@@ -69,13 +75,12 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
 
     switch (event) {
       case KeyDownEvent():
-        // Fire the first step immediately so a tap feels responsive; the
-        // ticker then governs subsequent held-key repeats in [update].
-        if (_keysPressed.add(key)) _moveTicker.reset();
+        _keysPressed.add(key);
       case KeyUpEvent():
         _keysPressed.remove(key);
       case KeyRepeatEvent():
-        // OS auto-repeat is irrelevant — [update]'s cooldown owns repeat cadence.
+        // OS auto-repeat is irrelevant — [update] paces movement off the move
+        // animation, not off key-repeat events.
         break;
     }
     return KeyEventResult.handled;
@@ -85,17 +90,24 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
   void update(double dt) {
     super.update(dt);
 
+    // Focus can move to a text field by mouse/tap with NO keyboard event, so the
+    // onKeyEvent guard isn't enough — re-check here (the emission point) and drop
+    // any held keys, or a held key would keep walking the avatar while typing.
+    if (isTextFieldFocused()) {
+      _keysPressed.clear();
+      return;
+    }
+
     final techWorld = world;
     if (techWorld is! TechWorld) return;
 
-    // The whole step decision (direction resolution + idle re-entrancy guard +
-    // cadence floor) lives in the pure [nextKeyboardStep] so it is unit-tested
-    // without a live TechWorld and the runtime/test paths can't drift.
+    // The step decision (direction resolution + idle gate) lives in the pure
+    // [nextKeyboardStep] so it is unit-tested without a live TechWorld and the
+    // runtime/test paths can't drift. The idle gate makes the move animation the
+    // cadence — no separate timer.
     final direction = nextKeyboardStep(
       keysPressed: _keysPressed,
       playerIsMoving: techWorld.isUserPlayerMoving,
-      ticker: _moveTicker,
-      dt: dt,
     );
     if (direction == null) return;
 

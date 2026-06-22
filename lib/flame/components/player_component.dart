@@ -65,10 +65,10 @@ class PlayerComponent extends SpriteAnimationGroupComponent<Direction>
 
   /// Duration of a single one-cell [MoveToEffect].
   ///
-  /// Lifted to a named constant so the keyboard auto-repeat cadence
-  /// ([TechWorldGame]'s continuous-while-held tick) can stay in lock-step with
-  /// the per-cell animation: one held-key step is issued per [cellMoveDuration],
-  /// so a key fires exactly when the previous cell-move completes.
+  /// This animation duration *is* the continuous-keyboard-movement cadence:
+  /// [TechWorldGame] issues the next held-key step only once the previous cell
+  /// move has finished (gated on [isMoving]), so a held key walks at exactly one
+  /// cell per [cellMoveDuration] with no separate repeat timer.
   static const double cellMoveDuration = 0.2;
 
   List<MoveEffect> _moveEffects = [];

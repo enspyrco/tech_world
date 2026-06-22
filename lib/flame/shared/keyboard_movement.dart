@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:tech_world/flame/shared/constants.dart';
@@ -21,14 +19,18 @@ import 'package:tech_world/flame/shared/direction.dart';
 /// - [directionForKeys] (v2) resolves the *whole set* of currently-held keys
 ///   into a single combined [Direction], producing diagonals when two
 ///   perpendicular keys are held and cancelling opposing keys on the same axis.
-///   [TechWorldGame] tracks the pressed-key set and re-resolves it each
-///   `update(dt)` tick, stepping one cell whenever the player is idle — so
-///   holding a key walks continuously rather than one step per physical press.
-/// - [movementVelocity] (v2) is the authoritative definition of "no √2 diagonal
-///   speed boost": it returns a velocity whose magnitude equals `speed` for both
-///   cardinal and diagonal directions. The grid-stepping integration inherits
-///   the equality as one-cell-per-tick cadence (a diagonal advances one cell per
-///   move-completion, exactly like a cardinal).
+///   [TechWorldGame] re-resolves the live pressed-key set each `update(dt)` tick.
+/// - [nextKeyboardStep] (v2) is the per-tick decision: it emits the next
+///   cell-step only when the player is idle, so the *move animation itself* paces
+///   the walk (continuous, one cell per completed move) and a step is never
+///   re-issued mid-cell.
+///
+/// **Movement is one cell per step in any direction (grid cadence).** A diagonal
+/// step covers more ground per cell than a cardinal one — `(±32, ±32)` vs
+/// `(±32, 0)` — so on screen a diagonal travels ~√2 farther in the same
+/// [PlayerComponent.cellMoveDuration]. There is intentionally **no** pixel-speed
+/// normalisation; whether diagonals should *feel* speed-matched is a separate
+/// design decision, not something this layer asserts.
 
 /// Map a [LogicalKeyboardKey] to the movement [Direction] it requests.
 ///
@@ -82,89 +84,29 @@ Direction directionForKeys(Set<LogicalKeyboardKey> keysPressed) {
   return directionFromTuple[(sx, sy)] ?? Direction.none;
 }
 
-/// The per-frame velocity for moving in [direction] at [speed] (pixels/second),
-/// normalised so diagonal movement is **not** faster than cardinal movement.
-///
-/// This is the pure, testable definition of "no √2 diagonal speed boost": the
-/// returned [Offset] always has magnitude `speed` (or zero for [Direction.none]),
-/// whether [direction] is cardinal or diagonal. Screen coordinates: +x is right,
-/// +y is down, so up is negative y.
-Offset movementVelocity(Direction direction, {required double speed}) {
-  final dx = direction.offsetX;
-  final dy = direction.offsetY;
-  if (dx == 0 && dy == 0) return Offset.zero;
-  final magnitude = math.sqrt(dx * dx + dy * dy);
-  return Offset(dx / magnitude * speed, dy / magnitude * speed);
-}
-
-/// Cooldown-gated cadence for continuous-while-held keyboard movement.
-///
-/// This is the pure, Flame-free brain of [TechWorldGame]'s `update(dt)` loop:
-/// it decides *when* the next held-key cell-step should fire without knowing how
-/// the step is enacted. Keeping it here means the held-key cadence (immediate
-/// first step, then one step per [stepInterval]) is unit-testable by driving
-/// [tick] with simulated `dt` values, exactly as the game loop would.
-///
-/// Usage per tick:
-/// ```dart
-/// final direction = directionForKeys(keysPressed);
-/// if (direction != Direction.none && ticker.tick(dt)) {
-///   moveInDirection(direction); // enact one cell-step
-/// }
-/// ```
-class MovementTicker {
-  MovementTicker({required this.stepInterval});
-
-  /// Seconds between consecutive held-key cell-steps. Matched to the per-cell
-  /// move animation so cadence stays in lock-step with motion.
-  final double stepInterval;
-
-  double _cooldown = 0;
-
-  /// Advance the cooldown by [dt] and report whether a step should fire now.
-  ///
-  /// Returns `true` (and re-arms the cooldown to [stepInterval]) when the
-  /// cooldown has elapsed; `false` otherwise. The first call after a [reset]
-  /// fires immediately, so a fresh key-press steps without waiting a full
-  /// interval — then subsequent steps are spaced by [stepInterval].
-  bool tick(double dt) {
-    if (_cooldown > 0) _cooldown -= dt;
-    if (_cooldown > 0) return false;
-    _cooldown = stepInterval;
-    return true;
-  }
-
-  /// Re-arm so the next [tick] fires immediately. Call when a new movement key
-  /// is first pressed so the initial step feels responsive.
-  void reset() => _cooldown = 0;
-}
-
 /// Decide the cell-step (if any) to enact for one game tick of continuous
-/// keyboard movement, and advance [ticker] as a side-effect.
+/// keyboard movement.
 ///
 /// This is the pure, Flame-free decision the [TechWorldGame.update] loop runs
-/// each frame, factored out so the gate ordering is unit-testable without
-/// standing up a [TechWorld]. Returns the [Direction] to move, or `null` when no
-/// step should be issued this tick. The gate order is load-bearing:
+/// each frame, factored out so it is unit-testable without standing up a
+/// [TechWorld]. Returns the [Direction] to move, or `null` when no step should
+/// be issued this tick:
 ///
-/// 1. No live direction ([Direction.none]) → no step.
-/// 2. [playerIsMoving] → no step **and the ticker is not advanced**, so a step
-///    is ready on the very first tick after the move completes rather than one
-///    [MovementTicker.stepInterval] later. Move-completion is the real pacer;
-///    the ticker is only a lower bound on cadence. This is the re-entrancy guard
-///    that stops a step being re-issued mid-cell (which would abandon the
-///    in-flight [MoveEffect] and stutter).
-/// 3. [MovementTicker.tick] gates the cadence floor; only then do we step.
+/// 1. No live direction ([Direction.none], e.g. nothing held or opposing keys
+///    cancel) → no step.
+/// 2. [playerIsMoving] → no step. The in-flight cell-move animation *is* the
+///    cadence: this both prevents re-entrancy (issuing a second move mid-cell
+///    would abandon the running [MoveEffect] and stutter) AND paces continuous
+///    movement with no idle gap — the instant the move completes, the next held
+///    tick steps again. There is no separate timer; the animation duration is
+///    the interval.
 Direction? nextKeyboardStep({
   required Set<LogicalKeyboardKey> keysPressed,
   required bool playerIsMoving,
-  required MovementTicker ticker,
-  required double dt,
 }) {
   final direction = directionForKeys(keysPressed);
   if (direction == Direction.none) return null;
   if (playerIsMoving) return null;
-  if (!ticker.tick(dt)) return null;
   return direction;
 }
 

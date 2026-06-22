@@ -4,12 +4,14 @@ import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/keyboard_movement.dart';
 
 /// v2 keyboard-movement helper tests: combined-direction resolution
-/// (continuous-while-held + diagonals) and diagonal-speed normalisation.
+/// (continuous-while-held + diagonals) and the per-tick step decision.
 ///
 /// These exercise the *pure* input-mapping layer in isolation — no Flame, no
-/// rendering. The auto-repeat tick that consumes [directionForKeys] lives in
-/// [TechWorldGame.update]; the magnitude contract that guarantees "no √2
-/// diagonal speed boost" is pinned here on [movementVelocity].
+/// rendering. Movement is one cell per step in any direction (grid cadence);
+/// there is deliberately no pixel-speed normalisation (a diagonal cell covers
+/// ~√2 more pixels than a cardinal one), so there is nothing of that shape to
+/// pin here. The continuous walk is paced by the move animation via the idle
+/// gate in [nextKeyboardStep].
 void main() {
   group('directionForKeys (combined held-key resolution)', () {
     test('empty set yields Direction.none', () {
@@ -82,194 +84,79 @@ void main() {
     });
   });
 
-  group('movementVelocity (diagonal normalisation — no √2 boost)', () {
-    test('no movement yields a zero vector', () {
-      final v = movementVelocity(Direction.none, speed: 100);
-      expect(v.dx, 0);
-      expect(v.dy, 0);
-    });
-
-    test('cardinal velocity magnitude equals the requested speed', () {
-      const speed = 120.0;
-      for (final dir in [
-        Direction.up,
-        Direction.down,
-        Direction.left,
-        Direction.right,
-      ]) {
-        final v = movementVelocity(dir, speed: speed);
-        expect(v.distance, closeTo(speed, 1e-9),
-            reason: '$dir should move at exactly `speed`');
-      }
-    });
-
-    test('diagonal velocity magnitude equals cardinal magnitude (normalised)',
-        () {
-      const speed = 120.0;
-      final cardinal = movementVelocity(Direction.right, speed: speed);
-      for (final dir in [
-        Direction.upLeft,
-        Direction.upRight,
-        Direction.downLeft,
-        Direction.downRight,
-      ]) {
-        final diagonal = movementVelocity(dir, speed: speed);
-        expect(diagonal.distance, closeTo(cardinal.distance, 1e-9),
-            reason: '$dir must not be faster than a cardinal step (no √2)');
-      }
-    });
-
-    test('a naive (un-normalised) diagonal WOULD be √2 faster — guard holds',
-        () {
-      const speed = 100.0;
-      final diagonal = movementVelocity(Direction.upRight, speed: speed);
-      // The un-normalised diagonal would have length speed*√2 ≈ 141.4.
-      expect(diagonal.distance, lessThan(speed * 1.4142135));
-      expect(diagonal.distance, closeTo(speed, 1e-9));
-    });
-
-    test('velocity direction matches the requested Direction sign', () {
-      final upRight = movementVelocity(Direction.upRight, speed: 100);
-      expect(upRight.dx, greaterThan(0)); // right is +x
-      expect(upRight.dy, lessThan(0)); // up is -y (screen coords)
-    });
-  });
-
-  group('MovementTicker (continuous-while-held cadence)', () {
-    const interval = 0.2;
-
-    test('first tick fires immediately (responsive initial step)', () {
-      final ticker = MovementTicker(stepInterval: interval);
-      // Even a tiny dt on a fresh ticker fires the first step.
-      expect(ticker.tick(0.001), isTrue);
-    });
-
-    test('holding a key fires repeatedly, one step per interval', () {
-      // Simulate a game loop driving update(dt) at 60fps with the key held.
-      final ticker = MovementTicker(stepInterval: interval);
-      const frameDt = 1 / 60; // ~0.0167s
-      var steps = 0;
-      // Run for one full second of held-key time.
-      for (var t = 0.0; t < 1.0; t += frameDt) {
-        if (ticker.tick(frameDt)) steps++;
-      }
-      // 1 immediate + ~one per 0.2s over 1s -> 5 to 6 steps. Continuous, not one.
-      expect(steps, greaterThan(1),
-          reason: 'held key must move continuously, not a single step');
-      expect(steps, inInclusiveRange(5, 6));
-    });
-
-    test('no step fires again until the interval has elapsed', () {
-      final ticker = MovementTicker(stepInterval: interval);
-      expect(ticker.tick(frameInterval), isTrue); // immediate first step
-      // Accumulate dt below the interval -> no further step.
-      var fired = false;
-      for (var elapsed = 0.0; elapsed < interval - 0.02; elapsed += 0.02) {
-        if (ticker.tick(0.02)) fired = true;
-      }
-      expect(fired, isFalse, reason: 'should not step before stepInterval');
-      // One more tick crossing the interval boundary fires.
-      expect(ticker.tick(0.05), isTrue);
-    });
-
-    test('reset re-arms the immediate first step', () {
-      final ticker = MovementTicker(stepInterval: interval);
-      expect(ticker.tick(0.001), isTrue);
-      expect(ticker.tick(0.001), isFalse); // still cooling down
-      ticker.reset();
-      expect(ticker.tick(0.001), isTrue); // fresh press fires immediately again
-    });
-  });
-
-  group('nextKeyboardStep (idle re-entrancy gate)', () {
-    const interval = 0.2;
-    const frameDt = 1 / 60;
-
+  group('nextKeyboardStep (idle-gated continuous cadence)', () {
     Set<LogicalKeyboardKey> held() => {LogicalKeyboardKey.keyD};
 
-    test('no step while the player is moving, even when the ticker would fire',
-        () {
-      final ticker = MovementTicker(stepInterval: interval);
-      // Drive many frames of held-key time with the player reported as moving.
-      // Without the gate the ticker would fire repeatedly; the gate must block
-      // every one of them.
-      for (var t = 0.0; t < 1.0; t += frameDt) {
-        final step = nextKeyboardStep(
-          keysPressed: held(),
-          playerIsMoving: true,
-          ticker: ticker,
-          dt: frameDt,
-        );
-        expect(step, isNull,
-            reason: 'must never re-issue a step mid-cell-move');
-      }
-    });
-
-    test('the moving gate does not advance the ticker (step ready on idle)', () {
-      final ticker = MovementTicker(stepInterval: interval);
-      // First step consumes the immediate fire.
-      expect(
-        nextKeyboardStep(
-          keysPressed: held(),
-          playerIsMoving: false,
-          ticker: ticker,
-          dt: frameDt,
-        ),
-        Direction.right,
-      );
-      // While moving, accumulate well over a full interval of frames. Because
-      // the gate returns BEFORE ticking, the cooldown does not advance...
-      for (var t = 0.0; t < interval * 3; t += frameDt) {
+    test('no step while the player is moving (re-entrancy guard)', () {
+      // Across many ticks of held-key time, while the player reports moving, no
+      // step is ever issued — otherwise a second move would clobber the in-flight
+      // cell animation mid-cell.
+      for (var i = 0; i < 60; i++) {
         expect(
-          nextKeyboardStep(
-            keysPressed: held(),
-            playerIsMoving: true,
-            ticker: ticker,
-            dt: frameDt,
-          ),
+          nextKeyboardStep(keysPressed: held(), playerIsMoving: true),
           isNull,
+          reason: 'must never re-issue a step mid-cell-move',
         );
       }
-      // ...so the next idle frame must still respect the cadence floor: a single
-      // small idle tick has not yet elapsed the interval, so no step yet.
-      expect(
-        nextKeyboardStep(
-          keysPressed: held(),
-          playerIsMoving: false,
-          ticker: ticker,
-          dt: frameDt,
-        ),
-        isNull,
-        reason: 'cooldown is preserved across the moving window',
-      );
     });
 
-    test('once idle, the next eligible tick steps in the held direction', () {
-      final ticker = MovementTicker(stepInterval: interval);
-      // Fresh ticker fires immediately when idle with a live direction.
-      final step = nextKeyboardStep(
-        keysPressed: {LogicalKeyboardKey.keyW, LogicalKeyboardKey.keyD},
-        playerIsMoving: false,
-        ticker: ticker,
-        dt: frameDt,
+    test(
+        'continuous, no idle gap: the very first idle tick after a move steps '
+        'again with the key still held', () {
+      // Simulate the held-key lifecycle frame by frame. The move animation IS
+      // the cadence: the instant playerIsMoving flips false, the next tick must
+      // step (no dead frame). This is the FLIP of the old ticker behaviour, which
+      // forced an extra ~0.2s gap after every cell.
+      final keys = held();
+
+      // Idle with a key held -> step.
+      expect(nextKeyboardStep(keysPressed: keys, playerIsMoving: false),
+          Direction.right);
+
+      // The move runs for some frames; gate blocks every one.
+      for (var i = 0; i < 12; i++) {
+        expect(nextKeyboardStep(keysPressed: keys, playerIsMoving: true),
+            isNull);
+      }
+
+      // Move completes -> the FIRST idle frame steps again immediately, no gap.
+      expect(nextKeyboardStep(keysPressed: keys, playerIsMoving: false),
+          Direction.right,
+          reason: 'continuous walk: step on the first idle frame, no idle gap');
+    });
+
+    test('idle with a diagonal held steps diagonally', () {
+      expect(
+        nextKeyboardStep(
+          keysPressed: {LogicalKeyboardKey.keyW, LogicalKeyboardKey.keyD},
+          playerIsMoving: false,
+        ),
+        Direction.upRight,
       );
-      expect(step, Direction.upRight, reason: 'diagonal resolves through gate');
     });
 
     test('no step when no movement key is held, regardless of idle state', () {
-      final ticker = MovementTicker(stepInterval: interval);
       expect(
         nextKeyboardStep(
           keysPressed: {LogicalKeyboardKey.space},
           playerIsMoving: false,
-          ticker: ticker,
-          dt: frameDt,
+        ),
+        isNull,
+      );
+      expect(
+        nextKeyboardStep(keysPressed: {}, playerIsMoving: false),
+        isNull,
+      );
+    });
+
+    test('opposing keys cancel to no step even when idle', () {
+      expect(
+        nextKeyboardStep(
+          keysPressed: {LogicalKeyboardKey.keyA, LogicalKeyboardKey.keyD},
+          playerIsMoving: false,
         ),
         isNull,
       );
     });
   });
 }
-
-/// A single representative frame dt used in cadence tests.
-const double frameInterval = 1 / 60;
