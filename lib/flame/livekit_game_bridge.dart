@@ -50,10 +50,9 @@ class LiveKitGameBridge {
     // Data channel
     required void Function(DataChannelMessage) onSpeechTranscript,
     required void Function(DataChannelMessage) onDoorUnlock,
-    // Mentions
-    required void Function(
-            List<String> mentionedUids, String mentionerUid, String messageId)
-        onPlayersMentioned,
+    // Mentions — only the ack travels here; the mention itself reaches the
+    // world via the dispatched [PlayersMentioned] event (so the SENDER, whose
+    // own publishData LiveKit does not loop back, still witnesses it).
     required void Function(String ackerUid, String messageId) onMentionAck,
     // Map
     required void Function() onMapInfoRequested,
@@ -72,7 +71,6 @@ class LiveKitGameBridge {
         _onAvatarUpdate = onAvatarUpdate,
         _onSpeechTranscript = onSpeechTranscript,
         _onDoorUnlock = onDoorUnlock,
-        _onPlayersMentioned = onPlayersMentioned,
         _onMentionAck = onMentionAck,
         _onMapInfoRequested = onMapInfoRequested,
         _onMapSwitchReceived = onMapSwitchReceived,
@@ -92,9 +90,6 @@ class LiveKitGameBridge {
   final void Function(AvatarUpdate) _onAvatarUpdate;
   final void Function(DataChannelMessage) _onSpeechTranscript;
   final void Function(DataChannelMessage) _onDoorUnlock;
-  final void Function(
-          List<String> mentionedUids, String mentionerUid, String messageId)
-      _onPlayersMentioned;
   final void Function(String ackerUid, String messageId) _onMentionAck;
   final void Function() _onMapInfoRequested;
   final void Function(String) _onMapSwitchReceived;
@@ -115,7 +110,6 @@ class LiveKitGameBridge {
   StreamSubscription<String>? _mapSwitchSub;
   StreamSubscription<DataChannelMessage>? _speechTranscriptSub;
   StreamSubscription<DataChannelMessage>? _doorUnlockSub;
-  StreamSubscription<DataChannelMessage>? _mentionSub;
   StreamSubscription<DataChannelMessage>? _mentionAckSub;
 
   InfraHealthService? _infraHealthService;
@@ -224,24 +218,12 @@ class LiveKitGameBridge {
         .where((msg) => msg.topic == DataTopic.doorUnlock.wireName)
         .listen(_onDoorUnlock);
 
-    // ── @mentions ────────────────────────────────────────────────────────
-    // Extract the structured mention list from group chat messages and route
-    // it to the world. The mentioner is the TRANSPORT-verified sender, never
-    // the payload's self-reported senderId (a peer can name victims but cannot
-    // forge who sent the mention). Malformed lists drop to empty (no callback).
-    _mentionSub = _liveKitService.dataReceived
-        .where((msg) => msg.topic == LiveKitTopic.chat.wire)
-        .listen((msg) {
-      final json = msg.json;
-      if (json == null) return;
-      final mentioned = ChatMessage.parseMentions(json['mentions']);
-      if (mentioned.isEmpty) return;
-      final messageId =
-          ChatMessage.asStringOrNull(json['id']) ?? 'mention-${msg.senderId}';
-      _onPlayersMentioned(mentioned, msg.senderId ?? 'unknown', messageId);
-    });
-
-    // A mention-ack: the acker UID is the TRANSPORT sender — a peer can only
+    // ── @mention ack ─────────────────────────────────────────────────────
+    // The mention itself reaches the world via the dispatched
+    // [PlayersMentioned] event (fired by ChatService on BOTH send and receive),
+    // so the sender witnesses their own mention even though LiveKit doesn't
+    // loop their publishData back. Only the ack is a pure wire signal handled
+    // here. The acker UID is the TRANSPORT sender — a peer can only
     // ack its own mention, never silence someone else's pulse.
     _mentionAckSub = _liveKitService.dataReceived
         .where((msg) => msg.topic == LiveKitTopic.mentionAck.wire)
@@ -312,8 +294,6 @@ class LiveKitGameBridge {
     _speechTranscriptSub = null;
     _doorUnlockSub?.cancel();
     _doorUnlockSub = null;
-    _mentionSub?.cancel();
-    _mentionSub = null;
     _mentionAckSub?.cancel();
     _mentionAckSub = null;
 

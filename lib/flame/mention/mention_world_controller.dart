@@ -30,7 +30,9 @@ class MentionWorldController {
     required this.publishAck,
     required this.reduceMotion,
     String Function(String uid)? displayNameLookup,
-  }) : displayNameLookup = displayNameLookup ?? ((_) => '');
+    bool Function()? isLocalChatOpen,
+  })  : displayNameLookup = displayNameLookup ?? ((_) => ''),
+        isLocalChatOpen = isLocalChatOpen ?? (() => false);
 
   /// The shared pulse-state machine (one per client).
   final MentionPulseController pulseController;
@@ -46,8 +48,12 @@ class MentionWorldController {
   /// Add a (world-spanning) component such as the arc to the World.
   final void Function(Component) addToWorld;
 
-  /// Broadcast a `mention-ack` for the local user's [uid] against [messageId].
-  final void Function(String uid, String messageId) publishAck;
+  /// Broadcast a `mention-ack` against [messageId]. The acked player is always
+  /// the local user (the only mention you can acknowledge is one of yourself),
+  /// and the ack's identity is the transport sender on the wire — so this
+  /// deliberately carries ONLY the messageId, never a payload UID, to remove
+  /// any invitation to trust a payload-sourced identity.
+  final void Function(String messageId) publishAck;
 
   /// Accessibility: hold beacon/arc animation still when true.
   final bool reduceMotion;
@@ -56,6 +62,12 @@ class MentionWorldController {
   /// to empty (no label). Avoids reaching into the avatar via dynamic dispatch
   /// (which breaks under WASM).
   final String Function(String uid) displayNameLookup;
+
+  /// Whether the local user's chat panel is currently visible. When a mention
+  /// of the local user arrives while chat is ALREADY open, they've effectively
+  /// already "seen" it, so we ack immediately rather than waiting for the next
+  /// panel-open (or the 45s timeout). Defaults to always-closed.
+  final bool Function() isLocalChatOpen;
 
   /// Handle an incoming mention (already parsed + trust-checked upstream).
   ///
@@ -71,7 +83,12 @@ class MentionWorldController {
   }) {
     final mentionerAvatar = avatarLookup(mentionerUid);
 
+    // Dedupe so a payload naming the same UID twice can't create duplicate
+    // arcs/work. The structured list is the trust anchor but it's still
+    // untrusted shape — bound it to distinct players.
+    final seenUids = <String>{};
     for (final uid in mentionedUids) {
+      if (!seenUids.add(uid)) continue;
       pulseController.onMention(
         mentionedUid: uid,
         mentionerUid: mentionerUid,
@@ -102,6 +119,32 @@ class MentionWorldController {
         ));
       }
     }
+
+    // If this mention names the local user and their chat is ALREADY open,
+    // they've seen it — ack immediately so the pulse doesn't ride the 45s
+    // timeout despite the user being right there in chat.
+    if (seenUids.contains(localUid) && isLocalChatOpen()) {
+      onLocalChatOpened();
+    }
+  }
+
+  /// Attach a beacon to a freshly-spawned avatar if a pulse for [uid] is
+  /// already active — covers the race where a mention arrives BEFORE the named
+  /// player's `PlayerComponent` is created (the controller recorded the pulse
+  /// state, but had no avatar to attach to at the time). Idempotent: no-op if
+  /// not pulsing or a beacon already exists. Called by TechWorld on player
+  /// component creation.
+  void reconcileBeaconFor(String uid, PositionComponent avatar) {
+    if (!pulseController.isPulsing(uid)) return;
+    final hasBeacon =
+        avatar.children.whereType<MentionBeaconComponent>().isNotEmpty;
+    if (hasBeacon) return;
+    avatar.add(MentionBeaconComponent(
+      mentionedUid: uid,
+      controller: pulseController,
+      displayName: displayNameLookup(uid),
+      reduceMotion: reduceMotion,
+    ));
   }
 
   /// The local user opened the chat panel — acknowledge every live mention that
@@ -111,7 +154,7 @@ class MentionWorldController {
   void onLocalChatOpened() {
     final messageId = pulseController.activeMessageId(localUid);
     if (messageId == null) return;
-    publishAck(localUid, messageId);
+    publishAck(messageId);
     // Optimistically stop our own pulse locally too (don't wait for the echo).
     pulseController.onAck(mentionedUid: localUid, messageId: messageId);
   }

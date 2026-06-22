@@ -546,6 +546,20 @@ class ChatService {
       payload: payload,
     ));
 
+    // Dispatch the mention locally too — LiveKit does NOT loop our own
+    // publishData back to us, so without this the SENDER never witnesses their
+    // own mention bloom/arc (breaking "witnessed by everyone"). Mirrors the
+    // optimistic local-add of the chat message above. The mentioner is our own
+    // authenticated identity. The receive path dispatches the same event for
+    // remote participants, so both routes funnel through one world consumer.
+    if (mentions.isNotEmpty) {
+      dispatch([PlayersMentioned(
+        mentionedUids: mentions,
+        mentionerUid: _liveKitService.userId,
+        messageId: messageId,
+      )]);
+    }
+
     _log.info('Sent message (id=$messageId, len=${text.length})');
     final challengeWire = metadata?['challengeId'] as String?;
     dispatch([GroupMessageSent(

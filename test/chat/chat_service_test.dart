@@ -1248,6 +1248,28 @@ void main() {
         expect(payload['mentions'], equals(['bob-uid']));
       });
 
+      test('sendMessage dispatches PlayersMentioned LOCALLY so the sender '
+          'witnesses their own mention (LiveKit does not loop self back)',
+          () async {
+        unawaited(chatService.sendMessage(
+          'hey @Bob',
+          mentions: ['bob-uid'],
+        ));
+        await pumpEventQueue();
+
+        expect(mentions(), hasLength(1));
+        // The mentioner is our own authenticated identity, not a payload value.
+        expect(mentions().single.mentionerUid, equals('test-user-id'));
+        expect(mentions().single.mentionedUids, equals(['bob-uid']));
+      });
+
+      test('sendMessage with no mentions dispatches no PlayersMentioned',
+          () async {
+        unawaited(chatService.sendMessage('plain'));
+        await pumpEventQueue();
+        expect(mentions(), isEmpty);
+      });
+
       test('sendMessage with no mentions omits the field entirely', () async {
         unawaited(chatService.sendMessage('plain message'));
         await pumpEventQueue();

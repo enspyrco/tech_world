@@ -18,8 +18,9 @@ void main() {
     late DateTime now;
     late MentionPulseController pulse;
     late List<Component> added; // components added to the "world"
-    late List<({String uid, String messageId})> acks;
+    late List<String> acks;
     late Map<String, _FakeAvatar> avatars;
+    late bool chatOpen;
     late MentionWorldController controller;
 
     setUp(() {
@@ -27,6 +28,7 @@ void main() {
       pulse = MentionPulseController(clock: () => now);
       added = [];
       acks = [];
+      chatOpen = false;
       avatars = {
         'me': _FakeAvatar(Vector2(0, 0)),
         'alice': _FakeAvatar(Vector2(100, 0)),
@@ -37,9 +39,9 @@ void main() {
         localUid: 'me',
         avatarLookup: (uid) => avatars[uid],
         addToWorld: added.add,
-        publishAck: (uid, messageId) =>
-            acks.add((uid: uid, messageId: messageId)),
+        publishAck: acks.add,
         reduceMotion: false,
+        isLocalChatOpen: () => chatOpen,
       );
     });
 
@@ -121,9 +123,7 @@ void main() {
 
       controller.onLocalChatOpened();
 
-      expect(acks, hasLength(1));
-      expect(acks.single.uid, equals('me'));
-      expect(acks.single.messageId, equals('m-self'));
+      expect(acks, equals(['m-self']));
     });
 
     test('receiving a matching ack stops the local pulse', () {
@@ -173,6 +173,73 @@ void main() {
       controller.tick();
 
       expect(pulse.isPulsing('bob'), isFalse);
+    });
+
+    test('a duplicate UID in the list does not create duplicate arcs', () {
+      controller.onPlayersMentioned(
+        mentionedUids: ['bob', 'bob', 'bob'],
+        mentionerUid: 'alice',
+        messageId: 'm1',
+      );
+      expect(added.whereType<MentionArcComponent>(), hasLength(1));
+      expect(avatars['bob']!.children.whereType<MentionBeaconComponent>(),
+          hasLength(1));
+    });
+
+    test('reconcileBeaconFor attaches a beacon to a late-spawning avatar', () {
+      // Mention arrives before the avatar exists locally.
+      controller.onPlayersMentioned(
+        mentionedUids: ['ghost'],
+        mentionerUid: 'alice',
+        messageId: 'm1',
+      );
+      expect(pulse.isPulsing('ghost'), isTrue);
+
+      // The avatar spawns later → reconcile attaches the beacon.
+      final ghost = _FakeAvatar(Vector2(300, 0));
+      controller.reconcileBeaconFor('ghost', ghost);
+      expect(ghost.children.whereType<MentionBeaconComponent>(), hasLength(1));
+    });
+
+    test('reconcileBeaconFor is a no-op when not pulsing', () {
+      final fresh = _FakeAvatar(Vector2(0, 0));
+      controller.reconcileBeaconFor('nobody', fresh);
+      expect(fresh.children.whereType<MentionBeaconComponent>(), isEmpty);
+    });
+
+    test('reconcileBeaconFor does not double-attach if a beacon exists', () {
+      controller.onPlayersMentioned(
+        mentionedUids: ['bob'],
+        mentionerUid: 'alice',
+        messageId: 'm1',
+      );
+      controller.reconcileBeaconFor('bob', avatars['bob']!);
+      expect(avatars['bob']!.children.whereType<MentionBeaconComponent>(),
+          hasLength(1));
+    });
+
+    test('a mention of me while chat is ALREADY open auto-acks immediately',
+        () {
+      chatOpen = true;
+      controller.onPlayersMentioned(
+        mentionedUids: ['me'],
+        mentionerUid: 'alice',
+        messageId: 'm-self',
+      );
+      expect(acks, equals(['m-self']),
+          reason: 'already-open chat should ack without waiting for re-open');
+      expect(pulse.isPulsing('me'), isFalse);
+    });
+
+    test('a mention of me while chat is CLOSED does not auto-ack', () {
+      chatOpen = false;
+      controller.onPlayersMentioned(
+        mentionedUids: ['me'],
+        mentionerUid: 'alice',
+        messageId: 'm-self',
+      );
+      expect(acks, isEmpty);
+      expect(pulse.isPulsing('me'), isTrue);
     });
   });
 }
