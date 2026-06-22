@@ -20,6 +20,8 @@ import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/chat/conversation.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/direction.dart';
@@ -1215,6 +1217,123 @@ void main() {
         expect(reply.replyToMessageId, equals('someone:999'));
         expect(reply.replyToText, equals('a question'));
         expect(reply.replyToSenderName, equals('Asker'));
+      });
+    });
+
+    group('@mentions', () {
+      late List<AppEvent> dispatched;
+
+      setUp(() {
+        dispatched = [];
+        clearSinks();
+        registerSink(dispatched.add);
+      });
+
+      tearDown(clearSinks);
+
+      List<PlayersMentioned> mentions() =>
+          dispatched.whereType<PlayersMentioned>().toList();
+
+      test('sendMessage publishes an atomic mentions UID list', () async {
+        unawaited(chatService.sendMessage(
+          'hey @Bob',
+          mentions: ['bob-uid'],
+        ));
+        await pumpEventQueue();
+
+        final chatPublish = fakeLiveKit.publishedMessages.firstWhere(
+          (m) => m['topic'] == DataTopic.chat.wireName,
+        );
+        final payload = chatPublish['payload'] as Map<String, dynamic>;
+        expect(payload['mentions'], equals(['bob-uid']));
+      });
+
+      test('sendMessage with no mentions omits the field entirely', () async {
+        unawaited(chatService.sendMessage('plain message'));
+        await pumpEventQueue();
+
+        final chatPublish = fakeLiveKit.publishedMessages.firstWhere(
+          (m) => m['topic'] == DataTopic.chat.wireName,
+        );
+        final payload = chatPublish['payload'] as Map<String, dynamic>;
+        expect(payload.containsKey('mentions'), isFalse);
+      });
+
+      test('incoming mention dispatches PlayersMentioned with the named UID',
+          () async {
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'id': 'msg-1',
+          'text': 'ping @Me',
+          'senderName': 'Alice',
+          'mentions': ['my-uid', 'other-uid'],
+        });
+        await pumpEventQueue();
+
+        expect(mentions(), hasLength(1));
+        expect(mentions().single.mentionedUids, equals(['my-uid', 'other-uid']));
+        expect(mentions().single.messageId, equals('msg-1'));
+      });
+
+      test(
+          'mentionerUid is the TRANSPORT senderId, never the spoofed payload '
+          'senderId', () async {
+        // Hostile payload claims to be from "victim-uid"; the transport layer
+        // says it came from "attacker-uid". The dispatched event must credit
+        // the transport identity — mirrors the PR #490 reply trust test.
+        fakeLiveKit.simulateChatFromOtherUser('attacker-uid', {
+          'id': 'msg-2',
+          'text': 'gotcha @X',
+          'senderName': 'Totally Not An Attacker',
+          'senderId': 'victim-uid', // spoof attempt in payload
+          'mentions': ['x-uid'],
+        });
+        await pumpEventQueue();
+
+        expect(mentions(), hasLength(1));
+        expect(mentions().single.mentionerUid, equals('attacker-uid'),
+            reason: 'transport identity must win over payload senderId');
+      });
+
+      test('malformed mentions field is dropped, no throw, no dispatch',
+          () async {
+        // A non-list mentions value must not throw or fabricate a mention.
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'id': 'msg-3',
+          'text': 'garbage',
+          'senderName': 'Alice',
+          'mentions': 'not-a-list',
+        });
+        // Mixed list: non-string elements are skipped.
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'id': 'msg-4',
+          'text': 'mixed',
+          'senderName': 'Alice',
+          'mentions': ['good-uid', 42, null, 'also-good'],
+        });
+        await pumpEventQueue();
+
+        // msg-3 had no valid mentions → no dispatch. msg-4 keeps the two strings.
+        expect(mentions(), hasLength(1));
+        expect(mentions().single.messageId, equals('msg-4'));
+        expect(mentions().single.mentionedUids, equals(['good-uid', 'also-good']));
+        // The chat messages themselves still landed (parse never threw).
+        expect(
+          chatService.currentMessages.where((m) => m.text == 'garbage'),
+          hasLength(1),
+        );
+      });
+
+      test('a chat message with an empty mentions list dispatches nothing',
+          () async {
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'id': 'msg-5',
+          'text': 'no mentions here',
+          'senderName': 'Alice',
+          'mentions': <String>[],
+        });
+        await pumpEventQueue();
+
+        expect(mentions(), isEmpty);
       });
     });
   });

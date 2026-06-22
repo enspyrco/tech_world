@@ -39,6 +39,15 @@ enum LiveKitTopic {
   helpRequest('help-request'),
   helpResponse('help-response'),
 
+  /// Acknowledgement that a mentioned player has *seen* a mention — broadcast
+  /// by the named player's OWN client when it opens the chat panel. All clients
+  /// stop that avatar's mention pulse on receiving it. Payload carries the
+  /// stable `messageId` of the originating mention so a concurrent mention of
+  /// the same player isn't cross-cancelled. The acked player's UID is the
+  /// transport-verified `senderId`, never the payload — a peer can only ack
+  /// its own mentions. Reliable. See `lib/flame/components/mention_beacon_component.dart`.
+  mentionAck('mention-ack'),
+
   // ── Bot / Oracle ──────────────────────────────────────────────────────────
   oracleRequest('oracle-request'),
   oracleResponse('oracle-response'),

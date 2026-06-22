@@ -120,6 +120,25 @@ class ChatMessage {
     return (messageId: messageId, text: text, senderName: senderName);
   }
 
+  /// Defensively parse the `mentions` field from an untrusted wire payload.
+  ///
+  /// The structured `mentions` list — UIDs of named players — is the trust
+  /// anchor for the world-mention beacon (NOT the inline `@Name` text, which is
+  /// display-only and spoofable). It is parsed with the same discipline as
+  /// [_parseParticipants]: a non-`List` value (legacy / corrupt / hostile
+  /// payload) yields an empty list rather than throwing, and non-`String`
+  /// elements are skipped via [Iterable.whereType]. The whole field drops to
+  /// empty on malformed input — there is never a half-parsed mention list.
+  ///
+  /// Never throws — a single bad payload must not tear down the chat stream.
+  /// The *mentioner's* UID is always the transport-verified `senderId`, never
+  /// derived from this list, so a spoofed payload can name victims but cannot
+  /// forge who sent the mention.
+  static List<String> parseMentions(Object? value) {
+    if (value is! List) return const [];
+    return value.whereType<String>().toList();
+  }
+
   /// Defensively parse the `participants` field.
   ///
   /// A non-`List` value (legacy / corrupt doc) yields `null`; non-`String`

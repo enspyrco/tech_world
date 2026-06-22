@@ -1174,6 +1174,10 @@ class _MyAppState extends State<MyApp> {
                                         initialDmPeerId: dmPeer,
                                         onDmPeerConsumed: () =>
                                             _activeDmPeer.value = null,
+                                        // Seeing chat acknowledges any mention of
+                                        // the local user (stops their pulse).
+                                        onOpened: () =>
+                                            locate<TechWorld>().onChatPanelOpened(),
                                       );
                                     },
                                   ),

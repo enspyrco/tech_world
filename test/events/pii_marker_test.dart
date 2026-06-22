@@ -47,7 +47,7 @@ void main() {
   // classes do not expose their subtypes for runtime enumeration, so a
   // true exhaustiveness check at runtime would need code generation.
   //
-  // For the foreseeable scale (34 subtypes, low churn) the
+  // For the foreseeable scale (35 subtypes, low churn) the
   // compile-time gate is the load-bearing property; this test makes the
   // runtime classification of representatives explicit and pins them to
   // the declared switch values.
@@ -58,7 +58,7 @@ void main() {
     // asserts on a known concrete type.
     void check(AppEvent event, PiiPolicy expected) {
       final declared = switch (event) {
-        // PII subtypes (25)
+        // PII subtypes (26)
         SpellCastFailed() => PiiPolicy.pii,
         RoomJoined() => PiiPolicy.pii,
         UserSignedIn() => PiiPolicy.pii,
@@ -73,6 +73,7 @@ void main() {
         BotSpoke() => PiiPolicy.pii,
         GroupMessageSent() => PiiPolicy.pii,
         DmSent() => PiiPolicy.pii,
+        PlayersMentioned() => PiiPolicy.pii,
         AppLogRecord() => PiiPolicy.pii,
         // AV pipeline PII (10 — participant identity)
         AvPipelineSnapshot() => PiiPolicy.pii,
@@ -130,7 +131,7 @@ void main() {
       // here for the runtime classification to be pinned — see the
       // group comment above for what this list does and does not prove.
       final piiEvents = <AppEvent>[
-        // PII (25)
+        // PII (26)
         SpellCastFailed(
           reason: CastFailureReason.noMatch,
           transcript: 'ignis',
@@ -148,6 +149,11 @@ void main() {
         BotSpoke(text: 'hi', context: BotSpokeContext.group),
         GroupMessageSent(messageId: 'm'),
         DmSent(peerId: 'p', conversationId: 'c'),
+        PlayersMentioned(
+          mentionedUids: ['x'],
+          mentionerUid: 'y',
+          messageId: 'm',
+        ),
         AppLogRecord(
           loggerName: 'L',
           severity: LogSeverity.info,
@@ -240,8 +246,8 @@ void main() {
       // Cardinality cross-check: keeps this list and the switch above
       // honest against the same expected subtype count. Bump together
       // when adding a new subtype.
-      expect(events.length, 44);
-      expect(piiEvents.length, 25);
+      expect(events.length, 45);
+      expect(piiEvents.length, 26);
       expect(nonPiiEvents.length, 19);
 
       for (final event in piiEvents) {

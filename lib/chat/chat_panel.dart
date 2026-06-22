@@ -6,6 +6,8 @@ import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/chat/conversation_list_tile.dart';
 import 'package:tech_world/chat/dm_thread_view.dart';
+import 'package:tech_world/chat/mention_composer.dart';
+import 'package:tech_world/chat/mention_text.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/services/stt_service.dart';
 
@@ -18,12 +20,17 @@ class ChatPanel extends StatefulWidget {
     this.onCollapse,
     this.initialDmPeerId,
     this.onDmPeerConsumed,
+    this.onOpened,
     super.key,
   });
 
   final ChatService chatService;
   final LiveKitService liveKitService;
   final VoidCallback? onCollapse;
+
+  /// Called when the panel is shown — the user "seeing" chat. Used to
+  /// acknowledge any `@mention` of the local user (stops their public pulse).
+  final VoidCallback? onOpened;
 
   /// When set, the panel auto-opens a DM thread with this peer on first build.
   final String? initialDmPeerId;
@@ -52,6 +59,18 @@ class _ChatPanelState extends State<ChatPanel>
   /// composing a fresh message. Mirrors `DmThreadView._replyTarget`.
   ChatMessage? _replyTarget;
 
+  /// UIDs the user picked from the @-mention picker while composing, paired with
+  /// the display name inserted. Filtered at send time to those whose `@Name`
+  /// token still survives in the text (see [MentionComposer.survivingUids]).
+  final List<MentionCandidate> _pickedMentions = [];
+
+  /// Candidates currently shown in the @-mention picker, or empty when the
+  /// picker is closed (no active `@query`).
+  List<MentionCandidate> _mentionMatches = const [];
+
+  /// The active `@query`'s anchor index, so a pick knows what span to replace.
+  int? _mentionAtIndex;
+
   // Clawd's orange color
   static const clawdOrange = Color(0xFFD97757);
 
@@ -59,6 +78,13 @@ class _ChatPanelState extends State<ChatPanel>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // The panel mounting means the user is now looking at chat — acknowledge
+    // any mention of them. Deferred to after the first frame so the ack fires
+    // outside build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onOpened?.call();
+    });
 
     // If an initial DM peer was requested, switch to DMs tab.
     if (widget.initialDmPeerId != null) {
@@ -133,10 +159,24 @@ class _ChatPanelState extends State<ChatPanel>
     final text = _textController.text.trim();
     if (text.isEmpty) return;
 
+    // Keep only the picked mentions whose `@Name` token still survives in the
+    // text (the user may have deleted one after inserting it). The structured
+    // UID list is the trust anchor; the inline `@Name` text is display-only.
+    final mentions = MentionComposer.survivingUids(text, _pickedMentions);
+
     final replyTarget = _replyTarget;
-    widget.chatService.sendMessage(text, replyTo: replyTarget);
+    widget.chatService.sendMessage(
+      text,
+      replyTo: replyTarget,
+      mentions: mentions,
+    );
     _textController.clear();
-    setState(() => _replyTarget = null);
+    setState(() {
+      _replyTarget = null;
+      _pickedMentions.clear();
+      _mentionMatches = const [];
+      _mentionAtIndex = null;
+    });
     _focusNode.requestFocus();
 
     // Scroll to bottom after message is added
@@ -158,6 +198,67 @@ class _ChatPanelState extends State<ChatPanel>
 
   void _cancelReply() {
     setState(() => _replyTarget = null);
+  }
+
+  /// Everyone you can `@mention`: the remote participants plus yourself. The UID
+  /// (LiveKit identity) is the trust anchor; the display name is cosmetic.
+  List<MentionCandidate> _mentionCandidates() {
+    final candidates = <MentionCandidate>[
+      MentionCandidate(
+        uid: widget.liveKitService.userId,
+        displayName: widget.liveKitService.displayName,
+      ),
+    ];
+    for (final p in widget.liveKitService.remoteParticipants.values) {
+      final name = (p.name.isNotEmpty ? p.name : p.identity);
+      candidates.add(MentionCandidate(uid: p.identity, displayName: name));
+    }
+    return candidates;
+  }
+
+  /// React to composer edits: open/refresh the @-mention picker when the cursor
+  /// sits in an unfinished `@token`, otherwise close it.
+  void _onComposerChanged() {
+    final value = _textController.value;
+    final cursor = value.selection.baseOffset;
+    final active = MentionComposer.activeQuery(value.text, cursor);
+    if (active == null) {
+      if (_mentionMatches.isNotEmpty || _mentionAtIndex != null) {
+        setState(() {
+          _mentionMatches = const [];
+          _mentionAtIndex = null;
+        });
+      }
+      return;
+    }
+    final matches = MentionComposer.filter(_mentionCandidates(), active.query);
+    setState(() {
+      _mentionMatches = matches;
+      _mentionAtIndex = active.atIndex;
+    });
+  }
+
+  /// Insert the chosen mention, recording its UID for the structured wire list.
+  void _pickMention(MentionCandidate chosen) {
+    final atIndex = _mentionAtIndex;
+    if (atIndex == null) return;
+    final cursor = _textController.selection.baseOffset;
+    final ins = MentionComposer.insert(
+      text: _textController.text,
+      atIndex: atIndex,
+      cursor: cursor < 0 ? _textController.text.length : cursor,
+      chosen: chosen,
+    );
+    _textController.value = TextEditingValue(
+      text: ins.text,
+      selection: TextSelection.collapsed(offset: ins.cursor),
+    );
+    setState(() {
+      _pickedMentions.add(chosen);
+      _mentionMatches = const [];
+      _mentionAtIndex = null;
+    });
+    _focusNode.requestFocus();
   }
 
   @override
@@ -363,6 +464,14 @@ class _ChatPanelState extends State<ChatPanel>
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // @-mention picker — a filterable list of room participants
+                // shown while the cursor is inside an unfinished `@token`.
+                if (_mentionMatches.isNotEmpty)
+                  _MentionPicker(
+                    candidates: _mentionMatches,
+                    onPick: _pickMention,
+                    accentColor: clawdOrange,
+                  ),
                 // "Replying to X" banner while composing a reply.
                 if (replyTarget != null)
                   _ReplyComposingBanner(
@@ -426,6 +535,7 @@ class _ChatPanelState extends State<ChatPanel>
                               vertical: 12,
                             ),
                           ),
+                          onChanged: (_) => _onComposerChanged(),
                           onSubmitted:
                               isAbsent ? null : (_) => _sendMessage(),
                         ),
@@ -736,11 +846,20 @@ class _MessageBubble extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (message.isReply) _QuotedMessage(message: message),
-                        Text(
-                          message.text,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
+                        Text.rich(
+                          TextSpan(
+                            children: buildMentionSpans(
+                              message.text,
+                              baseStyle: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                              mentionStyle: const TextStyle(
+                                color: clawdOrange,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -889,6 +1008,77 @@ class _ReplyComposingBanner extends StatelessWidget {
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A compact, filterable list of room participants shown above the composer
+/// while the user is typing an `@mention`. Tapping a row inserts `@Name` and
+/// records the participant's UID (see `_ChatPanelState._pickMention`).
+class _MentionPicker extends StatelessWidget {
+  const _MentionPicker({
+    required this.candidates,
+    required this.onPick,
+    required this.accentColor,
+  });
+
+  final List<MentionCandidate> candidates;
+  final ValueChanged<MentionCandidate> onPick;
+  final Color accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 180),
+      decoration: const BoxDecoration(
+        color: Color(0xFF252525),
+        border: Border(top: BorderSide(color: Color(0xFF3D3D3D))),
+      ),
+      child: ListView.builder(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
+        itemCount: candidates.length,
+        itemBuilder: (context, i) {
+          final c = candidates[i];
+          final initial =
+              c.displayName.isNotEmpty ? c.displayName[0].toUpperCase() : '?';
+          return InkWell(
+            onTap: () => onPick(c),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 12,
+                    backgroundColor: accentColor.withValues(alpha: 0.25),
+                    child: Text(
+                      initial,
+                      style: TextStyle(
+                        color: accentColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      c.displayName,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Text('@',
+                      style: TextStyle(
+                          color: accentColor.withValues(alpha: 0.6),
+                          fontSize: 14)),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
