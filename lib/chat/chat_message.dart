@@ -134,9 +134,23 @@ class ChatMessage {
   /// The *mentioner's* UID is always the transport-verified `senderId`, never
   /// derived from this list, so a spoofed payload can name victims but cannot
   /// forge who sent the mention.
+  ///
+  /// **Bounded at the trust boundary.** A hostile peer could otherwise put an
+  /// arbitrarily large list on the wire and drive unbounded pulse state /
+  /// beacons / arcs on every other client. The list is truncated to
+  /// [maxMentions] *distinct* UIDs (dedup-then-cap) so the resource cost of a
+  /// single chat message is bounded regardless of payload size — a real group
+  /// chat never names more than a handful of people at once.
+  static const int maxMentions = 16;
+
   static List<String> parseMentions(Object? value) {
     if (value is! List) return const [];
-    return value.whereType<String>().toList();
+    final seen = <String>{};
+    for (final element in value) {
+      if (element is String) seen.add(element);
+      if (seen.length >= maxMentions) break;
+    }
+    return seen.toList();
   }
 
   /// Defensively parse the `participants` field.
