@@ -431,6 +431,57 @@ void main() {
         expect(msgs.last.isReply, isFalse);
       });
 
+      test('inbound group reply with only replyToMessageId is rejected '
+          '(atomic parse — no orphaned half-reply)', () async {
+        // Carnot (cage-match PR #490): a payload carrying ONLY replyToMessageId
+        // (no text/name) would otherwise render a reply bubble quoting an empty
+        // "Unknown". The atomic parse drops the whole trio unless all three are
+        // present-and-String.
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'Sneaky half-reply',
+          'id': 'group-half-1',
+          'senderName': 'Alice',
+          'replyToMessageId': 'orig-x',
+          // no replyToText, no replyToSenderName
+        });
+        await pumpEventQueue();
+
+        final msgs = chatService.currentMessages;
+        expect(msgs, isNotEmpty);
+        expect(msgs.last.replyToMessageId, isNull);
+        expect(msgs.last.replyToText, isNull);
+        expect(msgs.last.replyToSenderName, isNull);
+        expect(msgs.last.isReply, isFalse);
+      });
+
+      test('inbound group reply with a wrong-typed id but valid text/name is '
+          'rejected wholesale (no orphaned snapshot)', () async {
+        // The asymmetric-survival case: replyToMessageId is malformed (drops to
+        // null) but text+name survive. Without atomic parse these would orphan
+        // onto a non-reply message.
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'Orphaned snapshot attempt',
+          'id': 'group-half-2',
+          'senderName': 'Alice',
+          'replyToMessageId': 123, // wrong type -> null
+          'replyToText': 'spoofed quote',
+          'replyToSenderName': 'Victim',
+        });
+        await pumpEventQueue();
+
+        final msgs = chatService.currentMessages;
+        expect(msgs, isNotEmpty);
+        expect(msgs.last.replyToMessageId, isNull);
+        expect(msgs.last.replyToText, isNull,
+            reason: 'orphaned text must be dropped with the malformed id');
+        expect(msgs.last.replyToSenderName, isNull);
+        expect(msgs.last.isReply, isFalse);
+      });
+
       test('group reply still derives senderId from transport, not payload',
           () async {
         // TRUST INVARIANT: a reply must not become a spoof vector. The SENDER

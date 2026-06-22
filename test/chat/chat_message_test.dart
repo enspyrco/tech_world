@@ -535,5 +535,47 @@ void main() {
         expect(message.senderId, equals('bot-claude'));
       });
     });
+
+    group('parseReplySnapshot (atomic reply parse)', () {
+      test('all three valid strings -> full trio', () {
+        final r = ChatMessage.parseReplySnapshot({
+          'replyToMessageId': 'orig-1',
+          'replyToText': 'the quote',
+          'replyToSenderName': 'Alice',
+        });
+        expect(r.messageId, equals('orig-1'));
+        expect(r.text, equals('the quote'));
+        expect(r.senderName, equals('Alice'));
+      });
+
+      test('missing text -> all null (no half-reply)', () {
+        final r = ChatMessage.parseReplySnapshot({
+          'replyToMessageId': 'orig-1',
+          'replyToSenderName': 'Alice',
+          // no replyToText
+        });
+        expect(r.messageId, isNull);
+        expect(r.text, isNull);
+        expect(r.senderName, isNull);
+      });
+
+      test('wrong-typed id but valid text/name -> all null (no orphan)', () {
+        final r = ChatMessage.parseReplySnapshot({
+          'replyToMessageId': 123, // wrong type
+          'replyToText': 'spoofed quote',
+          'replyToSenderName': 'Victim',
+        });
+        expect(r.messageId, isNull);
+        expect(r.text, isNull);
+        expect(r.senderName, isNull);
+      });
+
+      test('no reply fields -> all null', () {
+        final r = ChatMessage.parseReplySnapshot({'text': 'plain'});
+        expect(r.messageId, isNull);
+        expect(r.text, isNull);
+        expect(r.senderName, isNull);
+      });
+    });
   });
 }
