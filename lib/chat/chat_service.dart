@@ -326,12 +326,26 @@ class ChatService {
       // Message from another user (group chat) — use transport-verified
       // identity. Never trust payload senderId from a regular participant;
       // they could spoof another user's UID.
+      //
+      // Reply linkage + quote snapshot are display-only and parsed defensively
+      // (a malformed / wrong-type value drops the field, never throws). They do
+      // NOT affect the trust boundary above — the message's sender is still the
+      // transport identity, never the payload. Same discipline as the DM branch.
+      final replyToMessageId =
+          ChatMessage.asStringOrNull(json['replyToMessageId']);
+      final replyToText = ChatMessage.asStringOrNull(json['replyToText']);
+      final replyToSenderName =
+          ChatMessage.asStringOrNull(json['replyToSenderName']);
+
       _messages.add(ChatMessage(
         text: text,
         senderName: senderName,
         senderId: message.senderId ?? 'unknown',
         conversationId: 'group',
         isLocalUser: false,
+        replyToMessageId: replyToMessageId,
+        replyToText: replyToText,
+        replyToSenderName: replyToSenderName,
       ));
       _messagesController.add(List.from(_messages));
     }
@@ -419,9 +433,18 @@ class ChatService {
   ///
   /// Reserved keys (`type`, `id`, `text`, `senderName`, `timestamp`) are
   /// silently stripped from [metadata] to prevent protocol corruption.
+  ///
+  /// To quote-reply to an earlier message, pass [replyTo] — the single message
+  /// being replied to. Its ID ([ChatMessage.localKey]) and display snapshot
+  /// ([ChatMessage.replyToText] / [ChatMessage.replyToSenderName]) are derived
+  /// from it together, so the "half-reply" state (an ID with no snapshot, or
+  /// vice-versa) is unrepresentable. The snapshot is display-only — the
+  /// *sender* of this reply is still derived from the authenticated local
+  /// identity, never from the quoted message.
   Future<Map<String, dynamic>?> sendMessage(
     String text, {
     Map<String, dynamic>? metadata,
+    ChatMessage? replyTo,
   }) async {
     if (text.trim().isEmpty) return null;
 
@@ -451,6 +474,12 @@ class ChatService {
     final messageId = _nextMessageId();
     _markSeen(messageId); // Mark as seen so we don't duplicate
 
+    // Reply linkage + quote snapshot, all derived from the single [replyTo] so
+    // they're always consistent (both present or both absent). Display-only.
+    final replyToMessageId = replyTo?.localKey;
+    final replyText = replyTo?.text;
+    final replySenderName = replyTo?.senderName;
+
     // Add user message locally
     final userMessage = ChatMessage(
       text: text,
@@ -458,6 +487,9 @@ class ChatService {
       senderId: _liveKitService.userId,
       conversationId: 'group',
       isLocalUser: true,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyText,
+      replyToSenderName: replySenderName,
     );
     _messages.add(userMessage);
     _messagesController.add(List.from(_messages));
@@ -479,6 +511,9 @@ class ChatService {
       'id': messageId,
       'text': text,
       'senderName': _liveKitService.displayName,
+      if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
+      if (replyText != null) 'replyToText': replyText,
+      if (replySenderName != null) 'replyToSenderName': replySenderName,
       'timestamp': DateTime.now().toIso8601String(),
       if (safeMetadata != null) ...Map.fromEntries(safeMetadata),
     };
