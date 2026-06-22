@@ -730,29 +730,32 @@ void main() {
             senderId: 'peer-uid',
           );
 
+          // Single replyTo param — ID + snapshot derived together, so the
+          // "half-reply" state is unrepresentable.
           await chatService.sendDm(
             'peer-uid',
             'I agree',
             peerDisplayName: 'Peer',
             replyTo: original,
-            replyToMessageId: 'orig-1',
           );
           await pumpEventQueue();
 
-          // Local copy carries the reply linkage + quote snapshot.
+          // Local copy carries the reply linkage + quote snapshot. The ID is
+          // derived from the replied-to message's localKey.
           final convId =
               Conversation.conversationIdFor('test-user-id', 'peer-uid');
           final local = chatService.dmMessagesSnapshot('peer-uid');
           expect(local, isNotEmpty);
-          expect(local.last.replyToMessageId, equals('orig-1'));
+          expect(local.last.replyToMessageId, equals(original.localKey));
           expect(local.last.replyToText, equals('What do you think?'));
           expect(local.last.replyToSenderName, equals('Peer'));
           expect(local.last.conversationId, equals(convId));
+          expect(local.last.isReply, isTrue);
 
-          // Wire payload carries the reply fields.
+          // Wire payload carries the reply fields (all three present together).
           final payload = fakeLiveKit.publishedMessages.last['payload']
               as Map<String, dynamic>;
-          expect(payload['replyToMessageId'], equals('orig-1'));
+          expect(payload['replyToMessageId'], equals(original.localKey));
           expect(payload['replyToText'], equals('What do you think?'));
           expect(payload['replyToSenderName'], equals('Peer'));
         });
@@ -909,7 +912,127 @@ void main() {
             equals('Hello after failed history'));
       });
     });
+
+    group('reply rehydration (regression for the second copy-site bug)', () {
+      test('a persisted DM reply keeps its linkage + snapshot after reload',
+          () async {
+        // The MODEL round-trips reply fields fine; the gap was the SERVICE
+        // re-constructing fresh ChatMessages in _fetchAndCacheHistory and
+        // copying only a subset of fields. This asserts on the SERVICE path:
+        // a reply pulled through loadHistory must still be a reply.
+        final repo = RehydrationChatMessageRepository(
+          dmMessages: [
+            ChatMessage(
+              text: 'Original question',
+              senderName: 'Peer',
+              senderId: 'peer-uid',
+              conversationId:
+                  Conversation.conversationIdFor('test-user-id', 'peer-uid'),
+            ),
+            ChatMessage(
+              text: 'I agree',
+              senderName: 'Test User',
+              senderId: 'test-user-id',
+              conversationId:
+                  Conversation.conversationIdFor('test-user-id', 'peer-uid'),
+              replyToMessageId: 'peer-uid:12345',
+              replyToText: 'Original question',
+              replyToSenderName: 'Peer',
+            ),
+          ],
+        );
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: repo,
+        );
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+
+        final loaded = service.dmMessagesSnapshot('peer-uid');
+        expect(loaded.length, equals(2));
+        final reply = loaded.last;
+        expect(reply.isReply, isTrue,
+            reason: 'reply must survive the service rehydration copy');
+        expect(reply.replyToMessageId, equals('peer-uid:12345'));
+        expect(reply.replyToText, equals('Original question'));
+        expect(reply.replyToSenderName, equals('Peer'));
+      });
+
+      test('a persisted GROUP reply keeps its linkage + snapshot after reload',
+          () async {
+        final repo = RehydrationChatMessageRepository(
+          groupMessages: [
+            ChatMessage(
+              text: 'reply in group',
+              senderName: 'Peer',
+              senderId: 'peer-uid',
+              conversationId: 'group',
+              replyToMessageId: 'someone:999',
+              replyToText: 'a question',
+              replyToSenderName: 'Asker',
+            ),
+          ],
+        );
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: repo,
+        );
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+
+        final reply = service.currentMessages.last;
+        expect(reply.isReply, isTrue,
+            reason: 'group reply must survive the service rehydration copy');
+        expect(reply.replyToMessageId, equals('someone:999'));
+        expect(reply.replyToText, equals('a question'));
+        expect(reply.replyToSenderName, equals('Asker'));
+      });
+    });
   });
+}
+
+/// A [ChatMessageRepository] that returns canned messages for rehydration
+/// tests. [loadMessages] returns [groupMessages] for the `'group'` conv and
+/// [dmMessages] for any other conversation id.
+class RehydrationChatMessageRepository implements ChatMessageRepository {
+  RehydrationChatMessageRepository({
+    this.groupMessages = const [],
+    this.dmMessages = const [],
+  });
+
+  final List<ChatMessage> groupMessages;
+  final List<ChatMessage> dmMessages;
+
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) async {
+    return {
+      'group',
+      Conversation.conversationIdFor('test-user-id', 'peer-uid'),
+    };
+  }
+
+  @override
+  Future<List<ChatMessage>> loadMessages(
+    String roomId,
+    String conversationId, {
+    int limit = 100,
+  }) async {
+    return conversationId == 'group' ? groupMessages : dmMessages;
+  }
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {}
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {}
 }
 
 /// A [ChatMessageRepository] that always throws, simulating Firestore failures.

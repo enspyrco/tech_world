@@ -16,25 +16,24 @@ class ChatMessage {
 
   /// Reconstruct a [ChatMessage] from a Firestore document map.
   ///
-  /// Optional fields are parsed defensively with Dart 3 if-case patterns
-  /// rather than blind `as` casts: a malformed value (wrong type, e.g. an int
-  /// where a string is expected) drops the field instead of throwing. This
-  /// matters at the wire/persistence seam where the payload is untrusted.
+  /// EVERY field is parsed defensively (no unchecked `as` casts on values that
+  /// could be malformed): a wrong-type / legacy / mixed-version value drops or
+  /// falls back rather than throwing. This is the persistence seam — a single
+  /// bad doc must not throw and tear down the whole history load. Specifically:
+  /// - `participants`: non-`List` → null; non-`String` elements skipped.
+  /// - `timestamp`: missing/unparseable → `DateTime.now()` fallback (no throw).
+  /// - reply fields: wrong type → null (not treated as a reply).
   factory ChatMessage.fromFirestore(Map<String, dynamic> json) {
     return ChatMessage(
       text: json['text'] as String? ?? '',
       senderName: json['senderName'] as String? ?? '',
-      senderId: json['senderId'] as String?,
-      conversationId: json['conversationId'] as String?,
-      participants: (json['participants'] as List<dynamic>?)
-          ?.map((e) => e as String)
-          .toList(),
-      replyToMessageId: _asStringOrNull(json['replyToMessageId']),
-      replyToText: _asStringOrNull(json['replyToText']),
-      replyToSenderName: _asStringOrNull(json['replyToSenderName']),
-      timestamp: json['timestamp'] != null
-          ? DateTime.parse(json['timestamp'] as String)
-          : null,
+      senderId: asStringOrNull(json['senderId']),
+      conversationId: asStringOrNull(json['conversationId']),
+      participants: _parseParticipants(json['participants']),
+      replyToMessageId: asStringOrNull(json['replyToMessageId']),
+      replyToText: asStringOrNull(json['replyToText']),
+      replyToSenderName: asStringOrNull(json['replyToSenderName']),
+      timestamp: _parseTimestamp(json['timestamp']),
     );
   }
 
@@ -86,12 +85,34 @@ class ChatMessage {
   String get localKey =>
       '${senderId ?? senderName}:${timestamp.microsecondsSinceEpoch}';
 
-  /// Coerce a dynamic value to a non-empty `String`, or `null` otherwise.
+  /// Coerce an untrusted dynamic value to a `String`, or `null` otherwise.
   ///
-  /// Used at the Firestore parse seam so a malformed value (wrong type) drops
-  /// the field instead of throwing and tearing down the caller.
-  static String? _asStringOrNull(Object? value) =>
+  /// Shared by both wire seams — the Firestore parse here and the LiveKit
+  /// data-channel parse in `ChatService` — so a malformed value (wrong type)
+  /// drops the field instead of throwing and tearing down the caller.
+  static String? asStringOrNull(Object? value) =>
       value is String ? value : null;
+
+  /// Defensively parse the `participants` field.
+  ///
+  /// A non-`List` value (legacy / corrupt doc) yields `null`; non-`String`
+  /// elements are skipped rather than throwing. An empty result also yields
+  /// `null` so the absence semantics match a missing field.
+  static List<String>? _parseParticipants(Object? value) {
+    if (value is! List) return null;
+    final result = value.whereType<String>().toList();
+    return result.isEmpty ? null : result;
+  }
+
+  /// Defensively parse the `timestamp` field.
+  ///
+  /// Missing or unparseable values fall back to [DateTime.now] rather than
+  /// throwing — a single bad doc must not crash a whole history load. The
+  /// constructor applies the same now-fallback, so this keeps the seam total.
+  static DateTime? _parseTimestamp(Object? value) {
+    if (value is! String) return null;
+    return DateTime.tryParse(value);
+  }
 
   /// Serialize to a Firestore-compatible map.
   Map<String, dynamic> toFirestore() {

@@ -311,6 +311,93 @@ void main() {
       });
     });
 
+    group('defensive Firestore parsing (malformed docs must not throw)', () {
+      test('non-string timestamp falls back to now, no throw', () {
+        final before = DateTime.now();
+        final json = <String, dynamic>{
+          'text': 'bad ts',
+          'senderName': 'X',
+          'timestamp': 12345, // not a String
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+
+        // Falls back to ~now rather than throwing.
+        expect(
+          message.timestamp
+              .isAfter(before.subtract(const Duration(seconds: 5))),
+          isTrue,
+        );
+      });
+
+      test('unparseable timestamp string falls back to now, no throw', () {
+        final json = <String, dynamic>{
+          'text': 'bad ts',
+          'senderName': 'X',
+          'timestamp': 'not-a-date',
+        };
+
+        expect(() => ChatMessage.fromFirestore(json), returnsNormally);
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.timestamp, isNotNull);
+      });
+
+      test('non-list participants drops to null, no throw', () {
+        final json = <String, dynamic>{
+          'text': 'bad participants',
+          'senderName': 'X',
+          'participants': 'alice,bob', // a String, not a List
+          'timestamp': DateTime(2024).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.participants, isNull);
+      });
+
+      test('participants with non-string elements skips them, no throw', () {
+        final json = <String, dynamic>{
+          'text': 'mixed participants',
+          'senderName': 'X',
+          'participants': ['alice-uid', 42, null, 'bob-uid'],
+          'timestamp': DateTime(2024).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.participants, equals(['alice-uid', 'bob-uid']));
+      });
+
+      test('non-string senderId / conversationId drop to null, no throw', () {
+        final json = <String, dynamic>{
+          'text': 'bad ids',
+          'senderName': 'X',
+          'senderId': 99,
+          'conversationId': true,
+          'timestamp': DateTime(2024).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.senderId, isNull);
+        expect(message.conversationId, isNull);
+      });
+
+      test('a fully malformed legacy doc parses without throwing', () {
+        final json = <String, dynamic>{
+          'text': 'survivor',
+          'senderName': 'X',
+          'senderId': <dynamic>[],
+          'conversationId': 3.14,
+          'participants': {'not': 'a list'},
+          'replyToMessageId': 0,
+          'timestamp': null,
+        };
+
+        expect(() => ChatMessage.fromFirestore(json), returnsNormally);
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.text, equals('survivor'));
+        expect(message.isReply, isFalse);
+      });
+    });
+
     group('Firestore serialization', () {
       test('toFirestore includes all fields', () {
         final timestamp = DateTime(2024, 6, 15, 14, 30);

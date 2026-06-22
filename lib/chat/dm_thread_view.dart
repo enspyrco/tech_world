@@ -63,7 +63,6 @@ class _DmThreadViewState extends State<DmThreadView> {
       text,
       peerDisplayName: widget.conversation.peerDisplayName ?? 'Unknown',
       replyTo: replyTarget,
-      replyToMessageId: replyTarget?.localKey,
     );
     _textController.clear();
     setState(() => _replyTarget = null);
