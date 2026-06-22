@@ -7,6 +7,27 @@
 /// discriminators. Strings only ever appear at the wire boundary; everything
 /// in-language is typed (house rule: stringly-typing is a smell). Parse from
 /// the wire via [RoomTimerMessage.tryParse].
+///
+/// ## Two design decisions baked into the wire
+///
+/// **Relative remaining, not an absolute timestamp.** A `start` carries
+/// [StartRoomTimerMessage.remainingSeconds] — the time left *as of send* — not
+/// an absolute end instant. Each receiver computes its own
+/// `endsAt = itsOwnNow + remainingSeconds`, so the timer is immune to
+/// wall-clock skew between participants (a sender whose clock is minutes off no
+/// longer corrupts everyone else's countdown — only network latency, ~ms,
+/// matters). This is also what makes republish-on-join correct: a peer
+/// republishing a running timer simply sends the *current* remaining, and the
+/// joiner lands on the right value through the same code path as a fresh start.
+///
+/// **A monotonic [generation].** Every message carries the generation of the
+/// timer it refers to. A fresh `start` mints a new (higher) generation; a
+/// `cancel` carries the generation it is cancelling. Receivers track the
+/// highest generation they have applied and ignore anything older, so an
+/// out-of-order delivery (a stale `cancel` arriving after a newer `start`, or a
+/// resync `start` arriving after a `cancel`) can never wipe or resurrect the
+/// wrong timer. Republished messages reuse the *same* generation, so they are
+/// idempotent — multiple peers republishing the one running timer all agree.
 library;
 
 /// The closed set of actions a shared-timer message can express.
@@ -42,10 +63,15 @@ enum TimerAction {
 /// exhaustiveness, and so neither variant carries fields that are only
 /// meaningful for the other.
 sealed class RoomTimerMessage {
-  const RoomTimerMessage({this.startedBy});
+  const RoomTimerMessage({required this.generation, this.startedBy});
 
   /// Identity of the participant who started or cancelled the timer.
   final String? startedBy;
+
+  /// Monotonic generation of the timer this message refers to. Receivers drop
+  /// any message whose generation is older than the highest they have applied,
+  /// which resolves arrival-order races (a stale cancel vs a newer start).
+  final int generation;
 
   /// Which [TimerAction] this message represents.
   TimerAction get action;
@@ -55,28 +81,32 @@ sealed class RoomTimerMessage {
 
   /// Convenience constructor for a `start` message.
   factory RoomTimerMessage.start({
-    required int durationSeconds,
-    required int startedAtMillis,
+    required int remainingSeconds,
+    required int generation,
     required String startedBy,
   }) =>
       StartRoomTimerMessage(
-        durationSeconds: durationSeconds,
-        startedAtMillis: startedAtMillis,
+        remainingSeconds: remainingSeconds,
+        generation: generation,
         startedBy: startedBy,
       );
 
   /// Convenience constructor for a `cancel` message.
-  factory RoomTimerMessage.cancel({required String startedBy}) =>
-      CancelRoomTimerMessage(startedBy: startedBy);
+  factory RoomTimerMessage.cancel({
+    required int generation,
+    required String startedBy,
+  }) =>
+      CancelRoomTimerMessage(generation: generation, startedBy: startedBy);
 
   /// Parse a wire JSON map into a [RoomTimerMessage], or null if malformed.
   ///
   /// Every field is type-checked, not cast — a hostile or newer client that
-  /// sends a non-string `action`, a non-int `durationSeconds`, etc. yields a
+  /// sends a non-string `action`, a non-int `remainingSeconds`, etc. yields a
   /// clean `null` rather than throwing a `TypeError` that would tear down the
   /// subscription stream. A `start` message is additionally rejected unless it
-  /// carries a positive integer `durationSeconds` (a non-positive duration
-  /// would fire the alarm immediately).
+  /// carries a positive integer `remainingSeconds` (a non-positive remaining
+  /// would fire the alarm immediately). A missing/invalid `generation` is
+  /// rejected too — it is load-bearing for race resolution, not optional.
   static RoomTimerMessage? tryParse(Map<String, dynamic>? json) {
     if (json == null) return null;
 
@@ -85,43 +115,47 @@ sealed class RoomTimerMessage {
     final action = TimerAction.tryParse(actionWire);
     if (action == null) return null;
 
+    final generation = json['generation'];
+    if (generation is! int) return null;
+
     final startedByRaw = json['startedBy'];
     final startedBy = startedByRaw is String ? startedByRaw : null;
 
     switch (action) {
       case TimerAction.start:
-        final duration = json['durationSeconds'];
-        if (duration is! int || duration <= 0) return null;
-        final startedAt = json['startedAtMillis'];
+        final remaining = json['remainingSeconds'];
+        if (remaining is! int || remaining <= 0) return null;
         return StartRoomTimerMessage(
-          durationSeconds: duration,
-          startedAtMillis: startedAt is int ? startedAt : null,
+          remainingSeconds: remaining,
+          generation: generation,
           startedBy: startedBy,
         );
       case TimerAction.cancel:
-        return CancelRoomTimerMessage(startedBy: startedBy);
+        return CancelRoomTimerMessage(
+          generation: generation,
+          startedBy: startedBy,
+        );
     }
   }
 }
 
 /// A `start` message: begin (or replace) the shared countdown for everyone.
 ///
-/// v1 ignores clock skew: receivers start a *fresh* local countdown of
-/// [durationSeconds] on receipt rather than reconciling against
-/// [startedAtMillis]. [startedAtMillis] is carried anyway so a future version
-/// can compensate for skew / support late-joiner catch-up without a wire change.
+/// Carries [remainingSeconds] — the time left *as of send*, relative to the
+/// sender's clock — NOT an absolute end instant. The receiver reconstructs the
+/// end as `itsOwnNow + remainingSeconds`, making the countdown skew-immune. A
+/// fresh start sends the full duration as the remaining; a republish-on-join
+/// sends the *current* remaining of the already-running timer.
 class StartRoomTimerMessage extends RoomTimerMessage {
   const StartRoomTimerMessage({
-    required this.durationSeconds,
-    this.startedAtMillis,
+    required this.remainingSeconds,
+    required super.generation,
     super.startedBy,
   });
 
-  /// Countdown length in seconds (always positive — enforced at parse).
-  final int durationSeconds;
-
-  /// Unix epoch milliseconds when the sender started the timer (sender clock).
-  final int? startedAtMillis;
+  /// Seconds left on the countdown as of send (always positive — enforced at
+  /// parse). The receiver adds this to its OWN now to get the end instant.
+  final int remainingSeconds;
 
   @override
   TimerAction get action => TimerAction.start;
@@ -129,15 +163,21 @@ class StartRoomTimerMessage extends RoomTimerMessage {
   @override
   Map<String, dynamic> toJson() => {
         'action': TimerAction.start.wire,
-        'durationSeconds': durationSeconds,
-        if (startedAtMillis != null) 'startedAtMillis': startedAtMillis,
+        'remainingSeconds': remainingSeconds,
+        'generation': generation,
         if (startedBy != null) 'startedBy': startedBy,
       };
 }
 
 /// A `cancel` message: stop any running shared countdown for everyone.
+///
+/// Carries the [generation] it is cancelling so a stale cancel (one referring
+/// to a timer that has since been replaced by a newer start) is ignored.
 class CancelRoomTimerMessage extends RoomTimerMessage {
-  const CancelRoomTimerMessage({super.startedBy});
+  const CancelRoomTimerMessage({
+    required super.generation,
+    super.startedBy,
+  });
 
   @override
   TimerAction get action => TimerAction.cancel;
@@ -145,6 +185,7 @@ class CancelRoomTimerMessage extends RoomTimerMessage {
   @override
   Map<String, dynamic> toJson() => {
         'action': TimerAction.cancel.wire,
+        'generation': generation,
         if (startedBy != null) 'startedBy': startedBy,
       };
 }

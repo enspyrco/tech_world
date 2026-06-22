@@ -513,6 +513,13 @@ class TechWorld extends World with TapCallbacks {
     _log.info('LiveKit participant joined: ${participant.identity}');
     _bubbleManager.refreshBubbleForPlayer(participant.identity);
 
+    // Resync the shared countdown to the new arrival. LiveKit data channels do
+    // NOT replay past messages, so a peer who joins mid-countdown would never
+    // learn about a timer that started before they connected. Mirror how
+    // publishMapInfo is re-sent on join: republish the running timer (no-op if
+    // none is running; idempotent by generation if several peers republish).
+    Locator.maybeLocate<TimerService>()?.republishForJoiner();
+
     // Create component based on participant type
     if (isBotIdentity(participant.identity)) {
       final botConfig = getBotConfig(participant.identity);

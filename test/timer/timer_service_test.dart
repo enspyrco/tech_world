@@ -31,7 +31,8 @@ class _SpyAlarm extends AlarmPlayer {
 
 void main() {
   setUpAll(() {
-    registerFallbackValue(RoomTimerMessage.cancel(startedBy: 'fallback'));
+    registerFallbackValue(
+        RoomTimerMessage.cancel(generation: 0, startedBy: 'fallback'));
   });
 
   group('TimerService', () {
@@ -57,7 +58,9 @@ void main() {
       service = TimerService(liveKitService: liveKit, alarmPlayer: alarm);
     });
 
-    // A service backed by a controllable clock, for late-joiner catch-up.
+    /// A service backed by a controllable clock. Each gets its OWN LiveKit fake
+    /// so its subscription is independent (simulating a distinct peer) unless it
+    /// shares [incoming] — which it does, so messages fan out to all of them.
     TimerService buildWithClock(DateTime Function() now) => TimerService(
           liveKitService: liveKit,
           alarmPlayer: alarm,
@@ -69,26 +72,34 @@ void main() {
       await incoming.close();
     });
 
-    test('start publishes a start message stamped with our identity', () async {
+    test('start publishes a relative-remaining start with our identity + gen',
+        () async {
       await service.start(300);
       expect(published, hasLength(1));
       final msg = published.single;
       expect(msg, isA<StartRoomTimerMessage>());
       final start = msg as StartRoomTimerMessage;
-      expect(start.durationSeconds, 300);
+      expect(start.remainingSeconds, 300);
       expect(start.startedBy, 'user-me');
-      expect(start.startedAtMillis, isNotNull);
+      expect(start.generation, 1); // first timer
+    });
+
+    test('each fresh start mints a higher generation', () async {
+      await service.start(60);
+      await service.start(30);
+      final gens = published
+          .whereType<StartRoomTimerMessage>()
+          .map((m) => m.generation)
+          .toList();
+      expect(gens, [1, 2]);
     });
 
     test('start applies locally immediately (LiveKit does not self-echo)',
         () async {
-      // Frozen clock so stamp-time == apply-time and the remaining is exact.
       final now = DateTime.fromMillisecondsSinceEpoch(5000000);
       final s = buildWithClock(() => now);
       addTearDown(s.dispose);
       await s.start(300);
-      // The starter must see its own countdown without waiting for an echo
-      // that LiveKit never delivers to the sender.
       expect(s.state.running, isTrue);
       expect(s.state.remaining, const Duration(seconds: 300));
     });
@@ -98,23 +109,31 @@ void main() {
       expect(alarm.primeCount, 1);
     });
 
-    test('cancel publishes a cancel message and stops locally', () async {
+    test('cancel publishes a cancel carrying the current generation', () async {
       await service.start(60);
       expect(service.state.running, isTrue);
       await service.cancel();
-      expect(published.last.action, TimerAction.cancel);
-      expect(published.last.startedBy, 'user-me');
+      final cancel = published.last;
+      expect(cancel.action, TimerAction.cancel);
+      expect(cancel.startedBy, 'user-me');
+      expect(cancel.generation, 1);
+      expect(service.state.running, isFalse);
+    });
+
+    test('cancel with no running timer is a no-op (nothing published)',
+        () async {
+      await service.cancel();
+      expect(published, isEmpty);
       expect(service.state.running, isFalse);
     });
 
     test('an incoming start message begins the local countdown', () async {
-      // A just-started timer (startedAtMillis == now) gives the full duration.
       final now = DateTime.fromMillisecondsSinceEpoch(5000000);
       final s = buildWithClock(() => now);
       addTearDown(s.dispose);
       incoming.add(RoomTimerMessage.start(
-        durationSeconds: 120,
-        startedAtMillis: now.millisecondsSinceEpoch,
+        remainingSeconds: 120,
+        generation: 1,
         startedBy: 'someone-else',
       ));
       await Future<void>.delayed(Duration.zero);
@@ -127,14 +146,14 @@ void main() {
       final s = buildWithClock(() => now);
       addTearDown(s.dispose);
       incoming.add(RoomTimerMessage.start(
-        durationSeconds: 120,
-        startedAtMillis: now.millisecondsSinceEpoch,
+        remainingSeconds: 120,
+        generation: 1,
         startedBy: 'a',
       ));
       await Future<void>.delayed(Duration.zero);
       expect(s.state.running, isTrue);
 
-      incoming.add(RoomTimerMessage.cancel(startedBy: 'a'));
+      incoming.add(RoomTimerMessage.cancel(generation: 1, startedBy: 'a'));
       await Future<void>.delayed(Duration.zero);
       expect(s.state.running, isFalse);
     });
@@ -164,63 +183,164 @@ void main() {
       expect(alarm.stopCount, greaterThanOrEqualTo(1));
     });
 
-    test(
-        'a late joiner catches up: an incoming start whose end is in the '
-        'future yields the REMAINING time, not the full duration', () async {
-      // The starter began a 120s timer 30s ago (startedAtMillis in the past).
-      // A joiner receiving it now must see ~90s left.
-      var now = DateTime.fromMillisecondsSinceEpoch(5000000);
-      final lateJoiner = buildWithClock(() => now);
-      addTearDown(lateJoiner.dispose);
+    // ------------------------------------------------------------------
+    // Late-joiner DELIVERY — the whole point of the feature. LiveKit does not
+    // replay past messages, so the running peer must REPUBLISH on join. These
+    // tests exercise the publish→receive handoff, not a hand-fed injection.
+    // ------------------------------------------------------------------
+    group('late-joiner delivery (republish on join)', () {
+      test(
+          'republishForJoiner emits the running timer; a fresh peer receiving '
+          'it via the stream catches up to the correct remaining', () async {
+        // Peer A starts a 120s timer, then 30s elapse on A's clock.
+        var aNow = DateTime.fromMillisecondsSinceEpoch(1000000);
+        final peerA = buildWithClock(() => aNow);
+        addTearDown(peerA.dispose);
+        await peerA.start(120);
+        aNow = aNow.add(const Duration(seconds: 30));
+        peerA.state.tick(); // A now shows 90s
+        expect(peerA.state.remaining, const Duration(seconds: 90));
 
-      final startedAt = now.subtract(const Duration(seconds: 30));
-      incoming.add(RoomTimerMessage.start(
-        durationSeconds: 120,
-        startedAtMillis: startedAt.millisecondsSinceEpoch,
-        startedBy: 'starter',
-      ));
-      await Future<void>.delayed(Duration.zero);
+        published.clear();
 
-      expect(lateJoiner.state.running, isTrue);
-      expect(lateJoiner.state.remaining, const Duration(seconds: 90));
+        // A new participant joins → A republishes the running timer.
+        await peerA.republishForJoiner();
+        expect(published, hasLength(1));
+        final resync = published.single as StartRoomTimerMessage;
+        expect(resync.remainingSeconds, 90); // current remaining, not 120
+        expect(resync.generation, 1); // same generation — idempotent
+
+        // The joiner (its own clock, never present at start) receives it.
+        final joinerNow = DateTime.fromMillisecondsSinceEpoch(9999999999);
+        final joiner = buildWithClock(() => joinerNow);
+        addTearDown(joiner.dispose);
+        incoming.add(resync);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(joiner.state.running, isTrue);
+        expect(joiner.state.remaining, const Duration(seconds: 90));
+      });
+
+      test('republishForJoiner is a no-op when no timer is running', () async {
+        await service.republishForJoiner();
+        expect(published, isEmpty);
+      });
+
+      test('republishForJoiner is a no-op after the timer was cancelled',
+          () async {
+        var now = DateTime.fromMillisecondsSinceEpoch(0);
+        final s = buildWithClock(() => now);
+        addTearDown(s.dispose);
+        await s.start(60);
+        await s.cancel();
+        published.clear();
+        await s.republishForJoiner();
+        expect(published, isEmpty);
+      });
     });
 
+    // ------------------------------------------------------------------
+    // Clock skew — the relative-remaining wire is skew-immune by construction.
+    // ------------------------------------------------------------------
     test(
-        'a late joiner whose timer already expired finishes immediately '
-        '(no negative remaining)', () async {
-      var now = DateTime.fromMillisecondsSinceEpoch(5000000);
-      final lateJoiner = buildWithClock(() => now);
-      addTearDown(lateJoiner.dispose);
+        'skew-immune: a start authored on a wildly different sender clock still '
+        'yields correct remaining on the receiver clock', () async {
+      // Receiver's clock is far in the future relative to the (irrelevant)
+      // sender clock — with an absolute timestamp this would be catastrophic;
+      // with relative remaining it is exactly right.
+      final receiverNow = DateTime.fromMillisecondsSinceEpoch(9999999999);
+      final receiver = buildWithClock(() => receiverNow);
+      addTearDown(receiver.dispose);
 
-      // Started 200s ago for only 60s — already over.
-      final startedAt = now.subtract(const Duration(seconds: 200));
       incoming.add(RoomTimerMessage.start(
-        durationSeconds: 60,
-        startedAtMillis: startedAt.millisecondsSinceEpoch,
-        startedBy: 'starter',
+        remainingSeconds: 75,
+        generation: 1,
+        startedBy: 'sender-with-skewed-clock',
       ));
       await Future<void>.delayed(Duration.zero);
 
-      expect(lateJoiner.state.running, isFalse);
-      expect(lateJoiner.state.remaining, Duration.zero);
+      expect(receiver.state.running, isTrue);
+      expect(receiver.state.remaining, const Duration(seconds: 75));
     });
 
-    test(
-        'an incoming start WITHOUT startedAtMillis falls back to a fresh '
-        'full-duration countdown', () async {
-      var now = DateTime.fromMillisecondsSinceEpoch(5000000);
-      final joiner = buildWithClock(() => now);
-      addTearDown(joiner.dispose);
+    // ------------------------------------------------------------------
+    // Arrival-order races — resolved by the monotonic generation guard.
+    // ------------------------------------------------------------------
+    group('generation race resolution', () {
+      test('a stale cancel arriving after a newer start is ignored', () async {
+        final now = DateTime.fromMillisecondsSinceEpoch(0);
+        final s = buildWithClock(() => now);
+        addTearDown(s.dispose);
 
-      // Legacy / skew-free message with no timestamp.
-      incoming.add(const StartRoomTimerMessage(
-        durationSeconds: 45,
-        startedBy: 'legacy',
-      ));
-      await Future<void>.delayed(Duration.zero);
+        // Newer start (gen 2) is applied.
+        incoming.add(RoomTimerMessage.start(
+          remainingSeconds: 60,
+          generation: 2,
+          startedBy: 'a',
+        ));
+        await Future<void>.delayed(Duration.zero);
+        expect(s.state.running, isTrue);
 
-      expect(joiner.state.running, isTrue);
-      expect(joiner.state.remaining, const Duration(seconds: 45));
+        // A stale cancel for the OLD timer (gen 1) arrives late — must NOT wipe
+        // the newer running timer.
+        incoming.add(RoomTimerMessage.cancel(generation: 1, startedBy: 'b'));
+        await Future<void>.delayed(Duration.zero);
+        expect(s.state.running, isTrue);
+        expect(s.state.remaining, const Duration(seconds: 60));
+      });
+
+      test('a stale start arriving after a cancel does not resurrect the timer',
+          () async {
+        final now = DateTime.fromMillisecondsSinceEpoch(0);
+        final s = buildWithClock(() => now);
+        addTearDown(s.dispose);
+
+        incoming.add(RoomTimerMessage.start(
+          remainingSeconds: 60,
+          generation: 1,
+          startedBy: 'a',
+        ));
+        await Future<void>.delayed(Duration.zero);
+        incoming.add(RoomTimerMessage.cancel(generation: 1, startedBy: 'a'));
+        await Future<void>.delayed(Duration.zero);
+        expect(s.state.running, isFalse);
+
+        // A late republish of the SAME (now-cancelled) generation arrives —
+        // must not bring the timer back.
+        incoming.add(RoomTimerMessage.start(
+          remainingSeconds: 40,
+          generation: 1,
+          startedBy: 'a',
+        ));
+        await Future<void>.delayed(Duration.zero);
+        expect(s.state.running, isFalse);
+      });
+
+      test('a genuinely newer start after a cancel DOES start a new timer',
+          () async {
+        final now = DateTime.fromMillisecondsSinceEpoch(0);
+        final s = buildWithClock(() => now);
+        addTearDown(s.dispose);
+
+        incoming.add(RoomTimerMessage.start(
+          remainingSeconds: 60,
+          generation: 1,
+          startedBy: 'a',
+        ));
+        await Future<void>.delayed(Duration.zero);
+        incoming.add(RoomTimerMessage.cancel(generation: 1, startedBy: 'a'));
+        await Future<void>.delayed(Duration.zero);
+        expect(s.state.running, isFalse);
+
+        incoming.add(RoomTimerMessage.start(
+          remainingSeconds: 30,
+          generation: 2,
+          startedBy: 'b',
+        ));
+        await Future<void>.delayed(Duration.zero);
+        expect(s.state.running, isTrue);
+        expect(s.state.remaining, const Duration(seconds: 30));
+      });
     });
 
     test('a new start clears a lingering alarm banner', () async {
@@ -233,8 +353,8 @@ void main() {
       expect(s.alarmActive.value, isTrue);
 
       incoming.add(RoomTimerMessage.start(
-        durationSeconds: 60,
-        startedAtMillis: now.millisecondsSinceEpoch,
+        remainingSeconds: 60,
+        generation: 1,
         startedBy: 'b',
       ));
       await Future<void>.delayed(Duration.zero);

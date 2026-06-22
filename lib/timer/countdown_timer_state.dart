@@ -43,6 +43,13 @@ class CountdownTimerState extends ChangeNotifier {
   /// Whether a countdown is currently active.
   bool get running => _running;
 
+  /// The current remaining time rounded UP to whole seconds, for republishing
+  /// the running timer to a late joiner. Rounding up (not down) means a joiner
+  /// never sees *less* time than the room actually has — at worst a sub-second
+  /// over-count that the next tick corrects. Returns 0 when not running.
+  int get remainingSecondsCeil =>
+      _running ? (_remaining.inMilliseconds / 1000).ceil() : 0;
+
   /// Remaining time formatted as `mm:ss` (e.g. `03:07`), zero-padded.
   ///
   /// Rounds up so a remaining of 4.2s reads `00:05`, matching what a user
@@ -113,13 +120,12 @@ class CountdownTimerState extends ChangeNotifier {
 
   /// Re-derive [remaining] from the clock and the absolute end instant.
   ///
-  /// The [step] argument is retained for source compatibility but is ignored:
-  /// remaining is always recomputed as `endsAt - now`, so the countdown is
-  /// self-correcting against skipped beats (a backgrounded tab), a slow
-  /// ticker, or a late join. No-op when not running. When now reaches or
-  /// crosses the end instant the countdown stops, [onFinished] fires once, and
-  /// listeners are notified.
-  void tick([Duration step = const Duration(seconds: 1)]) {
+  /// Remaining is always recomputed as `endsAt - now`, so the countdown is
+  /// self-correcting against skipped beats (a backgrounded tab), a slow ticker,
+  /// or a late join — there is no per-tick decrement to drift. No-op when not
+  /// running. When now reaches or crosses the end instant the countdown stops,
+  /// [onFinished] fires once, and listeners are notified.
+  void tick() {
     final endsAt = _endsAt;
     if (!_running || endsAt == null) return;
 

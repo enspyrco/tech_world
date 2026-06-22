@@ -62,6 +62,21 @@ class TimerService {
   StreamSubscription<RoomTimerMessage>? _sub;
   Timer? _ticker;
 
+  /// The highest timer generation this service has applied. Messages with an
+  /// older generation are dropped (arrival-order race resolution). A fresh
+  /// local [start] mints the next generation; an incoming `start` adopts the
+  /// sender's generation if it is newer.
+  int _generation = 0;
+
+  /// The generation of the currently running (or most-recently cancelled)
+  /// timer, used when republishing on join. Null when no timer has run.
+  int? _currentGeneration;
+
+  /// The highest generation that has been *cancelled*. A `start` at or below
+  /// this is refused, so a late republish of an already-cancelled timer (which
+  /// carries the same generation) can't resurrect it. -1 means none cancelled.
+  int _cancelledGeneration = -1;
+
   /// Start (or replace) the shared countdown for everyone in the room.
   ///
   /// Applies locally immediately (LiveKit won't echo our own message back) and
@@ -71,9 +86,10 @@ class TimerService {
   Future<void> start(int durationSeconds) async {
     if (durationSeconds <= 0) return;
     _alarm.prime();
+    // A fresh start mints the next generation, superseding any running timer.
     final message = StartRoomTimerMessage(
-      durationSeconds: durationSeconds,
-      startedAtMillis: _now().millisecondsSinceEpoch,
+      remainingSeconds: durationSeconds,
+      generation: _generation + 1,
       startedBy: _liveKit.userId,
     );
     _apply(message);
@@ -81,10 +97,46 @@ class TimerService {
   }
 
   /// Cancel any running shared countdown for everyone in the room.
+  ///
+  /// No-op if no timer is running — there is no generation to cancel, and
+  /// publishing a cancel for a never-started timer would be meaningless.
   Future<void> cancel() async {
-    final message = CancelRoomTimerMessage(startedBy: _liveKit.userId);
+    final generation = _currentGeneration;
+    if (generation == null || !state.running) return;
+    final message = CancelRoomTimerMessage(
+      generation: generation,
+      startedBy: _liveKit.userId,
+    );
     _apply(message);
     await _liveKit.publishRoomTimer(message);
+  }
+
+  /// Republish the currently running timer so a participant who just joined the
+  /// room receives it — LiveKit data channels do NOT replay past messages, so
+  /// without this a late joiner would see idle state forever.
+  ///
+  /// Sends the *current* remaining and the *current* generation, so the message
+  /// is idempotent: if several peers republish on the same join they all carry
+  /// the same generation and remaining (modulo ~1s rounding), and the joiner's
+  /// generation guard keeps only the first. No-op when no timer is running.
+  ///
+  /// Wired into the participant-joined handler (mirrors how `publishMapInfo` is
+  /// re-sent on join so a new peer learns the current map).
+  Future<void> republishForJoiner() async {
+    final generation = _currentGeneration;
+    if (generation == null || !state.running) return;
+    final remaining = state.remainingSecondsCeil;
+    if (remaining <= 0) return;
+    final message = StartRoomTimerMessage(
+      remainingSeconds: remaining,
+      generation: generation,
+      startedBy: _liveKit.userId,
+    );
+    // Do NOT _apply locally — we are already running this timer; this is purely
+    // an outbound resync for others.
+    await _liveKit.publishRoomTimer(message);
+    _log.fine('Republished running timer (gen $generation, ${remaining}s) '
+        'for a late joiner');
   }
 
   /// Silence the alarm locally and clear the "Time's up!" banner.
@@ -96,43 +148,55 @@ class TimerService {
   /// Apply a timer transition — from our own [start]/[cancel] or a remote
   /// broadcast. The single source of truth for both paths.
   void _apply(RoomTimerMessage message) {
+    // Arrival-order race guard. Drop any message older than the highest
+    // generation we have applied — a stale cancel can't wipe a newer start, and
+    // a resync start can't resurrect a cancelled timer. Equal generations are
+    // allowed through: that is the idempotent republish path (a peer resending
+    // the timer we already run; applying it just re-derives the same endsAt).
+    if (message.generation < _generation) {
+      _log.fine('Dropping stale timer message: gen ${message.generation} '
+          '< current $_generation');
+      return;
+    }
+    _generation = message.generation;
+
     switch (message) {
-      case StartRoomTimerMessage(
-          :final durationSeconds,
-          :final startedAtMillis,
-          :final startedBy,
-        ):
-        dismissAlarm(); // a new timer clears any lingering alarm/banner
-        // Late-joiner catch-up: reconstruct the absolute end instant from the
-        // sender's start time + duration and start from THAT, so a participant
-        // joining mid-countdown sees the real remaining time, not a fresh full
-        // duration. When the message carries no timestamp (legacy/skew-free),
-        // fall back to a fresh local countdown of [durationSeconds].
-        //
-        // Robust to a finished timer: if the reconstructed end is already in
-        // the past, CountdownTimerState.startAt fires onFinished immediately
-        // (alarm + banner), matching what an always-present client would show.
-        if (startedAtMillis != null) {
-          final endsAt = DateTime.fromMillisecondsSinceEpoch(startedAtMillis)
-              .add(Duration(seconds: durationSeconds));
-          state.startAt(endsAt);
-        } else {
-          state.start(durationSeconds);
+      case StartRoomTimerMessage(:final remainingSeconds, :final startedBy):
+        // Refuse a start at or below a cancelled generation — a late republish
+        // of an already-cancelled timer carries the same generation and must
+        // not resurrect it.
+        if (message.generation <= _cancelledGeneration) {
+          _log.fine('Dropping start for cancelled gen ${message.generation}');
+          return;
         }
-        // Only run the 1s ticker if the countdown is actually live — a
-        // late-joiner whose timer had already expired finishes synchronously
-        // inside startAt and needs no ticker.
+        _currentGeneration = message.generation;
+        dismissAlarm(); // a new timer clears any lingering alarm/banner
+        // Skew-immune catch-up: the wire carries the remaining time as of send.
+        // We anchor it to OUR OWN clock (endsAt = now + remaining), so a
+        // participant joining mid-countdown sees the real remaining without
+        // depending on the sender's wall clock matching ours.
+        final endsAt = _now().add(Duration(seconds: remainingSeconds));
+        state.startAt(endsAt);
+        // Only run the 1s ticker if the countdown is actually live — a joiner
+        // whose timer had already expired finishes synchronously inside startAt
+        // and needs no ticker.
         if (state.running) {
           _startTicker();
         } else {
           _stopTicker();
         }
-        _log.fine('Room timer started: ${durationSeconds}s by $startedBy');
+        _log.fine('Room timer started: ${remainingSeconds}s by $startedBy '
+            '(gen ${message.generation})');
       case CancelRoomTimerMessage(:final startedBy):
+        _currentGeneration = message.generation;
+        if (message.generation > _cancelledGeneration) {
+          _cancelledGeneration = message.generation;
+        }
         dismissAlarm();
         state.cancel();
         _stopTicker();
-        _log.fine('Room timer cancelled by $startedBy');
+        _log.fine('Room timer cancelled by $startedBy '
+            '(gen ${message.generation})');
     }
   }
 

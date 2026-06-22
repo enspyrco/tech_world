@@ -98,18 +98,25 @@ class CountdownClockComponent extends PositionComponent {
     super.onRemove();
   }
 
-  @override
-  void render(Canvas canvas) {
-    if (!_visible) return;
+  // Cached laid-out paragraph + the (label, finished) key it was built for.
+  // The clock renders every frame but its text only changes ~once a second, so
+  // we rebuild the ui.Paragraph only when the label or alarm face changes.
+  ui.Paragraph? _cachedParagraph;
+  String? _cachedLabel;
+  bool? _cachedFinished;
 
-    final finished = !state.running && alarmActive.value;
-    final rect = Rect.fromLTWH(2, 2, size.x - 4, size.y - 4);
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(4));
+  /// Number of times a ui.Paragraph was actually (re)built — exposed so a test
+  /// can prove the cache rebuilds only on label/face change, not every frame.
+  @visibleForTesting
+  int paragraphBuildCount = 0;
 
-    canvas.drawRRect(rrect, finished ? _alarmBgPaint : _bgPaint);
-    canvas.drawRRect(rrect, finished ? _alarmBorderPaint : _borderPaint);
-
-    final label = finished ? "TIME'S UP" : state.formatted;
+  ui.Paragraph _paragraphFor(String label, bool finished) {
+    if (_cachedParagraph != null &&
+        _cachedLabel == label &&
+        _cachedFinished == finished) {
+      return _cachedParagraph!;
+    }
+    paragraphBuildCount++;
     final style = ui.TextStyle(
       color: finished ? _alarmTextColor : _textColor,
       fontSize: finished ? 11 : 18,
@@ -123,6 +130,25 @@ class CountdownClockComponent extends PositionComponent {
           ..addText(label))
         .build()
       ..layout(ui.ParagraphConstraints(width: size.x));
+    _cachedParagraph = paragraph;
+    _cachedLabel = label;
+    _cachedFinished = finished;
+    return paragraph;
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (!_visible) return;
+
+    final finished = !state.running && alarmActive.value;
+    final rect = Rect.fromLTWH(2, 2, size.x - 4, size.y - 4);
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(4));
+
+    canvas.drawRRect(rrect, finished ? _alarmBgPaint : _bgPaint);
+    canvas.drawRRect(rrect, finished ? _alarmBorderPaint : _borderPaint);
+
+    final label = finished ? "TIME'S UP" : state.formatted;
+    final paragraph = _paragraphFor(label, finished);
     canvas.drawParagraph(
       paragraph,
       Offset(0, (size.y - paragraph.height) / 2),

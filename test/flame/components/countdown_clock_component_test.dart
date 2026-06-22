@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -91,6 +93,29 @@ void main() {
       // If the listener were still attached this would flip isVisible true.
       state.start(60);
       expect(clock.isVisible, isFalse);
+    });
+
+    test('caches the laid-out paragraph: rebuilds only when the label changes',
+        () async {
+      final clock = build();
+      await clock.onLoad();
+      state.start(120); // visible, label "02:00"
+
+      void renderFrame() => clock.render(Canvas(PictureRecorder()));
+
+      renderFrame(); // first build
+      expect(clock.paragraphBuildCount, 1);
+
+      // Several frames at the same displayed second — no rebuild.
+      renderFrame();
+      renderFrame();
+      expect(clock.paragraphBuildCount, 1);
+
+      // Advance past a whole second so the formatted label changes.
+      now = now.add(const Duration(seconds: 1));
+      state.tick(); // label now "01:59"
+      renderFrame();
+      expect(clock.paragraphBuildCount, 2);
     });
   });
 }

@@ -214,6 +214,25 @@ void main() {
         state.tick();
         expect(finishedCount, 1);
       });
+
+      group('remainingSecondsCeil (republish payload)', () {
+        test('rounds UP so a joiner never sees less time than the room has', () {
+          final state = build();
+          state.start(60);
+          now = now.add(const Duration(milliseconds: 200)); // 59.8s left
+          state.tick();
+          // 59.8s rounds up to 60, not down to 59.
+          expect(state.remainingSecondsCeil, 60);
+        });
+
+        test('is zero when not running', () {
+          final state = build();
+          expect(state.remainingSecondsCeil, 0);
+          state.start(30);
+          state.cancel();
+          expect(state.remainingSecondsCeil, 0);
+        });
+      });
     });
   });
 }
