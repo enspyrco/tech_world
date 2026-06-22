@@ -1199,6 +1199,14 @@ class TechWorld extends World with TapCallbacks {
     movePlayerToCell(targetX, targetY);
   }
 
+  /// Whether the local player is currently animating a cell-move.
+  ///
+  /// Keyboard auto-repeat ([TechWorldGame.update]) gates the next held-key step
+  /// on this so a new [moveInDirection] is never issued mid-cell (which would
+  /// abandon the in-flight [MoveEffect] and stutter). Delegates to
+  /// [PlayerComponent.isMoving].
+  bool get isUserPlayerMoving => _userPlayerComponent.isMoving;
+
   /// Handle terminal interaction - check proximity before opening editor.
   void _onTerminalInteract(Point<int> terminalPos, Challenge challenge) {
     final playerGrid = _userPlayerComponent.miniGridPosition;
