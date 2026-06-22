@@ -286,6 +286,16 @@ class ChatService {
         '"${text.substring(0, text.length.clamp(0, 50))}..."');
 
     if (isDm) {
+      // Reply linkage + quote snapshot are display-only and parsed defensively
+      // (a malformed / wrong-type value drops the field, never throws). They do
+      // NOT affect the trust boundary below — the reply's sender is still the
+      // transport identity.
+      final replyToMessageId =
+          ChatMessage.asStringOrNull(json['replyToMessageId']);
+      final replyToText = ChatMessage.asStringOrNull(json['replyToText']);
+      final replyToSenderName =
+          ChatMessage.asStringOrNull(json['replyToSenderName']);
+
       // Trust the transport-verified identity over the payload — prevents
       // a malicious peer from filing a DM under another user's UID by
       // spoofing senderId in the payload.
@@ -294,6 +304,9 @@ class ChatService {
         senderName: senderName,
         senderId: message.senderId ?? 'unknown',
         isResponse: message.topic == LiveKitTopic.dmResponse.wire,
+        replyToMessageId: replyToMessageId,
+        replyToText: replyToText,
+        replyToSenderName: replyToSenderName,
       );
     } else if (message.topic == LiveKitTopic.chatResponse.wire) {
       // Bot response — use sender info from payload (supports multiple bots).
@@ -331,11 +344,19 @@ class ChatService {
   }
 
   /// Handle an incoming DM or dm-response.
+  ///
+  /// [replyToMessageId] / [replyToText] / [replyToSenderName] are the optional
+  /// quote-reply snapshot, already coerced to `String?` at the wire seam by
+  /// the caller. They are display-only and never influence [senderId], which
+  /// remains the transport-verified identity.
   void _handleDmMessage({
     required String text,
     required String senderName,
     required String senderId,
     required bool isResponse,
+    String? replyToMessageId,
+    String? replyToText,
+    String? replyToSenderName,
   }) {
     final localUid = _liveKitService.userId;
     final convId = Conversation.conversationIdFor(localUid, senderId);
@@ -347,6 +368,9 @@ class ChatService {
       conversationId: convId,
       participants: [localUid, senderId],
       isBot: isResponse,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
+      replyToSenderName: replyToSenderName,
     );
 
     // Ensure conversation exists, then update with new activity.
@@ -609,10 +633,19 @@ class ChatService {
   /// Send a private direct message to another user.
   ///
   /// Uses targeted LiveKit data channels so only the recipient sees it.
+  ///
+  /// To quote-reply to an earlier message, pass [replyTo] — the single message
+  /// being replied to. Its ID ([ChatMessage.localKey]) and display snapshot
+  /// ([ChatMessage.replyToText] / [ChatMessage.replyToSenderName]) are derived
+  /// from it together, so the "half-reply" state (an ID with no snapshot, or
+  /// vice-versa) is unrepresentable. The snapshot is display-only — the
+  /// *sender* of this reply is still derived from the authenticated local
+  /// identity, never from the quoted message.
   Future<void> sendDm(
     String peerId,
     String text, {
     required String peerDisplayName,
+    ChatMessage? replyTo,
   }) async {
     if (text.trim().isEmpty) return;
 
@@ -629,6 +662,12 @@ class ChatService {
     final messageId = _nextMessageId();
     _markSeen(messageId);
 
+    // Reply linkage + quote snapshot, all derived from the single [replyTo] so
+    // they're always consistent (both present or both absent). Display-only.
+    final replyToMessageId = replyTo?.localKey;
+    final replyText = replyTo?.text;
+    final replySenderName = replyTo?.senderName;
+
     final localUid = _liveKitService.userId;
     final chatMessage = ChatMessage(
       text: text,
@@ -637,6 +676,9 @@ class ChatService {
       conversationId: convId,
       participants: [localUid, peerId],
       isLocalUser: true,
+      replyToMessageId: replyToMessageId,
+      replyToText: replyText,
+      replyToSenderName: replySenderName,
     );
 
     // Ensure conversation exists, then update last activity.
@@ -669,6 +711,9 @@ class ChatService {
       'text': text,
       'senderName': _liveKitService.displayName,
       'senderId': _liveKitService.userId,
+      if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
+      if (replyText != null) 'replyToText': replyText,
+      if (replySenderName != null) 'replyToSenderName': replySenderName,
       'timestamp': DateTime.now().toIso8601String(),
     };
 
@@ -733,6 +778,11 @@ class ChatService {
 
       if (convId == 'group') {
         for (final msg in messages) {
+          // These are re-constructed (rather than reusing `msg`) only to
+          // recompute the locally-derived flags isLocalUser/isBot, which are
+          // not persisted. Every PERSISTED field must be carried through —
+          // dropping one here silently loses it on reload (the reply-field
+          // rehydration bug). Keep this in sync with the DM mapping below.
           _messages.add(ChatMessage(
             text: msg.text,
             senderName: msg.senderName,
@@ -740,12 +790,17 @@ class ChatService {
             conversationId: 'group',
             isLocalUser: msg.senderId == _liveKitService.userId,
             isBot: msg.senderId != null && isBotIdentity(msg.senderId!),
+            replyToMessageId: msg.replyToMessageId,
+            replyToText: msg.replyToText,
+            replyToSenderName: msg.replyToSenderName,
             timestamp: msg.timestamp,
           ));
         }
         _messagesController.add(List.from(_messages));
       } else {
         // DM conversation — figure out peer from the conversation ID.
+        // See the group mapping above: carry every persisted field through so a
+        // persisted reply still has its linkage + quote snapshot after reload.
         _dmMessagesByConversation[convId] = messages.map((msg) {
           return ChatMessage(
             text: msg.text,
@@ -754,6 +809,9 @@ class ChatService {
             conversationId: convId,
             isLocalUser: msg.senderId == _liveKitService.userId,
             isBot: msg.senderId != null && isBotIdentity(msg.senderId!),
+            replyToMessageId: msg.replyToMessageId,
+            replyToText: msg.replyToText,
+            replyToSenderName: msg.replyToSenderName,
             timestamp: msg.timestamp,
           );
         }).toList();

@@ -208,6 +208,196 @@ void main() {
       });
     });
 
+    group('reply fields', () {
+      test('reply fields default to null', () {
+        final message = ChatMessage(text: 'Hi', senderName: 'User');
+
+        expect(message.replyToMessageId, isNull);
+        expect(message.replyToText, isNull);
+        expect(message.replyToSenderName, isNull);
+      });
+
+      test('isReply is false without a replyToMessageId', () {
+        final message = ChatMessage(text: 'Hi', senderName: 'User');
+        expect(message.isReply, isFalse);
+      });
+
+      test('accepts reply fields and reports isReply true', () {
+        final message = ChatMessage(
+          text: 'I agree',
+          senderName: 'Bob',
+          replyToMessageId: 'msg-42',
+          replyToText: 'What do you think?',
+          replyToSenderName: 'Alice',
+        );
+
+        expect(message.replyToMessageId, equals('msg-42'));
+        expect(message.replyToText, equals('What do you think?'));
+        expect(message.replyToSenderName, equals('Alice'));
+        expect(message.isReply, isTrue);
+      });
+
+      test('toFirestore includes reply fields when present', () {
+        final message = ChatMessage(
+          text: 'reply body',
+          senderName: 'Bob',
+          replyToMessageId: 'msg-42',
+          replyToText: 'original',
+          replyToSenderName: 'Alice',
+        );
+
+        final json = message.toFirestore();
+
+        expect(json['replyToMessageId'], equals('msg-42'));
+        expect(json['replyToText'], equals('original'));
+        expect(json['replyToSenderName'], equals('Alice'));
+      });
+
+      test('toFirestore omits reply fields when null', () {
+        final message = ChatMessage(text: 'plain', senderName: 'Bob');
+
+        final json = message.toFirestore();
+
+        expect(json.containsKey('replyToMessageId'), isFalse);
+        expect(json.containsKey('replyToText'), isFalse);
+        expect(json.containsKey('replyToSenderName'), isFalse);
+      });
+
+      test('fromFirestore parses reply fields', () {
+        final json = {
+          'text': 'reply body',
+          'senderName': 'Bob',
+          'replyToMessageId': 'msg-42',
+          'replyToText': 'original',
+          'replyToSenderName': 'Alice',
+          'timestamp': DateTime(2024, 6, 15).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+
+        expect(message.replyToMessageId, equals('msg-42'));
+        expect(message.replyToText, equals('original'));
+        expect(message.replyToSenderName, equals('Alice'));
+        expect(message.isReply, isTrue);
+      });
+
+      test('fromFirestore handles missing reply fields (legacy)', () {
+        final json = {
+          'text': 'plain',
+          'senderName': 'Bob',
+          'timestamp': DateTime(2024, 6, 15).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+
+        expect(message.replyToMessageId, isNull);
+        expect(message.isReply, isFalse);
+      });
+
+      test('fromFirestore tolerates a non-string replyToMessageId', () {
+        // Defensive parse at the wire seam — a malformed payload (here an int
+        // where a string is expected) must not throw, just drop the field.
+        final json = <String, dynamic>{
+          'text': 'plain',
+          'senderName': 'Bob',
+          'replyToMessageId': 12345, // wrong type
+          'timestamp': DateTime(2024, 6, 15).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+
+        expect(message.replyToMessageId, isNull);
+        expect(message.isReply, isFalse);
+      });
+    });
+
+    group('defensive Firestore parsing (malformed docs must not throw)', () {
+      test('non-string timestamp falls back to now, no throw', () {
+        final before = DateTime.now();
+        final json = <String, dynamic>{
+          'text': 'bad ts',
+          'senderName': 'X',
+          'timestamp': 12345, // not a String
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+
+        // Falls back to ~now rather than throwing.
+        expect(
+          message.timestamp
+              .isAfter(before.subtract(const Duration(seconds: 5))),
+          isTrue,
+        );
+      });
+
+      test('unparseable timestamp string falls back to now, no throw', () {
+        final json = <String, dynamic>{
+          'text': 'bad ts',
+          'senderName': 'X',
+          'timestamp': 'not-a-date',
+        };
+
+        expect(() => ChatMessage.fromFirestore(json), returnsNormally);
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.timestamp, isNotNull);
+      });
+
+      test('non-list participants drops to null, no throw', () {
+        final json = <String, dynamic>{
+          'text': 'bad participants',
+          'senderName': 'X',
+          'participants': 'alice,bob', // a String, not a List
+          'timestamp': DateTime(2024).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.participants, isNull);
+      });
+
+      test('participants with non-string elements skips them, no throw', () {
+        final json = <String, dynamic>{
+          'text': 'mixed participants',
+          'senderName': 'X',
+          'participants': ['alice-uid', 42, null, 'bob-uid'],
+          'timestamp': DateTime(2024).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.participants, equals(['alice-uid', 'bob-uid']));
+      });
+
+      test('non-string senderId / conversationId drop to null, no throw', () {
+        final json = <String, dynamic>{
+          'text': 'bad ids',
+          'senderName': 'X',
+          'senderId': 99,
+          'conversationId': true,
+          'timestamp': DateTime(2024).toIso8601String(),
+        };
+
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.senderId, isNull);
+        expect(message.conversationId, isNull);
+      });
+
+      test('a fully malformed legacy doc parses without throwing', () {
+        final json = <String, dynamic>{
+          'text': 'survivor',
+          'senderName': 'X',
+          'senderId': <dynamic>[],
+          'conversationId': 3.14,
+          'participants': {'not': 'a list'},
+          'replyToMessageId': 0,
+          'timestamp': null,
+        };
+
+        expect(() => ChatMessage.fromFirestore(json), returnsNormally);
+        final message = ChatMessage.fromFirestore(json);
+        expect(message.text, equals('survivor'));
+        expect(message.isReply, isFalse);
+      });
+    });
+
     group('Firestore serialization', () {
       test('toFirestore includes all fields', () {
         final timestamp = DateTime(2024, 6, 15, 14, 30);

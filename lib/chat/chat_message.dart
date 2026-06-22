@@ -8,22 +8,32 @@ class ChatMessage {
     this.participants,
     this.isLocalUser = false,
     this.isBot = false,
+    this.replyToMessageId,
+    this.replyToText,
+    this.replyToSenderName,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
   /// Reconstruct a [ChatMessage] from a Firestore document map.
+  ///
+  /// EVERY field is parsed defensively (no unchecked `as` casts on values that
+  /// could be malformed): a wrong-type / legacy / mixed-version value drops or
+  /// falls back rather than throwing. This is the persistence seam — a single
+  /// bad doc must not throw and tear down the whole history load. Specifically:
+  /// - `participants`: non-`List` → null; non-`String` elements skipped.
+  /// - `timestamp`: missing/unparseable → `DateTime.now()` fallback (no throw).
+  /// - reply fields: wrong type → null (not treated as a reply).
   factory ChatMessage.fromFirestore(Map<String, dynamic> json) {
     return ChatMessage(
       text: json['text'] as String? ?? '',
       senderName: json['senderName'] as String? ?? '',
-      senderId: json['senderId'] as String?,
-      conversationId: json['conversationId'] as String?,
-      participants: (json['participants'] as List<dynamic>?)
-          ?.map((e) => e as String)
-          .toList(),
-      timestamp: json['timestamp'] != null
-          ? DateTime.parse(json['timestamp'] as String)
-          : null,
+      senderId: asStringOrNull(json['senderId']),
+      conversationId: asStringOrNull(json['conversationId']),
+      participants: _parseParticipants(json['participants']),
+      replyToMessageId: asStringOrNull(json['replyToMessageId']),
+      replyToText: asStringOrNull(json['replyToText']),
+      replyToSenderName: asStringOrNull(json['replyToSenderName']),
+      timestamp: _parseTimestamp(json['timestamp']),
     );
   }
 
@@ -47,8 +57,62 @@ class ChatMessage {
   final bool isBot; // true if this message is from Claude
   final DateTime timestamp;
 
+  /// The ID of the message this one quote-replies to, or `null` if it isn't a
+  /// reply. Free-form opaque ID (the sender's microsecond message id), so it
+  /// stays a `String` rather than a closed-set enum.
+  final String? replyToMessageId;
+
+  /// Denormalized snapshot of the quoted message's text, carried so a reply
+  /// renders its quote even when the original isn't in the local list. This is
+  /// display-only (cosmetic), like [senderName] — it is NOT a trust anchor.
+  final String? replyToText;
+
+  /// Denormalized snapshot of the quoted message's sender name. Display-only.
+  final String? replyToSenderName;
+
   /// Legacy getter for backwards compatibility.
   bool get isUser => isLocalUser;
+
+  /// Whether this message quote-replies to another message.
+  bool get isReply => replyToMessageId != null;
+
+  /// A stable-enough key identifying this message for reply linkage.
+  ///
+  /// [ChatMessage] carries no transported wire `id`, so reply targeting uses a
+  /// derived key from the sender + microsecond timestamp. Deterministic and
+  /// survives the Firestore round-trip (both inputs persist). This is
+  /// best-effort UX linkage (quote / scroll-to), not a correctness invariant.
+  String get localKey =>
+      '${senderId ?? senderName}:${timestamp.microsecondsSinceEpoch}';
+
+  /// Coerce an untrusted dynamic value to a `String`, or `null` otherwise.
+  ///
+  /// Shared by both wire seams — the Firestore parse here and the LiveKit
+  /// data-channel parse in `ChatService` — so a malformed value (wrong type)
+  /// drops the field instead of throwing and tearing down the caller.
+  static String? asStringOrNull(Object? value) =>
+      value is String ? value : null;
+
+  /// Defensively parse the `participants` field.
+  ///
+  /// A non-`List` value (legacy / corrupt doc) yields `null`; non-`String`
+  /// elements are skipped rather than throwing. An empty result also yields
+  /// `null` so the absence semantics match a missing field.
+  static List<String>? _parseParticipants(Object? value) {
+    if (value is! List) return null;
+    final result = value.whereType<String>().toList();
+    return result.isEmpty ? null : result;
+  }
+
+  /// Defensively parse the `timestamp` field.
+  ///
+  /// Missing or unparseable values fall back to [DateTime.now] rather than
+  /// throwing — a single bad doc must not crash a whole history load. The
+  /// constructor applies the same now-fallback, so this keeps the seam total.
+  static DateTime? _parseTimestamp(Object? value) {
+    if (value is! String) return null;
+    return DateTime.tryParse(value);
+  }
 
   /// Serialize to a Firestore-compatible map.
   Map<String, dynamic> toFirestore() {
@@ -58,6 +122,9 @@ class ChatMessage {
       if (senderId != null) 'senderId': senderId,
       if (conversationId != null) 'conversationId': conversationId,
       if (participants != null) 'participants': participants,
+      if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
+      if (replyToText != null) 'replyToText': replyToText,
+      if (replyToSenderName != null) 'replyToSenderName': replyToSenderName,
       'timestamp': timestamp.toIso8601String(),
     };
   }
