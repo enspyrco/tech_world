@@ -1001,6 +1001,35 @@ void main() {
           expect(msgs.last.isReply, isFalse);
         });
 
+        test('inbound DM reply with a wrong-typed id but valid text/name is '
+            'rejected wholesale (atomic parse — no orphaned snapshot)',
+            () async {
+          // The asymmetric-survival case on the DM branch (Carnot re-review,
+          // PR #490): a malformed id drops to null but text+name would survive
+          // an independent parse, orphaning a snapshot onto a non-reply. The
+          // atomic parseReplySnapshot drops the whole trio.
+          fakeLiveKit.connected = true;
+
+          fakeLiveKit.simulateDm('alice-uid', {
+            'text': 'Orphaned DM snapshot attempt',
+            'id': 'dm-orphan-1',
+            'senderName': 'Alice',
+            'senderId': 'alice-uid',
+            'replyToMessageId': 123, // wrong type -> null
+            'replyToText': 'spoofed quote',
+            'replyToSenderName': 'Victim',
+          });
+          await pumpEventQueue();
+
+          final msgs = chatService.dmMessagesSnapshot('alice-uid');
+          expect(msgs, isNotEmpty);
+          expect(msgs.last.replyToMessageId, isNull);
+          expect(msgs.last.replyToText, isNull,
+              reason: 'orphaned text must be dropped with the malformed id');
+          expect(msgs.last.replyToSenderName, isNull);
+          expect(msgs.last.isReply, isFalse);
+        });
+
         test('reply still derives senderId from transport, not payload',
             () async {
           // A reply must not become a spoof vector: the SENDER of the reply is
