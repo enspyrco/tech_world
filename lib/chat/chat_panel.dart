@@ -48,6 +48,10 @@ class _ChatPanelState extends State<ChatPanel>
   /// When non-null, shows the DM thread view instead of the conversation list.
   Conversation? _activeDmConversation;
 
+  /// The group message currently being quote-replied to, or `null` when
+  /// composing a fresh message. Mirrors `DmThreadView._replyTarget`.
+  ChatMessage? _replyTarget;
+
   // Clawd's orange color
   static const clawdOrange = Color(0xFFD97757);
 
@@ -129,8 +133,10 @@ class _ChatPanelState extends State<ChatPanel>
     final text = _textController.text.trim();
     if (text.isEmpty) return;
 
-    widget.chatService.sendMessage(text);
+    final replyTarget = _replyTarget;
+    widget.chatService.sendMessage(text, replyTo: replyTarget);
     _textController.clear();
+    setState(() => _replyTarget = null);
     _focusNode.requestFocus();
 
     // Scroll to bottom after message is added
@@ -143,6 +149,15 @@ class _ChatPanelState extends State<ChatPanel>
         );
       }
     });
+  }
+
+  void _startReply(ChatMessage message) {
+    setState(() => _replyTarget = message);
+    _focusNode.requestFocus();
+  }
+
+  void _cancelReply() {
+    setState(() => _replyTarget = null);
   }
 
   @override
@@ -316,19 +331,20 @@ class _ChatPanelState extends State<ChatPanel>
                 padding: const EdgeInsets.all(16),
                 itemCount: messages.length,
                 itemBuilder: (context, index) {
+                  final message = messages[index];
                   return _MessageBubble(
-                    message: messages[index],
-                    onSenderTap: messages[index].isLocalUser ||
-                            messages[index].isBot
+                    message: message,
+                    onReply: () => _startReply(message),
+                    onSenderTap: message.isLocalUser || message.isBot
                         ? null
                         : () {
                             // Open a DM with this sender.
-                            final senderId = messages[index].senderId;
+                            final senderId = message.senderId;
                             if (senderId == null) return;
                             _tabController.animateTo(1);
                             _openDmForPeer(
                               senderId,
-                              displayName: messages[index].senderName,
+                              displayName: message.senderName,
                             );
                           },
                   );
@@ -343,9 +359,16 @@ class _ChatPanelState extends State<ChatPanel>
           valueListenable: widget.chatService.botStatus,
           builder: (context, botStatus, _) {
             final isAbsent = botStatus == BotStatus.absent;
+            final replyTarget = _replyTarget;
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // "Replying to X" banner while composing a reply.
+                if (replyTarget != null)
+                  _ReplyComposingBanner(
+                    target: replyTarget,
+                    onCancel: _cancelReply,
+                  ),
                 // Offline banner
                 if (isAbsent)
                   Container(
@@ -606,10 +629,15 @@ class _ChatPanelState extends State<ChatPanel>
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.message,
+    required this.onReply,
     this.onSenderTap,
   });
 
   final ChatMessage message;
+
+  /// Invoked when the user chooses to quote-reply to this message.
+  final VoidCallback onReply;
+
   final VoidCallback? onSenderTap;
 
   static const clawdOrange = Color(0xFFD97757);
@@ -685,24 +713,58 @@ class _MessageBubble extends StatelessWidget {
                       ),
                     ),
                   ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isLocalUser
-                        ? clawdOrange.withValues(alpha: 0.2)
-                        : const Color(0xFF2D2D2D),
-                    borderRadius: BorderRadius.circular(16),
-                    border: isLocalUser
-                        ? Border.all(
-                            color: clawdOrange.withValues(alpha: 0.3))
-                        : null,
+                // Long-press anywhere on the bubble starts a quote-reply — a
+                // discoverable, platform-agnostic affordance (touch + desktop)
+                // without a persistent button on every row. Mirrors the DM view.
+                GestureDetector(
+                  onLongPress: onReply,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isLocalUser
+                          ? clawdOrange.withValues(alpha: 0.2)
+                          : const Color(0xFF2D2D2D),
+                      borderRadius: BorderRadius.circular(16),
+                      border: isLocalUser
+                          ? Border.all(
+                              color: clawdOrange.withValues(alpha: 0.3))
+                          : null,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (message.isReply) _QuotedMessage(message: message),
+                        Text(
+                          message.text,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Text(
-                    message.text,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
+                ),
+                // Subtle reply hint / button for discoverability.
+                GestureDetector(
+                  onTap: onReply,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.reply, size: 12, color: Colors.grey[600]),
+                        const SizedBox(width: 2),
+                        Text(
+                          'Reply',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -710,6 +772,122 @@ class _MessageBubble extends StatelessWidget {
             ),
           ),
           if (isLocalUser) const SizedBox(width: 36),
+        ],
+      ),
+    );
+  }
+}
+
+/// The quoted snippet rendered inside a reply bubble.
+///
+/// Shows the original sender + a one-line preview of the quoted text, using
+/// the display-only [ChatMessage.replyToSenderName] / [ChatMessage.replyToText]
+/// snapshot carried by the reply. Mirrors the DM thread view's treatment so
+/// group and DM replies feel consistent.
+class _QuotedMessage extends StatelessWidget {
+  const _QuotedMessage({required this.message});
+
+  final ChatMessage message;
+
+  static const _clawdOrange = Color(0xFFD97757);
+
+  @override
+  Widget build(BuildContext context) {
+    final quotedSender = message.replyToSenderName ?? 'Unknown';
+    final quotedText = message.replyToText ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(8),
+        border: Border(
+          left: BorderSide(color: _clawdOrange, width: 3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            quotedSender,
+            style: const TextStyle(
+              color: _clawdOrange,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          if (quotedText.isNotEmpty)
+            Text(
+              quotedText,
+              style: TextStyle(color: Colors.grey[400], fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The "Replying to X" banner shown above the input while composing a reply.
+class _ReplyComposingBanner extends StatelessWidget {
+  const _ReplyComposingBanner({
+    required this.target,
+    required this.onCancel,
+  });
+
+  final ChatMessage target;
+  final VoidCallback onCancel;
+
+  static const _clawdOrange = Color(0xFFD97757);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: const Color(0xFF1E1E1E),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 32,
+            color: _clawdOrange,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Replying to ${target.senderName}',
+                  style: const TextStyle(
+                    color: _clawdOrange,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  target.text,
+                  style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onCancel,
+            icon: const Icon(Icons.close),
+            iconSize: 18,
+            color: Colors.grey[400],
+            tooltip: 'Cancel reply',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          ),
         ],
       ),
     );

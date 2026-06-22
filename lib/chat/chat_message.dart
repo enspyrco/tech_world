@@ -93,6 +93,33 @@ class ChatMessage {
   static String? asStringOrNull(Object? value) =>
       value is String ? value : null;
 
+  /// Parse the quote-reply snapshot from an untrusted wire payload **atomically**:
+  /// all three fields are returned together, or all three are `null`.
+  ///
+  /// The outbound paths ([ChatService.sendMessage] / [ChatService.sendDm])
+  /// derive the trio from a single `replyTo`, so a "half-reply" (an ID with no
+  /// snapshot, or a snapshot with no ID) is unrepresentable on send. This
+  /// helper enforces the SAME predicate on RECEIVE — a malformed or hostile
+  /// payload where only a subset of the three fields are valid strings is
+  /// rejected wholesale, never partially admitted. Without this, an inbound
+  /// `{replyToMessageId: "x"}` (no text/name) would render a reply bubble
+  /// quoting an empty "Unknown", and an inbound `{replyToText: "spoof"}` with a
+  /// wrong-typed ID would leave orphaned snapshot fields on a non-reply.
+  ///
+  /// Like [asStringOrNull], it never throws — the trust boundary is unaffected
+  /// because these fields are display-only and never influence `senderId`.
+  static ({String? messageId, String? text, String? senderName})
+      parseReplySnapshot(Map<String, dynamic> json) {
+    final messageId = asStringOrNull(json['replyToMessageId']);
+    final text = asStringOrNull(json['replyToText']);
+    final senderName = asStringOrNull(json['replyToSenderName']);
+    // All-or-nothing: only a complete trio is a valid reply snapshot.
+    if (messageId == null || text == null || senderName == null) {
+      return (messageId: null, text: null, senderName: null);
+    }
+    return (messageId: messageId, text: text, senderName: senderName);
+  }
+
   /// Defensively parse the `participants` field.
   ///
   /// A non-`List` value (legacy / corrupt doc) yields `null`; non-`String`

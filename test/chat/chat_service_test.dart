@@ -316,6 +316,204 @@ void main() {
       expect(chatService.currentMessages.first.senderName, equals('user-456'));
     });
 
+    group('group quote-reply', () {
+      test('sendMessage with replyTo carries reply fields locally and on the wire',
+          () async {
+        fakeLiveKit.connected = true;
+
+        // The message being replied to (as it exists in the local group list).
+        final original = ChatMessage(
+          text: 'What is fizzbuzz?',
+          senderName: 'Alice',
+          senderId: 'alice-uid',
+          conversationId: 'group',
+        );
+
+        // Single replyTo param — ID + snapshot derived together, so the
+        // "half-reply" state (an ID with no snapshot, or vice-versa) is
+        // unrepresentable.
+        unawaited(chatService.sendMessage('Here is fizzbuzz', replyTo: original));
+        await pumpEventQueue();
+
+        // Local copy carries the reply linkage + quote snapshot. The ID is
+        // derived from the replied-to message's localKey.
+        final local = chatService.currentMessages;
+        expect(local, isNotEmpty);
+        expect(local.last.replyToMessageId, equals(original.localKey));
+        expect(local.last.replyToText, equals('What is fizzbuzz?'));
+        expect(local.last.replyToSenderName, equals('Alice'));
+        expect(local.last.isReply, isTrue);
+
+        // Wire payload carries the reply fields (all three present together).
+        final payload =
+            fakeLiveKit.publishedMessages.last['payload'] as Map<String, dynamic>;
+        expect(payload['replyToMessageId'], equals(original.localKey));
+        expect(payload['replyToText'], equals('What is fizzbuzz?'));
+        expect(payload['replyToSenderName'], equals('Alice'));
+      });
+
+      test('sendMessage without replyTo has null reply fields', () async {
+        fakeLiveKit.connected = true;
+
+        unawaited(chatService.sendMessage('Plain message'));
+        await pumpEventQueue();
+
+        final local = chatService.currentMessages;
+        expect(local, isNotEmpty);
+        expect(local.last.replyToMessageId, isNull);
+        expect(local.last.replyToText, isNull);
+        expect(local.last.replyToSenderName, isNull);
+        expect(local.last.isReply, isFalse);
+
+        // No reply keys leak into the wire payload.
+        final payload =
+            fakeLiveKit.publishedMessages.last['payload'] as Map<String, dynamic>;
+        expect(payload.containsKey('replyToMessageId'), isFalse);
+        expect(payload.containsKey('replyToText'), isFalse);
+        expect(payload.containsKey('replyToSenderName'), isFalse);
+      });
+
+      test('inbound group reply parses reply fields from the wire', () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'Replying to you',
+          'id': 'group-reply-1',
+          'senderName': 'Alice',
+          'replyToMessageId': 'orig-7',
+          'replyToText': 'original question',
+          'replyToSenderName': 'Test User',
+        });
+        await pumpEventQueue();
+
+        final msgs = chatService.currentMessages;
+        expect(msgs, isNotEmpty);
+        expect(msgs.last.replyToMessageId, equals('orig-7'));
+        expect(msgs.last.replyToText, equals('original question'));
+        expect(msgs.last.replyToSenderName, equals('Test User'));
+        expect(msgs.last.isReply, isTrue);
+      });
+
+      test('inbound group message with no reply fields has null reply fields',
+          () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'No reply here',
+          'id': 'group-plain-1',
+          'senderName': 'Alice',
+        });
+        await pumpEventQueue();
+
+        final msgs = chatService.currentMessages;
+        expect(msgs, isNotEmpty);
+        expect(msgs.last.replyToMessageId, isNull);
+        expect(msgs.last.isReply, isFalse);
+      });
+
+      test('inbound group reply with a non-string replyToMessageId is ignored',
+          () async {
+        // Defensive parse at the wire seam: a malformed reply field must not
+        // throw / tear down the stream — it just isn't treated as a reply.
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'Malformed reply',
+          'id': 'group-bad-1',
+          'senderName': 'Alice',
+          'replyToMessageId': 123, // wrong type
+        });
+        await pumpEventQueue();
+
+        final msgs = chatService.currentMessages;
+        expect(msgs, isNotEmpty);
+        expect(msgs.last.replyToMessageId, isNull);
+        expect(msgs.last.isReply, isFalse);
+      });
+
+      test('inbound group reply with only replyToMessageId is rejected '
+          '(atomic parse — no orphaned half-reply)', () async {
+        // Carnot (cage-match PR #490): a payload carrying ONLY replyToMessageId
+        // (no text/name) would otherwise render a reply bubble quoting an empty
+        // "Unknown". The atomic parse drops the whole trio unless all three are
+        // present-and-String.
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'Sneaky half-reply',
+          'id': 'group-half-1',
+          'senderName': 'Alice',
+          'replyToMessageId': 'orig-x',
+          // no replyToText, no replyToSenderName
+        });
+        await pumpEventQueue();
+
+        final msgs = chatService.currentMessages;
+        expect(msgs, isNotEmpty);
+        expect(msgs.last.replyToMessageId, isNull);
+        expect(msgs.last.replyToText, isNull);
+        expect(msgs.last.replyToSenderName, isNull);
+        expect(msgs.last.isReply, isFalse);
+      });
+
+      test('inbound group reply with a wrong-typed id but valid text/name is '
+          'rejected wholesale (no orphaned snapshot)', () async {
+        // The asymmetric-survival case: replyToMessageId is malformed (drops to
+        // null) but text+name survive. Without atomic parse these would orphan
+        // onto a non-reply message.
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'Orphaned snapshot attempt',
+          'id': 'group-half-2',
+          'senderName': 'Alice',
+          'replyToMessageId': 123, // wrong type -> null
+          'replyToText': 'spoofed quote',
+          'replyToSenderName': 'Victim',
+        });
+        await pumpEventQueue();
+
+        final msgs = chatService.currentMessages;
+        expect(msgs, isNotEmpty);
+        expect(msgs.last.replyToMessageId, isNull);
+        expect(msgs.last.replyToText, isNull,
+            reason: 'orphaned text must be dropped with the malformed id');
+        expect(msgs.last.replyToSenderName, isNull);
+        expect(msgs.last.isReply, isFalse);
+      });
+
+      test('group reply still derives senderId from transport, not payload',
+          () async {
+        // TRUST INVARIANT: a reply must not become a spoof vector. The SENDER
+        // of an incoming group message is the transport identity, even though
+        // the reply quote snapshot is display-only and payload-sourced. A
+        // malicious peer crafting a payload senderId of another user's UID must
+        // NOT have it leak into the rendered senderId.
+        fakeLiveKit.connected = true;
+
+        // alice-uid is the real transport sender; the payload claims victim-uid.
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'I am impersonating the victim!',
+          'id': 'group-spoof-1',
+          'senderName': 'Victim',
+          'senderId': 'victim-uid', // <-- attacker spoofs this
+          'replyToMessageId': 'orig-1',
+          'replyToText': 'something',
+          'replyToSenderName': 'Test User',
+        });
+        await pumpEventQueue();
+
+        final msgs = chatService.currentMessages;
+        expect(msgs, isNotEmpty);
+        expect(msgs.last.senderId, equals('alice-uid'),
+            reason: 'senderId must come from transport, not payload');
+        expect(msgs.last.senderId, isNot(equals('victim-uid')));
+        // The display-only reply snapshot is still carried.
+        expect(msgs.last.replyToText, equals('something'));
+        expect(msgs.last.isReply, isTrue);
+      });
+    });
+
     test('completes pending message when response arrives with matching messageId', () async {
       fakeLiveKit.connected = true;
 
@@ -800,6 +998,35 @@ void main() {
           final msgs = chatService.dmMessagesSnapshot('alice-uid');
           expect(msgs, isNotEmpty);
           expect(msgs.last.replyToMessageId, isNull);
+          expect(msgs.last.isReply, isFalse);
+        });
+
+        test('inbound DM reply with a wrong-typed id but valid text/name is '
+            'rejected wholesale (atomic parse — no orphaned snapshot)',
+            () async {
+          // The asymmetric-survival case on the DM branch (Carnot re-review,
+          // PR #490): a malformed id drops to null but text+name would survive
+          // an independent parse, orphaning a snapshot onto a non-reply. The
+          // atomic parseReplySnapshot drops the whole trio.
+          fakeLiveKit.connected = true;
+
+          fakeLiveKit.simulateDm('alice-uid', {
+            'text': 'Orphaned DM snapshot attempt',
+            'id': 'dm-orphan-1',
+            'senderName': 'Alice',
+            'senderId': 'alice-uid',
+            'replyToMessageId': 123, // wrong type -> null
+            'replyToText': 'spoofed quote',
+            'replyToSenderName': 'Victim',
+          });
+          await pumpEventQueue();
+
+          final msgs = chatService.dmMessagesSnapshot('alice-uid');
+          expect(msgs, isNotEmpty);
+          expect(msgs.last.replyToMessageId, isNull);
+          expect(msgs.last.replyToText, isNull,
+              reason: 'orphaned text must be dropped with the malformed id');
+          expect(msgs.last.replyToSenderName, isNull);
           expect(msgs.last.isReply, isFalse);
         });
 
