@@ -18,6 +18,7 @@ import 'package:tech_world/flame/bubble_manager.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/livekit_game_bridge.dart';
+import 'package:tech_world/flame/components/countdown_clock_component.dart';
 import 'package:tech_world/flame/components/door_component.dart';
 import 'package:tech_world/flame/door_manager.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
@@ -56,6 +57,7 @@ import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
@@ -112,6 +114,11 @@ class TechWorld extends World with TapCallbacks {
 
   final List<TerminalComponent> _terminalComponents = [];
   final List<DoorComponent> _doorComponents = [];
+
+  /// The in-world shared countdown clock, added when a [TimerService] is
+  /// available (on LiveKit connect) and removed on disconnect. Null when no
+  /// room is active. A view of the shared timer — see [CountdownClockComponent].
+  CountdownClockComponent? _clockComponent;
 
   Point<int>? _lastKnownPlayerGrid;
 
@@ -506,6 +513,13 @@ class TechWorld extends World with TapCallbacks {
     _log.info('LiveKit participant joined: ${participant.identity}');
     _bubbleManager.refreshBubbleForPlayer(participant.identity);
 
+    // Resync the shared countdown to the new arrival. LiveKit data channels do
+    // NOT replay past messages, so a peer who joins mid-countdown would never
+    // learn about a timer that started before they connected. Mirror how
+    // publishMapInfo is re-sent on join: republish the running timer (no-op if
+    // none is running; idempotent by generation if several peers republish).
+    Locator.maybeLocate<TimerService>()?.republishForJoiner();
+
     // Create component based on participant type
     if (isBotIdentity(participant.identity)) {
       final botConfig = getBotConfig(participant.identity);
@@ -744,6 +758,39 @@ class TechWorld extends World with TapCallbacks {
       onConnectionLost: disconnectFromLiveKit,
     );
     _liveKitBridge!.connect();
+
+    _addClockComponent();
+  }
+
+  /// Add the in-world shared countdown clock, reading the room's [TimerService]
+  /// from the Locator (registered by `RoomSession.create` before connect).
+  ///
+  /// Positioned at a sensible default near the map spawn point — a clock the
+  /// whole room can walk up to and read, consistent with "the world is the
+  /// thing." Map-editor placement of the clock is a deferred design question
+  /// (owned by Nick); this method intentionally hard-codes a default offset.
+  void _addClockComponent() {
+    if (_clockComponent != null) return; // already mounted
+    final timer = Locator.maybeLocate<TimerService>();
+    if (timer == null) {
+      _log.info('No TimerService yet — skipping in-world clock');
+      return;
+    }
+    final spawn = currentMap.value.spawnPoint;
+    // A few squares above-right of spawn, clamped into the grid so it never
+    // lands off-map on small maps.
+    final clockGridX = (spawn.x + 2).clamp(0, gridSize - 2);
+    final clockGridY = (spawn.y - 2).clamp(0, gridSize - 1);
+    final clock = CountdownClockComponent(
+      state: timer.state,
+      alarmActive: timer.alarmActive,
+      position: Vector2(
+        clockGridX * gridSquareSizeDouble,
+        clockGridY * gridSquareSizeDouble,
+      ),
+    );
+    _clockComponent = clock;
+    add(clock);
   }
 
   @override
@@ -1322,6 +1369,10 @@ class TechWorld extends World with TapCallbacks {
     _pendingAvatars.clear();
     _liveKitService = null;
     _bubbleManager.clear();
+
+    // Remove the in-world clock — its TimerService is torn down on leave.
+    _clockComponent?.removeFromParent();
+    _clockComponent = null;
 
     for (final component in _otherPlayerComponentsMap.values) {
       component.removeFromParent();
