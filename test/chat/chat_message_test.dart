@@ -577,5 +577,45 @@ void main() {
         expect(r.senderName, isNull);
       });
     });
+
+    group('parseMentions', () {
+      test('non-list drops to empty', () {
+        expect(ChatMessage.parseMentions('nope'), isEmpty);
+        expect(ChatMessage.parseMentions(null), isEmpty);
+        expect(ChatMessage.parseMentions(42), isEmpty);
+      });
+
+      test('keeps string elements, skips non-strings', () {
+        expect(
+          ChatMessage.parseMentions(['a', 1, null, 'b', true, 'c']),
+          equals(['a', 'b', 'c']),
+        );
+      });
+
+      test('dedupes repeated UIDs', () {
+        expect(
+          ChatMessage.parseMentions(['a', 'a', 'b', 'a']),
+          equals(['a', 'b']),
+        );
+      });
+
+      test('caps at maxMentions distinct UIDs (bounded resource at the wire)',
+          () {
+        final huge = List.generate(1000, (i) => 'uid-$i');
+        final parsed = ChatMessage.parseMentions(huge);
+        expect(parsed.length, equals(ChatMessage.maxMentions));
+        // The cap keeps the FIRST distinct UIDs (insertion order preserved).
+        expect(parsed.first, equals('uid-0'));
+      });
+
+      test('bounds the input SCAN even for a duplicate-stuffed hostile list',
+          () {
+        // 100k duplicates of one UID: only 1 distinct, but the scan must not
+        // walk the whole list — it stops at the scan cap and returns the UID.
+        final stuffed = List.filled(100000, 'spammer');
+        final parsed = ChatMessage.parseMentions(stuffed);
+        expect(parsed, equals(['spammer']));
+      });
+    });
   });
 }

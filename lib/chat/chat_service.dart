@@ -342,6 +342,20 @@ class ChatService {
         replyToSenderName: reply.senderName,
       ));
       _messagesController.add(List.from(_messages));
+
+      // Structured @mention list — the trust anchor for the world beacon.
+      // Parsed defensively (malformed → empty, no throw). The mentioner is the
+      // TRANSPORT-verified sender, never the payload's self-reported senderId —
+      // a peer can name victims but cannot forge who sent the mention. Only
+      // dispatch when at least one valid UID survives parsing.
+      final mentionedUids = ChatMessage.parseMentions(json['mentions']);
+      if (mentionedUids.isNotEmpty) {
+        dispatch([PlayersMentioned(
+          mentionedUids: mentionedUids,
+          mentionerUid: message.senderId ?? 'unknown',
+          messageId: ownId ?? _nextMessageId(),
+        )]);
+      }
     }
 
     // Complete pending message if this is a response to one of ours
@@ -439,6 +453,7 @@ class ChatService {
     String text, {
     Map<String, dynamic>? metadata,
     ChatMessage? replyTo,
+    List<String> mentions = const [],
   }) async {
     if (text.trim().isEmpty) return null;
 
@@ -508,6 +523,10 @@ class ChatService {
       if (replyToMessageId != null) 'replyToMessageId': replyToMessageId,
       if (replyText != null) 'replyToText': replyText,
       if (replySenderName != null) 'replyToSenderName': replySenderName,
+      // The structured @mention UID list — the trust anchor for the world
+      // beacon. Inline `@Name` text in [text] is display-only. Omitted entirely
+      // when empty so a plain message carries no `mentions` key.
+      if (mentions.isNotEmpty) 'mentions': mentions,
       'timestamp': DateTime.now().toIso8601String(),
       if (safeMetadata != null) ...Map.fromEntries(safeMetadata),
     };
@@ -526,6 +545,20 @@ class ChatService {
       senderName: _liveKitService.displayName,
       payload: payload,
     ));
+
+    // Dispatch the mention locally too — LiveKit does NOT loop our own
+    // publishData back to us, so without this the SENDER never witnesses their
+    // own mention bloom/arc (breaking "witnessed by everyone"). Mirrors the
+    // optimistic local-add of the chat message above. The mentioner is our own
+    // authenticated identity. The receive path dispatches the same event for
+    // remote participants, so both routes funnel through one world consumer.
+    if (mentions.isNotEmpty) {
+      dispatch([PlayersMentioned(
+        mentionedUids: mentions,
+        mentionerUid: _liveKitService.userId,
+        messageId: messageId,
+      )]);
+    }
 
     _log.info('Sent message (id=$messageId, len=${text.length})');
     final challengeWire = metadata?['challengeId'] as String?;

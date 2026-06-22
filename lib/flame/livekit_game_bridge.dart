@@ -2,15 +2,19 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:livekit_client/livekit_client.dart';
+// Hide LiveKit's own ChatMessage so the project's ChatMessage (used for the
+// defensive `parseMentions` / `asStringOrNull` wire helpers) resolves cleanly.
+import 'package:livekit_client/livekit_client.dart' hide ChatMessage;
 import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/infra/infra_health_service.dart';
 import 'package:tech_world/livekit/data_topic.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
@@ -46,6 +50,10 @@ class LiveKitGameBridge {
     // Data channel
     required void Function(DataChannelMessage) onSpeechTranscript,
     required void Function(DataChannelMessage) onDoorUnlock,
+    // Mentions — only the ack travels here; the mention itself reaches the
+    // world via the dispatched [PlayersMentioned] event (so the SENDER, whose
+    // own publishData LiveKit does not loop back, still witnesses it).
+    required void Function(String ackerUid, String messageId) onMentionAck,
     // Map
     required void Function() onMapInfoRequested,
     required void Function(String mapId) onMapSwitchReceived,
@@ -63,6 +71,7 @@ class LiveKitGameBridge {
         _onAvatarUpdate = onAvatarUpdate,
         _onSpeechTranscript = onSpeechTranscript,
         _onDoorUnlock = onDoorUnlock,
+        _onMentionAck = onMentionAck,
         _onMapInfoRequested = onMapInfoRequested,
         _onMapSwitchReceived = onMapSwitchReceived,
         _onConnectionLost = onConnectionLost;
@@ -81,6 +90,7 @@ class LiveKitGameBridge {
   final void Function(AvatarUpdate) _onAvatarUpdate;
   final void Function(DataChannelMessage) _onSpeechTranscript;
   final void Function(DataChannelMessage) _onDoorUnlock;
+  final void Function(String ackerUid, String messageId) _onMentionAck;
   final void Function() _onMapInfoRequested;
   final void Function(String) _onMapSwitchReceived;
   final void Function() _onConnectionLost;
@@ -100,6 +110,7 @@ class LiveKitGameBridge {
   StreamSubscription<String>? _mapSwitchSub;
   StreamSubscription<DataChannelMessage>? _speechTranscriptSub;
   StreamSubscription<DataChannelMessage>? _doorUnlockSub;
+  StreamSubscription<DataChannelMessage>? _mentionAckSub;
 
   InfraHealthService? _infraHealthService;
 
@@ -207,6 +218,23 @@ class LiveKitGameBridge {
         .where((msg) => msg.topic == DataTopic.doorUnlock.wireName)
         .listen(_onDoorUnlock);
 
+    // ── @mention ack ─────────────────────────────────────────────────────
+    // The mention itself reaches the world via the dispatched
+    // [PlayersMentioned] event (fired by ChatService on BOTH send and receive),
+    // so the sender witnesses their own mention even though LiveKit doesn't
+    // loop their publishData back. Only the ack is a pure wire signal handled
+    // here. The acker UID is the TRANSPORT sender — a peer can only
+    // ack its own mention, never silence someone else's pulse.
+    _mentionAckSub = _liveKitService.dataReceived
+        .where((msg) => msg.topic == LiveKitTopic.mentionAck.wire)
+        .listen((msg) {
+      final json = msg.json;
+      if (json == null) return;
+      final messageId = ChatMessage.asStringOrNull(json['messageId']);
+      if (messageId == null) return;
+      _onMentionAck(msg.senderId ?? 'unknown', messageId);
+    });
+
     // ── Infrastructure health ────────────────────────────────────────────
     _infraHealthService = InfraHealthService(
       liveKitService: _liveKitService,
@@ -266,6 +294,8 @@ class LiveKitGameBridge {
     _speechTranscriptSub = null;
     _doorUnlockSub?.cancel();
     _doorUnlockSub = null;
+    _mentionAckSub?.cancel();
+    _mentionAckSub = null;
 
     _infraHealthService?.dispose();
     Locator.remove<InfraHealthService>();

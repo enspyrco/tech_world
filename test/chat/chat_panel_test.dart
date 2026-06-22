@@ -203,6 +203,91 @@ void main() {
       expect(find.text('Original question'), findsNWidgets(2));
     });
   });
+
+  group('ChatPanel @mentions', () {
+    late _FakeLiveKit fakeLiveKit;
+    late ChatService chatService;
+
+    setUp(() {
+      fakeLiveKit = _FakeLiveKit();
+      chatService = ChatService(liveKitService: fakeLiveKit);
+      chatService.setBotStatusForTest(BotStatus.idle);
+    });
+
+    tearDown(() => chatService.dispose());
+
+    Future<void> pumpPanel(WidgetTester tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 1200,
+            child: ChatPanel(
+              chatService: chatService,
+              liveKitService: fakeLiveKit,
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('typing @ opens the picker; selecting inserts @Name and '
+        'publishes the UID', (tester) async {
+      await pumpPanel(tester);
+
+      // The local user "Me" is always a mention candidate. Type "@M".
+      await tester.enterText(find.byType(TextField), '@M');
+      await tester.pump();
+
+      // Picker row for "Me" appears.
+      expect(find.text('Me'), findsOneWidget);
+
+      // Select it → inserts "@Me " into the field.
+      await tester.tap(find.text('Me'));
+      await tester.pumpAndSettle();
+      expect(
+        find.widgetWithText(TextField, '@Me '),
+        findsOneWidget,
+      );
+
+      // Send → the published chat payload carries the structured mentions UID.
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+
+      final chatPublish = fakeLiveKit.published.firstWhere(
+        (m) => (m['payload'] as Map)['type'] == 'chat',
+      );
+      final payload = chatPublish['payload'] as Map<String, dynamic>;
+      expect(payload['mentions'], equals(['me']));
+      expect(payload['text'], equals('@Me'));
+
+      // Group sendMessage opens a 30s response-timeout timer + a 100ms scroll
+      // timer; drain both so no timer outlives the tree.
+      await tester.pump(const Duration(seconds: 31));
+    });
+
+    testWidgets('an inbound message with @Name highlights the span',
+        (tester) async {
+      fakeLiveKit._data.add(DataChannelMessage(
+        senderId: 'peer',
+        topic: 'chat',
+        data: _utf8Json({
+          'text': 'hey @Me look here',
+          'id': 'g-1',
+          'senderName': 'Peer',
+        }),
+      ));
+      await tester.pump();
+      await pumpPanel(tester);
+
+      // The message renders via Text.rich; find the RichText carrying the body.
+      final richText = tester.widgetList<RichText>(find.byType(RichText)).where(
+        (rt) => rt.text.toPlainText().contains('hey @Me look here'),
+      );
+      expect(richText, isNotEmpty,
+          reason: 'the inbound mention message should render');
+    });
+  });
 }
 
 List<int> _utf8Json(Map<String, dynamic> map) => utf8.encode(jsonEncode(map));

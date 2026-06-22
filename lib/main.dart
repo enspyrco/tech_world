@@ -499,6 +499,9 @@ class _MyAppState extends State<MyApp> {
             techWorld.setHideVideoBubbles(
                 await UserPreferences.hideVideoBubbles());
             techWorld.setReduceMotion(await UserPreferences.reduceMotion());
+            // A mention arriving while chat is already open auto-acks (the user
+            // has already "seen" it). `_chatCollapsed == false` means visible.
+            techWorld.isLocalChatOpen = () => !_chatCollapsed.value;
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
             // Wire C: camera + mic (depends on server connection).
@@ -1174,6 +1177,10 @@ class _MyAppState extends State<MyApp> {
                                         initialDmPeerId: dmPeer,
                                         onDmPeerConsumed: () =>
                                             _activeDmPeer.value = null,
+                                        // Seeing chat acknowledges any mention of
+                                        // the local user (stops their pulse).
+                                        onOpened: () =>
+                                            locate<TechWorld>().onChatPanelOpened(),
                                       );
                                     },
                                   ),

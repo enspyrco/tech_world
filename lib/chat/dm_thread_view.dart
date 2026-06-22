@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tech_world/chat/chat_message.dart';
+import 'package:tech_world/chat/mention_text.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
@@ -396,11 +397,20 @@ class _DmBubble extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (message.isReply) _QuotedMessage(message: message),
-                        Text(
-                          message.text,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
+                        Text.rich(
+                          TextSpan(
+                            children: buildMentionSpans(
+                              message.text,
+                              baseStyle: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                              mentionStyle: const TextStyle(
+                                color: _clawdOrange,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ),
                       ],

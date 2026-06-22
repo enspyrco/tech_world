@@ -167,6 +167,7 @@ void main() {
         RemoteDoorUnlocked() => 'remote_door',
         GroupMessageSent() => 'group_msg',
         DmSent() => 'dm',
+        PlayersMentioned() => 'mentioned',
         BotSpoke() => 'bot',
         AppLogRecord() => 'log',
         // AV pipeline diagnostics

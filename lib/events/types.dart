@@ -537,6 +537,51 @@ final class BotLeft extends AppEvent {
   PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
+/// One or more players were named with `@mention` in group chat.
+///
+/// Dispatched by [ChatService] after it has parsed the structured `mentions`
+/// UID list defensively from a chat payload. The world consumes this to bloom
+/// the named avatars and draw the light arc from the mentioner.
+///
+/// Trust boundary: [mentionerUid] is the LiveKit transport-verified sender of
+/// the chat message, NEVER the payload's self-reported `senderId`. The
+/// [mentionedUids] are the structured list (display-only `@Name` text is not a
+/// trust anchor). Marked [PiiPolicy.pii] — these are user identifiers, so the
+/// remote-sink gate drops the event (consistent with [DmSent] / chat events).
+final class PlayersMentioned extends AppEvent {
+  PlayersMentioned({
+    required this.mentionedUids,
+    required this.mentionerUid,
+    required this.messageId,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  /// UIDs of the named players (structured wire list, transport-independent).
+  final List<String> mentionedUids;
+
+  /// UID of the player who sent the mention — transport-verified `senderId`.
+  final String mentionerUid;
+
+  /// Stable ID of the originating chat message, so a `mention-ack` matches the
+  /// right mention and concurrent mentions don't cross-cancel.
+  final String messageId;
+
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'players_mentioned',
+        'mentionedUids': mentionedUids,
+        'mentionerUid': mentionerUid,
+        'messageId': messageId,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
 /// Player toggled screen sharing.
 final class ScreenShareToggled extends AppEvent {
   ScreenShareToggled({required this.started, DateTime? timestamp})

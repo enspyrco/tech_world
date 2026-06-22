@@ -120,6 +120,53 @@ class ChatMessage {
     return (messageId: messageId, text: text, senderName: senderName);
   }
 
+  /// Defensively parse the `mentions` field from an untrusted wire payload.
+  ///
+  /// The structured `mentions` list — UIDs of named players — is the trust
+  /// anchor for the world-mention beacon (NOT the inline `@Name` text, which is
+  /// display-only and spoofable). It is parsed with the same discipline as
+  /// [_parseParticipants]: a non-`List` value (legacy / corrupt / hostile
+  /// payload) yields an empty list rather than throwing, and non-`String`
+  /// elements are skipped via [Iterable.whereType]. The whole field drops to
+  /// empty on malformed input — there is never a half-parsed mention list.
+  ///
+  /// Never throws — a single bad payload must not tear down the chat stream.
+  /// The *mentioner's* UID is always the transport-verified `senderId`, never
+  /// derived from this list, so a spoofed payload can name victims but cannot
+  /// forge who sent the mention.
+  ///
+  /// **Bounded at the trust boundary, on both axes.** A hostile peer could
+  /// otherwise put a large list on the wire and drive unbounded pulse state /
+  /// beacons / arcs on every other client. Two independent caps:
+  /// - [maxMentions] distinct UIDs in the OUTPUT (dedup-then-cap), so all
+  ///   downstream world work is bounded; and
+  /// - [_maxMentionsScan] elements SCANNED from the input, so even a pathological
+  ///   payload (e.g. a million duplicate strings before 16 distinct ones) costs
+  ///   O(1) here rather than O(n). (The LiveKit data channel already size-bounds
+  ///   the payload, so this is belt-and-suspenders, but it makes the bound
+  ///   explicit instead of relying on the transport.)
+  ///
+  /// A real group chat never names more than a handful of people at once.
+  static const int maxMentions = 16;
+
+  /// Hard cap on how many list elements [parseMentions] inspects, independent of
+  /// how many turn out to be distinct valid UIDs. Comfortably above
+  /// [maxMentions] so legitimate (deduped) payloads are never truncated, while a
+  /// hostile duplicate-stuffed list can't force an unbounded scan.
+  static const int _maxMentionsScan = 256;
+
+  static List<String> parseMentions(Object? value) {
+    if (value is! List) return const [];
+    final seen = <String>{};
+    var scanned = 0;
+    for (final element in value) {
+      if (scanned++ >= _maxMentionsScan) break;
+      if (element is String) seen.add(element);
+      if (seen.length >= maxMentions) break;
+    }
+    return seen.toList();
+  }
+
   /// Defensively parse the `participants` field.
   ///
   /// A non-`List` value (legacy / corrupt doc) yields `null`; non-`String`

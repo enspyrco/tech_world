@@ -12,6 +12,13 @@ final List<AsyncSink> _asyncSinks = [];
 /// Register a synchronous sink. Called once at app startup or in tests.
 void registerSink(Sink sink) => _syncSinks.add(sink);
 
+/// Remove a previously-registered synchronous sink (by identity). No-op if the
+/// sink was never registered. Used for room-scoped sinks (e.g. the world's
+/// mention consumer) that must be torn down on room leave WITHOUT clearing the
+/// app-lifetime sinks (console / file). Pass the exact closure that was
+/// registered — capture it in a field so the same reference can be removed.
+void unregisterSink(Sink sink) => _syncSinks.remove(sink);
+
 /// Register an asynchronous sink. Called once at app startup or in tests.
 void registerAsyncSink(AsyncSink sink) => _asyncSinks.add(sink);
 

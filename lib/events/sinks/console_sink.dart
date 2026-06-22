@@ -76,6 +76,8 @@ void consoleSink(AppEvent event) {
     GroupMessageSent(:final messageId, :final challengeId) =>
       'GroupMessageSent: $messageId${challengeId != null ? ' (challenge: ${challengeId.wireName})' : ''}',
     DmSent(:final peerId) => 'DmSent: → $peerId',
+    PlayersMentioned(:final mentionedUids, :final mentionerUid) =>
+      'PlayersMentioned: $mentionerUid → ${mentionedUids.join(', ')}',
     BotSpoke(:final text, :final context) =>
       'BotSpoke [${context.name}]: "${text.length > 60 ? '${text.substring(0, 60)}...' : text}"',
     // AV pipeline diagnostics

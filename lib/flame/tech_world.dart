@@ -19,6 +19,10 @@ import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/livekit_game_bridge.dart';
 import 'package:tech_world/flame/components/countdown_clock_component.dart';
+import 'package:tech_world/flame/components/mention_arc_component.dart';
+import 'package:tech_world/flame/mention/mention_pulse_controller.dart';
+import 'package:tech_world/flame/mention/mention_world_controller.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/flame/components/door_component.dart';
 import 'package:tech_world/flame/door_manager.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
@@ -98,6 +102,24 @@ class TechWorld extends World with TapCallbacks {
 
   final Map<String, PlayerComponent> _otherPlayerComponentsMap = {};
   final Map<String, BotCharacterComponent> _botCharacterComponents = {};
+
+  /// Owns the `@mention` pulse lifecycle + world beacons/arcs. Constructed on
+  /// LiveKit connect (when [userId] is known), cleared on disconnect.
+  MentionWorldController? _mentionController;
+
+  /// The [PlayersMentioned] dispatch sink, held so it can be removed (by
+  /// identity) on disconnect without clearing app-lifetime sinks.
+  Sink? _mentionSink;
+
+  /// The chat-panel-opened hook the UI calls so the local user can acknowledge
+  /// a mention of themselves. Routed through [_mentionController]; a no-op until
+  /// a room is connected.
+  void onChatPanelOpened() => _mentionController?.onLocalChatOpened();
+
+  /// Whether the local user's chat panel is currently visible. Set by the UI
+  /// (main.dart) so a mention arriving while chat is already open auto-acks.
+  /// Defaults to closed.
+  bool Function() isLocalChatOpen = () => false;
   DreamfinderComponent? _dreamfinderComponent;
   late final BubbleManager _bubbleManager;
   late final DoorManager _doorManager;
@@ -425,6 +447,8 @@ class TechWorld extends World with TapCallbacks {
       _doorManager.recomputeNearbyLockedDoor();
     }
     _bubbleManager.update(dt);
+    // Drive @mention pulse auto-timeout (bounded; stops un-acked pulses).
+    _mentionController?.tick();
   }
 
   /// Listen for gameReady and process pending Dreamfinder participant.
@@ -473,6 +497,9 @@ class TechWorld extends World with TapCallbacks {
         );
         _otherPlayerComponentsMap[path.playerId] = playerComponent;
         add(playerComponent);
+        // A mention may have arrived before this avatar spawned — attach its
+        // beacon now if a pulse is already active for this player.
+        _mentionController?.reconcileBeaconFor(path.playerId, playerComponent);
       }
       _otherPlayerComponentsMap[path.playerId]
           ?.move(path.directions, path.largeGridPoints);
@@ -501,6 +528,8 @@ class TechWorld extends World with TapCallbacks {
         );
         _otherPlayerComponentsMap[heartbeat.playerId] = playerComponent;
         add(playerComponent);
+        _mentionController?.reconcileBeaconFor(
+            heartbeat.playerId, playerComponent);
       } else {
         _otherPlayerComponentsMap[heartbeat.playerId]?.position =
             targetPosition;
@@ -620,6 +649,9 @@ class TechWorld extends World with TapCallbacks {
       );
       _otherPlayerComponentsMap[participant.identity] = playerComponent;
       add(playerComponent);
+      // Attach a mention beacon if this player was named before they spawned.
+      _mentionController?.reconcileBeaconFor(
+          participant.identity, playerComponent);
 
       // Dreamfinder notices the new human player arriving.
       _dreamfinderComponent?.noticePlayer(playerComponent.position);
@@ -648,6 +680,20 @@ class TechWorld extends World with TapCallbacks {
     }
 
     _bubbleManager.removeBubble(participant.identity);
+  }
+
+  /// Resolve a player UID to its on-screen avatar — local or remote — or null
+  /// if that player isn't present locally (the graceful-degradation case for
+  /// the mention beacon/arc). Used by [MentionWorldController].
+  PositionComponent? _avatarForUid(String uid) {
+    if (uid == _userPlayerComponent.id) return _userPlayerComponent;
+    return _otherPlayerComponentsMap[uid];
+  }
+
+  /// Display name for a player UID, for the mention beacon's cosmetic label.
+  String _displayNameForUid(String uid) {
+    if (uid == _userPlayerComponent.id) return _userPlayerComponent.displayName;
+    return _otherPlayerComponentsMap[uid]?.displayName ?? '';
   }
 
   /// Handle an avatar update from a remote player.
@@ -732,6 +778,42 @@ class TechWorld extends World with TapCallbacks {
     _log.info('Using LiveKitService from Locator');
     _bubbleManager.setLiveKitService(_liveKitService!);
 
+    _mentionController = MentionWorldController(
+      pulseController: MentionPulseController(),
+      localUid: userId,
+      avatarLookup: _avatarForUid,
+      addToWorld: add,
+      displayNameLookup: _displayNameForUid,
+      publishAck: (messageId) {
+        _liveKitService?.publishJson(
+          {
+            'type': LiveKitTopic.mentionAck.wire,
+            'messageId': messageId,
+            'timestamp': DateTime.now().toIso8601String(),
+          },
+          topic: LiveKitTopic.mentionAck.wire,
+        );
+      },
+      reduceMotion: _bubbleManager.reduceMotion,
+      isLocalChatOpen: () => isLocalChatOpen(),
+    );
+
+    // Consume PlayersMentioned from the dispatch bus — fired by ChatService on
+    // BOTH send (so the mentioner sees their own bloom; LiveKit doesn't loop a
+    // participant's own publishData back) AND receive (remote mentions). One
+    // world entry point for both directions. Registered here, removed on
+    // disconnect via [unregisterSink] so app-lifetime sinks are untouched.
+    _mentionSink = (AppEvent event) {
+      if (event is PlayersMentioned) {
+        _mentionController?.onPlayersMentioned(
+          mentionedUids: event.mentionedUids,
+          mentionerUid: event.mentionerUid,
+          messageId: event.messageId,
+        );
+      }
+    };
+    registerSink(_mentionSink!);
+
     _liveKitBridge = LiveKitGameBridge(
       liveKitService: _liveKitService!,
       userId: userId,
@@ -745,6 +827,12 @@ class TechWorld extends World with TapCallbacks {
       onAvatarUpdate: _handleAvatarUpdate,
       onSpeechTranscript: _handleSpeechTranscript,
       onDoorUnlock: _doorManager.handleRemoteDoorUnlock,
+      onMentionAck: (ackerUid, messageId) {
+        _mentionController?.onMentionAck(
+          ackerUid: ackerUid,
+          messageId: messageId,
+        );
+      },
       onMapInfoRequested: () =>
           _liveKitService?.publishMapInfo(currentMap.value),
       onMapSwitchReceived: (mapId) {
@@ -1373,6 +1461,19 @@ class TechWorld extends World with TapCallbacks {
     // Remove the in-world clock — its TimerService is torn down on leave.
     _clockComponent?.removeFromParent();
     _clockComponent = null;
+
+    // Stop consuming mention events, drop active pulses (beacons self-remove
+    // when no longer pulsing), and sweep any in-flight arcs so none linger
+    // past room-leave on their own fade timer.
+    if (_mentionSink != null) {
+      unregisterSink(_mentionSink!);
+      _mentionSink = null;
+    }
+    _mentionController?.clear();
+    _mentionController = null;
+    for (final arc in children.whereType<MentionArcComponent>().toList()) {
+      arc.removeFromParent();
+    }
 
     for (final component in _otherPlayerComponentsMap.values) {
       component.removeFromParent();
