@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/chat/chat_message.dart';
+import 'package:tech_world/chat/reply_widgets.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/chat/conversation.dart';
@@ -474,7 +475,7 @@ class _ChatPanelState extends State<ChatPanel>
                   ),
                 // "Replying to X" banner while composing a reply.
                 if (replyTarget != null)
-                  _ReplyComposingBanner(
+                  ReplyComposingBanner(
                     target: replyTarget,
                     onCancel: _cancelReply,
                   ),
@@ -845,7 +846,7 @@ class _MessageBubble extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (message.isReply) _QuotedMessage(message: message),
+                        if (message.isReply) QuotedMessage(message: message),
                         Text.rich(
                           TextSpan(
                             children: buildMentionSpans(
@@ -891,122 +892,6 @@ class _MessageBubble extends StatelessWidget {
             ),
           ),
           if (isLocalUser) const SizedBox(width: 36),
-        ],
-      ),
-    );
-  }
-}
-
-/// The quoted snippet rendered inside a reply bubble.
-///
-/// Shows the original sender + a one-line preview of the quoted text, using
-/// the display-only [ChatMessage.replyToSenderName] / [ChatMessage.replyToText]
-/// snapshot carried by the reply. Mirrors the DM thread view's treatment so
-/// group and DM replies feel consistent.
-class _QuotedMessage extends StatelessWidget {
-  const _QuotedMessage({required this.message});
-
-  final ChatMessage message;
-
-  static const _clawdOrange = Color(0xFFD97757);
-
-  @override
-  Widget build(BuildContext context) {
-    final quotedSender = message.replyToSenderName ?? 'Unknown';
-    final quotedText = message.replyToText ?? '';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(8),
-        border: Border(
-          left: BorderSide(color: _clawdOrange, width: 3),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            quotedSender,
-            style: const TextStyle(
-              color: _clawdOrange,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (quotedText.isNotEmpty)
-            Text(
-              quotedText,
-              style: TextStyle(color: Colors.grey[400], fontSize: 12),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The "Replying to X" banner shown above the input while composing a reply.
-class _ReplyComposingBanner extends StatelessWidget {
-  const _ReplyComposingBanner({
-    required this.target,
-    required this.onCancel,
-  });
-
-  final ChatMessage target;
-  final VoidCallback onCancel;
-
-  static const _clawdOrange = Color(0xFFD97757);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: const Color(0xFF1E1E1E),
-      child: Row(
-        children: [
-          Container(
-            width: 3,
-            height: 32,
-            color: _clawdOrange,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Replying to ${target.senderName}',
-                  style: const TextStyle(
-                    color: _clawdOrange,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  target.text,
-                  style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: onCancel,
-            icon: const Icon(Icons.close),
-            iconSize: 18,
-            color: Colors.grey[400],
-            tooltip: 'Cancel reply',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-          ),
         ],
       ),
     );
