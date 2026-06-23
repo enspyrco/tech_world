@@ -617,5 +617,55 @@ void main() {
         expect(parsed, equals(['spammer']));
       });
     });
+
+    group('stable id (reply navigability)', () {
+      test('stableId returns the transported id when present', () {
+        final msg = ChatMessage(text: 'hi', senderName: 'A', id: 'wire-7');
+        expect(msg.stableId, equals('wire-7'));
+      });
+
+      test('stableId falls back to localKey when id is absent (legacy)', () {
+        final msg = ChatMessage(
+          text: 'hi',
+          senderName: 'A',
+          senderId: 'a-uid',
+          timestamp: DateTime.fromMicrosecondsSinceEpoch(123),
+        );
+        expect(msg.id, isNull);
+        expect(msg.stableId, equals(msg.localKey));
+        expect(msg.stableId, equals('a-uid:123'));
+      });
+
+      test('id round-trips through Firestore', () {
+        final msg = ChatMessage(
+          text: 'hi',
+          senderName: 'A',
+          id: 'wire-9',
+          senderId: 'a-uid',
+          conversationId: 'group',
+        );
+        final restored = ChatMessage.fromFirestore(msg.toFirestore());
+        expect(restored.id, equals('wire-9'));
+        expect(restored.stableId, equals('wire-9'));
+      });
+
+      test('toFirestore omits id when absent (legacy messages)', () {
+        final msg = ChatMessage(text: 'hi', senderName: 'A');
+        expect(msg.toFirestore().containsKey('id'), isFalse);
+        // A legacy doc with no id still parses, falling back to localKey.
+        final restored = ChatMessage.fromFirestore(msg.toFirestore());
+        expect(restored.id, isNull);
+        expect(restored.stableId, equals(restored.localKey));
+      });
+
+      test('a non-string id in a malformed doc drops to null, no throw', () {
+        final restored = ChatMessage.fromFirestore({
+          'text': 'hi',
+          'senderName': 'A',
+          'id': 123, // wrong type
+        });
+        expect(restored.id, isNull);
+      });
+    });
   });
 }

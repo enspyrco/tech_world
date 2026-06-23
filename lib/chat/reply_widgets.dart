@@ -14,17 +14,25 @@ const _clawdOrange = Color(0xFFD97757);
 
 /// The inline quote bubble rendered above a message that is a reply, showing
 /// the quoted sender + a one-line snippet of the original.
+///
+/// When [onTap] is provided, the bubble becomes tappable — the DM thread view
+/// uses this to scroll to and briefly highlight the quoted original. The group
+/// chat panel passes no [onTap] (navigation not wired there yet), so the bubble
+/// stays display-only.
 class QuotedMessage extends StatelessWidget {
-  const QuotedMessage({super.key, required this.message});
+  const QuotedMessage({super.key, required this.message, this.onTap});
 
   final ChatMessage message;
+
+  /// Invoked when the user taps the quote to jump to the original message.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final quotedSender = message.replyToSenderName ?? 'Unknown';
     final quotedText = message.replyToText ?? '';
 
-    return Container(
+    final bubble = Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
@@ -54,6 +62,16 @@ class QuotedMessage extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
         ],
+      ),
+    );
+
+    if (onTap == null) return bubble;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: bubble,
       ),
     );
   }

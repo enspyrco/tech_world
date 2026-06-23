@@ -1146,6 +1146,84 @@ void main() {
       });
     });
 
+    // The transported message id is threaded onto every ChatMessage (sent,
+    // received, rehydrated) so quote-replies target a value that resolves on
+    // ANY participant's device — unlike the per-device localKey. See #488/#7.
+    group('stable message id (reply navigability)', () {
+      test('a sent DM stores the transported wire id on the local message',
+          () async {
+        fakeLiveKit.connected = true;
+
+        await chatService.sendDm('bob-uid', 'hi', peerDisplayName: 'Bob');
+
+        final published =
+            fakeLiveKit.publishedMessages.last['payload'] as Map<String, dynamic>;
+        final wireId = published['id'] as String;
+        final local = chatService.dmMessagesSnapshot('bob-uid').last;
+        expect(local.id, equals(wireId),
+            reason: 'local copy must carry the same id it put on the wire');
+        expect(local.stableId, equals(wireId));
+      });
+
+      test('an inbound DM carries the transported wire id', () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'hello',
+          'id': 'wire-123',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+        await pumpEventQueue();
+
+        final msg = chatService.dmMessagesSnapshot('alice-uid').last;
+        expect(msg.id, equals('wire-123'));
+        expect(msg.stableId, equals('wire-123'));
+      });
+
+      test('replying to an inbound DM targets its transported id, not a '
+          'device-local key (navigable cross-device)', () async {
+        fakeLiveKit.connected = true;
+
+        // An inbound message from Alice with a known transported id.
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'original question',
+          'id': 'msg-orig',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+        await pumpEventQueue();
+        final original = chatService.dmMessagesSnapshot('alice-uid').last;
+        expect(original.id, equals('msg-orig'));
+
+        // Reply to it.
+        await chatService.sendDm('alice-uid', 'my reply',
+            peerDisplayName: 'Alice', replyTo: original);
+
+        final published =
+            fakeLiveKit.publishedMessages.last['payload'] as Map<String, dynamic>;
+        // The link targets the ORIGINAL's transported id — the value Alice's
+        // device knows it by — NOT a localKey stamped on this device.
+        expect(published['replyToMessageId'], equals('msg-orig'));
+        expect(published['replyToMessageId'], isNot(contains(':')),
+            reason: 'a localKey would be "<sender>:<micros>"; an id is opaque');
+      });
+
+      test('an inbound group message carries the transported wire id',
+          () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateChatFromOtherUser('carol-uid', {
+          'text': 'group hello',
+          'id': 'grp-wire-1',
+          'senderName': 'Carol',
+        });
+        await pumpEventQueue();
+
+        expect(chatService.currentMessages.last.id, equals('grp-wire-1'));
+      });
+    });
+
     group('loadHistory (regression)', () {
       test('does not throw when repository fails', () async {
         final failingRepo = FailingChatMessageRepository();
@@ -1271,6 +1349,37 @@ void main() {
         expect(reply.replyToMessageId, equals('peer-uid:12345'));
         expect(reply.replyToText, equals('Original question'));
         expect(reply.replyToSenderName, equals('Peer'));
+      });
+
+      test('reloaded DMs are deduped by stableId (no GlobalKey collision)',
+          () async {
+        // A DM is persisted by BOTH participants, so a reload can return two
+        // docs sharing one transported id. They MUST collapse to one rendered
+        // message — otherwise the DM view assigns a single GlobalKey to two
+        // bubbles and crashes. Regression for the #494 cage-match (Carnot).
+        final convId = Conversation.conversationIdFor('test-user-id', 'peer-uid');
+        final dup = ChatMessage(
+          text: 'Hello there',
+          id: 'shared-wire-id',
+          senderName: 'Peer',
+          senderId: 'peer-uid',
+          conversationId: convId,
+        );
+        final repo = RehydrationChatMessageRepository(
+          dmMessages: [dup, dup], // same id persisted twice
+        );
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: repo,
+        );
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+
+        final loaded = service.dmMessagesSnapshot('peer-uid');
+        expect(loaded.length, equals(1),
+            reason: 'two docs with the same stableId must collapse to one');
+        expect(loaded.single.stableId, equals('shared-wire-id'));
       });
 
       test('a persisted GROUP reply keeps its linkage + snapshot after reload',
