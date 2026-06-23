@@ -3,6 +3,7 @@ class ChatMessage {
   ChatMessage({
     required this.text,
     required this.senderName,
+    this.id,
     this.senderId,
     this.conversationId,
     this.participants,
@@ -27,6 +28,7 @@ class ChatMessage {
     return ChatMessage(
       text: json['text'] as String? ?? '',
       senderName: json['senderName'] as String? ?? '',
+      id: asStringOrNull(json['id']),
       senderId: asStringOrNull(json['senderId']),
       conversationId: asStringOrNull(json['conversationId']),
       participants: _parseParticipants(json['participants']),
@@ -39,6 +41,16 @@ class ChatMessage {
 
   final String text;
   final String senderName;
+
+  /// The stable, transported message id (the sender's `_nextMessageId()`),
+  /// carried on the wire and persisted to Firestore. Unlike [localKey] — which
+  /// is recomputed per-device from sender + timestamp — this is the SAME value
+  /// on the sender, every recipient, and after a Firestore reload, so it's the
+  /// correct anchor for navigable quote-replies (target + scroll-to).
+  ///
+  /// `null` only for messages created before this field existed (legacy docs)
+  /// or built without an id in tests; [stableId] falls back to [localKey] then.
+  final String? id;
 
   /// Firebase UID of the sender, or `'bot-claude'` for bot messages.
   final String? senderId;
@@ -76,12 +88,21 @@ class ChatMessage {
   /// Whether this message quote-replies to another message.
   bool get isReply => replyToMessageId != null;
 
-  /// A stable-enough key identifying this message for reply linkage.
+  /// The identifier used for reply targeting and tap-to-scroll: the transported
+  /// [id] when present, else the derived [localKey] for legacy/test messages.
   ///
-  /// [ChatMessage] carries no transported wire `id`, so reply targeting uses a
-  /// derived key from the sender + microsecond timestamp. Deterministic and
-  /// survives the Firestore round-trip (both inputs persist). This is
-  /// best-effort UX linkage (quote / scroll-to), not a correctness invariant.
+  /// Prefer this over [localKey] everywhere reply linkage is computed — it makes
+  /// new messages navigable cross-device and across reload, while degrading to
+  /// the old best-effort behaviour for messages that predate [id].
+  String get stableId => id ?? localKey;
+
+  /// A derived, device-local key from sender + microsecond timestamp.
+  ///
+  /// Used only as the [stableId] fallback for messages with no transported
+  /// [id]. NOT stable across the wire (each device stamps its own receive
+  /// time), so it cannot resolve a quoted message on another participant's
+  /// device — that's exactly why [id] was introduced. It does survive the
+  /// Firestore round-trip on a single device (both inputs persist).
   String get localKey =>
       '${senderId ?? senderName}:${timestamp.microsecondsSinceEpoch}';
 
@@ -193,6 +214,7 @@ class ChatMessage {
     return {
       'text': text,
       'senderName': senderName,
+      if (id != null) 'id': id,
       if (senderId != null) 'senderId': senderId,
       if (conversationId != null) 'conversationId': conversationId,
       if (participants != null) 'participants': participants,

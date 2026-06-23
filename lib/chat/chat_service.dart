@@ -304,6 +304,7 @@ class ChatService {
       // a malicious peer from filing a DM under another user's UID by
       // spoofing senderId in the payload.
       _handleDmMessage(
+        id: ownId,
         text: text,
         senderName: senderName,
         senderId: message.senderId ?? 'unknown',
@@ -317,6 +318,7 @@ class ChatService {
       _botStatus.value = BotStatus.idle;
       _messages.add(ChatMessage(
         text: text,
+        id: ownId,
         senderName: senderName,
         senderId: payloadSenderId ?? _activeBotIdentity,
         conversationId: 'group',
@@ -340,6 +342,7 @@ class ChatService {
 
       _messages.add(ChatMessage(
         text: text,
+        id: ownId,
         senderName: senderName,
         senderId: message.senderId ?? 'unknown',
         conversationId: 'group',
@@ -383,6 +386,7 @@ class ChatService {
     required String senderName,
     required String senderId,
     required bool isResponse,
+    String? id,
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderName,
@@ -392,6 +396,7 @@ class ChatService {
 
     final chatMessage = ChatMessage(
       text: text,
+      id: id,
       senderName: senderName,
       senderId: senderId,
       conversationId: convId,
@@ -450,7 +455,7 @@ class ChatService {
   /// silently stripped from [metadata] to prevent protocol corruption.
   ///
   /// To quote-reply to an earlier message, pass [replyTo] — the single message
-  /// being replied to. Its ID ([ChatMessage.localKey]) and display snapshot
+  /// being replied to. Its ID ([ChatMessage.stableId]) and display snapshot
   /// ([ChatMessage.replyToText] / [ChatMessage.replyToSenderName]) are derived
   /// from it together, so the "half-reply" state (an ID with no snapshot, or
   /// vice-versa) is unrepresentable. The snapshot is display-only — the
@@ -491,14 +496,17 @@ class ChatService {
     _markSeen(messageId); // Mark as seen so we don't duplicate
 
     // Reply linkage + quote snapshot, all derived from the single [replyTo] so
-    // they're always consistent (both present or both absent). Display-only.
-    final replyToMessageId = replyTo?.localKey;
+    // they're always consistent (both present or both absent). The link targets
+    // the replied-to message's [ChatMessage.stableId] — its transported id — so
+    // every recipient can resolve and scroll to it. Snapshot is display-only.
+    final replyToMessageId = replyTo?.stableId;
     final replyText = replyTo?.text;
     final replySenderName = replyTo?.senderName;
 
     // Add user message locally
     final userMessage = ChatMessage(
       text: text,
+      id: messageId,
       senderName: _liveKitService.displayName,
       senderId: _liveKitService.userId,
       conversationId: 'group',
@@ -704,7 +712,7 @@ class ChatService {
   /// Uses targeted LiveKit data channels so only the recipient sees it.
   ///
   /// To quote-reply to an earlier message, pass [replyTo] — the single message
-  /// being replied to. Its ID ([ChatMessage.localKey]) and display snapshot
+  /// being replied to. Its ID ([ChatMessage.stableId]) and display snapshot
   /// ([ChatMessage.replyToText] / [ChatMessage.replyToSenderName]) are derived
   /// from it together, so the "half-reply" state (an ID with no snapshot, or
   /// vice-versa) is unrepresentable. The snapshot is display-only — the
@@ -732,14 +740,17 @@ class ChatService {
     _markSeen(messageId);
 
     // Reply linkage + quote snapshot, all derived from the single [replyTo] so
-    // they're always consistent (both present or both absent). Display-only.
-    final replyToMessageId = replyTo?.localKey;
+    // they're always consistent (both present or both absent). The link targets
+    // the replied-to message's [ChatMessage.stableId] — its transported id — so
+    // the recipient can resolve and scroll to it. Snapshot is display-only.
+    final replyToMessageId = replyTo?.stableId;
     final replyText = replyTo?.text;
     final replySenderName = replyTo?.senderName;
 
     final localUid = _liveKitService.userId;
     final chatMessage = ChatMessage(
       text: text,
+      id: messageId,
       senderName: _liveKitService.displayName,
       senderId: localUid,
       conversationId: convId,
@@ -854,6 +865,7 @@ class ChatService {
           // rehydration bug). Keep this in sync with the DM mapping below.
           _messages.add(ChatMessage(
             text: msg.text,
+            id: msg.id,
             senderName: msg.senderName,
             senderId: msg.senderId,
             conversationId: 'group',
@@ -873,6 +885,7 @@ class ChatService {
         _dmMessagesByConversation[convId] = messages.map((msg) {
           return ChatMessage(
             text: msg.text,
+            id: msg.id,
             senderName: msg.senderName,
             senderId: msg.senderId,
             conversationId: convId,

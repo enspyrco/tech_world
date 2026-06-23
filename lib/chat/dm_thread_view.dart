@@ -35,7 +35,50 @@ class _DmThreadViewState extends State<DmThreadView> {
   /// fresh message.
   ChatMessage? _replyTarget;
 
+  /// Per-message keys, by [ChatMessage.stableId], so a tapped quote can locate
+  /// and scroll to the original via [Scrollable.ensureVisible].
+  final Map<String, GlobalKey> _bubbleKeys = {};
+
+  /// The [ChatMessage.stableId] currently flashing as the just-navigated-to
+  /// quote target, or `null`. Cleared after a short delay.
+  String? _highlightedId;
+
+  /// True while a tap-to-quote scroll is animating, so the
+  /// near-bottom auto-scroll doesn't yank the view back down mid-navigation.
+  bool _navigatingToQuote = false;
+
   static const _clawdOrange = Color(0xFFD97757);
+
+  GlobalKey _keyFor(String stableId) =>
+      _bubbleKeys.putIfAbsent(stableId, () => GlobalKey());
+
+  /// Scroll to and briefly highlight the message a reply quotes.
+  ///
+  /// Best-effort: [Scrollable.ensureVisible] can only target a message the
+  /// [ListView.builder] has actually built (on or near screen). For a target
+  /// scrolled far out of view its key has no context yet, so the scroll is a
+  /// no-op — acceptable for typically-short DM threads, and the same
+  /// best-effort framing as the reply linkage itself.
+  void _scrollToQuoted(String targetId) {
+    final ctx = _bubbleKeys[targetId]?.currentContext;
+    if (ctx != null) {
+      _navigatingToQuote = true;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        alignment: 0.3,
+        curve: Curves.easeInOut,
+      ).whenComplete(() {
+        if (mounted) _navigatingToQuote = false;
+      });
+    }
+    setState(() => _highlightedId = targetId);
+    Future.delayed(const Duration(milliseconds: 1600), () {
+      if (mounted && _highlightedId == targetId) {
+        setState(() => _highlightedId = null);
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -191,7 +234,7 @@ class _DmThreadViewState extends State<DmThreadView> {
               // Auto-scroll only when the user is already near the bottom,
               // so reading history isn't interrupted.
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!_scrollController.hasClients) return;
+                if (_navigatingToQuote || !_scrollController.hasClients) return;
                 final position = _scrollController.position;
                 final isNearBottom =
                     position.pixels >= position.maxScrollExtent - 80;
@@ -207,8 +250,13 @@ class _DmThreadViewState extends State<DmThreadView> {
                 itemBuilder: (context, index) {
                   final message = messages[index];
                   return _DmBubble(
+                    key: _keyFor(message.stableId),
                     message: message,
+                    highlighted: message.stableId == _highlightedId,
                     onReply: () => _startReply(message),
+                    onQuoteTap: message.isReply
+                        ? () => _scrollToQuoted(message.replyToMessageId!)
+                        : null,
                   );
                 },
               );
@@ -321,12 +369,25 @@ class _DmThreadViewState extends State<DmThreadView> {
 }
 
 class _DmBubble extends StatelessWidget {
-  const _DmBubble({required this.message, required this.onReply});
+  const _DmBubble({
+    super.key,
+    required this.message,
+    required this.onReply,
+    this.highlighted = false,
+    this.onQuoteTap,
+  });
 
   final ChatMessage message;
 
   /// Invoked when the user chooses to quote-reply to this message.
   final VoidCallback onReply;
+
+  /// Whether this bubble is the just-navigated-to quote target (brief flash).
+  final bool highlighted;
+
+  /// Invoked when the user taps this message's quote to jump to the original.
+  /// `null` when this message isn't a reply.
+  final VoidCallback? onQuoteTap;
 
   static const _clawdOrange = Color(0xFFD97757);
 
@@ -380,24 +441,31 @@ class _DmBubble extends StatelessWidget {
                     ? CrossAxisAlignment.end
                     : CrossAxisAlignment.start,
                 children: [
-                  Container(
+                  AnimatedContainer(
+                    key: highlighted ? const ValueKey('dm-highlight') : null,
+                    duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
-                      color: isLocal
-                          ? _clawdOrange.withValues(alpha: 0.2)
-                          : const Color(0xFF2D2D2D),
+                      color: highlighted
+                          ? _clawdOrange.withValues(alpha: 0.30)
+                          : isLocal
+                              ? _clawdOrange.withValues(alpha: 0.2)
+                              : const Color(0xFF2D2D2D),
                       borderRadius: BorderRadius.circular(16),
-                      border: isLocal
-                          ? Border.all(
-                              color: _clawdOrange.withValues(alpha: 0.3))
-                          : null,
+                      border: highlighted
+                          ? Border.all(color: _clawdOrange, width: 2)
+                          : isLocal
+                              ? Border.all(
+                                  color: _clawdOrange.withValues(alpha: 0.3))
+                              : null,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (message.isReply) QuotedMessage(message: message),
+                        if (message.isReply)
+                          QuotedMessage(message: message, onTap: onQuoteTap),
                         Text.rich(
                           TextSpan(
                             children: buildMentionSpans(

@@ -7,6 +7,7 @@ import 'package:livekit_client/livekit_client.dart' show RemoteParticipant;
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/chat/dm_thread_view.dart';
+import 'package:tech_world/chat/reply_widgets.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
@@ -149,6 +150,32 @@ void main() {
       await tester.tap(find.byTooltip('Cancel reply'));
       await tester.pumpAndSettle();
       expect(find.text('Replying to Peer'), findsNothing);
+    });
+
+    testWidgets('tapping a reply quote highlights the quoted original',
+        (tester) async {
+      await pumpThread(tester); // seeds inbound original (id 'dm-1')
+
+      // Compose + send a reply to the original.
+      await tester.tap(find.text('Reply').first);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'I agree');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      // The reply renders exactly one tappable quote; nothing is highlighted yet.
+      expect(find.byType(QuotedMessage), findsOneWidget);
+      expect(find.byKey(const ValueKey('dm-highlight')), findsNothing);
+
+      // Tap the quote → scroll to + flash the original.
+      await tester.tap(find.byType(QuotedMessage));
+      await tester.pump(); // setState applies highlight
+      await tester.pump(const Duration(milliseconds: 250)); // animate flash
+      expect(find.byKey(const ValueKey('dm-highlight')), findsOneWidget);
+
+      // The flash clears after its delay (also drains the pending timer).
+      await tester.pump(const Duration(milliseconds: 1700));
+      expect(find.byKey(const ValueKey('dm-highlight')), findsNothing);
     });
   });
 }
