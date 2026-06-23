@@ -9,6 +9,15 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  # Exclude build artifacts. A native (macOS/iOS) build populates
+  # build/**/SourcePackages/ with vendored plugin example apps whose Dart
+  # sources don't resolve in this project, producing thousands of spurious
+  # errors. CI analyzes a clean checkout so it never hits these, but the local
+  # pre-commit hook (project-wide `flutter analyze`) does — this keeps it quiet.
+  exclude:
+    - build/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
