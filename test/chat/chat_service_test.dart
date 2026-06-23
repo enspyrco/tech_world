@@ -516,6 +516,91 @@ void main() {
       });
     });
 
+    // Defensive parse at the group-chat wire seam. A malformed payload (a
+    // field with the wrong type) must never throw inside the stream callback
+    // and tear down the chat subscription — same failure class as the
+    // `as`-cast-in-stream-teardown bug (#364/#366), here for the non-reply
+    // fields (text / senderName / id) that the #490 reply-field parse left
+    // as unchecked `as String?` casts.
+    group('malformed payload (wire seam totality)', () {
+      test('group message with non-string text is dropped, stream survives',
+          () async {
+        fakeLiveKit.connected = true;
+
+        // A non-string `text` must be dropped gracefully (treated as absent),
+        // not throw a TypeError that tears down the subscription.
+        fakeLiveKit.simulateChatFromOtherUser('attacker-uid', {
+          'text': 123, // wrong type
+          'id': 'bad-text-1',
+          'senderName': 'Mallory',
+        });
+        await pumpEventQueue();
+
+        // The malformed message produced no chat entry...
+        expect(chatService.currentMessages, isEmpty);
+
+        // ...and the subscription is still alive: a subsequent valid message
+        // from another user still arrives.
+        fakeLiveKit.simulateChatFromOtherUser('other-uid', {
+          'text': 'still here',
+          'id': 'good-after-bad',
+          'senderName': 'Other User',
+        });
+        await pumpEventQueue();
+
+        expect(chatService.currentMessages.length, equals(1));
+        expect(chatService.currentMessages.single.text, equals('still here'));
+      });
+
+      test('group message with non-string senderName falls back, stream survives',
+          () async {
+        fakeLiveKit.connected = true;
+
+        // A non-string `senderName` must not throw; it falls back to the
+        // transport senderId (matching the missing-senderName behaviour).
+        fakeLiveKit.simulateChatFromOtherUser('user-789', {
+          'text': 'has a bad name',
+          'id': 'bad-name-1',
+          'senderName': <String, dynamic>{}, // wrong type
+        });
+        await pumpEventQueue();
+
+        expect(chatService.currentMessages.length, equals(1));
+        expect(chatService.currentMessages.single.text, equals('has a bad name'));
+        // Falls back to transport senderId rather than throwing.
+        expect(chatService.currentMessages.single.senderName, equals('user-789'));
+      });
+
+      test('inbound DM with non-string text is dropped, stream survives',
+          () async {
+        fakeLiveKit.connected = true;
+
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': <String, dynamic>{}, // wrong type
+          'id': 'dm-bad-text',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+        await pumpEventQueue();
+
+        // No DM entry created from the malformed payload.
+        expect(chatService.dmMessagesSnapshot('alice-uid'), isEmpty);
+
+        // Subscription survives: a subsequent valid DM still arrives.
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'real message',
+          'id': 'dm-good',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+        await pumpEventQueue();
+
+        final msgs = chatService.dmMessagesSnapshot('alice-uid');
+        expect(msgs.length, equals(1));
+        expect(msgs.single.text, equals('real message'));
+      });
+    });
+
     test('completes pending message when response arrives with matching messageId', () async {
       fakeLiveKit.connected = true;
 

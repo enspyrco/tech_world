@@ -246,21 +246,28 @@ class ChatService {
     final json = message.json;
     if (json == null) return;
 
-    final text = json['text'] as String?;
+    // Every field is coerced via asStringOrNull rather than an `as String?`
+    // cast: a present-but-wrong-type value (e.g. `text: 123`) would make the
+    // cast throw *inside* this stream callback and tear down the chat
+    // subscription — the `as`-cast-in-stream-teardown failure class (#364/#366).
+    // asStringOrNull drops a malformed field to null instead of throwing.
+    final text = ChatMessage.asStringOrNull(json['text']);
     // 'id' is the message's own ID (for deduplication)
     // 'messageId' is the ID of the message being responded to (for correlation)
-    final ownId = json['id'] as String?;
-    final replyToId = json['messageId'] as String?;
+    final ownId = ChatMessage.asStringOrNull(json['id']);
+    final replyToId = ChatMessage.asStringOrNull(json['messageId']);
     // senderName is cosmetic — payload value is acceptable for display.
-    final senderName =
-        json['senderName'] as String? ?? message.senderId ?? 'Unknown';
+    final senderName = ChatMessage.asStringOrNull(json['senderName']) ??
+        message.senderId ??
+        'Unknown';
     // payloadSenderId is read from the JSON payload, which the bot uses to
     // advertise its specific identity in chat-response messages. Bots are
     // trusted LiveKit participants so payload-sourced senderId is safe THERE.
     // Never use payloadSenderId for DMs or group chat from regular users —
     // a malicious participant could spoof another user's UID via the payload.
     // For those paths, use message.senderId (LiveKit transport, server-verified).
-    final payloadSenderId = json['senderId'] as String? ?? message.senderId;
+    final payloadSenderId =
+        ChatMessage.asStringOrNull(json['senderId']) ?? message.senderId;
 
     if (text == null) return;
 
@@ -900,8 +907,11 @@ class ChatService {
     final json = message.json;
     if (json == null) return;
 
-    final requestId = json['requestId'] as String?;
-    final hint = json['hint'] as String?;
+    // Defensive parse (same seam totality as _handleMessage): a wrong-type
+    // field must drop to null, never throw and tear down the help-response
+    // subscription.
+    final requestId = ChatMessage.asStringOrNull(json['requestId']);
+    final hint = ChatMessage.asStringOrNull(json['hint']);
     if (requestId == null || hint == null) return;
 
     _log.fine('Received help-response for $requestId');
