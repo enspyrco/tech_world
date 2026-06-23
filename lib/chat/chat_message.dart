@@ -88,21 +88,14 @@ class ChatMessage {
   /// Whether this message quote-replies to another message.
   bool get isReply => replyToMessageId != null;
 
-  /// The identifier used for reply targeting and tap-to-scroll: the transported
-  /// [id] when present, else the derived [localKey] for legacy/test messages.
-  ///
-  /// Prefer this over [localKey] everywhere reply linkage is computed — it makes
-  /// new messages navigable cross-device and across reload, while degrading to
-  /// the old best-effort behaviour for messages that predate [id].
+  /// The identifier for reply targeting / tap-to-scroll: the transported [id]
+  /// when present, else [localKey] for legacy messages. Use this, not
+  /// [localKey], wherever reply linkage is computed.
   String get stableId => id ?? localKey;
 
-  /// A derived, device-local key from sender + microsecond timestamp.
-  ///
-  /// Used only as the [stableId] fallback for messages with no transported
-  /// [id]. NOT stable across the wire (each device stamps its own receive
-  /// time), so it cannot resolve a quoted message on another participant's
-  /// device — that's exactly why [id] was introduced. It does survive the
-  /// Firestore round-trip on a single device (both inputs persist).
+  /// Device-local fallback key (sender + receive-microsecond) for messages with
+  /// no transported [id]. NOT stable across the wire — each device stamps its
+  /// own receive time — which is exactly why [id] exists.
   String get localKey =>
       '${senderId ?? senderName}:${timestamp.microsecondsSinceEpoch}';
 

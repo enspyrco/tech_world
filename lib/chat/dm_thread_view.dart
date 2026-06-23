@@ -49,8 +49,20 @@ class _DmThreadViewState extends State<DmThreadView> {
 
   static const _clawdOrange = Color(0xFFD97757);
 
+  /// How long a tapped-to quote target stays highlighted before the flash
+  /// fades — long enough to catch the eye after the scroll settles, short
+  /// enough not to linger as persistent state.
+  static const _highlightDuration = Duration(milliseconds: 1600);
+
   GlobalKey _keyFor(String stableId) =>
       _bubbleKeys.putIfAbsent(stableId, () => GlobalKey());
+
+  /// Drop keys for messages no longer rendered, so [_bubbleKeys] tracks the
+  /// live message set instead of growing unbounded over the thread's lifetime.
+  void _pruneBubbleKeys(Iterable<String> liveStableIds) {
+    final live = liveStableIds.toSet();
+    _bubbleKeys.removeWhere((stableId, _) => !live.contains(stableId));
+  }
 
   /// Scroll to and briefly highlight the message a reply quotes.
   ///
@@ -73,7 +85,7 @@ class _DmThreadViewState extends State<DmThreadView> {
       });
     }
     setState(() => _highlightedId = targetId);
-    Future.delayed(const Duration(milliseconds: 1600), () {
+    Future.delayed(_highlightDuration, () {
       if (mounted && _highlightedId == targetId) {
         setState(() => _highlightedId = null);
       }
@@ -214,6 +226,7 @@ class _DmThreadViewState extends State<DmThreadView> {
                 : null,
             builder: (context, snapshot) {
               final messages = snapshot.data ?? [];
+              _pruneBubbleKeys(messages.map((m) => m.stableId));
 
               if (messages.isEmpty) {
                 return Center(
@@ -442,7 +455,10 @@ class _DmBubble extends StatelessWidget {
                     : CrossAxisAlignment.start,
                 children: [
                   AnimatedContainer(
-                    key: highlighted ? const ValueKey('dm-highlight') : null,
+                    // No key toggle here: changing a widget's key forces a
+                    // rebuild instead of an animated update, which would defeat
+                    // the fade. The findable highlight marker lives inside as a
+                    // zero-size keyed child instead.
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 10),
@@ -464,6 +480,8 @@ class _DmBubble extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (highlighted)
+                          const SizedBox.shrink(key: ValueKey('dm-highlight')),
                         if (message.isReply)
                           QuotedMessage(message: message, onTap: onQuoteTap),
                         Text.rich(

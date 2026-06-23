@@ -1351,6 +1351,37 @@ void main() {
         expect(reply.replyToSenderName, equals('Peer'));
       });
 
+      test('reloaded DMs are deduped by stableId (no GlobalKey collision)',
+          () async {
+        // A DM is persisted by BOTH participants, so a reload can return two
+        // docs sharing one transported id. They MUST collapse to one rendered
+        // message — otherwise the DM view assigns a single GlobalKey to two
+        // bubbles and crashes. Regression for the #494 cage-match (Carnot).
+        final convId = Conversation.conversationIdFor('test-user-id', 'peer-uid');
+        final dup = ChatMessage(
+          text: 'Hello there',
+          id: 'shared-wire-id',
+          senderName: 'Peer',
+          senderId: 'peer-uid',
+          conversationId: convId,
+        );
+        final repo = RehydrationChatMessageRepository(
+          dmMessages: [dup, dup], // same id persisted twice
+        );
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: repo,
+        );
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+
+        final loaded = service.dmMessagesSnapshot('peer-uid');
+        expect(loaded.length, equals(1),
+            reason: 'two docs with the same stableId must collapse to one');
+        expect(loaded.single.stableId, equals('shared-wire-id'));
+      });
+
       test('a persisted GROUP reply keeps its linkage + snapshot after reload',
           () async {
         final repo = RehydrationChatMessageRepository(

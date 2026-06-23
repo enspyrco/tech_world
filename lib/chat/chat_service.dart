@@ -845,6 +845,19 @@ class ChatService {
   ///
   /// Extracted so [loadHistory] can wrap the entire operation in a single
   /// timeout rather than per-query timeouts that can accumulate.
+  /// Keep the first message per [ChatMessage.stableId]. Reloaded DMs can
+  /// contain two docs sharing one transported id (both participants persist a
+  /// copy), which would otherwise assign a single GlobalKey to two rendered
+  /// rows in the DM view and crash. Preserves order.
+  static List<ChatMessage> _dedupeByStableId(List<ChatMessage> msgs) {
+    final seen = <String>{};
+    final out = <ChatMessage>[];
+    for (final m in msgs) {
+      if (seen.add(m.stableId)) out.add(m);
+    }
+    return out;
+  }
+
   Future<void> _fetchAndCacheHistory(
     String roomId,
     ChatMessageRepository repository,
@@ -853,8 +866,22 @@ class ChatService {
         await repository.loadConversationIds(roomId, _liveKitService.userId);
 
     for (final convId in conversationIds) {
-      final messages = await repository.loadMessages(roomId, convId);
-      if (messages.isEmpty) continue;
+      final loaded = await repository.loadMessages(roomId, convId);
+      if (loaded.isEmpty) continue;
+
+      // Dedupe by stableId. A DM is persisted by BOTH participants (each calls
+      // saveMessage with `.add()`), so a reload can return two docs sharing one
+      // transported id. Rendering two rows with the same stableId would assign
+      // a single GlobalKey to both bubbles in the DM view — a hard crash
+      // ("Multiple widgets used the same GlobalKey"). Keep the first per
+      // stableId. Also mark loaded ids seen so a later live re-delivery of an
+      // already-loaded message is dropped by the _seenMessageIds guard rather
+      // than appended as a duplicate. (See claude-tasks #20 for the deeper
+      // write-side fix; this is the render-correctness guard.)
+      final messages = _dedupeByStableId(loaded);
+      for (final m in messages) {
+        if (m.id != null) _markSeen(m.id!);
+      }
 
       if (convId == 'group') {
         for (final msg in messages) {
