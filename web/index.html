@@ -165,6 +165,161 @@
                 true
             );
 
+            // ── WebGL context-loss recovery ──────────────────────────
+            // Flutter's CanvasKit renderer draws the ENTIRE game (map,
+            // avatars, video bubbles) through a single WebGL context. If
+            // the browser drops that context — seen in Firefox under GPU
+            // memory pressure from the per-frame video-bubble texture
+            // churn — CanvasKit cannot rebuild its GrContext (it falls
+            // back to CPU, which then also throws "index out of bounds"),
+            // leaving the canvas permanently frozen while LiveKit audio
+            // (a separate pipeline) keeps playing. That "video froze but
+            // audio is fine" symptom is the fingerprint.
+            //
+            // Flutter 3.44 has no in-place recovery, so we detect the loss
+            // and auto-reload: a fresh page gets a fresh context (exactly
+            // what a manual Cmd+R does, but automatic). The overlay is
+            // plain DOM — NOT Flutter — so it paints even while WebGL is
+            // dead. A reload-loop guard (sessionStorage) stops a
+            // fundamentally unhappy GPU from bricking the session in a
+            // reload storm: after repeated failures we show a manual
+            // recovery prompt instead.
+            (function () {
+                var RECOVERY_KEY = "glRecovery";
+                var LOOP_WINDOW_MS = 60000; // resets the failure counter
+                var MAX_AUTO_RELOADS = 2; // before falling back to manual
+                var reloading = false;
+
+                function readState() {
+                    try {
+                        return JSON.parse(
+                            sessionStorage.getItem(RECOVERY_KEY) || "{}"
+                        );
+                    } catch (_) {
+                        return {};
+                    }
+                }
+                function writeState(s) {
+                    try {
+                        sessionStorage.setItem(
+                            RECOVERY_KEY,
+                            JSON.stringify(s)
+                        );
+                    } catch (_) {}
+                }
+
+                function overlay(title, detail, buttonLabel) {
+                    if (document.getElementById("gl-recovery")) return;
+                    var o = document.createElement("div");
+                    o.id = "gl-recovery";
+                    o.style.cssText =
+                        "position:fixed;inset:0;z-index:10000;display:flex;" +
+                        "flex-direction:column;justify-content:center;" +
+                        "align-items:center;background:#1a1a2e;color:#fff;" +
+                        "text-align:center;padding:24px;font-family:" +
+                        "-apple-system,BlinkMacSystemFont,'Segoe UI'," +
+                        "Roboto,sans-serif;";
+                    var t = document.createElement("div");
+                    t.style.cssText =
+                        "font-size:24px;font-weight:bold;margin-bottom:12px;";
+                    t.textContent = title;
+                    var d = document.createElement("div");
+                    d.style.cssText =
+                        "color:#888;font-size:13px;max-width:360px;";
+                    d.textContent = detail;
+                    o.appendChild(t);
+                    o.appendChild(d);
+                    if (buttonLabel) {
+                        var b = document.createElement("button");
+                        b.textContent = buttonLabel;
+                        b.style.cssText =
+                            "margin-top:20px;padding:10px 20px;border:none;" +
+                            "border-radius:6px;background:#4ade80;" +
+                            "color:#1a1a2e;font-weight:bold;font-size:14px;" +
+                            "cursor:pointer;";
+                        b.onclick = function () {
+                            writeState({}); // clear the loop guard
+                            window.location.reload();
+                        };
+                        o.appendChild(b);
+                    }
+                    document.body.appendChild(o);
+                }
+
+                function onContextLost(e) {
+                    // preventDefault permits the browser to attempt
+                    // restoration and marks the event handled. We reload
+                    // regardless because Flutter can't rebuild its render
+                    // resources in place.
+                    if (e && e.preventDefault) e.preventDefault();
+                    if (reloading) return;
+                    reloading = true;
+
+                    var now = Date.now();
+                    var st = readState();
+                    if (!st.ts || now - st.ts > LOOP_WINDOW_MS) st.count = 0;
+                    st.count = (st.count || 0) + 1;
+                    st.ts = now;
+                    writeState(st);
+
+                    if (st.count > MAX_AUTO_RELOADS) {
+                        console.error(
+                            "[gl-recovery] WebGL context lost " +
+                                st.count +
+                                "x in " +
+                                LOOP_WINDOW_MS / 1000 +
+                                "s — stopping auto-reload, asking the user."
+                        );
+                        overlay(
+                            "Display can't recover",
+                            "The graphics context keeps failing — your GPU " +
+                                "may be under pressure. Try closing other " +
+                                "tabs or apps, then reload. Your audio is " +
+                                "unaffected.",
+                            "Reload page"
+                        );
+                        return;
+                    }
+
+                    console.error(
+                        "[gl-recovery] WebGL context lost — auto-reloading " +
+                            "to recover (audio pipeline unaffected)."
+                    );
+                    overlay(
+                        "Restoring display…",
+                        "The graphics context was lost. Reconnecting — your " +
+                            "audio is unaffected."
+                    );
+                    // Brief delay so the overlay paints before the reload.
+                    setTimeout(function () {
+                        window.location.reload();
+                    }, 1500);
+                }
+
+                // webglcontextlost does not bubble, but capture-phase
+                // listeners on window still receive it (capture descends
+                // root->target for ALL events). Same trick as the keydown
+                // bypass above.
+                window.addEventListener(
+                    "webglcontextlost",
+                    onContextLost,
+                    true
+                );
+                // Surface creation failures for diagnostics — these
+                // accompany the "failed to create GrContext" error seen in
+                // Firefox when CanvasKit tries to re-create a dead context.
+                window.addEventListener(
+                    "webglcontextcreationerror",
+                    function (ev) {
+                        console.error(
+                            "[gl-recovery] WebGL context creation error: " +
+                                ((ev && ev.statusMessage) || "(no detail)")
+                        );
+                    },
+                    true
+                );
+            })();
+
             // Loading progress management
             var progressBar = null;
             var loadingText = null;
@@ -208,6 +363,12 @@
                     var glassPane = document.querySelector("flt-glass-pane");
                     if (glassPane) {
                         clearInterval(checkInterval);
+                        // App mounted — if we got here via a context-loss
+                        // auto-reload, that recovery worked, so clear the
+                        // reload-loop guard for a clean slate.
+                        try {
+                            sessionStorage.removeItem("glRecovery");
+                        } catch (_) {}
                         setProgress(80, "Starting game...");
 
                         // Give app time to render first frame
