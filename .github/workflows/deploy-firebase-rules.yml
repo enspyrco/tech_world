@@ -11,7 +11,7 @@ name: Sync Firebase Rules
 #
 # RULES vs INDEXES are deployed in SEPARATE, DECOUPLED steps with different
 # safety profiles (cage-match #496, Carnot):
-#  - RULES (firestore:rules + storage) have no destructive "delete" semantics, so
+#  - RULES (firestore:rules) have no destructive "delete" semantics, so
 #    they auto-deploy on every change. An invalid ruleset is rejected server-side
 #    and the job fails WITHOUT replacing the live rules (atomic per service): the
 #    failure mode is "nothing deployed", never "a broken gate deployed".
@@ -29,7 +29,6 @@ on:
     branches: [main]
     paths:
       - firestore.rules
-      - storage.rules
       - firestore.indexes.json
       - firebase.json
   # Allow a manual re-sync from the Actions tab (e.g. after a hand-edit in the
@@ -90,13 +89,19 @@ jobs:
           fi
           echo "GOOGLE_APPLICATION_CREDENTIALS=$SA_FILE" >> "$GITHUB_ENV"
 
-      - name: Deploy Firestore + Storage RULES
+      - name: Deploy Firestore RULES
         # Rules only — no destructive semantics. --only scopes the deploy and can
         # never touch hosting, functions, or data. firebase-tools reads the
         # service account from GOOGLE_APPLICATION_CREDENTIALS.
+        #
+        # NOTE: `storage` is intentionally NOT deployed here — Firebase Storage
+        # has never been initialized on this project (no Storage ruleset), so
+        # `firebase deploy --only storage` fails "Storage has not been set up".
+        # storage.rules in the repo is therefore unsynced/dead config until
+        # Storage is set up in the console; re-add `,storage` then (claude-tasks).
         run: |
           firebase deploy \
-            --only firestore:rules,storage \
+            --only firestore:rules \
             --project adventures-in-tech-world-0 \
             --non-interactive
 
