@@ -17,6 +17,7 @@ import 'dart:js_interop';
 import 'dart:ui' as ui;
 
 import 'package:logging/logging.dart';
+import 'package:tech_world/native/decode_size.dart';
 import 'package:web/web.dart' as web;
 
 import 'frame_source.dart';
@@ -87,14 +88,21 @@ class CanvasCapture implements FrameSource {
     if (!_isCapturing) return;
     if (_frameInFlight) return;
 
-    final w = _canvas.width;
-    final h = _canvas.height;
-    if (w == 0 || h == 0) return;
+    final srcW = _canvas.width;
+    final srcH = _canvas.height;
+    if (srcW == 0 || srcH == 0) return;
+
+    // Cap the decoded texture to the displayed bubble size — decoding the
+    // source canvas at full res for a small bubble is the GPU memory pressure
+    // that triggers WebGL context loss (see kMaxBubbleDecodeDimension).
+    final decode = scaledDecodeSize(srcW, srcH, kMaxBubbleDecodeDimension);
+    final w = decode.width;
+    final h = decode.height;
 
     _frameInFlight = true;
 
     try {
-      // Ensure offscreen canvas matches source dimensions.
+      // Ensure offscreen canvas matches the (capped) decode dimensions.
       if (_offscreen == null ||
           _offscreen!.width != w ||
           _offscreen!.height != h) {
@@ -106,8 +114,15 @@ class CanvasCapture implements FrameSource {
             _offscreen!.getContext('2d')! as web.CanvasRenderingContext2D;
       }
 
-      // Direct canvas-to-canvas copy via 2D context.
-      _offscreenCtx!.drawImage(_canvas as web.CanvasImageSource, 0, 0);
+      // Direct canvas-to-canvas copy via 2D context. The 5-arg drawImage
+      // scales the full-res source down into the capped offscreen canvas.
+      _offscreenCtx!.drawImage(
+        _canvas as web.CanvasImageSource,
+        0,
+        0,
+        w.toDouble(),
+        h.toDouble(),
+      );
 
       // Read raw RGBA pixels via getImageData. This bypasses
       // createImageFromImageBitmap (CanvasKit's MakeLazyImageFromTextureSource)
