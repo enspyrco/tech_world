@@ -1382,14 +1382,19 @@ void main() {
         expect(loaded.single.stableId, equals('shared-wire-id'));
       });
 
-      test('receiving a DM does NOT persist it (only the sender persists)',
+      test('receiving a DM persists the conversation INDEX but NOT the message',
           () async {
-        // Root-cause guard for the double-persist (claude-tasks #20). The
-        // recipient's senderId is the OTHER participant, so the Firestore
-        // create rule (senderId == auth.uid) would reject the write anyway —
-        // persisting here only ever produced a rejected no-op (correct rules)
-        // or a duplicate forged-senderId doc (loose rules). The receive path
-        // must mirror group-chat receive and persist nothing.
+        // Root-cause guard for the double-persist (claude-tasks #20) AND the
+        // cage-match #495 (Carnot) over-removal. Two writes hide behind the old
+        // single _persistMessage call with DIFFERENT rules:
+        //  - the MESSAGE: the recipient's senderId is the OTHER participant, so
+        //    the `/messages` create rule (senderId == auth.uid) rejects it —
+        //    persisting it produced a rejected no-op or a forged-senderId dup.
+        //    The receive path must persist NO message (mirrors group receive).
+        //  - the conversation INDEX: the `/conversations` rule only needs the
+        //    writer to be a participant, so the recipient's upsert IS allowed,
+        //    and IS the redundancy that keeps a durable DM discoverable on
+        //    reload if the author's own index write lost its race. Keep it.
         final repo = RecordingChatMessageRepository();
         final service = ChatService(
           liveKitService: fakeLiveKit,
@@ -1399,6 +1404,8 @@ void main() {
         await service.loadHistory('room-1'); // sets _roomId so persist is reachable
         fakeLiveKit.connected = true;
 
+        final expectedConvId =
+            Conversation.conversationIdFor('test-user-id', 'alice-uid');
         fakeLiveKit.simulateDm('alice-uid', {
           'text': 'Hey!',
           'id': 'dm-recv-1',
@@ -1409,12 +1416,17 @@ void main() {
 
         // The message is shown locally...
         expect(service.dmMessagesSnapshot('alice-uid').single.text, equals('Hey!'));
-        // ...but nothing was written to Firestore by the recipient.
+        // ...the recipient writes NO message doc (would be rejected / a dup)...
         expect(repo.saved, isEmpty,
-            reason: 'a received DM must not be persisted by the recipient');
+            reason: 'a received DM message must not be persisted by the recipient');
+        // ...but it DOES upsert the discovery index for the thread.
+        expect(repo.savedConversations, equals([expectedConvId]),
+            reason: 'recipient keeps the conversation-index write (discovery '
+                'redundancy if the author index write lost its race)');
       });
 
-      test('sending a DM persists exactly one copy (the author\'s)', () async {
+      test('sending a DM persists the message AND its conversation index',
+          () async {
         final repo = RecordingChatMessageRepository();
         final service = ChatService(
           liveKitService: fakeLiveKit,
@@ -1424,14 +1436,18 @@ void main() {
         await service.loadHistory('room-1'); // sets _roomId
         fakeLiveKit.connected = true;
 
+        final expectedConvId =
+            Conversation.conversationIdFor('test-user-id', 'peer-uid');
         await service.sendDm('peer-uid', 'Hello', peerDisplayName: 'Peer');
         await pumpEventQueue();
 
         expect(repo.saved.length, equals(1),
-            reason: 'the sender persists its own message exactly once');
+            reason: 'the author persists its own message exactly once');
         expect(repo.saved.single.senderId, equals('test-user-id'),
             reason: 'persisted senderId is the authenticated author');
         expect(repo.saved.single.text, equals('Hello'));
+        expect(repo.savedConversations, equals([expectedConvId]),
+            reason: 'the author also upserts the conversation index');
       });
 
       test('a persisted GROUP reply keeps its linkage + snapshot after reload',
@@ -2040,13 +2056,15 @@ class FakeLiveKitService implements LiveKitService {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-/// A [ChatMessageRepository] that RECORDS every [saveMessage] call, so a test
-/// can assert WHICH paths persist. Used to pin the invariant that a RECEIVED
-/// DM is not persisted by the recipient (only the sender persists its own
-/// copy), mirroring the group-chat receive path and the Firestore create rule
-/// (`senderId == auth.uid`). See claude-tasks #20.
+/// A [ChatMessageRepository] that RECORDS every [saveMessage] AND
+/// [saveConversation] call, so a test can assert WHICH writes each path makes.
+/// Used to pin two invariants: a RECEIVED DM persists the conversation INDEX
+/// but NOT the message (only the author persists the message, per the
+/// `/messages` `senderId == auth.uid` rule), while a SENT DM persists both.
+/// See claude-tasks #20 and cage-match #495 (Carnot).
 class RecordingChatMessageRepository implements ChatMessageRepository {
   final List<ChatMessage> saved = [];
+  final List<String> savedConversations = [];
 
   @override
   Future<Set<String>> loadConversationIds(String roomId, String userId) async =>
@@ -2072,5 +2090,7 @@ class RecordingChatMessageRepository implements ChatMessageRepository {
     required List<String> participants,
     required String type,
     String? lastMessageText,
-  }) async {}
+  }) async {
+    savedConversations.add(conversationId);
+  }
 }
