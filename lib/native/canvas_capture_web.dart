@@ -114,6 +114,12 @@ class CanvasCapture implements FrameSource {
             _offscreen!.getContext('2d')! as web.CanvasRenderingContext2D;
       }
 
+      // Clear first: the offscreen canvas is reused across frames, and the
+      // Dreamfinder source canvas can contain transparency — without a clear,
+      // source-over compositing would leave stale pixels showing through
+      // transparent regions.
+      _offscreenCtx!.clearRect(0, 0, w.toDouble(), h.toDouble());
+
       // Direct canvas-to-canvas copy via 2D context. The 5-arg drawImage
       // scales the full-res source down into the capped offscreen canvas.
       _offscreenCtx!.drawImage(

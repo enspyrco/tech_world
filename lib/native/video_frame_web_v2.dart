@@ -826,8 +826,21 @@ class VideoElementCapture implements FrameSource {
       // Then draw bitmap to canvas for pixel readback. We can't draw
       // HTMLVideoElement directly because the CanvasImageSource cast
       // may fail at runtime in package:web.
+      //
+      // resizeWidth/resizeHeight cap the ImageBitmap allocation itself at the
+      // decode size — without them createImageBitmap decodes the full-res
+      // frame (the bulk of the GPU pressure this fix targets) and the
+      // subsequent draw into the smaller readback canvas would CROP to the
+      // top-left rather than scale.
       final imageBitmap = await web.window
-          .createImageBitmap(_videoElement as web.ImageBitmapSource)
+          .createImageBitmap(
+            _videoElement as web.ImageBitmapSource,
+            web.ImageBitmapOptions(
+              resizeWidth: _width,
+              resizeHeight: _height,
+              resizeQuality: 'high',
+            ),
+          )
           .toDart;
 
       if (_readbackCanvas == null ||
@@ -841,7 +854,17 @@ class VideoElementCapture implements FrameSource {
             as web.CanvasRenderingContext2D;
       }
 
-      _readbackCtx!.drawImage(imageBitmap as web.CanvasImageSource, 0, 0);
+      // 5-arg drawImage scales to the decode size. The bitmap is already
+      // resized above, so this is a 1:1 draw in the happy path — but it
+      // guarantees correct scaling (not a crop) even if a browser ignores
+      // the createImageBitmap resize options.
+      _readbackCtx!.drawImage(
+        imageBitmap as web.CanvasImageSource,
+        0,
+        0,
+        _width.toDouble(),
+        _height.toDouble(),
+      );
       imageBitmap.close();
 
       final imageData =
