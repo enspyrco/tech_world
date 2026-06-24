@@ -15,6 +15,7 @@ import 'dart:js_interop';
 import 'dart:ui' as ui;
 
 import 'package:logging/logging.dart';
+import 'package:tech_world/native/decode_size.dart';
 // dart_webrtc doesn't conditionally export MediaStreamTrackWeb, so
 // importing the barrel pulls in dart:js_interop and breaks native tests.
 // This file is web-only (conditional import in direct_track_capture.dart).
@@ -353,19 +354,26 @@ class DirectTrackCapture {
         return;
       }
 
-      // Update dimensions
-      _width = videoFrame.displayWidth;
-      _height = videoFrame.displayHeight;
+      // Source camera dimensions. The decoded texture is capped to what the
+      // small bubble actually draws — uploading a full-res frame every tick is
+      // the GPU memory pressure that triggers WebGL context loss on Firefox
+      // (see kMaxBubbleDecodeDimension in decode_size.dart).
+      final srcW = videoFrame.displayWidth;
+      final srcH = videoFrame.displayHeight;
 
       if (_frameNumber == 0) {
-        _log.fine('DirectTrackCapture: first VideoFrame ${_width}x$_height');
+        _log.fine('DirectTrackCapture: first VideoFrame ${srcW}x$srcH');
       }
 
-      if (_width == 0 || _height == 0) {
+      if (srcW == 0 || srcH == 0) {
         videoFrame.close();
         _frameInFlight = false;
         return;
       }
+
+      final decode = scaledDecodeSize(srcW, srcH, kMaxBubbleDecodeDimension);
+      _width = decode.width;
+      _height = decode.height;
 
       // Draw VideoFrame directly to offscreen canvas, read pixels, decode.
       // Mirrors canvas_capture_web.dart — no ImageBitmap, no createImageFromImageBitmap.
@@ -380,7 +388,15 @@ class DirectTrackCapture {
             as web.CanvasRenderingContext2D;
       }
 
-      _readbackCtx!.drawImage(videoFrame as web.CanvasImageSource, 0, 0);
+      // 5-arg drawImage scales the full-res source frame down into the
+      // capped readback canvas (_width/_height are the decode size).
+      _readbackCtx!.drawImage(
+        videoFrame as web.CanvasImageSource,
+        0,
+        0,
+        _width.toDouble(),
+        _height.toDouble(),
+      );
       // Close VideoFrame immediately to release video decoder resources.
       videoFrame.close();
 
@@ -799,15 +815,32 @@ class VideoElementCapture implements FrameSource {
     _frameInFlight = true;
 
     try {
-      _width = videoWidth;
-      _height = videoHeight;
+      // Cap the decoded texture to the displayed bubble size — see
+      // kMaxBubbleDecodeDimension. Avoids uploading full-res remote frames.
+      final decode =
+          scaledDecodeSize(videoWidth, videoHeight, kMaxBubbleDecodeDimension);
+      _width = decode.width;
+      _height = decode.height;
 
       // Create ImageBitmap from video (this works — original code did it).
       // Then draw bitmap to canvas for pixel readback. We can't draw
       // HTMLVideoElement directly because the CanvasImageSource cast
       // may fail at runtime in package:web.
+      //
+      // resizeWidth/resizeHeight cap the ImageBitmap allocation itself at the
+      // decode size — without them createImageBitmap decodes the full-res
+      // frame (the bulk of the GPU pressure this fix targets) and the
+      // subsequent draw into the smaller readback canvas would CROP to the
+      // top-left rather than scale.
       final imageBitmap = await web.window
-          .createImageBitmap(_videoElement as web.ImageBitmapSource)
+          .createImageBitmap(
+            _videoElement as web.ImageBitmapSource,
+            web.ImageBitmapOptions(
+              resizeWidth: _width,
+              resizeHeight: _height,
+              resizeQuality: 'high',
+            ),
+          )
           .toDart;
 
       if (_readbackCanvas == null ||
@@ -821,7 +854,17 @@ class VideoElementCapture implements FrameSource {
             as web.CanvasRenderingContext2D;
       }
 
-      _readbackCtx!.drawImage(imageBitmap as web.CanvasImageSource, 0, 0);
+      // 5-arg drawImage scales to the decode size. The bitmap is already
+      // resized above, so this is a 1:1 draw in the happy path — but it
+      // guarantees correct scaling (not a crop) even if a browser ignores
+      // the createImageBitmap resize options.
+      _readbackCtx!.drawImage(
+        imageBitmap as web.CanvasImageSource,
+        0,
+        0,
+        _width.toDouble(),
+        _height.toDouble(),
+      );
       imageBitmap.close();
 
       final imageData =
