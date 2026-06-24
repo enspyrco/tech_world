@@ -1,0 +1,116 @@
+name: Sync Firebase Rules
+
+# Keep the Firestore/Storage security rules + indexes in the repo as the single
+# source of truth, and DEPLOY them on every merge to main that touches them — so
+# "deployed == repo" holds by construction instead of by hand. The web bundle is
+# deployed separately by deploy.yml (rsync to OCI); this workflow only touches
+# Firebase config, and only when the rules/index files actually change.
+#
+# Why a separate workflow with a paths filter: a rules-only change must not
+# trigger a full web rebuild, and a web-only change must not redeploy rules.
+#
+# RULES vs INDEXES are deployed in SEPARATE, DECOUPLED steps with different
+# safety profiles (cage-match #496, Carnot):
+#  - RULES (firestore:rules + storage) have no destructive "delete" semantics, so
+#    they auto-deploy on every change. An invalid ruleset is rejected server-side
+#    and the job fails WITHOUT replacing the live rules (atomic per service): the
+#    failure mode is "nothing deployed", never "a broken gate deployed".
+#  - INDEXES are deployed WITHOUT --force, so this workflow only ever ADDS/keeps
+#    indexes; it never deletes. A pending DELETION (an index live in prod but
+#    absent from firestore.indexes.json) makes the index step fail loudly rather
+#    than silently excising a prod index that a live query may depend on. To
+#    intentionally remove an index, run it by hand:
+#        firebase deploy --only firestore:indexes --force --project adventures-in-tech-world-0
+#    This decoupling means a rules sync can never be blocked or endangered by
+#    index state, and index deletion is always a deliberate human act.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - firestore.rules
+      - storage.rules
+      - firestore.indexes.json
+      - firebase.json
+  # Allow a manual re-sync from the Actions tab (e.g. after a hand-edit in the
+  # console drifted prod away from the repo, to slam it back to source-of-truth).
+  # NOTE: workflow_dispatch ignores the paths filter and deploys current main —
+  # see the PR for the recommended Environment-approval hardening on this job.
+  workflow_dispatch:
+
+# Serialize rule deploys so two quick merges can't race the same ruleset.
+concurrency:
+  group: deploy-firebase-rules
+  cancel-in-progress: false
+
+jobs:
+  sync-rules:
+    runs-on: ubuntu-latest
+    steps:
+      # First-party actions pinned to immutable SHAs (not floating tags): this
+      # job carries the service-account secret, so a moved tag must not be able
+      # to swap in new code under it (cage-match #496, Carnot).
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Install firebase-tools (pinned)
+        # Pinned exact version: firebase-tools runs with GOOGLE_APPLICATION_-
+        # CREDENTIALS in scope, so a surprise (possibly compromised) release
+        # could read the service-account JSON. Bump deliberately, not implicitly.
+        run: npm install -g firebase-tools@15.22.1
+
+      - name: Write + validate service-account credentials
+        # GitHub masks registered secrets in logs; printf (not echo) keeps the
+        # JSON intact. Validate it PARSES and is for the EXPECTED project before
+        # exporting it, so a malformed/wrong-account secret fails here with a
+        # precise error instead of deep inside `firebase deploy` (cage-match
+        # #496, Carnot). The file lives in RUNNER_TEMP, chmod 600, wiped on exit.
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          EXPECTED_PROJECT: adventures-in-tech-world-0
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT secret is not set — cannot deploy rules."
+            exit 1
+          fi
+          SA_FILE="$RUNNER_TEMP/firebase-sa.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$SA_FILE"
+          chmod 600 "$SA_FILE"
+          if ! jq -e . "$SA_FILE" >/dev/null 2>&1; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is not valid JSON."
+            rm -f "$SA_FILE"; exit 1
+          fi
+          PROJECT_ID=$(jq -r '.project_id // empty' "$SA_FILE")
+          if [ "$PROJECT_ID" != "$EXPECTED_PROJECT" ]; then
+            echo "::error::service account project_id '$PROJECT_ID' != expected '$EXPECTED_PROJECT'."
+            rm -f "$SA_FILE"; exit 1
+          fi
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$SA_FILE" >> "$GITHUB_ENV"
+
+      - name: Deploy Firestore + Storage RULES
+        # Rules only — no destructive semantics. --only scopes the deploy and can
+        # never touch hosting, functions, or data. firebase-tools reads the
+        # service account from GOOGLE_APPLICATION_CREDENTIALS.
+        run: |
+          firebase deploy \
+            --only firestore:rules,storage \
+            --project adventures-in-tech-world-0 \
+            --non-interactive
+
+      - name: Deploy Firestore INDEXES (additive — never deletes)
+        # No --force: this ADDS/keeps indexes from the repo but will NOT delete a
+        # prod index. A pending deletion fails this step LOUDLY (red CI), which is
+        # the signal to reconcile by hand — see the header comment. Separate from
+        # the rules step so index state can never block or endanger a rules sync.
+        run: |
+          firebase deploy \
+            --only firestore:indexes \
+            --project adventures-in-tech-world-0 \
+            --non-interactive
+
+      - name: Scrub credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/firebase-sa.json"

@@ -1,0 +1,14 @@
+# Code owners — review-gates the most security-sensitive surfaces.
+#
+# GitHub Actions workflows run with repository secrets in scope (e.g. the
+# FIREBASE_SERVICE_ACCOUNT JSON used by deploy-firebase-rules.yml). A malicious
+# edit to a workflow, once merged, could exfiltrate a secret on the next run —
+# the paths filter does not protect against that (cage-match #496, Carnot). Make
+# any change to a workflow require an explicit owner review.
+#
+# ENFORCEMENT GATE (Nick): this file is ADVISORY until branch protection on
+# `main` enables "Require review from Code Owners". Turn it on at:
+#   https://github.com/enspyrco/tech_world/settings/branches
+# Until then, treat workflow edits as owner-review-required by discipline.
+/.github/workflows/  @nickmeinhold
+/.github/CODEOWNERS  @nickmeinhold
