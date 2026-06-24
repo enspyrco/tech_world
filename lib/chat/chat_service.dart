@@ -434,8 +434,17 @@ class ChatService {
     _emitConversations();
     _updateTotalUnread();
 
-    // Persist to Firestore.
-    _persistMessage(chatMessage);
+    // Do NOT persist a RECEIVED message. This mirrors the group-chat receive
+    // path (which never persists) and matches the Firestore security model: the
+    // `/messages` create rule requires `senderId == request.auth.uid`, so a
+    // client can only persist messages it AUTHORED. A received DM's senderId is
+    // the *other* participant, so this client's write is rejected by the rule
+    // (and was silently swallowed by _persistMessage's fire-and-forget
+    // catchError). The sender persists its own copy in [sendDm]; the receiver
+    // reads it back on reload via the participant read-rule + conversation
+    // metadata. Persisting here only ever produced either a no-op rejected write
+    // (correct rules) or a duplicate doc with a forged senderId (loose rules) —
+    // the double-persist the #494 load-dedup defended against (claude-tasks #20).
   }
 
   /// Send a message to the shared chat (visible to all participants).
