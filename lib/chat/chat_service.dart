@@ -434,8 +434,23 @@ class ChatService {
     _emitConversations();
     _updateTotalUnread();
 
-    // Persist to Firestore.
-    _persistMessage(chatMessage);
+    // Persist the conversation INDEX but NOT the message. Two separate writes
+    // hide behind the old single _persistMessage call, and they have different
+    // rules:
+    //  - the MESSAGE (`/messages`) create rule binds `senderId == auth.uid`, so
+    //    a recipient (whose senderId is the *other* participant) is REJECTED —
+    //    persisting it here only ever produced a no-op rejected write (correct
+    //    rules) or a duplicate forged-senderId doc (loose rules), the
+    //    double-persist the #494 load-dedup defended against. So we drop it,
+    //    matching the group-chat receive path (which never persists a message).
+    //  - the conversation INDEX (`/conversations`) create rule only requires
+    //    the writer be a participant, so the recipient's upsert IS allowed and
+    //    IS kept: it's the redundancy that keeps a durably-stored DM
+    //    discoverable on reload if the author's own conversation-index write
+    //    lost its race against its message write (cage-match #495, Carnot).
+    // The author persists the message itself in [sendDm]; the recipient reads
+    // it back via the participant read-rule once the index points at the thread.
+    _persistConversationMetadata(chatMessage);
   }
 
   /// Send a message to the shared chat (visible to all participants).
@@ -1059,6 +1074,10 @@ class ChatService {
   ///
   /// Also upserts conversation metadata for DMs so that
   /// [ChatMessageRepository.loadConversationIds] can use an efficient query.
+  /// Persist an AUTHORED message: the message doc itself plus (for DMs) its
+  /// conversation index. Only the author may call this — the `/messages` create
+  /// rule binds `senderId == auth.uid`. Recipients call
+  /// [_persistConversationMetadata] directly instead (index only, no message).
   void _persistMessage(ChatMessage message) {
     final repository = _repository;
     final roomId = _roomId;
@@ -1069,7 +1088,29 @@ class ChatService {
       _log.warning('Failed to persist message', e);
     });
 
-    // Upsert conversation metadata for DMs.
+    _persistConversationMetadata(message);
+  }
+
+  /// Upsert the DM conversation INDEX (not the message). Safe for BOTH the
+  /// author and the recipient to call: the `/conversations` create rule only
+  /// requires the writer be a participant (`auth.uid in participants`), unlike
+  /// the `/messages` rule which binds `senderId == auth.uid`. So a recipient
+  /// legitimately records "I have a conversation with X" even though it cannot
+  /// persist the message itself.
+  ///
+  /// Why the recipient SHOULD still write this: `loadConversationIds` discovers
+  /// DM threads ONLY via this `/conversations` index, never by scanning
+  /// `/messages`. The author's [saveMessage] and [saveConversation] are
+  /// INDEPENDENT fire-and-forget writes that can fail independently — so if the
+  /// author's message persists but its conversation-index write loses that race,
+  /// the recipient's own index write is the redundancy that keeps the durable
+  /// DM DISCOVERABLE on reload (cage-match #495, Carnot). A no-op for group
+  /// messages and for messages without a participant set.
+  void _persistConversationMetadata(ChatMessage message) {
+    final repository = _repository;
+    final roomId = _roomId;
+    if (repository == null || roomId == null) return;
+
     final convId = message.conversationId;
     final participants = message.participants;
     if (convId != null && convId != 'group' && participants != null) {

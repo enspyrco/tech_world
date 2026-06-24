@@ -1382,6 +1382,74 @@ void main() {
         expect(loaded.single.stableId, equals('shared-wire-id'));
       });
 
+      test('receiving a DM persists the conversation INDEX but NOT the message',
+          () async {
+        // Root-cause guard for the double-persist (claude-tasks #20) AND the
+        // cage-match #495 (Carnot) over-removal. Two writes hide behind the old
+        // single _persistMessage call with DIFFERENT rules:
+        //  - the MESSAGE: the recipient's senderId is the OTHER participant, so
+        //    the `/messages` create rule (senderId == auth.uid) rejects it —
+        //    persisting it produced a rejected no-op or a forged-senderId dup.
+        //    The receive path must persist NO message (mirrors group receive).
+        //  - the conversation INDEX: the `/conversations` rule only needs the
+        //    writer to be a participant, so the recipient's upsert IS allowed,
+        //    and IS the redundancy that keeps a durable DM discoverable on
+        //    reload if the author's own index write lost its race. Keep it.
+        final repo = RecordingChatMessageRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: repo,
+        );
+        addTearDown(service.dispose);
+        await service.loadHistory('room-1'); // sets _roomId so persist is reachable
+        fakeLiveKit.connected = true;
+
+        final expectedConvId =
+            Conversation.conversationIdFor('test-user-id', 'alice-uid');
+        fakeLiveKit.simulateDm('alice-uid', {
+          'text': 'Hey!',
+          'id': 'dm-recv-1',
+          'senderName': 'Alice',
+          'senderId': 'alice-uid',
+        });
+        await pumpEventQueue();
+
+        // The message is shown locally...
+        expect(service.dmMessagesSnapshot('alice-uid').single.text, equals('Hey!'));
+        // ...the recipient writes NO message doc (would be rejected / a dup)...
+        expect(repo.saved, isEmpty,
+            reason: 'a received DM message must not be persisted by the recipient');
+        // ...but it DOES upsert the discovery index for the thread.
+        expect(repo.savedConversations, equals([expectedConvId]),
+            reason: 'recipient keeps the conversation-index write (discovery '
+                'redundancy if the author index write lost its race)');
+      });
+
+      test('sending a DM persists the message AND its conversation index',
+          () async {
+        final repo = RecordingChatMessageRepository();
+        final service = ChatService(
+          liveKitService: fakeLiveKit,
+          repository: repo,
+        );
+        addTearDown(service.dispose);
+        await service.loadHistory('room-1'); // sets _roomId
+        fakeLiveKit.connected = true;
+
+        final expectedConvId =
+            Conversation.conversationIdFor('test-user-id', 'peer-uid');
+        await service.sendDm('peer-uid', 'Hello', peerDisplayName: 'Peer');
+        await pumpEventQueue();
+
+        expect(repo.saved.length, equals(1),
+            reason: 'the author persists its own message exactly once');
+        expect(repo.saved.single.senderId, equals('test-user-id'),
+            reason: 'persisted senderId is the authenticated author');
+        expect(repo.saved.single.text, equals('Hello'));
+        expect(repo.savedConversations, equals([expectedConvId]),
+            reason: 'the author also upserts the conversation index');
+      });
+
       test('a persisted GROUP reply keeps its linkage + snapshot after reload',
           () async {
         final repo = RehydrationChatMessageRepository(
@@ -1986,4 +2054,43 @@ class FakeLiveKitService implements LiveKitService {
   // hand-rolled fake (mirrors the other fakes' noSuchMethod pattern).
   @override
   dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+/// A [ChatMessageRepository] that RECORDS every [saveMessage] AND
+/// [saveConversation] call, so a test can assert WHICH writes each path makes.
+/// Used to pin two invariants: a RECEIVED DM persists the conversation INDEX
+/// but NOT the message (only the author persists the message, per the
+/// `/messages` `senderId == auth.uid` rule), while a SENT DM persists both.
+/// See claude-tasks #20 and cage-match #495 (Carnot).
+class RecordingChatMessageRepository implements ChatMessageRepository {
+  final List<ChatMessage> saved = [];
+  final List<String> savedConversations = [];
+
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) async =>
+      {'group'};
+
+  @override
+  Future<List<ChatMessage>> loadMessages(
+    String roomId,
+    String conversationId, {
+    int limit = 100,
+  }) async =>
+      const [];
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {
+    saved.add(message);
+  }
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {
+    savedConversations.add(conversationId);
+  }
 }
