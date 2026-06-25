@@ -481,6 +481,7 @@ class _MyAppState extends State<MyApp> {
             room: room,
             userId: userId,
             displayName: _currentDisplayName,
+            avatarId: _selectedAvatar?.id ?? defaultAvatar.id,
             onStateChanged: () => setState(() {}),
             onReconnectWorld: () {
                 final tw = locate<TechWorld>();
@@ -742,6 +743,7 @@ class _MyAppState extends State<MyApp> {
           room: room,
           userId: userId,
           displayName: _currentDisplayName,
+          avatarId: _selectedAvatar?.id ?? defaultAvatar.id,
           onStateChanged: () => setState(() {}),
           onReconnectWorld: () {
                 final tw = locate<TechWorld>();

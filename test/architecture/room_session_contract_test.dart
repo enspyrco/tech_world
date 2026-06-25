@@ -35,6 +35,7 @@ void main() {
         room: testRoom,
         userId: 'user-1',
         displayName: 'Test User',
+        avatarId: 'npc11',
         onStateChanged: () {},
         onReconnectWorld: () async {},
         onRoomDeleted: () {},
