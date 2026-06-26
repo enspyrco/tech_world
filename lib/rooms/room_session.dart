@@ -225,18 +225,23 @@ class RoomSession {
     return result;
   }
 
-  /// The in-flight presence write, if any. [leave] awaits it before deleting so
-  /// a fast connect→leave can't let a still-resolving `enter()` land *after* the
-  /// delete and resurrect a ghost doc (the delete must be the last writer).
+  /// The TAIL of the serialized presence-write chain. Every [_enterPresence]
+  /// chains onto this, and [leave] awaits it before deleting — so the delete is
+  /// the last writer even across MULTIPLE overlapping enters (e.g. an initial
+  /// connect write still in flight when a reconnect fires a second one). A
+  /// single-slot "latest future" would let an earlier enter land after the
+  /// delete and resurrect a ghost; the chain closes that window.
   Future<void>? _pendingEnter;
 
-  /// Announce this user's presence in the room. Best-effort and unawaited: a
-  /// presence-write failure must never break the connection flow, so errors are
-  /// logged and swallowed rather than propagated. The future is retained in
-  /// [_pendingEnter] so [leave] can serialize the delete after it.
+  /// Announce this user's presence in the room. Best-effort: a presence-write
+  /// failure must never break the connection flow, so errors are logged and
+  /// swallowed. The write STARTS synchronously (in flight immediately), and the
+  /// tail accumulates every in-flight write via `Future.wait` so [leave] awaits
+  /// ALL of them before deleting — even multiple overlapping enters (connect +
+  /// reconnect) — guaranteeing the delete is the last writer.
   void _enterPresence() {
     if (_disposed) return;
-    _pendingEnter = _presenceService
+    final enterFuture = _presenceService
         .enter(
           userId: userId,
           displayName: displayName,
@@ -245,6 +250,9 @@ class RoomSession {
         )
         .catchError((Object e) =>
             _log.warning('Failed to write presence for room ${room.id}: $e'));
+    final prior = _pendingEnter;
+    _pendingEnter =
+        prior == null ? enterFuture : Future.wait([prior, enterFuture]);
   }
 
   /// Listen to the Firestore room document; fire [_onRoomDeleted] when the

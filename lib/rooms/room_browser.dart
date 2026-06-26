@@ -548,9 +548,9 @@ class _OccupantAvatar extends StatelessWidget {
     Color(0xFFF06292),
   ];
 
-  // Explicit FNV-ish hash over code units — unlike String.hashCode this is
-  // stable across runs/platforms, so a given user keeps the same color between
-  // sessions, not just within one process.
+  // Explicit polynomial (Java-style, *31) hash over code units — unlike
+  // String.hashCode this is stable across runs/platforms, so a given user keeps
+  // the same color between sessions, not just within one process.
   static int _stableHash(String s) {
     var h = 0;
     for (final unit in s.codeUnits) {
