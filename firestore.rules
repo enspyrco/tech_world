@@ -13,6 +13,24 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Shared-world presence — "who is in which room right now", read by the
+    // room browser to show occupancy before joining. Any signed-in user can
+    // read the whole collection (presence is public in a shared world). A user
+    // may only write their OWN presence document: the doc key must equal their
+    // UID AND the userId field must match, so nobody can plant a ghost in a
+    // room as someone else.
+    match /presence/{userId} {
+      allow read: if request.auth != null;
+      // Create/update: the doc key must be the caller's UID AND the userId
+      // field must match — nobody can plant presence as someone else.
+      allow create, update: if request.auth != null &&
+        request.auth.uid == userId &&
+        request.resource.data.userId == userId;
+      // Delete: only your own doc (request.resource is null on delete, so the
+      // field check above cannot apply here).
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
     // Rooms — public rooms are readable by any authenticated user (for browse
     // listing). Private rooms are only readable by their owner and editors.
     // The listPublicRooms() query filters on isPublic == true so it satisfies
