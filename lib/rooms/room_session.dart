@@ -7,6 +7,7 @@ import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
+import 'package:tech_world/rooms/presence_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/services/dreamfinder_client.dart';
 import 'package:tech_world/events/dispatch.dart';
@@ -42,12 +43,15 @@ class RoomSession {
     required this.room,
     required this.userId,
     required this.displayName,
+    required this.avatarId,
     required FirebaseFirestore firestore,
+    required PresenceService presenceService,
     required void Function() onStateChanged,
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
     List<Duration>? reconnectDelays,
   })  : _firestore = firestore,
+        _presenceService = presenceService,
         _onStateChanged = onStateChanged,
         _onReconnectWorld = onReconnectWorld,
         _onRoomDeleted = onRoomDeleted,
@@ -66,7 +70,15 @@ class RoomSession {
   final RoomData room;
   final String userId;
   final String displayName;
+
+  /// The user's chosen avatar id, denormalized into the presence document so
+  /// the room browser can render occupant avatars without a profile lookup.
+  final String avatarId;
   final FirebaseFirestore _firestore;
+
+  /// Writes/clears this user's presence in the shared-world `/presence`
+  /// collection across the connection lifecycle.
+  final PresenceService _presenceService;
 
   // --- Callbacks ---
 
@@ -122,6 +134,7 @@ class RoomSession {
     required RoomData room,
     required String userId,
     required String displayName,
+    required String avatarId,
     required void Function() onStateChanged,
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
@@ -129,6 +142,7 @@ class RoomSession {
     @visibleForTesting ChatMessageRepository? chatMessageRepository,
     @visibleForTesting LiveKitService? liveKitService,
     @visibleForTesting FirebaseFirestore? firestore,
+    @visibleForTesting PresenceService? presenceService,
     @visibleForTesting List<Duration>? reconnectDelays,
   }) {
     final liveKit = liveKitService ??
@@ -164,6 +178,8 @@ class RoomSession {
     Locator.add<ProximityService>(proximity);
     Locator.add<TimerService>(timer);
 
+    final fs = firestore ?? FirebaseFirestore.instance;
+
     return RoomSession._(
       liveKitService: liveKit,
       chatService: chat,
@@ -173,7 +189,9 @@ class RoomSession {
       room: room,
       userId: userId,
       displayName: displayName,
-      firestore: firestore ?? FirebaseFirestore.instance,
+      avatarId: avatarId,
+      firestore: fs,
+      presenceService: presenceService ?? PresenceService(firestore: fs),
       onStateChanged: onStateChanged,
       onReconnectWorld: onReconnectWorld,
       onRoomDeleted: onRoomDeleted,
@@ -197,11 +215,44 @@ class RoomSession {
 
     if (result == ConnectionResult.connected) {
       _listenForConnectionLoss();
-    } else if (result != ConnectionResult.alreadyConnected) {
+      _enterPresence();
+    } else if (result == ConnectionResult.alreadyConnected) {
+      _enterPresence();
+    } else {
       connectionFailed.value = true;
       connectionMessage.value = failureMessageFor(result);
     }
     return result;
+  }
+
+  /// The TAIL of the serialized presence-write chain. Every [_enterPresence]
+  /// chains onto this, and [leave] awaits it before deleting — so the delete is
+  /// the last writer even across MULTIPLE overlapping enters (e.g. an initial
+  /// connect write still in flight when a reconnect fires a second one). A
+  /// single-slot "latest future" would let an earlier enter land after the
+  /// delete and resurrect a ghost; the chain closes that window.
+  Future<void>? _pendingEnter;
+
+  /// Announce this user's presence in the room. Best-effort: a presence-write
+  /// failure must never break the connection flow, so errors are logged and
+  /// swallowed. The write STARTS synchronously (in flight immediately), and the
+  /// tail accumulates every in-flight write via `Future.wait` so [leave] awaits
+  /// ALL of them before deleting — even multiple overlapping enters (connect +
+  /// reconnect) — guaranteeing the delete is the last writer.
+  void _enterPresence() {
+    if (_disposed) return;
+    final enterFuture = _presenceService
+        .enter(
+          userId: userId,
+          displayName: displayName,
+          avatarId: avatarId,
+          roomId: room.id,
+        )
+        .catchError((Object e) =>
+            _log.warning('Failed to write presence for room ${room.id}: $e'));
+    final prior = _pendingEnter;
+    _pendingEnter =
+        prior == null ? enterFuture : Future.wait([prior, enterFuture]);
   }
 
   /// Listen to the Firestore room document; fire [_onRoomDeleted] when the
@@ -284,6 +335,9 @@ class RoomSession {
           await _onReconnectWorld();
           if (_disposed) return;
           _listenForConnectionLoss();
+          // Re-announce presence: the prior doc may have been reaped (or never
+          // written if the first connect failed).
+          _enterPresence();
           await enableMedia();
           if (_disposed) return;
 
@@ -339,6 +393,21 @@ class RoomSession {
   /// producers (ChatService → ProximityService → LiveKitService).
   Future<void> leave() async {
     _disposed = true;
+
+    // Serialize the delete AFTER any in-flight enter() so a fast connect→leave
+    // can't let the write land after the delete (which would resurrect a ghost).
+    // The enter future already swallows its own errors via catchError.
+    final pendingEnter = _pendingEnter;
+    if (pendingEnter != null) {
+      await pendingEnter;
+    }
+
+    // Clear presence so the user vanishes from the foyer promptly.
+    // Best-effort — a delete failure must not block teardown.
+    await _presenceService
+        .leave(userId)
+        .catchError((Object e) => _log.warning('Failed to clear presence: $e'));
+
     _roomDeletionSub?.cancel();
     _roomDeletionSub = null;
     _connectionLostSub?.cancel();

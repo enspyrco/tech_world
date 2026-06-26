@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
 import 'package:tech_world/flame/maps/map_identity.dart';
 import 'package:tech_world/rooms/manage_editors_dialog.dart';
+import 'package:tech_world/rooms/presence_entry.dart';
+import 'package:tech_world/rooms/presence_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
 
@@ -17,11 +21,16 @@ class RoomBrowser extends StatefulWidget {
     required this.onCreateRoom,
     this.canCreateRoom = true,
     this.onSignOut,
+    this.presenceService,
     super.key,
   });
 
   final RoomService roomService;
   final String userId;
+
+  /// Source of room occupancy ("who is in each room"). Injectable for tests;
+  /// defaults to a Firestore-backed [PresenceService] in production.
+  final PresenceService? presenceService;
 
   /// Whether the current user can create rooms (false for anonymous guests).
   final bool canCreateRoom;
@@ -42,20 +51,33 @@ class RoomBrowser extends StatefulWidget {
 class _RoomBrowserState extends State<RoomBrowser>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  late final PresenceService _presenceService;
   List<RoomData>? _publicRooms;
   List<RoomData>? _myRooms;
   bool _loading = true;
   String? _error;
 
+  /// Live room occupancy, keyed by room id. One subscription over the whole
+  /// `/presence` collection feeds every card.
+  Map<String, List<PresenceEntry>> _occupancy = const {};
+  StreamSubscription<List<PresenceEntry>>? _presenceSub;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _presenceService = widget.presenceService ?? PresenceService();
     _loadRooms();
+    _presenceSub = _presenceService.watchAll().listen((entries) {
+      if (mounted) {
+        setState(() => _occupancy = PresenceService.groupByRoom(entries));
+      }
+    });
   }
 
   @override
   void dispose() {
+    _presenceSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -269,6 +291,7 @@ class _RoomBrowserState extends State<RoomBrowser>
           return _RoomCard(
             room: room,
             isOwner: room.isOwner(widget.userId),
+            occupants: _occupancy[room.id] ?? const [],
             onTap: () => widget.onJoinRoom(room),
             onDelete: room.isOwner(widget.userId)
                 ? () => _deleteRoom(room)
@@ -331,12 +354,16 @@ class _RoomCard extends StatelessWidget {
     required this.room,
     required this.isOwner,
     required this.onTap,
+    this.occupants = const [],
     this.onDelete,
     this.onManageEditors,
   });
 
   final RoomData room;
   final bool isOwner;
+
+  /// Users currently in this room — rendered as a foyer presence row.
+  final List<PresenceEntry> occupants;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
   final VoidCallback? onManageEditors;
@@ -396,6 +423,10 @@ class _RoomCard extends StatelessWidget {
                         fontSize: 12,
                       ),
                     ),
+                    if (occupants.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _OccupancyRow(occupants: occupants),
+                    ],
                   ],
                 ),
               ),
@@ -435,6 +466,158 @@ class _RoomCard extends StatelessWidget {
               const Icon(Icons.chevron_right, color: Colors.white38),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The foyer "who's gathered" indicator: a horizontal stack of overlapping
+/// occupant avatars, an overflow "+N" chip when there are more than fit, and a
+/// count. This is the world-as-substrate moment — you see who's in a room
+/// before you walk in, the way you'd glance into a tavern common-room.
+class _OccupancyRow extends StatelessWidget {
+  const _OccupancyRow({required this.occupants});
+
+  final List<PresenceEntry> occupants;
+
+  static const _maxVisible = 5;
+  static const _size = 24.0;
+  static const _overlap = 8.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = occupants.take(_maxVisible).toList();
+    final overflow = occupants.length - visible.length;
+    final chipCount = visible.length + (overflow > 0 ? 1 : 0);
+    final step = _size - _overlap;
+    final stackWidth = _size + (chipCount - 1) * step;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: _size,
+          width: stackWidth,
+          child: Stack(
+            children: [
+              for (var i = 0; i < visible.length; i++)
+                Positioned(
+                  left: i * step,
+                  child: _OccupantAvatar(entry: visible[i], size: _size),
+                ),
+              if (overflow > 0)
+                Positioned(
+                  left: visible.length * step,
+                  child: _OverflowChip(count: overflow, size: _size),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          occupants.length == 1 ? '1 here' : '${occupants.length} here',
+          style: const TextStyle(
+            color: Color(0xFF4CAF50),
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A single occupant rendered as a colored initial circle. Deterministic color
+/// from the user id so a given person looks consistent across cards/sessions.
+/// (Sprite-head avatars are a planned follow-up; an initial circle always
+/// renders and reads instantly — the Gather/Slack foyer idiom.)
+class _OccupantAvatar extends StatelessWidget {
+  const _OccupantAvatar({required this.entry, required this.size});
+
+  final PresenceEntry entry;
+  final double size;
+
+  static const _palette = [
+    Color(0xFF4FC3F7),
+    Color(0xFFD97757),
+    Color(0xFF81C784),
+    Color(0xFFBA68C8),
+    Color(0xFFFFB74D),
+    Color(0xFF4DB6AC),
+    Color(0xFFF06292),
+  ];
+
+  // Explicit polynomial (Java-style, *31) hash over code units — unlike
+  // String.hashCode this is stable across runs/platforms, so a given user keeps
+  // the same color between sessions, not just within one process.
+  static int _stableHash(String s) {
+    var h = 0;
+    for (final unit in s.codeUnits) {
+      h = (h * 31 + unit) & 0x7fffffff;
+    }
+    return h;
+  }
+
+  Color get _color => _palette[_stableHash(entry.userId) % _palette.length];
+
+  String get _initial {
+    final name = entry.displayName.trim();
+    // characters.first, not substring(0, 1): grapheme-safe so a leading emoji
+    // or surrogate-pair name doesn't render a broken half-character.
+    return name.isEmpty ? '?' : name.characters.first.toUpperCase();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: entry.displayName.isEmpty ? 'Someone' : entry.displayName,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: _color,
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFF16213E), width: 2),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          _initial,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: size * 0.45,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The "+N" chip shown when a room has more occupants than fit in the stack.
+class _OverflowChip extends StatelessWidget {
+  const _OverflowChip({required this.count, required this.size});
+
+  final int count;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFF3D3D5C),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFF16213E), width: 2),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '+$count',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: size * 0.34,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
