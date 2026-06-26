@@ -548,11 +548,24 @@ class _OccupantAvatar extends StatelessWidget {
     Color(0xFFF06292),
   ];
 
-  Color get _color => _palette[entry.userId.hashCode.abs() % _palette.length];
+  // Explicit FNV-ish hash over code units — unlike String.hashCode this is
+  // stable across runs/platforms, so a given user keeps the same color between
+  // sessions, not just within one process.
+  static int _stableHash(String s) {
+    var h = 0;
+    for (final unit in s.codeUnits) {
+      h = (h * 31 + unit) & 0x7fffffff;
+    }
+    return h;
+  }
+
+  Color get _color => _palette[_stableHash(entry.userId) % _palette.length];
 
   String get _initial {
     final name = entry.displayName.trim();
-    return name.isEmpty ? '?' : name.substring(0, 1).toUpperCase();
+    // characters.first, not substring(0, 1): grapheme-safe so a leading emoji
+    // or surrogate-pair name doesn't render a broken half-character.
+    return name.isEmpty ? '?' : name.characters.first.toUpperCase();
   }
 
   @override

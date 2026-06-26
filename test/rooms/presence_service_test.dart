@@ -101,6 +101,22 @@ void main() {
       await sub.cancel();
     });
 
+    test('a non-Timestamp lastSeen does not throw — parses with null lastSeen',
+        () async {
+      // Regression: `as Timestamp?` would THROW on a non-null non-Timestamp
+      // value, escaping tryParse and erroring the whole stream.
+      final entry = PresenceEntry.tryParse('u1', {
+        'userId': 'u1',
+        'displayName': 'Ada',
+        'avatarId': 'npc12',
+        'currentRoomId': 'room-a',
+        'lastSeen': 'definitely-not-a-timestamp',
+      });
+      expect(entry, isNotNull);
+      expect(entry!.lastSeen, isNull);
+      expect(entry.currentRoomId, 'room-a');
+    });
+
     test('drops malformed docs without crashing the stream', () async {
       // A doc missing currentRoomId is unparseable and must be skipped.
       await firestore

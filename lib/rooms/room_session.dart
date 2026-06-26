@@ -225,12 +225,18 @@ class RoomSession {
     return result;
   }
 
+  /// The in-flight presence write, if any. [leave] awaits it before deleting so
+  /// a fast connect→leave can't let a still-resolving `enter()` land *after* the
+  /// delete and resurrect a ghost doc (the delete must be the last writer).
+  Future<void>? _pendingEnter;
+
   /// Announce this user's presence in the room. Best-effort and unawaited: a
   /// presence-write failure must never break the connection flow, so errors are
-  /// logged and swallowed rather than propagated.
+  /// logged and swallowed rather than propagated. The future is retained in
+  /// [_pendingEnter] so [leave] can serialize the delete after it.
   void _enterPresence() {
     if (_disposed) return;
-    _presenceService
+    _pendingEnter = _presenceService
         .enter(
           userId: userId,
           displayName: displayName,
@@ -380,7 +386,15 @@ class RoomSession {
   Future<void> leave() async {
     _disposed = true;
 
-    // Clear presence first so the user vanishes from the foyer promptly.
+    // Serialize the delete AFTER any in-flight enter() so a fast connect→leave
+    // can't let the write land after the delete (which would resurrect a ghost).
+    // The enter future already swallows its own errors via catchError.
+    final pendingEnter = _pendingEnter;
+    if (pendingEnter != null) {
+      await pendingEnter;
+    }
+
+    // Clear presence so the user vanishes from the foyer promptly.
     // Best-effort — a delete failure must not block teardown.
     await _presenceService
         .leave(userId)

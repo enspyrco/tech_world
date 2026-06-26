@@ -20,11 +20,18 @@ class _FakeLiveKit extends Mock implements LiveKitService {}
 /// [RoomSession] calls [PresenceService.enter]/[leave] at the right moments.
 /// The Firestore behaviour itself is covered by `presence_service_test.dart`.
 class _SpyPresence extends PresenceService {
-  _SpyPresence() : super(firestore: FakeFirebaseFirestore());
+  _SpyPresence({this.enterGate}) : super(firestore: FakeFirebaseFirestore());
+
+  /// When set, `enter` does not complete until this completes — lets a test
+  /// hold an enter() in flight and prove `leave` serializes after it.
+  final Future<void>? enterGate;
 
   final List<String> enteredRooms = [];
   final List<String> enteredAvatars = [];
   final List<String> leftUsers = [];
+
+  /// Ordered log of completed operations: `enter:<room>` / `leave:<user>`.
+  final List<String> order = [];
 
   @override
   Future<void> enter({
@@ -35,11 +42,14 @@ class _SpyPresence extends PresenceService {
   }) async {
     enteredRooms.add(roomId);
     enteredAvatars.add(avatarId);
+    if (enterGate != null) await enterGate;
+    order.add('enter:$roomId');
   }
 
   @override
   Future<void> leave(String userId) async {
     leftUsers.add(userId);
+    order.add('leave:$userId');
   }
 }
 
@@ -349,6 +359,47 @@ void main() {
 
       await session.leave();
       expect(spy.leftUsers, ['user-1']);
+    });
+
+    test('leave awaits an in-flight enter so the delete is the last writer',
+        () async {
+      // Regression for the connect→leave race: a fire-and-forget enter() that
+      // resolves AFTER leave()'s delete would resurrect a ghost doc. leave()
+      // must serialize the delete after the pending enter.
+      final liveKit = _FakeLiveKit();
+      _stubLiveKit(liveKit);
+      when(liveKit.connect)
+          .thenAnswer((_) async => ConnectionResult.connected);
+
+      final gate = Completer<void>();
+      final spy = _SpyPresence(enterGate: gate.future);
+      final session = RoomSession.create(
+        room: _testRoom,
+        userId: 'user-1',
+        displayName: 'User 1',
+        avatarId: 'npc12',
+        onStateChanged: () {},
+        onReconnectWorld: () async {},
+        onRoomDeleted: () {},
+        chatMessageRepository:
+            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+        liveKitService: liveKit,
+        firestore: FakeFirebaseFirestore(),
+        presenceService: spy,
+      );
+
+      await session.connect(); // enter() starts but blocks on the gate
+      final leaveFuture = session.leave();
+
+      // leave must NOT have deleted yet — the enter is still in flight.
+      await Future<void>.delayed(Duration.zero);
+      expect(spy.order, isEmpty, reason: 'leave is waiting on the pending enter');
+
+      gate.complete(); // let enter() resolve
+      await leaveFuture;
+
+      expect(spy.order, ['enter:test-room', 'leave:user-1'],
+          reason: 'delete must land after the enter write');
     });
 
     test('a failed connect does not write presence', () async {

@@ -60,12 +60,17 @@ class PresenceEntry {
     final avatarId = data['avatarId'];
     final currentRoomId = data['currentRoomId'];
     if (currentRoomId is! String || currentRoomId.isEmpty) return null;
+    // Guard with `is`, NOT `as Timestamp?`: a rules-legal doc with a non-null
+    // non-Timestamp lastSeen (e.g. lastSeen: 'bad') makes `as Timestamp?` THROW
+    // rather than yield null — and that throw escapes tryParse and errors the
+    // whole browser stream. Same `as`-cast wire-seam teardown class as #364/#366.
+    final rawLastSeen = data['lastSeen'];
     return PresenceEntry(
       userId: docId,
       displayName: displayName is String ? displayName : '',
       avatarId: avatarId is String ? avatarId : '',
       currentRoomId: currentRoomId,
-      lastSeen: (data['lastSeen'] as Timestamp?)?.toDate(),
+      lastSeen: rawLastSeen is Timestamp ? rawLastSeen.toDate() : null,
     );
   }
 }
