@@ -294,4 +294,4 @@ Application materials for the Screen Australia Games Production Fund are in [`do
 
 ## License
 
-See repository root.
+Licensing is under discussion — no `LICENSE` file is committed yet. See [`docs/licensing.html`](docs/licensing.html) for the current recommendation (a split licence: permissive on the reusable framework, protective on the game) and the Screen Australia grant IP findings.

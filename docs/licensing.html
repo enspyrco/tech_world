@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tech World — Licensing Decision</title>
+<style>
+  :root { --ink:#1a1a2e; --muted:#5a5a72; --line:#e2e2ec; --accent:#4a3aff; --warn:#b8860b; --good:#1d7a46; --bg:#fbfbfe; }
+  * { box-sizing:border-box; }
+  body { font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:var(--ink); background:var(--bg); margin:0; padding:0 1.2rem; }
+  main { max-width:820px; margin:0 auto; padding:2.5rem 0 5rem; }
+  h1 { font-size:2rem; margin:0 0 .3rem; letter-spacing:-.02em; }
+  h2 { font-size:1.3rem; margin:2.5rem 0 .6rem; letter-spacing:-.01em; }
+  h3 { font-size:1.05rem; margin:1.4rem 0 .3rem; }
+  .sub { color:var(--muted); margin:.2rem 0 1.4rem; }
+  .status { display:inline-block; font-size:.78rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:.25rem .6rem; border-radius:6px; background:#fff4d6; color:var(--warn); border:1px solid #f0dba0; }
+  .tldr { background:#fff; border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:10px; padding:1.1rem 1.3rem; margin:1.5rem 0; }
+  .tldr p { margin:.4rem 0; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; font-size:.93rem; }
+  th,td { text-align:left; padding:.6rem .7rem; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:#f3f3fb; font-weight:600; }
+  blockquote { margin:.8rem 0; padding:.5rem 1rem; border-left:3px solid var(--line); color:var(--muted); font-style:italic; }
+  details { background:#fff; border:1px solid var(--line); border-radius:10px; margin:.7rem 0; padding:.2rem 1rem; }
+  details[open] { padding-bottom:1rem; }
+  summary { cursor:pointer; font-weight:600; padding:.7rem 0; }
+  code { background:#f0f0f7; padding:.1rem .35rem; border-radius:4px; font-size:.88em; }
+  .pill { display:inline-block; font-size:.75rem; font-weight:700; padding:.15rem .5rem; border-radius:5px; }
+  .pill.good { background:#e3f5ea; color:var(--good); }
+  .pill.warn { background:#fff4d6; color:var(--warn); }
+  a { color:var(--accent); }
+  .foot { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--muted); font-size:.85rem; }
+  ul { padding-left:1.2rem; }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>Tech World &mdash; Licensing Decision</h1>
+  <p class="sub">
+    <span class="status">Decision pending</span>
+    &nbsp; Last updated 2026-06-21 &nbsp;&middot;&nbsp; Owner: Nick / Enspyr Pty Ltd
+  </p>
+
+  <div class="tldr">
+    <p><strong>Where we are.</strong> No licence has been committed. There is no <code>LICENSE</code> file at the repo root, no <code>license:</code> field in <code>pubspec.yaml</code>, and the README's "See repository root" points at a file that does not exist. This document records the options, the constraints, and a recommendation.</p>
+    <p><strong>Direction chosen.</strong> Split the licence by layer: a <em>permissive</em> licence on the reusable framework (to seed adoption, the way Andy G uses Apache), and a <em>protective or closed</em> licence on the game itself.</p>
+    <p><strong>Key finding.</strong> The Screen Australia Games Production Fund is a <strong>non-recoupable grant that takes no IP stake</strong> &mdash; it imposes no restriction on how the output is licensed or open-sourced. The only binding instrument still to read is the signed Project Grant Agreement (PGA).</p>
+  </div>
+
+  <h2>1. Recommendation</h2>
+  <table>
+    <tr><th>Layer</th><th>Recommended licence</th><th>Why</th></tr>
+    <tr>
+      <td><strong>Framework / engine</strong><br><span class="sub">reusable Flutter + Flame + LiveKit multiplayer plumbing</span></td>
+      <td><span class="pill good">Apache 2.0</span></td>
+      <td>Maximises adoption. Businesses can build on it freely; the explicit patent grant is what makes it the corporate-safe default. This is Andy G's model and the right one for code you <em>want</em> others to take.</td>
+    </tr>
+    <tr>
+      <td><strong>The game</strong><br><span class="sub">content, challenges, the AITW experience</span></td>
+      <td><span class="pill warn">AGPL v3</span> or <span class="pill warn">all-rights-reserved</span></td>
+      <td>If you want it visible-but-protected, AGPL forces anyone hosting a modified version to share their changes. Because Enspyr is the <strong>sole copyright holder</strong>, you keep the dual-licensing lever (AGPL to the community + a paid commercial licence to businesses who don't want copyleft). If you'd rather keep it fully closed for now, simply ship no licence on that part &mdash; "all rights reserved" is the default.</td>
+    </tr>
+  </table>
+  <p>This is a recommendation, not a settled call &mdash; see the open questions in &sect;5.</p>
+
+  <h2>2. Apache 2.0 vs AGPL v3</h2>
+  <p>Your read on these is correct. The short version:</p>
+  <table>
+    <tr><th></th><th>Apache 2.0</th><th>AGPL v3</th></tr>
+    <tr><td><strong>Type</strong></td><td>Permissive</td><td>Strong copyleft</td></tr>
+    <tr><td><strong>Must share changes?</strong></td><td>No. A business can modify it, ship it inside a proprietary product, and contribute nothing back.</td><td>Yes &mdash; and uniquely, the network clause (&sect;13) closes the "SaaS loophole": anyone running a <em>modified</em> version as a hosted service must offer users the source.</td></tr>
+    <tr><td><strong>Adoption</strong></td><td>Broadest. Asks nothing of downstream users.</td><td>Narrower. Many companies (Google notably) <strong>ban AGPL dependencies outright</strong>.</td></tr>
+    <tr><td><strong>Patents</strong></td><td>Explicit patent grant + retaliation clause.</td><td>Patent grant via GPLv3 terms.</td></tr>
+    <tr><td><strong>Best for</strong></td><td>Code you want maximally adopted; goodwill and ecosystem.</td><td>Code where you want improvements to flow back, or where copyleft is the thing that makes a paid commercial licence worth buying.</td></tr>
+  </table>
+
+  <details>
+    <summary>The dual-licensing lever (why sole ownership matters)</summary>
+    <p>Because Enspyr Pty Ltd is the <strong>sole copyright holder</strong> (confirmed in <a href="grant-application/legal/chain-of-title-declaration.md">chain-of-title-declaration.md</a> &mdash; sole developer, no external IP contributors, no encumbrances), you are not limited to one licence. The classic single-rights-holder move is to release under AGPL <em>and</em> sell a commercial licence to businesses that don't want the copyleft. AGPL becomes the lever: anyone who won't share their changes has to buy their way out.</p>
+    <p>A pure-Apache release forgoes this entirely &mdash; with a permissive licence there is nothing to buy. That's the trade Andy G accepts in exchange for maximum adoption. The split recommended here keeps both: adoption on the framework, the commercial lever on the game.</p>
+    <p>Note: all current third-party dependencies are permissive (Flutter BSD-3, Flame MIT, LiveKit Apache 2.0, Firebase Apache/BSD), so <strong>nothing forces a copyleft licence</strong>. AGPL on the game would be a deliberate choice, not an inherited obligation.</p>
+  </details>
+
+  <h2>3. Screen Australia grant &mdash; IP findings</h2>
+  <p>Researched against the primary sources (the Guidelines PDF and Terms of Trade, not the summary web pages). The grant is materially friendlier to open-sourcing than a film/TV <em>investment</em> would be.</p>
+
+  <table>
+    <tr><th>Question</th><th>Answer</th></tr>
+    <tr><td>Does Screen Australia take any IP?</td><td><span class="pill good">No</span> &mdash; no ownership, no equity stake.</td></tr>
+    <tr><td>Recoupment / revenue share?</td><td><span class="pill good">None</span> &mdash; pure grant, not repayable.</td></tr>
+    <tr><td>Restriction on open-sourcing the output?</td><td><span class="pill good">None stated</span> in guidelines or terms of trade.</td></tr>
+    <tr><td>Binding instrument still to read?</td><td><span class="pill warn">The PGA</span> &mdash; the signed Project Grant Agreement defines the actual terms and is not public.</td></tr>
+  </table>
+
+  <h3>Exact wording</h3>
+  <blockquote>"Funding is provided in the form of a grant. Screen Australia does not expect to recoup funds from successful teams. That is, you are not expected to repay the grant in any way."<br><span class="sub">&mdash; Games Production Fund Guidelines, &sect;6.2 Terms of Funding</span></blockquote>
+  <p>The only IP rules in the guidelines concern <strong>inbound</strong> IP, not how you license your output:</p>
+  <blockquote>Ineligible: projects that "are based on a licence to use and/or adapt pre-existing intellectual property owned by a third party&hellip; For clarity, this does not include licences obtained for music, assets or software/plugins used in the making of the game."<br><span class="sub">&mdash; Guidelines, &sect;3.2.2 Ineligible Projects</span></blockquote>
+  <p>Tech World is original work using permissively-licensed tooling, so it clears this cleanly (per the chain-of-title declaration).</p>
+
+  <details>
+    <summary>Eligibility landmine for the framework/game split &mdash; read this</summary>
+    <p>The guidelines list as <strong>ineligible</strong>:</p>
+    <blockquote>"business-to-business products (for example, training simulations, games created solely for teaching purposes at schools, games with ties to academic research, <strong>middleware tools</strong>, or games limited to a small number of locations)"</blockquote>
+    <p><strong>Implication:</strong> open-sourcing the reusable framework as a <em>byproduct</em> of building the game is fine. But the funded thing must be <em>the game</em>. Do not pitch or frame the project <em>as</em> an engine, middleware, or B2B teaching tool &mdash; that risks ineligibility. The split licence is safe; the split <em>narrative</em> needs care.</p>
+  </details>
+
+  <details>
+    <summary>Other grant obligations worth noting</summary>
+    <ul>
+      <li><strong>90% Australian spend.</strong> At least 90% of the grant must be spent on development expenditure physically in Australia.</li>
+      <li><strong>Credit obligation.</strong> Funded projects must include the Screen Australia logo per the Credits Policy and the PGA.</li>
+      <li><strong>Up to $100,000</strong> per application; one application per round across this and the Emerging Gamemakers Fund.</li>
+    </ul>
+  </details>
+
+  <h2>4. Immediate hygiene (independent of the decision)</h2>
+  <ul>
+    <li>The README's <code>## License &rarr; See repository root</code> is a <strong>dangling reference</strong> &mdash; it asserts a licence that does not exist. Either add the file or change the text to "licensing under discussion".</li>
+    <li>Once decided: add <code>LICENSE</code> (and, for a split, a per-directory licence note or a <code>LICENSE</code> in the framework subtree) and set <code>pubspec.yaml</code> accordingly.</li>
+  </ul>
+
+  <h2>5. Open questions</h2>
+  <ul>
+    <li><strong>Read the PGA before finalising.</strong> It is the binding instrument and may contain IP/distribution clauses not in the public guidelines. (Only relevant if/when the grant is awarded.)</li>
+    <li><strong>Game licence: AGPL vs all-rights-reserved?</strong> AGPL = visible + dual-licensing lever; closed = simplest, keeps every option open. Reversible later for code not yet published.</li>
+    <li><strong>Where does the framework/game boundary fall in the repo?</strong> The split licence needs a concrete directory boundary (which packages are "framework"). Worth defining before writing the LICENSE files.</li>
+    <li><strong>Contributor licensing.</strong> If external contributors ever join, a CLA is needed to preserve the dual-licensing lever. Not needed while Nick is sole developer.</li>
+  </ul>
+
+  <div class="foot">
+    <strong>References</strong>
+    <ul>
+      <li><a href="https://www.screenaustralia.gov.au/fund/games-production-fund/">Games Production Fund</a> &mdash; program page</li>
+      <li><a href="https://www.screenaustralia.gov.au/resource/games-production-fund-guidelines/">Games Production Fund Guidelines</a> (PDF) &mdash; source of the &sect;6.2 and &sect;3.2.2 quotes</li>
+      <li><a href="https://www.screenaustralia.gov.au/doing-business-with-us/terms-of-trade/">Screen Australia Terms of Trade</a></li>
+      <li><a href="grant-application/legal/chain-of-title-declaration.md">chain-of-title-declaration.md</a> &mdash; sole ownership, permissive dependencies</li>
+      <li>Licence texts: <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache 2.0</a> &middot; <a href="https://www.gnu.org/licenses/agpl-3.0.en.html">AGPL v3</a></li>
+    </ul>
+  </div>
+
+</main>
+</body>
+</html>
