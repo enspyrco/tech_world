@@ -120,7 +120,9 @@ Screen Australia's Games Production Fund provides **non-repayable grants of up t
 - [ ] Review full Terms of Trade document (especially clause 2.2 for company eligibility, clause 4.7.a for fair compensation)
 - [ ] Ensure Enspyr Pty Ltd has formal IP ownership — get legal advice, prepare contractor agreements if needed
 - [ ] Review Screen Australia's Guiding Principles on generative AI use
-- [ ] If Alexar joins as a collaborator, put a contractor/IP-assignment agreement in place (chain-of-title currently declares Nick sole developer)
+- [x] Alexar Pendashteh confirmed as a collaborator (Telegram, 2026-07-03) — will also help with outreach
+- [ ] Put a contractor/IP-assignment agreement in place for Alexar (chain-of-title currently declares Nick sole developer)
+- [ ] **Pick a studio/brand name distinct from the company** (Alexar feedback 2026-07-03): keep "Enspyr Pty Ltd" as the legal applicant, but choose a separate studio name for the brand identity. Details to be settled with Alexar next meeting; then ripple through all docs (Studio: lines, pitch, end card, CVs)
 
 ---
 
