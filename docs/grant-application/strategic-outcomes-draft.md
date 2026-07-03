@@ -1,7 +1,7 @@
 # Screen Australia – Games: Strategic Outcomes
 
 **Project title:** Tech World
-**Studio:** Enspyrco Pty Ltd
+**Studio:** Enspyr Pty Ltd
 **Strategic Outcomes prepared by:** [Your name]
 **Strategic Outcomes date:** [DD/MM/2026]
 
@@ -65,7 +65,7 @@ These weaknesses are all **game loop and polish** problems — they are well-und
 
 [Your creative practice: this project pushes your practice into new territory — game design, real-time multiplayer systems, AI integration, and the intersection of education and entertainment. It represents a deliberate move from [previous work] into interactive entertainment.]
 
-[The transition: Enspyrco started as a vehicle for community-driven development. This grant represents the transition to a focused studio with a commercial product. The creative ambition has outgrown the community context, and Tech World deserves dedicated resources to reach its potential.]
+[The transition: Enspyr started as a vehicle for community-driven development. This grant represents the transition to a focused studio with a commercial product. The creative ambition has outgrown the community context, and Tech World deserves dedicated resources to reach its potential.]
 
 ### Diversity, equity, and inclusion plan
 
@@ -95,13 +95,13 @@ Tech World is designed to make coding accessible to people who might not see the
 
 ### What are your studio goals?
 
-Enspyrco's goal is to become a sustainable Australian independent game studio that creates games where coding is the core mechanic. Tech World is the studio's debut title and the foundation for this vision.
+Enspyr's goal is to become a sustainable Australian independent game studio that creates games where coding is the core mechanic. Tech World is the studio's debut title and the foundation for this vision.
 
 **Short-term (12 months):** Deliver a polished, playable demo of Tech World at PAX Aus October 2026. Use the event to validate the concept with a broad audience, build a wishlist base, and establish the studio's presence in the Australian games community.
 
 **Medium-term (2–3 years):** Release Tech World on Steam as an Early Access title. Grow the player community. Expand the game with additional content (more challenges, maps, game modes). Generate revenue through premium sales (no microtransactions, no pay-to-win).
 
-**Long-term:** Establish Enspyrco as a recognised studio in the "coding games" genre. Explore additional titles that use real programming as a gameplay mechanic. Contribute to the Australian games industry by demonstrating that Flutter/Flame is a viable game engine and that open-source toolchains can produce competitive indie titles.
+**Long-term:** Establish Enspyr as a recognised studio in the "coding games" genre. Explore additional titles that use real programming as a gameplay mechanic. Contribute to the Australian games industry by demonstrating that Flutter/Flame is a viable game engine and that open-source toolchains can produce competitive indie titles.
 
 ### What significant milestone are you currently working towards for the game?
 
@@ -130,7 +130,7 @@ This aligns with Screen Australia's supported milestone: *"Completion of a demo 
 - Post-event media coverage or social media engagement metrics
 - Qualitative: players can pick up the game, complete at least one challenge, and have a positive experience without developer assistance
 
-**How this furthers studio goals:** A successful PAX demo validates the concept with real players, generates a wishlist base for an Early Access launch, and establishes Enspyrco in the Australian games community. It provides the evidence needed to pursue further funding, publisher interest, or self-funded development toward release.
+**How this furthers studio goals:** A successful PAX demo validates the concept with real players, generates a wishlist base for an Early Access launch, and establishes Enspyr in the Australian games community. It provides the evidence needed to pursue further funding, publisher interest, or self-funded development toward release.
 
 ---
 

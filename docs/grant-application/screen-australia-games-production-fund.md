@@ -1,12 +1,13 @@
 # Screen Australia Games Production Fund — Application Plan
 
-**Applicant:** Enspyrco Pty Ltd
+**Applicant:** Enspyr Pty Ltd (ABN 92 167 142 421)
 **Project:** Tech World
 **Grant Amount Requested:** Up to $100,000
-**Round Deadline:** 5pm AEDT Thursday, March 5, 2026 (~2.5 weeks)
-**Decision:** ~12 weeks after deadline (early June 2026)
+**Round Deadline:** 5pm AEST Thursday, 27 August 2026
+**Decision:** ~12 weeks after deadline (~late November 2026)
+**Funded milestone target:** PAX Aus 2027 demo (funding lands ~Dec 2026; PAX Aus 2026 is before the money arrives)
 **Approval Rate:** ~18% of eligible applications (August 2025 round)
-**Guidelines Version:** Issued 03/10/2023, Updated 14/11/2025
+**Guidelines Version:** Issued 03/10/2023, Updated 14/11/2025 — VERIFY against the live August 2026 round before submitting
 
 ---
 
@@ -21,7 +22,7 @@
 7. [Assessment Criteria Strategy](#7-assessment-criteria-strategy)
 8. [Tips for a Compelling Application](#8-tips-for-a-compelling-application)
 9. [Pitch Video Script (3 Minutes)](#9-pitch-video-script-3-minutes)
-10. [Application Timeline (Now → March 5)](#10-application-timeline-now--march-5)
+10. [Application Timeline (Now → 27 Aug 2026)](#10-application-timeline-now--27-aug-2026)
 - [Appendix A: If Successful — Contracting Requirements](#appendix-a-if-successful--contracting-requirements)
 - [Appendix B: Useful Links](#appendix-b-useful-links)
 
@@ -85,13 +86,13 @@ Screen Australia's Games Production Fund provides **non-repayable grants of up t
 
 | Requirement | Status | Notes |
 |---|---|---|
-| Registered Australian company (private, not sole trader or public) | YES | Enspyrco Pty Ltd |
+| Registered Australian company (private, not sole trader or public) | YES | Enspyr Pty Ltd |
 | Not majority owned/controlled by overseas company | YES | Australian-owned |
 | Playable prototype | YES | Fully functional multiplayer prototype |
-| Clear, well-scoped milestone actively being worked towards | YES | PAX Aus demo Oct 2026 |
+| Clear, well-scoped milestone actively being worked towards | YES | PAX Aus 2027 demo |
 | Pre-production or production stage | YES | In production since mid-2024 |
-| Australian creative control (citizens/PR) | CONFIRM | Key creatives must be AU citizens/PR |
-| Predominantly developed in Australia | CONFIRM | |
+| Australian creative control (citizens/PR) | YES | Confirmed — key creatives are AU citizens/PR |
+| Predominantly developed in Australia | YES | Confirmed — developed in Australia |
 | Not previously funded by GPF or Games: Expansion Pack | YES | First application |
 | Not applying to EGF in same round | YES | Only applying to GPF |
 | Digital game platform | YES | Web, macOS, iOS, Android |
@@ -110,15 +111,16 @@ Screen Australia's Games Production Fund provides **non-repayable grants of up t
 **This directly applies to Tech World** — it started as a meetup learning project. The application must clearly frame it as having **evolved beyond** that origin. Emphasise: the meetup was the incubator, but the game has outgrown it. The technical foundation is production-quality (CI/CD, test coverage, cross-platform). Position the grant as the transition from community project to commercial studio.
 
 ### IP Ownership
-> The Trends Report notes many applicants had unclear IP ownership, causing contracting complications. Ensure **Enspyrco Pty Ltd** clearly owns all IP. Any contributor work should have appropriate contractor/assignment agreements in place. Legal advice recommended.
+> The Trends Report notes many applicants had unclear IP ownership, causing contracting complications. Ensure **Enspyr Pty Ltd** clearly owns all IP. Any contributor work should have appropriate contractor/assignment agreements in place. Legal advice recommended.
 
 ### Action Items
-- [ ] Confirm all key creatives are Australian citizens or permanent residents
-- [ ] Confirm no team members are currently enrolled students in games-adjacent fields
-- [ ] Confirm no team members juggling multiple active game projects (Trends Report flags this as a concern)
+- [x] Confirm all key creatives are Australian citizens or permanent residents — CONFIRMED (Nick, 2026-07-02)
+- [x] Confirm no team members are currently enrolled students in games-adjacent fields — CONFIRMED (Nick, 2026-07-02)
+- [x] Confirm no team members juggling multiple active game projects — CONFIRMED not student-reliant (Nick, 2026-07-02)
 - [ ] Review full Terms of Trade document (especially clause 2.2 for company eligibility, clause 4.7.a for fair compensation)
-- [ ] Ensure Enspyrco Pty Ltd has formal IP ownership — get legal advice, prepare contractor agreements if needed
+- [ ] Ensure Enspyr Pty Ltd has formal IP ownership — get legal advice, prepare contractor agreements if needed
 - [ ] Review Screen Australia's Guiding Principles on generative AI use
+- [ ] If Alexar joins as a collaborator, put a contractor/IP-assignment agreement in place (chain-of-title currently declares Nick sole developer)
 
 ---
 
@@ -127,13 +129,14 @@ Screen Australia's Games Production Fund provides **non-repayable grants of up t
 ### Project Summary
 Tech World is a multiplayer 2D game built with Flutter and the Flame engine. Players explore a shared virtual world, collaborate at coding terminal stations, chat with an AI companion (Clawd), and see each other via proximity-based video chat. It's a social coding adventure — think Stardew Valley meets Zachtronics, where the puzzles are real code.
 
-### Technical Stats
+### Technical Stats (as of July 2026)
 - **First commit:** June 2023 (current architecture since July 2024)
-- **Active development:** 99 PRs merged, 61 commits in 2026 alone
-- **Codebase:** ~12,200 lines of production Dart code across 74 source files
-- **Tests:** ~6,700 lines across 36 test files
-- **CI/CD:** Automated analysis, testing (45% coverage threshold), and deployment to Firebase Hosting
+- **Active development:** ~387 commits total, 343 in 2026 alone; ~500 PRs merged
+- **Codebase:** ~42,700 lines of production Dart code across 213 source files
+- **Tests:** ~34,200 lines of test code
+- **CI/CD:** Automated analysis (`flutter analyze --fatal-infos`), testing (45% coverage threshold), and auto-deploy to self-hosted infrastructure (OCI) on merge to main
 - **Platforms:** Web (primary), macOS, iOS, Android
+- **Infrastructure:** Self-hosted LiveKit v1.11.0 (OCI, Caddy TLS, Redis), Firebase Auth + Firestore, AI bots on OCI
 
 ### Features — COMPLETE
 
@@ -200,6 +203,18 @@ Tech World is a multiplayer 2D game built with Flutter and the Flame engine. Pla
 - Connection failure banner when LiveKit is unavailable
 - Responsive layout with breakpoints (1200px welcome panel, 800px panel widths)
 
+#### Shipped Since Feb 2026 (not in the original prototype snapshot)
+- **Keyboard movement** — WASD + arrow keys, continuous-while-held with diagonals (PRs #483, #487)
+- **Full chat system** — group chat, direct messages, navigable quote-replies (group + DM), and @mentions that "light up the world" (PRs #488, #490, #491, #494)
+- **Shared room timers** — synchronised countdown timer with alarm + in-world clock entity, late-joiner catch-up (PRs #484, #489)
+- **Foyer room-presence** — see the avatars of who's in each room before you enter (PR #501)
+- **Embodied Dreamfinder** — a second AI character with a rendered avatar; its audio is proximity-gated symmetrically with its video bubble (PRs #485, #486)
+- **Prompt challenges** — a second challenge track (18 natural-language "prompt" challenges) alongside the 23 code challenges, with deterministic local evaluation (PR #344)
+- **Spellbook / voice casting** — words-of-power cast by speaking near world listeners (doors, runestones); "the world is the listener" design
+- **Accessibility preferences** (directly serves the EDIA criterion) — hide-video-bubbles (sensory-load / ASD accessibility), reduce-motion, user-configurable proximity radius (PRs #437, #440, #444)
+- **Type-enforced privacy** — an event-sink system with 34 domain events and a three-layer PII gate that the Dart analyzer enforces at build time (PRs #436, #459, #461)
+- **Reliability & security hardening** — dozens of defensive-parse, Firestore-rules, WASM-safety, and concurrency fixes; WebGL context-loss recovery; version-mismatch update banner; cache-busting deploy (PRs #364–#499)
+
 ### Features — NOT YET IMPLEMENTED
 
 | Feature | Priority | Complexity |
@@ -223,48 +238,50 @@ Tech World is a multiplayer 2D game built with Flutter and the Flame engine. Pla
 
 ## 4. What's Missing — Development Roadmap
 
-### Phase 1: Pre-Application Polish (Now → March 5, 2026)
-Focus: Make the prototype demo-ready for assessors.
+> **Timeline note (re-based for the August 2026 round):** Funding lands ~December 2026 (deadline 27 Aug → ~12-week assessment → PGA + 80% payment). PAX Aus 2026 (Oct 9–11) is *before* the money arrives, so the funded demo milestone targets **PAX Aus 2027**. Pre-application polish through Aug 2026 is unfunded (existing cadence); funded development runs ~Dec 2026 → Sep 2027.
+
+### Phase 1: Pre-Application Polish (Now → 27 Aug 2026, unfunded)
+Focus: Make the prototype demo-ready for assessors and assemble the application.
 
 | Task | Due | Est. Days |
 |---|---|---|
-| Update documentation to reflect current state | Feb 17 | 1 |
-| Test prototype on fresh machine (assessor experience) | Feb 18 | 1 |
-| Record 30-second gameplay footage | Feb 20 | 1 |
-| Write Production Plan (7 pages, use SA template) | Feb 22 | 3 |
-| Write Strategic Outcomes (6 pages, use SA template) | Feb 24 | 2 |
-| Complete Finance Plan & Budget (SA template) | Feb 25 | 2 |
-| Record 3-minute pitch video | Feb 27 | 2 |
-| Prepare Prototype Details document | Feb 28 | 1 |
-| Compile team CVs | Mar 1 | 1 |
-| Final review and submit on SmartyGrants | Mar 3–4 | 2 |
+| Refresh grant docs to reflect current state | Jul 2026 | 1 |
+| Test prototype on fresh machine (assessor experience) | Jul 2026 | 1 |
+| Record 30-second gameplay footage | Aug 2026 | 1 |
+| Write Production Plan (7 pages, use SA template) | Aug 2026 | 3 |
+| Write Strategic Outcomes (6 pages, use SA template) | Aug 2026 | 2 |
+| Complete Finance Plan & Budget (SA template) | Aug 2026 | 2 |
+| Record 3-minute pitch video | Aug 2026 | 2 |
+| Prepare Prototype Details document | Aug 2026 | 1 |
+| Compile team CVs (incl. Alexar if joining) | Aug 2026 | 1 |
+| Final review and submit on SmartyGrants | ≤26 Aug 2026 | 2 |
 
-### Phase 2: Progression & Sound (April–June 2026, funded)
-Focus: Add the game loop — progression, persistence, sound, and enhanced tutoring. The content foundation (23 challenges, 6 maps, map editor, voice services) is already built.
-
-| Task | Target | Est. Weeks |
-|---|---|---|
-| Progression system (challenge completion tracking, scores, stars) | Apr 2026 | 2 |
-| Challenge persistence (save/resume via Firebase) | Apr 2026 | 2 |
-| Enhanced Clawd tutoring (structured hints, grading rubric, difficulty-aware feedback) | May 2026 | 3 |
-| Sound design (ambient music, interaction SFX, chat notification sounds) | May–Jun 2026 | 3 |
-| "I'm stuck" button with guided hints from Clawd | Jun 2026 | 1 |
-
-### Phase 3: Polish & Event Prep (July–September 2026, funded)
-Focus: Polish for PAX Aus demo.
+### Phase 2: Progression & Sound (~Dec 2026 – Mar 2027, funded)
+Focus: Add the game loop — progression, persistence, sound, and enhanced tutoring. The content foundation (23 code challenges + 18 prompt challenges, 6 maps, map editor, voice services, chat/DMs) is already built.
 
 | Task | Target | Est. Weeks |
 |---|---|---|
-| Onboarding tutorial (guided first experience) | Jul 2026 | 2 |
-| Points and rewards system (badges, achievements) | Jul 2026 | 2 |
-| UI/UX polish pass (menus, transitions, responsive design) | Aug 2026 | 2 |
-| Accessibility features (keyboard nav, text sizing, colour contrast) | Aug 2026 | 2 |
-| Performance optimization and cross-platform testing | Sep 2026 | 2 |
-| PAX Aus demo build preparation | Sep 2026 | 1 |
+| Progression system (challenge completion tracking, scores, stars) | Dec 2026 | 2 |
+| Challenge persistence (save/resume via Firebase) | Jan 2027 | 2 |
+| Enhanced Clawd tutoring (structured hints, grading rubric, difficulty-aware feedback) | Feb 2027 | 3 |
+| Sound design (ambient music, interaction SFX, chat notification sounds) | Feb–Mar 2027 | 3 |
+| "I'm stuck" button with guided hints from Clawd | Mar 2027 | 1 |
 
-### Phase 4: PAX Aus Demo (October 2026)
-- **PAX Aus: October 9–11, 2026** (Melbourne Convention Centre)
-- **GCAP: Early October 2026** (developer conference, same week)
+### Phase 3: Polish & Event Prep (~Apr – Sep 2027, funded)
+Focus: Polish for the PAX Aus 2027 demo.
+
+| Task | Target | Est. Weeks |
+|---|---|---|
+| Onboarding tutorial (guided first experience) | Apr 2027 | 2 |
+| Points and rewards system (badges, achievements) | May 2027 | 2 |
+| UI/UX polish pass (menus, transitions, responsive design) | Jun 2027 | 2 |
+| Deepen accessibility (build on shipped hide-bubbles / reduce-motion / proximity-radius: keyboard nav, text sizing, colour contrast, screen-reader) | Jul 2027 | 2 |
+| Performance optimization and cross-platform testing | Aug 2027 | 2 |
+| PAX Aus demo build preparation | Sep 2027 | 1 |
+
+### Phase 4: PAX Aus 2027 Demo (October 2027)
+- **PAX Aus 2027** (Melbourne Convention Centre; exact dates TBC — typically early-mid October)
+- **GCAP 2027** (developer conference, same week)
 - Playable demo on show floor
 - Networking with publishers, media, players
 
@@ -273,7 +290,7 @@ Focus: Polish for PAX Aus demo.
 ## 5. Milestone & Budget Plan
 
 ### Proposed Milestone
-> **Playable public demo at PAX Aus 2026 (October 9–11) with 23+ coding challenges, progression system, enhanced AI tutoring, sound design, and multiplayer video chat.**
+> **Playable public demo at PAX Aus 2027 with 23 code challenges + 18 prompt challenges, a progression system, enhanced AI tutoring, sound design, and multiplayer video chat.**
 
 This aligns with Screen Australia's supported milestone: *"Demo completion for events."*
 
@@ -382,9 +399,9 @@ What we've already built (the stuff that's genuinely difficult):
 What remains is **game loop and polish** — progression tracking, challenge persistence, sound design, onboarding, and UI refinement. This is straightforward execution, not speculative R&D.
 
 **Development velocity evidence:**
-- 99 PRs merged total, 61 commits in 2026 alone
-- Shipped 23 challenges, 6 maps, map editor, voice services, and wall occlusion in a 3-week sprint (PRs #81–#98)
-- ~12,200 lines of production code, ~6,700 lines of tests, clean git history
+- ~500 PRs merged total; 343 commits in 2026 alone
+- Shipped 23 code challenges, 18 prompt challenges, 6 maps, map editor, voice services, chat/DMs/@mentions, foyer presence, and a second AI avatar since the prototype snapshot
+- ~42,700 lines of production code, ~34,200 lines of tests, clean git history
 
 **Fair compensation (required by Terms of Trade clause 4.7.a):**
 - Budget must show all team members paid at minimum industry rates
@@ -406,7 +423,7 @@ Include a thorough risk analysis and mitigation plan. Key risks to address:
 - Slow progress, no event presence, no public release timeline
 
 **With funding:**
-- Dedicated development time → PAX Aus demo in October 2026
+- Dedicated development time → PAX Aus demo in October 2027
 - Professional art and sound → polished game feel
 - Event presence → visibility in Australian games community
 - Pathway to Early Access release → sustainable studio
@@ -457,8 +474,8 @@ Must include:
 
 ### DO (incorporating Trends Report insights)
 - **Show, don't tell** — The prototype IS the strongest argument. Make sure it works flawlessly for assessors.
-- **Be specific about the milestone** — "Playable demo at PAX Aus October 2026 with 20 challenges and progression system" beats "continue developing the game."
-- **Show development velocity** — 85 PRs, 10k lines of code, working multiplayer + video + AI in a few months. This team ships.
+- **Be specific about the milestone** — "Playable demo at PAX Aus 2027 with 41 challenges and a progression system" beats "continue developing the game."
+- **Show development velocity** — ~500 PRs, ~42k lines of code, working multiplayer + video + AI + chat. This team ships.
 - **Frame it as a game first** — Coding is the *mechanic*, not the *purpose*. Players will come for the fun, the social experience, the satisfaction of solving puzzles. The learning is a bonus.
 - **Name your differentiators** — No other game combines real coding + multiplayer video + AI tutor. Be explicit about this.
 - **Be honest about what's built vs. planned** — Assessors respect transparency over overpromising.
@@ -534,13 +551,13 @@ This isn't a mockup — the hard technical challenges are solved. What remains i
 *[Show roadmap graphic or whiteboard]*
 
 **ON CAMERA:**
-"With Screen Australia's support, we'll take this prototype to a polished, playable demo at PAX Aus in October 2026.
+"With Screen Australia's support, we'll take this prototype to a polished, playable demo at PAX Aus 2027.
 
 Here's what that looks like:
 
-**Phase 1** — April to June: Build the game loop on top of our existing content. A progression system that tracks your coding journey. Challenge persistence so you can pick up where you left off. Enhanced AI tutoring with structured hints and graded feedback. Sound design to bring the world to life.
+**Phase 1** — the first few months: Build the game loop on top of our existing content. A progression system that tracks your coding journey. Challenge persistence so you can pick up where you left off. Enhanced AI tutoring with structured hints and graded feedback. Sound design to bring the world to life.
 
-**Phase 2** — July to September: Polish for PAX. An onboarding tutorial for new players. Points, rewards, and achievements. Accessibility features. Performance optimization across platforms.
+**Phase 2** — through mid-2027: Polish for PAX. An onboarding tutorial for new players. Points, rewards, and achievements. Deeper accessibility. Performance optimization across platforms.
 
 **October: PAX Aus.** A playable demo on the show floor. Players pick up a laptop, walk into Tech World, and start coding together.
 
@@ -556,46 +573,47 @@ Tech World grew out of the 'Adventures In' meetup — a community of developers 
 ### [2:45–3:00] CLOSE — The Ask
 
 **ON CAMERA:**
-"We're Enspyrco. We've built far more than a prototype — 23 challenges, 6 maps, video chat, AI tutor, map editor, voice input. The technical risks are behind us. We're asking for $100,000 to add the game loop, the polish, and bring Tech World to PAX Aus.
+"We're Enspyr. We've built far more than a prototype — 23 challenges, 6 maps, video chat, AI tutor, map editor, voice input. The technical risks are behind us. We're asking for $100,000 to add the game loop, the polish, and bring Tech World to PAX Aus.
 
 Thank you."
 
-*[End card: Tech World logo, Enspyrco, website/contact]*
+*[End card: Tech World logo, Enspyr, website/contact]*
 
 ---
 
-## 10. Application Timeline (Now → March 5)
+## 10. Application Timeline (Now → 27 Aug 2026)
 
-### Week 1: February 15–21
-- [x] **Feb 15:** Download SA templates (Production Plan .docx, Strategic Outcomes .docx, Finance Plan .xlsx)
-- [x] **Feb 15:** Download Guidelines PDF, FAQs, Trends Report for reference
-- [ ] **Feb 15:** Register/log in to SmartyGrants platform
-- [x] **Feb 17:** Update documentation (README, CLAUDE.md) to reflect current state (PR #99)
-- [ ] **Feb 17–18:** Review Terms of Trade document, Screen Australia AI Guiding Principles
-- [ ] **Feb 18:** Test prototype on a fresh machine/browser (simulate assessor experience)
-- [ ] **Feb 18:** Confirm IP ownership is with Enspyrco Pty Ltd; seek legal advice if needed
-- [ ] **Feb 19:** Prepare Prototype Details document (hardware reqs, setup instructions, controls)
-- [ ] **Feb 19:** Consider building a curated "assessor demo" version of prototype
-- [ ] **Feb 20:** Record 30-second gameplay footage video
-- [ ] **Feb 20–21:** Draft Production Plan (7 pages, using SA template)
+Deadline is **5pm AEST Thursday 27 August 2026**. ~8 weeks from early July. Front-load — do not leave submission to the final day.
 
-### Week 2: February 22–28
-- [ ] **Feb 22–23:** Finalize Production Plan (include risk analysis, timeline with buffer, acceptance criteria)
-- [ ] **Feb 24–25:** Write Strategic Outcomes document (6 pages, include marketing plan, accessibility plan)
-- [ ] **Feb 25–26:** Complete Finance Plan & Budget spreadsheet (ALL funding sources, in-kind valuations)
-- [ ] **Feb 26:** Gather letters of support from industry peers / meetup community
-- [ ] **Feb 26:** Get letters of commitment from team members
-- [ ] **Feb 27:** Record 3-minute pitch video (MP4, H.264, 720p, <200MB — plan, rehearse, allow re-takes)
-- [ ] **Feb 28:** Compile team CVs
+### Setup (early July)
+- [x] Download SA templates (Production Plan .docx, Strategic Outcomes .docx, Finance Plan .xlsx)
+- [x] Download Guidelines PDF, FAQs, Trends Report for reference
+- [ ] **VERIFY the live August 2026 round** on SmartyGrants — confirm the guidelines/templates/questions haven't changed since the 14/11/2025 version we hold
+- [ ] Register/log in to SmartyGrants platform
+- [x] Refresh grant docs to reflect current state (this pass, July 2026)
+- [ ] Reach out to Alexar re: joining as a collaborator (Telegram) + send docs
+- [ ] Review Terms of Trade + Screen Australia AI Guiding Principles
+- [ ] Confirm IP ownership with Enspyr Pty Ltd; if Alexar joins, prepare a contractor/IP-assignment agreement
 
-### Week 3: March 1–5
-- [ ] **Mar 1:** Full application review — read through everything fresh
-- [ ] **Mar 1:** Cross-check consistency: team members appear in application, budget, AND CVs; timeline consistent across all docs
-- [ ] **Mar 2:** Have someone external review the application (fresh eyes)
-- [ ] **Mar 3:** Incorporate feedback, finalize all documents
-- [ ] **Mar 3:** Verify all cloud-hosted materials (prototype URL, any Drive/Dropbox links) are accessible and will remain so for 12 weeks
-- [ ] **Mar 4:** Upload everything to SmartyGrants — test all downloads/links
-- [ ] **Mar 5 (before 5pm AEDT):** Final submission — do NOT leave this to the last minute
+### Weeks 1–4 (July → early August): build the materials
+- [ ] Test prototype on a fresh machine/browser (simulate assessor experience)
+- [ ] Consider a curated "assessor demo" build rather than pointing at the live app
+- [ ] Record 30-second gameplay footage video
+- [ ] Draft + finalize Production Plan (7 pages, SA template — include risk analysis, buffered timeline, acceptance criteria)
+- [ ] Write Strategic Outcomes (6 pages, SA template — include marketing plan + accessibility plan)
+- [ ] Complete Finance Plan & Budget spreadsheet (ALL funding sources, in-kind valuations)
+- [ ] Record 3-minute pitch video (MP4, H.264, 720p, <200MB — plan, rehearse, allow re-takes)
+- [ ] Compile team CVs (incl. Alexar if joining — ensure names match across all docs)
+- [ ] Gather letters of support (peers / meetup community) + letters of commitment (team)
+
+### Final week (18–26 August): review + submit
+- [ ] Full application review — read through everything fresh
+- [ ] Cross-check consistency: team members appear in application, budget, AND CVs; timeline consistent across all docs
+- [ ] Have someone external review the application (fresh eyes)
+- [ ] Incorporate feedback, finalize all documents
+- [ ] Verify all cloud-hosted materials (prototype URL, any Drive/Dropbox links) are accessible and will remain so for the full 12-week assessment
+- [ ] Upload everything to SmartyGrants — test all downloads/links
+- [ ] **≤26 Aug (before 5pm AEST 27 Aug):** Final submission — do NOT leave this to the last minute
 
 ### Critical Path Items
 1. **SmartyGrants templates** — downloaded ✅ — use these exactly, don't deviate

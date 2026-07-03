@@ -14,7 +14,7 @@ Email: ______________________________
 ## And
 
 **Assignee (Company):**
-Enspyrco Pty Ltd
+Enspyr Pty Ltd
 ABN: [insert ABN]
 Address: [insert registered address]
 Email: nick@enspyr.co
@@ -95,7 +95,7 @@ Name: ______________________________
 
 Date: ______________________________
 
-**Enspyrco Pty Ltd:**
+**Enspyr Pty Ltd:**
 
 Signature: ______________________________
 

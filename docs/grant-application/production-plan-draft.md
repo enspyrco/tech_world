@@ -1,7 +1,7 @@
 # Screen Australia – Games: Production Plan
 
 **Project title:** Tech World
-**Studio:** Enspyrco Pty Ltd
+**Studio:** Enspyr Pty Ltd
 **Production Plan prepared by:** [Your name]
 **Production Plan date:** [DD/MM/2026]
 
