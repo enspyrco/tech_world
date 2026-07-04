@@ -384,6 +384,27 @@ class BubbleManager {
         'local-player-bubble-refreshed');
   }
 
+  /// Downgrade the LOCAL player's video bubble to a static avatar — e.g. when
+  /// the local camera is turned off.
+  ///
+  /// Without this, the local video bubble keeps its last decoded frame (a
+  /// freeze) and, because it stays a [VideoBubbleComponent],
+  /// [refreshLocalPlayerBubble]'s guard makes turning the camera back on a
+  /// no-op. Mirrors [downgradeVideoBubble] for remote players. The camera is
+  /// already off by the time this fires, so [_createLocalPlayerBubble] builds a
+  /// static [PlayerBubbleComponent].
+  void downgradeLocalPlayerBubble() {
+    final existing = _playerBubbles[_localPlayerBubbleKey];
+    if (existing is! VideoBubbleComponent) return;
+
+    _log.fine('Downgrading local player bubble after camera disabled');
+    final position = existing.position.clone();
+    final newBubble = _createLocalPlayerBubble();
+    newBubble.position = position;
+    _replaceBubble(_localPlayerBubbleKey, newBubble,
+        'local-video-downgraded-to-static');
+  }
+
   /// Downgrade a video bubble to a static placeholder.
   void downgradeVideoBubble(String playerId) {
     final existingBubble = _playerBubbles[playerId];

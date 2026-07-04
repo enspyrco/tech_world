@@ -156,6 +156,8 @@ class LiveKitService {
       StreamController<(Participant, VideoTrack)>.broadcast();
   final _localTrackPublishedController =
       StreamController<LocalTrackPublication>.broadcast();
+  final _localTrackUnpublishedController =
+      StreamController<LocalTrackPublication>.broadcast();
   final _trackUnsubscribedController =
       StreamController<(Participant, VideoTrack)>.broadcast();
   final _dataReceivedController =
@@ -185,6 +187,12 @@ class LiveKitService {
   /// Stream of local track publication events (fires when camera/mic is published)
   Stream<LocalTrackPublication> get localTrackPublished =>
       _localTrackPublishedController.stream;
+
+  /// Stream of local track UN-publication events (fires when the camera/mic is
+  /// turned off). The game bridge downgrades the local video bubble to a static
+  /// avatar so it doesn't freeze on its last decoded frame.
+  Stream<LocalTrackPublication> get localTrackUnpublished =>
+      _localTrackUnpublishedController.stream;
 
   /// Stream of data channel messages received from other participants
   Stream<DataChannelMessage> get dataReceived => _dataReceivedController.stream;
@@ -1032,6 +1040,11 @@ class LiveKitService {
             'Local track published: ${event.publication.kind}');
         _localTrackPublishedController.add(event.publication);
       })
+      ..on<LocalTrackUnpublishedEvent>((event) {
+        _log.fine(
+            'Local track unpublished: ${event.publication.kind}');
+        _localTrackUnpublishedController.add(event.publication);
+      })
       ..on<DataReceivedEvent>((event) {
         _log.fine(
             'Data received from: ${event.participant?.identity}, topic: ${event.topic}');
@@ -1055,6 +1068,7 @@ class LiveKitService {
     _trackSubscribedController.close();
     _trackUnsubscribedController.close();
     _localTrackPublishedController.close();
+    _localTrackUnpublishedController.close();
     _dataReceivedController.close();
     _connectionLostController.close();
   }
