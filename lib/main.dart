@@ -1258,6 +1258,14 @@ class _MyAppState extends State<MyApp> {
                               techWorld: locate<TechWorld>(),
                             ),
                           ],
+                          const SizedBox(width: 8),
+                          _MicMuteButton(
+                            liveKitService: _session?.liveKitService,
+                          ),
+                          const SizedBox(width: 8),
+                          _CameraMuteButton(
+                            liveKitService: _session?.liveKitService,
+                          ),
                           if (kIsWeb || lkPlatformIsDesktop()) ...[
                             const SizedBox(width: 8),
                             _ScreenShareButton(
@@ -1770,6 +1778,85 @@ class _DreamfinderSilenceButton extends StatelessWidget {
           backgroundColor: silenced
               ? Colors.amber.shade300.withValues(alpha: 0.2)
               : Colors.black54,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Toolbar button to mute/unmute the local microphone.
+///
+/// Drives [LiveKitService.setMicrophoneEnabled] and reflects
+/// [LiveKitService.micEnabled]. Muted = the mic track stops publishing, so
+/// every other player stops hearing you immediately (this is a publish-side
+/// mute, distinct from the proximity/DF-silence receive-side gates).
+class _MicMuteButton extends StatelessWidget {
+  const _MicMuteButton({required this.liveKitService});
+
+  final LiveKitService? liveKitService;
+
+  @override
+  Widget build(BuildContext context) {
+    final service = liveKitService;
+    if (service == null) {
+      return const SizedBox.shrink();
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: service.micEnabled,
+      builder: (context, enabled, _) => IconButton(
+        onPressed: () => service.setMicrophoneEnabled(!enabled),
+        icon: Icon(
+          enabled ? Icons.mic : Icons.mic_off,
+          color: enabled ? Colors.white70 : Colors.red.shade300,
+          size: 20,
+        ),
+        tooltip: enabled ? 'Mute microphone' : 'Unmute microphone',
+        style: IconButton.styleFrom(
+          backgroundColor: enabled
+              ? Colors.black54
+              : Colors.red.shade300.withValues(alpha: 0.2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Toolbar button to mute/unmute the local camera.
+///
+/// Drives [LiveKitService.setCameraEnabled] and reflects
+/// [LiveKitService.cameraEnabled]. Muted = the camera track stops publishing,
+/// so your video bubble disappears for every other player.
+class _CameraMuteButton extends StatelessWidget {
+  const _CameraMuteButton({required this.liveKitService});
+
+  final LiveKitService? liveKitService;
+
+  @override
+  Widget build(BuildContext context) {
+    final service = liveKitService;
+    if (service == null) {
+      return const SizedBox.shrink();
+    }
+    return ValueListenableBuilder<bool>(
+      valueListenable: service.cameraEnabled,
+      builder: (context, enabled, _) => IconButton(
+        onPressed: () => service.setCameraEnabled(!enabled),
+        icon: Icon(
+          enabled ? Icons.videocam : Icons.videocam_off,
+          color: enabled ? Colors.white70 : Colors.red.shade300,
+          size: 20,
+        ),
+        tooltip: enabled ? 'Turn off camera' : 'Turn on camera',
+        style: IconButton.styleFrom(
+          backgroundColor: enabled
+              ? Colors.black54
+              : Colors.red.shade300.withValues(alpha: 0.2),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),

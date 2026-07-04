@@ -445,15 +445,34 @@ class LiveKitService {
     _listener = null;
     _room = null;
     _connectionState = _ConnectionState.disconnected;
+    // Nothing is published while disconnected; keep the mute toolbar honest
+    // across a reconnect (enableMedia re-flips these true on rejoin).
+    cameraEnabled.value = false;
+    micEnabled.value = false;
 
     _log.info('Disconnected');
   }
+
+  /// Whether the local camera is currently publishing (true = live/unmuted).
+  ///
+  /// Reactive so the mute toolbar button reflects reality. Session-scoped:
+  /// starts `false` (fast-connect publishes nothing), flips `true` once
+  /// [enableMedia] succeeds on room entry, and tracks every [setCameraEnabled].
+  final ValueNotifier<bool> cameraEnabled = ValueNotifier<bool>(false);
+
+  /// Whether the local microphone is currently publishing (true = live/unmuted).
+  ///
+  /// See [cameraEnabled] for lifecycle. Tracks every [setMicrophoneEnabled].
+  final ValueNotifier<bool> micEnabled = ValueNotifier<bool>(false);
 
   /// Enable/disable local camera
   Future<void> setCameraEnabled(bool enabled) async {
     if (_room?.localParticipant == null) return;
     try {
       await _room!.localParticipant!.setCameraEnabled(enabled);
+      // Only reflect state after the toggle actually lands, so a failed
+      // enable (e.g. permission denied) leaves the button showing muted.
+      cameraEnabled.value = enabled;
       _log.info('Camera ${enabled ? 'enabled' : 'disabled'}');
     } catch (e) {
       _log.warning('Failed to set camera', e);
@@ -465,6 +484,7 @@ class LiveKitService {
     if (_room?.localParticipant == null) return;
     try {
       await _room!.localParticipant!.setMicrophoneEnabled(enabled);
+      micEnabled.value = enabled;
       _log.info('Microphone ${enabled ? 'enabled' : 'disabled'}');
     } catch (e) {
       _log.warning('Failed to set microphone', e);
