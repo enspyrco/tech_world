@@ -9,6 +9,8 @@ import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/chat/conversation_list_tile.dart';
 import 'package:tech_world/chat/dm_thread_view.dart';
+import 'package:tech_world/chat/emoji_composer.dart';
+import 'package:tech_world/chat/emoji_picker.dart';
 import 'package:tech_world/chat/mention_composer.dart';
 import 'package:tech_world/chat/mention_text.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
@@ -73,6 +75,13 @@ class _ChatPanelState extends State<ChatPanel>
 
   /// The active `@query`'s anchor index, so a pick knows what span to replace.
   int? _mentionAtIndex;
+
+  /// Emoji currently shown in the `:name` picker, or empty when it's closed.
+  /// Mutually exclusive with [_mentionMatches] — a token is either `@` or `:`.
+  List<EmojiCandidate> _emojiMatches = const [];
+
+  /// The active `:query`'s opening-colon index, so a pick knows what to replace.
+  int? _emojiColonIndex;
 
   // Clawd's orange color
   static const clawdOrange = Color(0xFFD97757);
@@ -179,6 +188,8 @@ class _ChatPanelState extends State<ChatPanel>
       _pickedMentions.clear();
       _mentionMatches = const [];
       _mentionAtIndex = null;
+      _emojiMatches = const [];
+      _emojiColonIndex = null;
     });
     _focusNode.requestFocus();
 
@@ -219,26 +230,54 @@ class _ChatPanelState extends State<ChatPanel>
     return candidates;
   }
 
-  /// React to composer edits: open/refresh the @-mention picker when the cursor
-  /// sits in an unfinished `@token`, otherwise close it.
+  /// React to composer edits: auto-complete a fully-typed `:name:`, else
+  /// open/refresh whichever picker the cursor's token calls for (mention `@` or
+  /// emoji `:`). At most one picker is open — a token is either `@` or `:`.
   void _onComposerChanged() {
     final value = _textController.value;
     final cursor = value.selection.baseOffset;
-    final active = MentionComposer.activeQuery(value.text, cursor);
-    if (active == null) {
-      if (_mentionMatches.isNotEmpty || _mentionAtIndex != null) {
-        setState(() {
-          _mentionMatches = const [];
-          _mentionAtIndex = null;
-        });
-      }
+
+    // A just-closed `:name:` replaces itself inline with the glyph.
+    final completed = EmojiComposer.tryComplete(value.text, cursor);
+    if (completed != null) {
+      _textController.value = TextEditingValue(
+        text: completed.text,
+        selection: TextSelection.collapsed(offset: completed.cursor),
+      );
+      setState(_closePickers);
       return;
     }
-    final matches = MentionComposer.filter(_mentionCandidates(), active.query);
+
+    final mention = MentionComposer.activeQuery(value.text, cursor);
+    // Only look for an emoji token if we're not already inside a mention.
+    final emoji =
+        mention == null ? EmojiComposer.activeQuery(value.text, cursor) : null;
+
     setState(() {
-      _mentionMatches = matches;
-      _mentionAtIndex = active.atIndex;
+      if (mention != null) {
+        _mentionMatches =
+            MentionComposer.filter(_mentionCandidates(), mention.query);
+        _mentionAtIndex = mention.atIndex;
+        _emojiMatches = const [];
+        _emojiColonIndex = null;
+      } else if (emoji != null && emoji.query.length >= 2) {
+        // Require 2+ chars so a bare `:` / `:f` doesn't spam the picker.
+        _emojiMatches = EmojiComposer.filter(emoji.query);
+        _emojiColonIndex = emoji.colonIndex;
+        _mentionMatches = const [];
+        _mentionAtIndex = null;
+      } else {
+        _closePickers();
+      }
     });
+  }
+
+  /// Close both autocomplete pickers. Call inside a `setState`.
+  void _closePickers() {
+    _mentionMatches = const [];
+    _mentionAtIndex = null;
+    _emojiMatches = const [];
+    _emojiColonIndex = null;
   }
 
   /// Insert the chosen mention, recording its UID for the structured wire list.
@@ -260,6 +299,28 @@ class _ChatPanelState extends State<ChatPanel>
       _pickedMentions.add(chosen);
       _mentionMatches = const [];
       _mentionAtIndex = null;
+    });
+    _focusNode.requestFocus();
+  }
+
+  /// Insert the chosen emoji glyph, replacing the active `:query` token.
+  void _pickEmoji(EmojiCandidate chosen) {
+    final colonIndex = _emojiColonIndex;
+    if (colonIndex == null) return;
+    final cursor = _textController.selection.baseOffset;
+    final ins = EmojiComposer.insert(
+      text: _textController.text,
+      colonIndex: colonIndex,
+      cursor: cursor < 0 ? _textController.text.length : cursor,
+      chosen: chosen,
+    );
+    _textController.value = TextEditingValue(
+      text: ins.text,
+      selection: TextSelection.collapsed(offset: ins.cursor),
+    );
+    setState(() {
+      _emojiMatches = const [];
+      _emojiColonIndex = null;
     });
     _focusNode.requestFocus();
   }
@@ -473,6 +534,14 @@ class _ChatPanelState extends State<ChatPanel>
                   _MentionPicker(
                     candidates: _mentionMatches,
                     onPick: _pickMention,
+                    accentColor: clawdOrange,
+                  ),
+                // `:name` emoji picker — mutually exclusive with the mention
+                // picker (a token is either `@` or `:`).
+                if (_emojiMatches.isNotEmpty)
+                  EmojiPicker(
+                    candidates: _emojiMatches,
+                    onPick: _pickEmoji,
                     accentColor: clawdOrange,
                   ),
                 // "Replying to X" banner while composing a reply.
