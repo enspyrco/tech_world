@@ -151,8 +151,7 @@ class _DmThreadViewState extends State<DmThreadView> {
   @override
   Widget build(BuildContext context) {
     final isBotDm = widget.conversation.peerId == 'bot-claude';
-    final displayName =
-        widget.conversation.peerDisplayName ?? 'Unknown';
+    final displayName = widget.conversation.peerDisplayName ?? 'Unknown';
 
     return Column(
       children: [
@@ -173,8 +172,7 @@ class _DmThreadViewState extends State<DmThreadView> {
                 color: Colors.grey[400],
                 iconSize: 20,
                 padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 28, minHeight: 28),
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 tooltip: 'Back to conversations',
               ),
               const SizedBox(width: 8),
@@ -188,9 +186,7 @@ class _DmThreadViewState extends State<DmThreadView> {
                 ),
                 child: Center(
                   child: Text(
-                    displayName.isNotEmpty
-                        ? displayName[0].toUpperCase()
-                        : '?',
+                    displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
                     style: TextStyle(
                       color: isBotDm ? _clawdOrange : Colors.blue,
                       fontSize: 12,
@@ -219,8 +215,7 @@ class _DmThreadViewState extends State<DmThreadView> {
         Expanded(
           child: StreamBuilder<List<ChatMessage>>(
             stream: widget.conversation.peerId != null
-                ? widget.chatService
-                    .dmMessages(widget.conversation.peerId!)
+                ? widget.chatService.dmMessages(widget.conversation.peerId!)
                 : const Stream.empty(),
             initialData: widget.conversation.peerId != null
                 ? widget.chatService
@@ -258,22 +253,26 @@ class _DmThreadViewState extends State<DmThreadView> {
                 }
               });
 
-              return ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(16),
-                itemCount: messages.length,
-                itemBuilder: (context, index) {
-                  final message = messages[index];
-                  return _DmBubble(
-                    key: _keyFor(message.stableId),
-                    message: message,
-                    highlighted: message.stableId == _highlightedId,
-                    onReply: () => _startReply(message),
-                    onQuoteTap: message.isReply
-                        ? () => _scrollToQuoted(message.replyToMessageId!)
-                        : null,
-                  );
-                },
+              // SelectionArea: drag-select + copy across DM messages, same
+              // treatment as the group tab.
+              return SelectionArea(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final message = messages[index];
+                    return _DmBubble(
+                      key: _keyFor(message.stableId),
+                      message: message,
+                      highlighted: message.stableId == _highlightedId,
+                      onReply: () => _startReply(message),
+                      onQuoteTap: message.isReply
+                          ? () => _scrollToQuoted(message.replyToMessageId!)
+                          : null,
+                    );
+                  },
+                ),
               );
             },
           ),
@@ -304,20 +303,19 @@ class _DmThreadViewState extends State<DmThreadView> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (replyTarget != null) ReplyComposingBanner(
-          target: replyTarget,
-          onCancel: _cancelReply,
-        ),
+        if (replyTarget != null)
+          ReplyComposingBanner(
+            target: replyTarget,
+            onCancel: _cancelReply,
+          ),
         if (showBanner)
           Container(
             width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             color: Colors.amber.shade800.withValues(alpha: 0.3),
             child: Row(
               children: [
-                Icon(Icons.cloud_off,
-                    size: 16, color: Colors.amber.shade300),
+                Icon(Icons.cloud_off, size: 16, color: Colors.amber.shade300),
                 const SizedBox(width: 8),
                 Text(
                   'Clawd is offline',
@@ -344,9 +342,8 @@ class _DmThreadViewState extends State<DmThreadView> {
                   controller: _textController,
                   focusNode: _focusNode,
                   enabled: !disabled,
-                  hintText: disabled
-                      ? 'Clawd is offline...'
-                      : 'Type a message...',
+                  hintText:
+                      disabled ? 'Clawd is offline...' : 'Type a message...',
                   onSend: _sendMessage,
                 ),
               ),
@@ -438,9 +435,8 @@ class _DmBubble extends StatelessWidget {
             child: GestureDetector(
               onLongPress: onReply,
               child: Column(
-                crossAxisAlignment: isLocal
-                    ? CrossAxisAlignment.end
-                    : CrossAxisAlignment.start,
+                crossAxisAlignment:
+                    isLocal ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                 children: [
                   AnimatedContainer(
                     // No key toggle here: changing a widget's key forces a
@@ -472,20 +468,22 @@ class _DmBubble extends StatelessWidget {
                           const SizedBox.shrink(key: ValueKey('dm-highlight')),
                         if (message.isReply)
                           QuotedMessage(message: message, onTap: onQuoteTap),
-                        Text.rich(
-                          TextSpan(
-                            children: buildMentionSpans(
-                              message.text,
-                              baseStyle: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                              mentionStyle: const TextStyle(
-                                color: _clawdOrange,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                        MessageText(
+                          message.text,
+                          baseStyle: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                          mentionStyle: const TextStyle(
+                            color: _clawdOrange,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          linkStyle: const TextStyle(
+                            color: Color(0xFF7EB6FF),
+                            fontSize: 14,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Color(0xFF7EB6FF),
                           ),
                         ),
                       ],
