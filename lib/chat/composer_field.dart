@@ -74,7 +74,12 @@ class ChatComposerField extends StatelessWidget {
         minLines: 1,
         maxLines: maxLines,
         keyboardType: TextInputType.multiline,
-        textInputAction: TextInputAction.newline,
+        // `send`, not `newline`: a newline action would make the mobile soft
+        // keyboard's return key insert newlines and never fire onSubmitted —
+        // losing keyboard-send on mobile entirely. With `send`, mobile sends
+        // from the keyboard (newlines there are paste-only) while hardware
+        // Shift+Enter still inserts newlines on desktop/web.
+        textInputAction: TextInputAction.send,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
           hintText: hintText,
@@ -92,8 +97,9 @@ class ChatComposerField extends StatelessWidget {
         ),
         onChanged: onChanged,
         // Hardware Enter never reaches here (the Focus interceptor above
-        // handles it), but an IME "send/done" action still lands via
-        // onSubmitted — the send path for mobile soft keyboards.
+        // returns handled, which also preventDefaults the event on web), so
+        // onSubmitted fires only for IME text-input actions — the mobile
+        // soft-keyboard Send key. No double-send path exists.
         onSubmitted: enabled ? (_) => onSend() : null,
       ),
     );

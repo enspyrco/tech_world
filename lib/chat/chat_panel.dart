@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tech_world/bots/bot_config.dart';
+import 'package:tech_world/chat/bubble_footer.dart';
 import 'package:tech_world/chat/chat_message.dart';
-import 'package:tech_world/chat/chat_time.dart';
 import 'package:tech_world/chat/composer_field.dart';
 import 'package:tech_world/chat/reply_widgets.dart';
 import 'package:tech_world/chat/chat_service.dart';
@@ -855,33 +855,9 @@ class _MessageBubble extends StatelessWidget {
                   ),
                 ),
                 // Timestamp + subtle reply hint / button for discoverability.
-                Padding(
-                  padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ChatTimestamp(timestamp: message.timestamp),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: onReply,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.reply,
-                                size: 12, color: Colors.grey[600]),
-                            const SizedBox(width: 2),
-                            Text(
-                              'Reply',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                BubbleFooter(
+                  timestamp: message.timestamp,
+                  onReply: onReply,
                 ),
               ],
             ),

@@ -89,5 +89,32 @@ void main() {
         isNull,
       );
     });
+
+    test('future timestamp (clock skew) → plain one-minute recheck', () {
+      expect(
+        nextTimestampRefresh(now.add(const Duration(seconds: 30)), now: now),
+        const Duration(minutes: 1, seconds: 1),
+      );
+    });
+  });
+
+  group('formatCompactAge', () {
+    test('buckets: now / m / h / d', () {
+      expect(formatCompactAge(now.subtract(const Duration(seconds: 30)),
+          now: now), 'now');
+      expect(formatCompactAge(now.subtract(const Duration(minutes: 5)),
+          now: now), '5m');
+      expect(formatCompactAge(now.subtract(const Duration(hours: 3)),
+          now: now), '3h');
+      expect(formatCompactAge(now.subtract(const Duration(days: 2)),
+          now: now), '2d');
+    });
+
+    test('future timestamp (clock skew) → now', () {
+      expect(
+        formatCompactAge(now.add(const Duration(minutes: 5)), now: now),
+        'now',
+      );
+    });
   });
 }

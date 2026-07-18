@@ -65,11 +65,28 @@ Duration? nextTimestampRefresh(DateTime timestamp, {DateTime? now}) {
   final ref = now ?? DateTime.now();
   final age = ref.difference(timestamp.toLocal());
   if (age.inMinutes >= 60) return null;
+  // Clock-skewed future timestamp: it renders "Just now" and stays that way
+  // until real time catches up — just check again in a minute rather than
+  // computing a remainder of a negative age.
+  if (age.isNegative) return const Duration(minutes: 1, seconds: 1);
   // Align to the next minute boundary of the message's age (+1s of slack so
   // the rebuild lands after the boundary, never on it).
-  final intoMinute =
-      Duration(microseconds: age.inMicroseconds) - Duration(minutes: age.inMinutes);
+  final intoMinute = Duration(
+      microseconds: age.inMicroseconds % Duration.microsecondsPerMinute);
   return const Duration(minutes: 1, seconds: 1) - intoMinute;
+}
+
+/// The terse age form used by list rows (DM conversation tiles): `now`, `5m`,
+/// `2h`, `3d`. Same clock semantics as [formatChatTimestamp] — future skew
+/// renders as `now` — but a compact vocabulary for space-tight rows. Lives
+/// here so the app has one home for relative-time bucketing.
+String formatCompactAge(DateTime time, {DateTime? now}) {
+  final ref = now ?? DateTime.now();
+  final diff = ref.difference(time.toLocal());
+  if (diff.inMinutes < 1) return 'now';
+  if (diff.inHours < 1) return '${diff.inMinutes}m';
+  if (diff.inDays < 1) return '${diff.inHours}h';
+  return '${diff.inDays}d';
 }
 
 /// A chat-bubble timestamp label that keeps itself fresh.

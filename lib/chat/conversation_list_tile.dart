@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tech_world/chat/chat_time.dart';
 import 'package:tech_world/chat/conversation.dart';
 
 /// A list tile showing a DM conversation summary: avatar initial, display name,
@@ -96,7 +97,7 @@ class ConversationListTile extends StatelessWidget {
               children: [
                 if (conversation.lastActivity != null)
                   Text(
-                    _formatTime(conversation.lastActivity!),
+                    formatCompactAge(conversation.lastActivity!),
                     style: TextStyle(
                       color: Colors.grey[600],
                       fontSize: 11,
@@ -127,15 +128,5 @@ class ConversationListTile extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _formatTime(DateTime time) {
-    final now = DateTime.now();
-    final diff = now.difference(time);
-
-    if (diff.inMinutes < 1) return 'now';
-    if (diff.inHours < 1) return '${diff.inMinutes}m';
-    if (diff.inDays < 1) return '${diff.inHours}h';
-    return '${diff.inDays}d';
   }
 }
