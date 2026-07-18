@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:tech_world/bots/bot_config.dart';
+import 'package:tech_world/chat/bubble_footer.dart';
 import 'package:tech_world/chat/chat_message.dart';
+import 'package:tech_world/chat/composer_field.dart';
 import 'package:tech_world/chat/reply_widgets.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
@@ -515,30 +517,15 @@ class _ChatPanelState extends State<ChatPanel>
                   child: Row(
                     children: [
                       Expanded(
-                        child: TextField(
+                        child: ChatComposerField(
                           controller: _textController,
                           focusNode: _focusNode,
                           enabled: !isAbsent,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            hintText: isAbsent
-                                ? 'Clawd is offline...'
-                                : 'Type a message...',
-                            hintStyle: TextStyle(color: Colors.grey[500]),
-                            filled: true,
-                            fillColor: const Color(0xFF1E1E1E),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                          ),
+                          hintText: isAbsent
+                              ? 'Clawd is offline...'
+                              : 'Type a message...',
+                          onSend: _sendMessage,
                           onChanged: (_) => _onComposerChanged(),
-                          onSubmitted:
-                              isAbsent ? null : (_) => _sendMessage(),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -867,26 +854,10 @@ class _MessageBubble extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Subtle reply hint / button for discoverability.
-                GestureDetector(
-                  onTap: onReply,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.reply, size: 12, color: Colors.grey[600]),
-                        const SizedBox(width: 2),
-                        Text(
-                          'Reply',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                // Timestamp + subtle reply hint / button for discoverability.
+                BubbleFooter(
+                  timestamp: message.timestamp,
+                  onReply: onReply,
                 ),
               ],
             ),

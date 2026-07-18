@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:tech_world/chat/bubble_footer.dart';
 import 'package:tech_world/chat/chat_message.dart';
+import 'package:tech_world/chat/composer_field.dart';
 import 'package:tech_world/chat/reply_widgets.dart';
 import 'package:tech_world/chat/mention_text.dart';
 import 'package:tech_world/chat/chat_service.dart';
@@ -338,28 +340,14 @@ class _DmThreadViewState extends State<DmThreadView> {
           child: Row(
             children: [
               Expanded(
-                child: TextField(
+                child: ChatComposerField(
                   controller: _textController,
                   focusNode: _focusNode,
                   enabled: !disabled,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: disabled
-                        ? 'Clawd is offline...'
-                        : 'Type a message...',
-                    hintStyle: TextStyle(color: Colors.grey[500]),
-                    filled: true,
-                    fillColor: const Color(0xFF1E1E1E),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
-                  onSubmitted: disabled ? null : (_) => _sendMessage(),
+                  hintText: disabled
+                      ? 'Clawd is offline...'
+                      : 'Type a message...',
+                  onSend: _sendMessage,
                 ),
               ),
               const SizedBox(width: 8),
@@ -503,27 +491,11 @@ class _DmBubble extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Subtle reply hint / button for discoverability.
-                  GestureDetector(
-                    onTap: onReply,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 2, left: 4, right: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.reply,
-                              size: 12, color: Colors.grey[600]),
-                          const SizedBox(width: 2),
-                          Text(
-                            'Reply',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  // Timestamp + subtle reply hint / button for
+                  // discoverability.
+                  BubbleFooter(
+                    timestamp: message.timestamp,
+                    onReply: onReply,
                   ),
                 ],
               ),
