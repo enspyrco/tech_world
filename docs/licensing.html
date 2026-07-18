@@ -37,13 +37,13 @@
 
   <h1>Tech World &mdash; Licensing Decision</h1>
   <p class="sub">
-    <span class="status">Decision pending</span>
-    &nbsp; Last updated 2026-06-21 &nbsp;&middot;&nbsp; Owner: Nick / Enspyr Pty Ltd
+    <span class="status" style="background:#e3f5ea;color:#1d7a46;border-color:#a8e0bf">Decided &middot; AGPL v3</span>
+    &nbsp; Last updated 2026-06-26 &nbsp;&middot;&nbsp; Owner: Nick / Enspyr Pty Ltd
   </p>
 
   <div class="tldr">
-    <p><strong>Where we are.</strong> No licence has been committed. There is no <code>LICENSE</code> file at the repo root, no <code>license:</code> field in <code>pubspec.yaml</code>, and the README's "See repository root" points at a file that does not exist. This document records the options, the constraints, and a recommendation.</p>
-    <p><strong>Direction chosen.</strong> Split the licence by layer: a <em>permissive</em> licence on the reusable framework (to seed adoption, the way Andy G uses Apache), and a <em>protective or closed</em> licence on the game itself.</p>
+    <p><strong>Decision (2026-06-26).</strong> The repository is now licensed under the <strong>GNU AGPL v3.0</strong> (<code>LICENSE</code> at the repo root) &mdash; this repo <em>is</em> the game. The <em>framework</em> half of the split (Apache 2.0) applies to reusable components <strong>as they are extracted into separate packages</strong>; the current single-app structure has no framework subtree to license separately yet. <code>pubspec.yaml</code> carries no <code>license:</code> field by design (the app is <code>publish_to: "none"</code>, so the field is non-standard).</p>
+    <p><strong>Direction chosen.</strong> Split the licence by layer: a <em>permissive</em> licence on the reusable framework (to seed adoption, the way Andy G uses Apache), and a <em>protective</em> licence (AGPL v3) on the game itself &mdash; keeping the dual-licensing lever, since Enspyr is sole copyright holder.</p>
     <p><strong>Key finding.</strong> The Screen Australia Games Production Fund is a <strong>non-recoupable grant that takes no IP stake</strong> &mdash; it imposes no restriction on how the output is licensed or open-sourced. The only binding instrument still to read is the signed Project Grant Agreement (PGA).</p>
   </div>
 
@@ -116,14 +116,15 @@
 
   <h2>4. Immediate hygiene (independent of the decision)</h2>
   <ul>
-    <li>The README's <code>## License &rarr; See repository root</code> is a <strong>dangling reference</strong> &mdash; it asserts a licence that does not exist. Either add the file or change the text to "licensing under discussion".</li>
-    <li>Once decided: add <code>LICENSE</code> (and, for a split, a per-directory licence note or a <code>LICENSE</code> in the framework subtree) and set <code>pubspec.yaml</code> accordingly.</li>
+    <li><s>The README's <code>## License &rarr; See repository root</code> is a <strong>dangling reference</strong>.</s> <strong>Done</strong> &mdash; README now points at <code>LICENSE</code> and <code>docs/licensing.html</code>.</li>
+    <li><s>Once decided: add <code>LICENSE</code> and set <code>pubspec.yaml</code> accordingly.</s> <strong>Done</strong> &mdash; <code>LICENSE</code> (AGPL v3) committed. <code>pubspec.yaml</code> left without a <code>license:</code> field on purpose: the app is <code>publish_to: "none"</code>, so the field is non-standard and meaningless here. A per-package licence is set when a framework package is extracted.</li>
   </ul>
 
   <h2>5. Open questions</h2>
   <ul>
     <li><strong>Read the PGA before finalising.</strong> It is the binding instrument and may contain IP/distribution clauses not in the public guidelines. (Only relevant if/when the grant is awarded.)</li>
-    <li><strong>Game licence: AGPL vs all-rights-reserved?</strong> AGPL = visible + dual-licensing lever; closed = simplest, keeps every option open. Reversible later for code not yet published.</li>
+    <li><s><strong>Game licence: AGPL vs all-rights-reserved?</strong></s> <strong>Decided 2026-06-26: AGPL v3</strong> &mdash; visible source + the dual-licensing lever (sole owner). <code>LICENSE</code> committed at the repo root.</li>
+    <li><strong>Where does the framework/game boundary fall in the repo?</strong> Still open, but no longer blocking: the whole repo is AGPL today (it is the game), and the Apache-2.0 framework licence attaches per-package as reusable components are extracted (the way <code>code_forge_web</code> is already its own package). The boundary is decided at extraction time, not up front.</li>
     <li><strong>Where does the framework/game boundary fall in the repo?</strong> The split licence needs a concrete directory boundary (which packages are "framework"). Worth defining before writing the LICENSE files.</li>
     <li><strong>Contributor licensing.</strong> If external contributors ever join, a CLA is needed to preserve the dual-licensing lever. Not needed while Nick is sole developer.</li>
   </ul>
