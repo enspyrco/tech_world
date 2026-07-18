@@ -23,9 +23,15 @@ service cloud.firestore {
       allow read: if request.auth != null;
       // Create/update: the doc key must be the caller's UID AND the userId
       // field must match — nobody can plant presence as someone else.
+      // lastSeen must be the server clock (request.time): the livekitWebhook
+      // freshness watermark reaps ghosts by comparing lastSeen against the
+      // LiveKit event time, so a client-chosen lastSeen could future-pin a
+      // ghost to dodge cleanup (or backdate to self-grief). Pin it server-side;
+      // the client writes FieldValue.serverTimestamp() which resolves here.
       allow create, update: if request.auth != null &&
         request.auth.uid == userId &&
-        request.resource.data.userId == userId;
+        request.resource.data.userId == userId &&
+        request.resource.data.lastSeen == request.time;
       // Delete: only your own doc (request.resource is null on delete, so the
       // field check above cannot apply here).
       allow delete: if request.auth != null && request.auth.uid == userId;
