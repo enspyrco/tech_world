@@ -22,35 +22,40 @@ class BubbleFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2, left: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Flexible(child: ChatTimestamp(timestamp: timestamp)),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: onReply,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.reply, size: 12, color: Colors.grey[600]),
-                  const SizedBox(width: 2),
-                  Text(
-                    'Reply',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 11,
+    // Excluded from the enclosing SelectionArea: drag-selecting a
+    // conversation should copy the messages, not interleave "5 min ago
+    // Reply" between every line.
+    return SelectionContainer.disabled(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 2, left: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(child: ChatTimestamp(timestamp: timestamp)),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: onReply,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.reply, size: 12, color: Colors.grey[600]),
+                    const SizedBox(width: 2),
+                    Text(
+                      'Reply',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 11,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

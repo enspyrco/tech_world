@@ -313,8 +313,7 @@ class _ChatPanelState extends State<ChatPanel>
                     // DMs tab with unread badge
                     Tab(
                       child: ValueListenableBuilder<int>(
-                        valueListenable:
-                            widget.chatService.totalUnreadNotifier,
+                        valueListenable: widget.chatService.totalUnreadNotifier,
                         builder: (context, unread, _) {
                           if (unread == 0) {
                             return const Text('DMs');
@@ -430,29 +429,34 @@ class _ChatPanelState extends State<ChatPanel>
                 );
               }
 
-              return ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(16),
-                itemCount: messages.length,
-                itemBuilder: (context, index) {
-                  final message = messages[index];
-                  return _MessageBubble(
-                    message: message,
-                    onReply: () => _startReply(message),
-                    onSenderTap: message.isLocalUser || message.isBot
-                        ? null
-                        : () {
-                            // Open a DM with this sender.
-                            final senderId = message.senderId;
-                            if (senderId == null) return;
-                            _tabController.animateTo(1);
-                            _openDmForPeer(
-                              senderId,
-                              displayName: message.senderName,
-                            );
-                          },
-                  );
-                },
+              // SelectionArea: drag the mouse across messages to select +
+              // copy (Nick's 2026-07-18 request). Timestamps/Reply hints are
+              // excluded inside BubbleFooter so copied text stays clean.
+              return SelectionArea(
+                child: ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final message = messages[index];
+                    return _MessageBubble(
+                      message: message,
+                      onReply: () => _startReply(message),
+                      onSenderTap: message.isLocalUser || message.isBot
+                          ? null
+                          : () {
+                              // Open a DM with this sender.
+                              final senderId = message.senderId;
+                              if (senderId == null) return;
+                              _tabController.animateTo(1);
+                              _openDmForPeer(
+                                senderId,
+                                displayName: message.senderName,
+                              );
+                            },
+                    );
+                  },
+                ),
               );
             },
           ),
@@ -534,11 +538,9 @@ class _ChatPanelState extends State<ChatPanel>
                           valueListenable: _sttService.listening,
                           builder: (context, isListening, _) {
                             return IconButton(
-                              onPressed:
-                                  isAbsent ? null : _handleMicPress,
-                              icon: Icon(isListening
-                                  ? Icons.mic
-                                  : Icons.mic_none),
+                              onPressed: isAbsent ? null : _handleMicPress,
+                              icon: Icon(
+                                  isListening ? Icons.mic : Icons.mic_none),
                               color: isAbsent
                                   ? Colors.grey[600]
                                   : isListening
@@ -548,10 +550,8 @@ class _ChatPanelState extends State<ChatPanel>
                                 backgroundColor: isAbsent
                                     ? Colors.grey.withValues(alpha: 0.1)
                                     : isListening
-                                        ? Colors.red
-                                            .withValues(alpha: 0.2)
-                                        : clawdOrange
-                                            .withValues(alpha: 0.1),
+                                        ? Colors.red.withValues(alpha: 0.2)
+                                        : clawdOrange.withValues(alpha: 0.1),
                               ),
                             );
                           },
@@ -560,8 +560,7 @@ class _ChatPanelState extends State<ChatPanel>
                       IconButton(
                         onPressed: isAbsent ? null : _sendMessage,
                         icon: const Icon(Icons.send),
-                        color:
-                            isAbsent ? Colors.grey[600] : clawdOrange,
+                        color: isAbsent ? Colors.grey[600] : clawdOrange,
                         style: IconButton.styleFrom(
                           backgroundColor: isAbsent
                               ? Colors.grey.withValues(alpha: 0.1)
@@ -596,10 +595,10 @@ class _ChatPanelState extends State<ChatPanel>
         StreamBuilder<List<Conversation>>(
           stream: widget.chatService.conversations,
           builder: (context, snapshot) {
-            final conversations = (snapshot.data ??
-                    widget.chatService.currentConversations)
-                .where((c) => c.type == ConversationType.dm)
-                .toList();
+            final conversations =
+                (snapshot.data ?? widget.chatService.currentConversations)
+                    .where((c) => c.type == ConversationType.dm)
+                    .toList();
 
             if (conversations.isEmpty) {
               return Center(
@@ -676,8 +675,7 @@ class _ChatPanelState extends State<ChatPanel>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF2D2D4D),
-        title:
-            const Text('New message', style: TextStyle(color: Colors.white)),
+        title: const Text('New message', style: TextStyle(color: Colors.white)),
         content: SizedBox(
           width: double.maxFinite,
           child: participants.isEmpty
@@ -805,8 +803,7 @@ class _MessageBubble extends StatelessWidget {
                           decoration: onSenderTap != null
                               ? TextDecoration.underline
                               : null,
-                          decorationColor:
-                              clawdOrange.withValues(alpha: 0.4),
+                          decorationColor: clawdOrange.withValues(alpha: 0.4),
                         ),
                       ),
                     ),
@@ -834,20 +831,22 @@ class _MessageBubble extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (message.isReply) QuotedMessage(message: message),
-                        Text.rich(
-                          TextSpan(
-                            children: buildMentionSpans(
-                              message.text,
-                              baseStyle: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                              ),
-                              mentionStyle: const TextStyle(
-                                color: clawdOrange,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                        MessageText(
+                          message.text,
+                          baseStyle: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                          ),
+                          mentionStyle: const TextStyle(
+                            color: clawdOrange,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          linkStyle: const TextStyle(
+                            color: Color(0xFF7EB6FF),
+                            fontSize: 14,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Color(0xFF7EB6FF),
                           ),
                         ),
                       ],
@@ -902,8 +901,7 @@ class _MentionPicker extends StatelessWidget {
           return InkWell(
             onTap: () => onPick(c),
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
                   CircleAvatar(
