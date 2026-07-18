@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:tech_world/chat/bubble_footer.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/composer_field.dart';
+import 'package:tech_world/chat/emoji_composer.dart';
+import 'package:tech_world/chat/emoji_picker.dart';
 import 'package:tech_world/chat/reply_widgets.dart';
 import 'package:tech_world/chat/mention_text.dart';
 import 'package:tech_world/chat/chat_service.dart';
@@ -36,6 +38,12 @@ class _DmThreadViewState extends State<DmThreadView> {
   /// The message currently being quote-replied to, or `null` when composing a
   /// fresh message.
   ChatMessage? _replyTarget;
+
+  /// Emoji currently shown in the `:name` picker, or empty when it's closed.
+  List<EmojiCandidate> _emojiMatches = const [];
+
+  /// The active `:query`'s opening-colon index, so a pick knows what to replace.
+  int? _emojiColonIndex;
 
   /// Per-message keys, by [ChatMessage.stableId], so a tapped quote can locate
   /// and scroll to the original via [Scrollable.ensureVisible].
@@ -124,7 +132,11 @@ class _DmThreadViewState extends State<DmThreadView> {
       replyTo: replyTarget,
     );
     _textController.clear();
-    setState(() => _replyTarget = null);
+    setState(() {
+      _replyTarget = null;
+      _emojiMatches = const [];
+      _emojiColonIndex = null;
+    });
     _focusNode.requestFocus();
 
     // Scroll to bottom.
@@ -146,6 +158,59 @@ class _DmThreadViewState extends State<DmThreadView> {
 
   void _cancelReply() {
     setState(() => _replyTarget = null);
+  }
+
+  /// React to composer edits: auto-complete a fully-typed `:name:`, else
+  /// open/refresh the `:name` emoji picker (DMs have no `@mention`).
+  void _onComposerChanged() {
+    final value = _textController.value;
+    final cursor = value.selection.baseOffset;
+
+    final completed = EmojiComposer.tryComplete(value.text, cursor);
+    if (completed != null) {
+      _textController.value = TextEditingValue(
+        text: completed.text,
+        selection: TextSelection.collapsed(offset: completed.cursor),
+      );
+      setState(() {
+        _emojiMatches = const [];
+        _emojiColonIndex = null;
+      });
+      return;
+    }
+
+    final emoji = EmojiComposer.activeQuery(value.text, cursor);
+    setState(() {
+      if (emoji != null && emoji.query.length >= 2) {
+        _emojiMatches = EmojiComposer.filter(emoji.query);
+        _emojiColonIndex = emoji.colonIndex;
+      } else {
+        _emojiMatches = const [];
+        _emojiColonIndex = null;
+      }
+    });
+  }
+
+  /// Insert the chosen emoji glyph, replacing the active `:query` token.
+  void _pickEmoji(EmojiCandidate chosen) {
+    final colonIndex = _emojiColonIndex;
+    if (colonIndex == null) return;
+    final cursor = _textController.selection.baseOffset;
+    final ins = EmojiComposer.insert(
+      text: _textController.text,
+      colonIndex: colonIndex,
+      cursor: cursor < 0 ? _textController.text.length : cursor,
+      chosen: chosen,
+    );
+    _textController.value = TextEditingValue(
+      text: ins.text,
+      selection: TextSelection.collapsed(offset: ins.cursor),
+    );
+    setState(() {
+      _emojiMatches = const [];
+      _emojiColonIndex = null;
+    });
+    _focusNode.requestFocus();
   }
 
   @override
@@ -303,6 +368,13 @@ class _DmThreadViewState extends State<DmThreadView> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // `:name` emoji picker above the composer.
+        if (_emojiMatches.isNotEmpty)
+          EmojiPicker(
+            candidates: _emojiMatches,
+            onPick: _pickEmoji,
+            accentColor: _clawdOrange,
+          ),
         if (replyTarget != null)
           ReplyComposingBanner(
             target: replyTarget,
@@ -345,6 +417,7 @@ class _DmThreadViewState extends State<DmThreadView> {
                   hintText:
                       disabled ? 'Clawd is offline...' : 'Type a message...',
                   onSend: _sendMessage,
+                  onChanged: (_) => _onComposerChanged(),
                 ),
               ),
               const SizedBox(width: 8),

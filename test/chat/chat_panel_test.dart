@@ -288,6 +288,76 @@ void main() {
           reason: 'the inbound mention message should render');
     });
   });
+
+  group('ChatPanel emoji autocomplete', () {
+    late _FakeLiveKit fakeLiveKit;
+    late ChatService chatService;
+
+    setUp(() {
+      fakeLiveKit = _FakeLiveKit();
+      chatService = ChatService(liveKitService: fakeLiveKit);
+      chatService.setBotStatusForTest(BotStatus.idle);
+    });
+
+    tearDown(() => chatService.dispose());
+
+    Future<void> pumpPanel(WidgetTester tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 1200,
+            child: ChatPanel(
+              chatService: chatService,
+              liveKitService: fakeLiveKit,
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('typing :fi opens the picker; tapping inserts the glyph and '
+        'closes it', (tester) async {
+      await pumpPanel(tester);
+
+      await tester.enterText(find.byType(TextField), ':fi');
+      await tester.pump();
+
+      // The :fire: row is shown.
+      expect(find.text(':fire:'), findsOneWidget);
+
+      await tester.tap(find.text(':fire:'));
+      await tester.pumpAndSettle();
+
+      // The token is replaced with the glyph and the picker closes.
+      expect(find.widgetWithText(TextField, '🔥'), findsOneWidget);
+      expect(find.text(':fire:'), findsNothing);
+    });
+
+    testWidgets('typing a closed :fire: auto-completes inline', (tester) async {
+      await pumpPanel(tester);
+
+      await tester.enterText(find.byType(TextField), ':fire:');
+      await tester.pump();
+
+      expect(find.widgetWithText(TextField, '🔥'), findsOneWidget);
+      // No picker lingers.
+      expect(find.text(':fire:'), findsNothing);
+    });
+
+    testWidgets('typing @ shows the mention picker, not the emoji picker '
+        '(no cross-trigger)', (tester) async {
+      await pumpPanel(tester);
+
+      await tester.enterText(find.byType(TextField), '@M');
+      await tester.pump();
+
+      // Mention picker row for the local user "Me" appears...
+      expect(find.text('Me'), findsOneWidget);
+      // ...and no emoji shortcode row is shown.
+      expect(find.textContaining(':'), findsNothing);
+    });
+  });
 }
 
 List<int> _utf8Json(Map<String, dynamic> map) => utf8.encode(jsonEncode(map));
