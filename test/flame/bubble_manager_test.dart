@@ -436,6 +436,8 @@ void main() {
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
+        when(() => mockLiveKit.dreamfinderIdentities())
+            .thenReturn(const <String>[]);
         manager = BubbleManager(
           localPlayer: PlayerComponent(
             position: Vector2(160, 160),
@@ -450,6 +452,40 @@ void main() {
       });
 
       tearDown(() => silenced.dispose());
+
+      test('gates EVERY DF identity the service reports, not just the slot',
+          () {
+        // Two live agent identities (respawn/stale-session overlap) — both
+        // must pass through the gate; the single-slot assumption was half of
+        // the 2026-07-18 silence failure.
+        when(() => mockLiveKit.dreamfinderIdentities())
+            .thenReturn(const ['agent-a', 'agent-b']);
+        manager.debugUpdateDreamfinderAudio(2); // within enable range
+        verify(() =>
+                mockLiveKit.setParticipantAudioEnabled('agent-a', true))
+            .called(1);
+        verify(() =>
+                mockLiveKit.setParticipantAudioEnabled('agent-b', true))
+            .called(1);
+      });
+
+      test('while silenced, forces local volume 0 on every DF identity', () {
+        when(() => mockLiveKit.dreamfinderIdentities())
+            .thenReturn(const ['agent-a', 'agent-b']);
+        silenced.value = true;
+        manager.debugUpdateDreamfinderAudio(1); // near but silenced
+        // Local hard-mute regardless of the server-side disable's efficacy
+        // (the 2026-07-18 "DF will STILL not shut up" failure).
+        verify(() => mockLiveKit.setParticipantAudioVolume('agent-a', 0.0))
+            .called(1);
+        verify(() => mockLiveKit.setParticipantAudioVolume('agent-b', 0.0))
+            .called(1);
+        // And the volume-0 write is cached: a second silenced frame does not
+        // re-write (retry-until-landed semantics, matching the fade layer).
+        manager.debugUpdateDreamfinderAudio(1);
+        verifyNever(() =>
+            mockLiveKit.setParticipantAudioVolume('agent-a', 0.0));
+      });
 
       test('enables DF audio when within the enable threshold', () {
         manager.debugUpdateDreamfinderAudio(2); // ≤ enable (4)

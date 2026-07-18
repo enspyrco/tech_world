@@ -45,15 +45,47 @@ void main() {
       expect(silencedIdentities, ['agent-abc123']);
     });
 
-    test('DF audio track subscribed while silenced -> disables it', () {
-      service.dreamfinderSilenced.value = true;
+    test('DF audio track subscribed while silenced -> disables AND mutes it',
+        () {
+      final muted = <String>[];
+      final svc = LiveKitService(
+        userId: 'user-1',
+        displayName: 'User 1',
+        silenceParticipantAudio: silencedIdentities.add,
+        muteParticipantVolume: muted.add,
+      );
+      addTearDown(svc.dispose);
+      svc.dreamfinderSilenced.value = true;
 
-      service.disableDreamfinderAudioOnSubscribe(
+      svc.disableDreamfinderAudioOnSubscribe(
         isAudioTrack: true,
         identity: 'agent-abc123',
       );
 
       expect(silencedIdentities, ['agent-abc123']);
+      // A fresh track while silenced is volume-zeroed too — a new utterance
+      // must not play at default volume if the server disable is a no-op.
+      expect(muted, ['agent-abc123']);
+    });
+
+    test('DF audio track subscribed while NOT silenced -> no volume zero', () {
+      final muted = <String>[];
+      final svc = LiveKitService(
+        userId: 'user-1',
+        displayName: 'User 1',
+        silenceParticipantAudio: silencedIdentities.add,
+        muteParticipantVolume: muted.add,
+      );
+      addTearDown(svc.dispose);
+
+      svc.disableDreamfinderAudioOnSubscribe(
+        isAudioTrack: true,
+        identity: 'agent-abc123',
+      );
+
+      // The proximity fade layer owns volume when unsilenced; pre-zeroing
+      // would fight its change-detection cache.
+      expect(muted, isEmpty);
     });
 
     test('bot-dreamfinder audio track subscribed -> disables it', () {
@@ -95,16 +127,19 @@ void main() {
 
   group('setDreamfinderSilenced (Room-seam)', () {
     late List<String> silencedIdentities;
+    late List<String> mutedIdentities;
     late List<String> roster;
     late LiveKitService service;
 
     setUp(() {
       silencedIdentities = [];
+      mutedIdentities = [];
       roster = [];
       service = LiveKitService(
         userId: 'user-1',
         displayName: 'User 1',
         silenceParticipantAudio: silencedIdentities.add,
+        muteParticipantVolume: mutedIdentities.add,
         remoteParticipantIdentities: () => roster,
       );
     });
@@ -121,6 +156,37 @@ void main() {
       expect(service.dreamfinderSilenced.value, isTrue);
       // Both DF identities (bot-dreamfinder + agent-*) disabled; nobody else.
       expect(silencedIdentities, ['bot-dreamfinder', 'agent-xyz']);
+      // AND locally volume-zeroed — the server-side disable alone proved
+      // insufficient in production (2026-07-18).
+      expect(mutedIdentities, ['bot-dreamfinder', 'agent-xyz']);
+    });
+
+    test('a throwing identity does not abort silencing the rest', () {
+      roster = ['agent-zombie', 'agent-live', 'bot-dreamfinder'];
+      service = LiveKitService(
+        userId: 'user-1',
+        displayName: 'User 1',
+        silenceParticipantAudio: (identity) {
+          if (identity == 'agent-zombie') {
+            throw StateError('dead session');
+          }
+          silencedIdentities.add(identity);
+        },
+        muteParticipantVolume: mutedIdentities.add,
+        remoteParticipantIdentities: () => roster,
+      );
+
+      service.setDreamfinderSilenced(true);
+
+      // The zombie's throw is contained; every other DF still silenced+muted.
+      expect(silencedIdentities, ['agent-live', 'bot-dreamfinder']);
+      expect(mutedIdentities, ['agent-live', 'bot-dreamfinder']);
+    });
+
+    test('dreamfinderIdentities() returns every DF in the room', () {
+      roster = ['user-2', 'bot-claude', 'bot-dreamfinder', 'agent-a', 'agent-b'];
+      expect(service.dreamfinderIdentities().toList(),
+          ['bot-dreamfinder', 'agent-a', 'agent-b']);
     });
 
     test('silence(true) with no DF in room disables nobody', () {

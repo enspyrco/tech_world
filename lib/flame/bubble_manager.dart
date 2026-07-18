@@ -790,11 +790,32 @@ class BubbleManager {
   /// self-reconciles with the manual path (which also disables the track
   /// directly) within one frame.
   void _updateDreamfinderAudio(int dfDistance) {
-    final silenced = _liveKitService?.dreamfinderSilenced.value ?? false;
-    _updateParticipantAudio(
+    final service = _liveKitService;
+    final silenced = service?.dreamfinderSilenced.value ?? false;
+    final fedDistance = silenced ? _audioDisableThreshold + 1 : dfDistance;
+
+    // Gate EVERY DF participant in the room, not just the last-bound
+    // [dreamfinderIdentity] slot. Agent respawns / stale sessions mean more
+    // than one `agent-*` identity can exist at once, and any identity outside
+    // the gate is ungoverned audio (half of the 2026-07-18 silence failure).
+    final ids = <String>{
       dreamfinderIdentity,
-      silenced ? _audioDisableThreshold + 1 : dfDistance,
-    );
+      ...?service?.dreamfinderIdentities(),
+    };
+    for (final id in ids) {
+      _updateParticipantAudio(id, fedDistance);
+      if (silenced && service != null && _audioVolumes[id] != 0.0) {
+        // Local hard-mute while silenced: the fade layer above only writes
+        // volume for gate-ENABLED participants, so after the silence disable
+        // nothing else touches the playback element — if the server-side
+        // disable is ineffective (the other half of the 2026-07-18 failure),
+        // audio keeps playing at its last volume forever. Same
+        // retry-until-landed caching semantics as the fade layer.
+        if (service.setParticipantAudioVolume(id, 0.0)) {
+          _audioVolumes[id] = 0.0;
+        }
+      }
+    }
   }
 
   /// Test seam for [_updateDreamfinderAudio] — see

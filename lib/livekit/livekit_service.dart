@@ -101,6 +101,7 @@ class LiveKitService {
     this.roomName = 'tech-world',
     @visibleForTesting Future<String?> Function()? tokenRetriever,
     @visibleForTesting void Function(String identity)? silenceParticipantAudio,
+    @visibleForTesting void Function(String identity)? muteParticipantVolume,
     @visibleForTesting Iterable<String> Function()? remoteParticipantIdentities,
   }) : _tokenRetriever = tokenRetriever {
     // Seams for unit-testing the DF-silence logic without faking the LiveKit
@@ -110,6 +111,8 @@ class LiveKitService {
     // be `late final` rather than nullable, encoding "set once, never null".
     _silenceParticipantAudio = silenceParticipantAudio ??
         ((identity) => setParticipantAudioEnabled(identity, false));
+    _muteParticipantVolume = muteParticipantVolume ??
+        ((identity) => setParticipantAudioVolume(identity, 0.0));
     _remoteParticipantIdentities = remoteParticipantIdentities ??
         (() =>
             _room?.remoteParticipants.values.map((p) => p.identity) ?? const []);
@@ -125,6 +128,15 @@ class LiveKitService {
   /// Injectable so tests can observe which identities get silenced without a
   /// live LiveKit `Room`. Defaults to [setParticipantAudioEnabled]`(id, false)`.
   late final void Function(String identity) _silenceParticipantAudio;
+
+  /// Effect invoked to hard-mute a participant's LOCAL playback volume.
+  ///
+  /// The server-side subscription disable ([_silenceParticipantAudio]) proved
+  /// insufficient alone in production (2026-07-18: "DF will STILL not shut
+  /// up" with a single clean DF in the room) — whatever the SFU does with the
+  /// disable, a local volume of 0 on the playback element is not negotiable.
+  /// Injectable for tests; defaults to [setParticipantAudioVolume]`(id, 0)`.
+  late final void Function(String identity) _muteParticipantVolume;
 
   /// Source of the current remote participant identities.
   ///
@@ -595,12 +607,30 @@ class LiveKitService {
   void setDreamfinderSilenced(bool silenced) {
     dreamfinderSilenced.value = silenced;
     if (!silenced) return;
-    for (final identity in _remoteParticipantIdentities()) {
-      if (isDreamfinderIdentity(identity)) {
+    for (final identity in dreamfinderIdentities()) {
+      // Per-identity isolation: one misbehaving participant (e.g. a zombie
+      // record whose session is dead server-side, as on 2026-07-18) must not
+      // abort silencing the rest — same invariant as the webhook's per-doc
+      // sweep. Belt and braces per identity: server-side disable AND local
+      // volume-0 (see _muteParticipantVolume for why both).
+      try {
         _silenceParticipantAudio(identity);
+        _muteParticipantVolume(identity);
+      } catch (e) {
+        _log.warning('setDreamfinderSilenced: failed for $identity: $e');
       }
     }
   }
+
+  /// Every remote participant currently in the room that maps to Dreamfinder
+  /// (`bot-dreamfinder` or the agents-SDK `agent-*` identities).
+  ///
+  /// There can be MORE THAN ONE at a time — agent respawns, a stale session
+  /// surviving a server restart, or a second dispatch — so every consumer that
+  /// gates DF audio must act on the full set, never a single cached identity
+  /// (the single-slot assumption was half of the 2026-07-18 silence failure).
+  Iterable<String> dreamfinderIdentities() =>
+      _remoteParticipantIdentities().where(isDreamfinderIdentity);
 
   /// Disable a freshly-subscribed Dreamfinder audio track.
   ///
@@ -632,6 +662,14 @@ class LiveKitService {
   }) {
     if (isAudioTrack && isDreamfinderIdentity(identity)) {
       _silenceParticipantAudio(identity);
+      // While manually silenced, also zero the local volume of the fresh
+      // track — if the server-side disable is ineffective (the 2026-07-18
+      // failure), a new utterance track would otherwise play at default
+      // volume. NOT done when unsilenced: the proximity fade layer owns the
+      // volume then, and pre-zeroing would fight its change-detection cache.
+      if (dreamfinderSilenced.value) {
+        _muteParticipantVolume(identity);
+      }
     }
   }
 
