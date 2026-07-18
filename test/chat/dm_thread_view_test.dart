@@ -178,6 +178,53 @@ void main() {
       expect(find.byKey(const ValueKey('dm-highlight')), findsNothing);
     });
   });
+
+  group('DmThreadView emoji autocomplete', () {
+    late _FakeLiveKit fakeLiveKit;
+    late ChatService chatService;
+
+    setUp(() {
+      fakeLiveKit = _FakeLiveKit();
+      chatService = ChatService(liveKitService: fakeLiveKit);
+      chatService.setBotStatusForTest(BotStatus.idle);
+    });
+
+    tearDown(() => chatService.dispose());
+
+    Future<void> pumpThread(WidgetTester tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: DmThreadView(
+            conversation: Conversation(
+              id: Conversation.conversationIdFor('me', 'peer'),
+              type: ConversationType.dm,
+              peerId: 'peer',
+              peerDisplayName: 'Peer',
+            ),
+            chatService: chatService,
+            onBack: () {},
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('typing :fi opens the picker; tapping inserts the glyph',
+        (tester) async {
+      await pumpThread(tester);
+
+      await tester.enterText(find.byType(TextField), ':fi');
+      await tester.pump();
+
+      expect(find.text(':fire:'), findsOneWidget);
+
+      await tester.tap(find.text(':fire:'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TextField, '🔥'), findsOneWidget);
+      expect(find.text(':fire:'), findsNothing);
+    });
+  });
 }
 
 List<int> _utf8Json(Map<String, dynamic> map) => utf8.encode(jsonEncode(map));
