@@ -156,6 +156,8 @@ class LiveKitService {
       StreamController<(Participant, VideoTrack)>.broadcast();
   final _localTrackPublishedController =
       StreamController<LocalTrackPublication>.broadcast();
+  final _localTrackUnpublishedController =
+      StreamController<LocalTrackPublication>.broadcast();
   final _trackUnsubscribedController =
       StreamController<(Participant, VideoTrack)>.broadcast();
   final _dataReceivedController =
@@ -185,6 +187,12 @@ class LiveKitService {
   /// Stream of local track publication events (fires when camera/mic is published)
   Stream<LocalTrackPublication> get localTrackPublished =>
       _localTrackPublishedController.stream;
+
+  /// Stream of local track UN-publication events (fires when the camera/mic is
+  /// turned off). The game bridge downgrades the local video bubble to a static
+  /// avatar so it doesn't freeze on its last decoded frame.
+  Stream<LocalTrackPublication> get localTrackUnpublished =>
+      _localTrackUnpublishedController.stream;
 
   /// Stream of data channel messages received from other participants
   Stream<DataChannelMessage> get dataReceived => _dataReceivedController.stream;
@@ -445,15 +453,34 @@ class LiveKitService {
     _listener = null;
     _room = null;
     _connectionState = _ConnectionState.disconnected;
+    // Nothing is published while disconnected; keep the mute toolbar honest
+    // across a reconnect (enableMedia re-flips these true on rejoin).
+    cameraEnabled.value = false;
+    micEnabled.value = false;
 
     _log.info('Disconnected');
   }
+
+  /// Whether the local camera is currently publishing (true = live/unmuted).
+  ///
+  /// Reactive so the mute toolbar button reflects reality. Session-scoped:
+  /// starts `false` (fast-connect publishes nothing), flips `true` once
+  /// [enableMedia] succeeds on room entry, and tracks every [setCameraEnabled].
+  final ValueNotifier<bool> cameraEnabled = ValueNotifier<bool>(false);
+
+  /// Whether the local microphone is currently publishing (true = live/unmuted).
+  ///
+  /// See [cameraEnabled] for lifecycle. Tracks every [setMicrophoneEnabled].
+  final ValueNotifier<bool> micEnabled = ValueNotifier<bool>(false);
 
   /// Enable/disable local camera
   Future<void> setCameraEnabled(bool enabled) async {
     if (_room?.localParticipant == null) return;
     try {
       await _room!.localParticipant!.setCameraEnabled(enabled);
+      // Only reflect state after the toggle actually lands, so a failed
+      // enable (e.g. permission denied) leaves the button showing muted.
+      cameraEnabled.value = enabled;
       _log.info('Camera ${enabled ? 'enabled' : 'disabled'}');
     } catch (e) {
       _log.warning('Failed to set camera', e);
@@ -465,6 +492,7 @@ class LiveKitService {
     if (_room?.localParticipant == null) return;
     try {
       await _room!.localParticipant!.setMicrophoneEnabled(enabled);
+      micEnabled.value = enabled;
       _log.info('Microphone ${enabled ? 'enabled' : 'disabled'}');
     } catch (e) {
       _log.warning('Failed to set microphone', e);
@@ -1012,6 +1040,11 @@ class LiveKitService {
             'Local track published: ${event.publication.kind}');
         _localTrackPublishedController.add(event.publication);
       })
+      ..on<LocalTrackUnpublishedEvent>((event) {
+        _log.fine(
+            'Local track unpublished: ${event.publication.kind}');
+        _localTrackUnpublishedController.add(event.publication);
+      })
       ..on<DataReceivedEvent>((event) {
         _log.fine(
             'Data received from: ${event.participant?.identity}, topic: ${event.topic}');
@@ -1035,6 +1068,7 @@ class LiveKitService {
     _trackSubscribedController.close();
     _trackUnsubscribedController.close();
     _localTrackPublishedController.close();
+    _localTrackUnpublishedController.close();
     _dataReceivedController.close();
     _connectionLostController.close();
   }

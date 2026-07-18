@@ -99,6 +99,7 @@ class LiveKitGameBridge {
   StreamSubscription<(Participant, VideoTrack)>? _trackSubscribedSub;
   StreamSubscription<(Participant, VideoTrack)>? _trackUnsubscribedSub;
   StreamSubscription<LocalTrackPublication>? _localTrackPublishedSub;
+  StreamSubscription<LocalTrackPublication>? _localTrackUnpublishedSub;
   StreamSubscription<PlayerPath>? _positionSub;
   StreamSubscription<PositionHeartbeat>? _heartbeatSub;
   StreamSubscription<RemoteParticipant>? _participantJoinedSub;
@@ -209,6 +210,14 @@ class LiveKitGameBridge {
       }
     });
 
+    _localTrackUnpublishedSub =
+        _liveKitService.localTrackUnpublished.listen((publication) {
+      if (publication.kind == TrackType.VIDEO) {
+        _log.fine('Local video track unpublished, downgrading bubble');
+        _bubbleManager.downgradeLocalPlayerBubble();
+      }
+    });
+
     // ── Data channels ────────────────────────────────────────────────────
     _speechTranscriptSub = _liveKitService.dataReceived
         .where((msg) => msg.topic == DataTopic.speechTranscript.wireName)
@@ -272,6 +281,8 @@ class LiveKitGameBridge {
     _trackUnsubscribedSub = null;
     _localTrackPublishedSub?.cancel();
     _localTrackPublishedSub = null;
+    _localTrackUnpublishedSub?.cancel();
+    _localTrackUnpublishedSub = null;
     _positionSub?.cancel();
     _positionSub = null;
     _heartbeatSub?.cancel();
