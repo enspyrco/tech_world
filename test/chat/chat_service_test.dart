@@ -1305,6 +1305,160 @@ void main() {
       });
     });
 
+    group('eternal history paging', () {
+      ChatMessage groupMsg(String id, String text, int minute) => ChatMessage(
+            text: text,
+            id: id,
+            senderName: 'Alice',
+            senderId: 'alice-uid',
+            conversationId: 'group',
+            timestamp: DateTime(2024, 1, 1, 10, minute),
+          );
+
+      test('loadHistory loads only the newest page and reports more history',
+          () async {
+        final repo = PagingChatMessageRepository(
+          latest: [groupMsg('B', 'newest', 50)],
+          older: [groupMsg('A', 'oldest', 10)],
+        );
+        final service =
+            ChatService(liveKitService: fakeLiveKit, repository: repo);
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+
+        expect(service.currentMessages.map((m) => m.text), equals(['newest']));
+        expect(service.hasMoreHistory('group'), isTrue);
+        expect(repo.pageCalls, equals(1),
+            reason: 'only the newest page is fetched up front');
+      });
+
+      test('loadOlderGroupMessages prepends the older page before the newest',
+          () async {
+        final repo = PagingChatMessageRepository(
+          latest: [groupMsg('B', 'newest', 50)],
+          older: [groupMsg('A', 'oldest', 10)],
+        );
+        final service =
+            ChatService(liveKitService: fakeLiveKit, repository: repo);
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+        await service.loadOlderGroupMessages();
+
+        // Older page prepended → ascending [oldest, newest].
+        expect(service.currentMessages.map((m) => m.text),
+            equals(['oldest', 'newest']));
+        // The short older page latches exhaustion.
+        expect(service.hasMoreHistory('group'), isFalse);
+      });
+
+      test('an exhausted history does not refetch on further load-older calls',
+          () async {
+        // No older page at all → newest page is the whole history.
+        final repo = PagingChatMessageRepository(
+          latest: [groupMsg('X', 'only', 10)],
+          older: const [],
+        );
+        final service =
+            ChatService(liveKitService: fakeLiveKit, repository: repo);
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+        expect(service.hasMoreHistory('group'), isFalse);
+
+        await service.loadOlderGroupMessages();
+        await service.loadOlderGroupMessages();
+
+        expect(repo.pageCalls, equals(1),
+            reason: 'exhausted history must never refetch (no infinite loop)');
+      });
+
+      test('empty history reports no more and never fetches an older page',
+          () async {
+        final repo = PagingChatMessageRepository(latest: const [], older: const []);
+        final service =
+            ChatService(liveKitService: fakeLiveKit, repository: repo);
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+        expect(service.currentMessages, isEmpty);
+        expect(service.hasMoreHistory('group'), isFalse);
+
+        await service.loadOlderGroupMessages();
+        expect(repo.pageCalls, equals(1));
+      });
+
+      // THE dedup seam paging introduces (task #27 requirement 4): a message can
+      // arrive LIVE before the page containing it is ever paged in. Its id was
+      // never marked seen at load time (that page wasn't loaded), so the live
+      // copy is appended. When the user later pages back to it, the older-page
+      // copy must be deduped away — the message renders exactly ONCE.
+      test('a live-delivered old message is not duplicated when its older '
+          'page later loads', () async {
+        fakeLiveKit.connected = true;
+
+        // Newest page does NOT contain M10; the older page DOES.
+        final repo = PagingChatMessageRepository(
+          latest: [groupMsg('M50', 'newest', 50)],
+          older: [groupMsg('M10', 'old message', 10)],
+        );
+        final service =
+            ChatService(liveKitService: fakeLiveKit, repository: repo);
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1'); // loads [M50], more history true
+
+        // M10 arrives LIVE before its page is paged in.
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'old message',
+          'id': 'M10',
+          'senderName': 'Alice',
+        });
+        await pumpEventQueue();
+        expect(
+          service.currentMessages.where((m) => m.stableId == 'M10'),
+          hasLength(1),
+          reason: 'the live delivery adds M10 once',
+        );
+
+        // User pages back → the older page (which contains M10) loads.
+        await service.loadOlderGroupMessages();
+
+        expect(
+          service.currentMessages.where((m) => m.stableId == 'M10'),
+          hasLength(1),
+          reason: 'the older-page copy must be deduped against the live copy',
+        );
+        // The newest message is still present exactly once.
+        expect(
+          service.currentMessages.where((m) => m.stableId == 'M50'),
+          hasLength(1),
+        );
+      });
+
+      test('two docs sharing one id in a single older page collapse to one',
+          () async {
+        // The DM double-persist / GlobalKey-collision case, on the group path.
+        final dup = groupMsg('shared', 'dup', 10);
+        final repo = PagingChatMessageRepository(
+          latest: [groupMsg('N', 'newest', 50)],
+          older: [dup, dup],
+        );
+        final service =
+            ChatService(liveKitService: fakeLiveKit, repository: repo);
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1');
+        await service.loadOlderGroupMessages();
+
+        expect(
+          service.currentMessages.where((m) => m.stableId == 'shared'),
+          hasLength(1),
+        );
+      });
+    });
+
     group('reply rehydration (regression for the second copy-site bug)', () {
       test('a persisted DM reply keeps its linkage + snapshot after reload',
           () async {
@@ -1644,12 +1798,71 @@ class RehydrationChatMessageRepository implements ChatMessageRepository {
   }
 
   @override
-  Future<List<ChatMessage>> loadMessages(
+  Future<MessagePage> loadMessagePage(
     String roomId,
     String conversationId, {
-    int limit = 100,
+    MessageCursor? after,
+    int limit = ChatMessageRepository.defaultPageSize,
   }) async {
-    return conversationId == 'group' ? groupMessages : dmMessages;
+    // Canned single page; an older-page request (after != null) is exhausted.
+    if (after != null) return MessagePage.empty;
+    final msgs = conversationId == 'group' ? groupMessages : dmMessages;
+    return MessagePage(messages: msgs, cursor: null, hasMore: false);
+  }
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {}
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {}
+}
+
+/// Opaque cursor for [PagingChatMessageRepository] (the app only passes it back).
+class _FakeCursor extends MessageCursor {
+  const _FakeCursor();
+}
+
+/// A [ChatMessageRepository] serving two canned pages for paging tests: the
+/// newest page ([latest]) on the first `after: null` call, then one [older]
+/// page on the `after:` call. [pageCalls] counts every [loadMessagePage] so a
+/// test can assert an exhausted history never refetches.
+class PagingChatMessageRepository implements ChatMessageRepository {
+  PagingChatMessageRepository({this.latest = const [], this.older = const []});
+
+  final List<ChatMessage> latest;
+  final List<ChatMessage> older;
+  int pageCalls = 0;
+
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) async =>
+      {'group'};
+
+  @override
+  Future<MessagePage> loadMessagePage(
+    String roomId,
+    String conversationId, {
+    MessageCursor? after,
+    int limit = ChatMessageRepository.defaultPageSize,
+  }) async {
+    pageCalls++;
+    if (after == null) {
+      // Newest page. hasMore is true only when an older page exists, so a
+      // history with no older page latches exhausted immediately.
+      final hasMore = older.isNotEmpty;
+      return MessagePage(
+        messages: latest,
+        cursor: hasMore ? const _FakeCursor() : null,
+        hasMore: hasMore,
+      );
+    }
+    // The single older page — exhausted afterward.
+    return MessagePage(messages: older, cursor: null, hasMore: false);
   }
 
   @override
@@ -1673,10 +1886,11 @@ class FailingChatMessageRepository implements ChatMessageRepository {
   }
 
   @override
-  Future<List<ChatMessage>> loadMessages(
+  Future<MessagePage> loadMessagePage(
     String roomId,
     String conversationId, {
-    int limit = 100,
+    MessageCursor? after,
+    int limit = ChatMessageRepository.defaultPageSize,
   }) {
     throw Exception('Firestore unavailable');
   }
@@ -1703,12 +1917,13 @@ class HangingChatMessageRepository implements ChatMessageRepository {
   }
 
   @override
-  Future<List<ChatMessage>> loadMessages(
+  Future<MessagePage> loadMessagePage(
     String roomId,
     String conversationId, {
-    int limit = 100,
+    MessageCursor? after,
+    int limit = ChatMessageRepository.defaultPageSize,
   }) {
-    return Completer<List<ChatMessage>>().future;
+    return Completer<MessagePage>().future;
   }
 
   @override
@@ -1735,26 +1950,31 @@ class PartialThenHangingRepository implements ChatMessageRepository {
   int _loadMessagesCallCount = 0;
 
   @override
-  Future<List<ChatMessage>> loadMessages(
+  Future<MessagePage> loadMessagePage(
     String roomId,
     String conversationId, {
-    int limit = 100,
+    MessageCursor? after,
+    int limit = ChatMessageRepository.defaultPageSize,
   }) {
     _loadMessagesCallCount++;
     if (_loadMessagesCallCount == 1) {
-      // First conversation loads successfully.
-      return Future.value([
-        ChatMessage(
-          text: 'Hello from peer',
-          senderName: 'Peer',
-          senderId: 'peer-uid',
-          conversationId: conversationId,
-          timestamp: DateTime(2024),
-        ),
-      ]);
+      // First conversation's newest page loads successfully.
+      return Future.value(MessagePage(
+        messages: [
+          ChatMessage(
+            text: 'Hello from peer',
+            senderName: 'Peer',
+            senderId: 'peer-uid',
+            conversationId: conversationId,
+            timestamp: DateTime(2024),
+          ),
+        ],
+        cursor: null,
+        hasMore: false,
+      ));
     }
     // Subsequent calls hang forever.
-    return Completer<List<ChatMessage>>().future;
+    return Completer<MessagePage>().future;
   }
 
   @override
@@ -2071,12 +2291,13 @@ class RecordingChatMessageRepository implements ChatMessageRepository {
       {'group'};
 
   @override
-  Future<List<ChatMessage>> loadMessages(
+  Future<MessagePage> loadMessagePage(
     String roomId,
     String conversationId, {
-    int limit = 100,
+    MessageCursor? after,
+    int limit = ChatMessageRepository.defaultPageSize,
   }) async =>
-      const [];
+      MessagePage.empty;
 
   @override
   Future<void> saveMessage(String roomId, ChatMessage message) async {
