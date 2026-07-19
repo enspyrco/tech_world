@@ -63,7 +63,14 @@ class TileObjectLayerComponent extends Component {
         final sprite = registry.getSpriteForTile(ref.tilesetId, ref.tileIndex);
         if (sprite == null) continue;
 
-        final effectivePriority = priorityOverrides?[(x, y)] ?? y;
+        // Scale to the same priority space as characters, which use
+        // `row * kPriorityStride + xTieBreak` (see PlayerComponent.update).
+        // Overrides and the default are grid rows; without this multiply every
+        // tile sorts ~kPriorityStride× below any character, so the player
+        // renders in front of all wall tops and archways — occlusion dies.
+        // Regression from #376, which scaled only the character side.
+        final effectivePriority =
+            (priorityOverrides?[(x, y)] ?? y) * kPriorityStride;
         final isLintelOverlay =
             lintelOverlayPositions?.contains((x, y)) ?? false;
 
@@ -117,7 +124,10 @@ class TileObjectLayerComponent extends Component {
               x * gridSquareSizeDouble + 2,
               y * gridSquareSizeDouble + 2,
             ),
-            priority: 9999, // always on top
+            // Above every scaled tile/character priority (max row 49 →
+            // 49 * kPriorityStride + tie-break). A bare 9999 now sorts BEHIND
+            // any tile on row 10+, hiding labels exactly when debugging scale.
+            priority: gridSize * kPriorityStride, // always on top
             textRenderer: TextPaint(
               style: TextStyle(
                 fontSize: 8,
