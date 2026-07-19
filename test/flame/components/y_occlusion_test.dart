@@ -99,9 +99,16 @@ void main() {
 
   /// Adds a real player, positions it at [row], drives one frame so
   /// [PlayerComponent.update] sets `priority`, and returns the live component.
+  ///
+  /// The player is placed at a **non-zero grid x** on purpose: the character
+  /// priority is `row * kPriorityStride + (x.abs() % kPriorityStride)`, so at
+  /// x=0 the tie-break is 0 and a same-row player would exactly *equal* the
+  /// tile priority — a Flame stable-sort coin-flip, not the deterministic
+  /// "player in front" this suite claims. A non-zero x gives a strictly
+  /// positive tie-break, so same-row ordering is a hard inequality.
   Future<PlayerComponent> playerAtRow(_OcclusionTestGame game, int row) async {
     final player = PlayerComponent(
-      position: Vector2(0, row * gridSquareSizeDouble),
+      position: Vector2(3 * gridSquareSizeDouble, row * gridSquareSizeDouble),
       id: 'p',
       displayName: 'P',
     );
@@ -119,6 +126,33 @@ void main() {
         final cap = await loadCapSprite(game);
         // Cap is bumped to the barrier row, on the character scale.
         expect(cap.priority, equals(barrierRow * kPriorityStride));
+      },
+    );
+
+    testWithGame<_OcclusionTestGame>(
+      'a tile with NO override still scales its default grid-y',
+      _OcclusionTestGame.new,
+      (game) async {
+        // The regression was "one side of the seam forgotten" — the default
+        // `?? y` arm, not just the override arm. Strike it with a real sprite.
+        const plainX = 2;
+        const plainRow = 7;
+        final layer = TileLayerData()
+          ..setTile(plainX, plainRow,
+              const TileRef(tilesetId: 't', tileIndex: 0));
+        await game.world.add(TileObjectLayerComponent(
+          layerData: layer,
+          registry: game.registry,
+          // No priorityOverrides at all → exercises the `?? y` default.
+        ));
+        await game.ready();
+        final sprite = game.world.children.whereType<SpriteComponent>().firstWhere(
+              (s) =>
+                  s.position ==
+                  Vector2(plainX * gridSquareSizeDouble,
+                      plainRow * gridSquareSizeDouble),
+            );
+        expect(sprite.priority, equals(plainRow * kPriorityStride));
       },
     );
 
@@ -145,9 +179,10 @@ void main() {
         final player = await playerAtRow(game, barrierRow);
         expect(
           player.priority,
-          greaterThanOrEqualTo(cap.priority),
+          greaterThan(cap.priority),
           reason: 'Same-row player wins the tie (renders in front) — the '
-              'deterministic same-y ordering #376 set out to provide.',
+              'deterministic same-y ordering #376 set out to provide. Strict '
+              '> holds for any non-zero player x (positive tie-break).',
         );
       },
     );
