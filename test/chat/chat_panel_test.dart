@@ -95,6 +95,16 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    testWidgets('the group message list is reverse:true (opens at bottom)',
+        (tester) async {
+      await pumpPanel(tester);
+      // reverse:true is what makes the list open scrolled to the newest message
+      // (offset 0 = bottom) and grow upward for paging (task #27, tradeoff c).
+      final lists = tester.widgetList<ListView>(find.byType(ListView));
+      expect(lists.any((lv) => lv.reverse), isTrue,
+          reason: 'the message ListView must be reverse:true');
+    });
+
     testWidgets('tapping Reply shows the composing banner', (tester) async {
       await pumpPanel(tester);
 

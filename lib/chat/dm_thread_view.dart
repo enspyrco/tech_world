@@ -49,6 +49,11 @@ class _DmThreadViewState extends State<DmThreadView> {
   /// near-bottom auto-scroll doesn't yank the view back down mid-navigation.
   bool _navigatingToQuote = false;
 
+  /// True while an older-history page for this DM is being fetched, so the
+  /// top-of-list loading affordance shows and the scroll listener doesn't stack
+  /// overlapping fetches.
+  bool _loadingOlder = false;
+
   static const _clawdOrange = Color(0xFFD97757);
 
   /// How long a tapped-to quote target stays highlighted before the flash
@@ -99,6 +104,24 @@ class _DmThreadViewState extends State<DmThreadView> {
     super.initState();
     // Mark as read when opening.
     widget.chatService.markConversationRead(widget.conversation.id);
+    // Fetch older history as the user scrolls toward the top. With a
+    // reverse:true list the top is near maxScrollExtent.
+    _scrollController.addListener(_maybeLoadOlder);
+  }
+
+  /// Load an older page of this DM's history when scrolled near the top.
+  void _maybeLoadOlder() {
+    if (_loadingOlder) return;
+    final peerId = widget.conversation.peerId;
+    if (peerId == null) return;
+    if (!widget.chatService.hasMoreHistory(widget.conversation.id)) return;
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels < pos.maxScrollExtent - 300) return;
+    setState(() => _loadingOlder = true);
+    widget.chatService.loadOlderDmMessages(peerId).whenComplete(() {
+      if (mounted) setState(() => _loadingOlder = false);
+    });
   }
 
   @override
@@ -127,11 +150,12 @@ class _DmThreadViewState extends State<DmThreadView> {
     setState(() => _replyTarget = null);
     _focusNode.requestFocus();
 
-    // Scroll to bottom.
+    // Scroll to bottom. With a reverse:true list the newest message is at
+    // offset 0 (the bottom), so "scroll to bottom" is animateTo(0).
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
@@ -242,26 +266,37 @@ class _DmThreadViewState extends State<DmThreadView> {
               }
 
               // Auto-scroll only when the user is already near the bottom,
-              // so reading history isn't interrupted.
+              // so reading history isn't interrupted. With reverse:true the
+              // bottom (newest) is offset 0, so "near bottom" is a small
+              // pixels value and snapping means jumpTo(0).
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (_navigatingToQuote || !_scrollController.hasClients) return;
                 final position = _scrollController.position;
-                final isNearBottom =
-                    position.pixels >= position.maxScrollExtent - 80;
+                final isNearBottom = position.pixels <= 80;
                 if (isNearBottom) {
-                  _scrollController.jumpTo(position.maxScrollExtent);
+                  _scrollController.jumpTo(0);
                 }
               });
 
               // SelectionArea: drag-select + copy across DM messages, same
               // treatment as the group tab.
+              //
+              // reverse:true opens at the bottom (newest) and grows upward.
+              // `messages` stays ascending; index 0 (visually the bottom) maps
+              // to the last element. The trailing item (visually the TOP) is the
+              // "loading older" spinner while paging back through history.
+              final showOlderLoader = _loadingOlder;
               return SelectionArea(
                 child: ListView.builder(
                   controller: _scrollController,
+                  reverse: true,
                   padding: const EdgeInsets.all(16),
-                  itemCount: messages.length,
+                  itemCount: messages.length + (showOlderLoader ? 1 : 0),
                   itemBuilder: (context, index) {
-                    final message = messages[index];
+                    if (index >= messages.length) {
+                      return const _DmOlderHistoryLoader();
+                    }
+                    final message = messages[messages.length - 1 - index];
                     return _DmBubble(
                       key: _keyFor(message.stableId),
                       message: message,
@@ -362,6 +397,29 @@ class _DmThreadViewState extends State<DmThreadView> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Top-of-list spinner shown while an older page of this DM's eternal history
+/// loads. Mirrors the group tab's `_OlderHistoryLoader` (private per file).
+class _DmOlderHistoryLoader extends StatelessWidget {
+  const _DmOlderHistoryLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFD97757)),
+          ),
+        ),
+      ),
     );
   }
 }

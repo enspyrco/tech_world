@@ -117,6 +117,12 @@ class ChatService {
   /// The room ID for Firestore persistence. Set via [loadHistory].
   String? _roomId;
 
+  /// Per-conversation windowed-history paging state (eternal history is loaded
+  /// newest-first, a page at a time). Keyed by conversationId (`'group'` or a
+  /// `dm_..._...` id). Populated by [loadHistory]; advanced by [loadOlderGroupMessages]
+  /// / [loadOlderDmMessages].
+  final Map<String, _ConvPaging> _paging = {};
+
   /// Stream of all conversations (group + DMs), sorted by last activity.
   Stream<List<Conversation>> get conversations =>
       _conversationsController.stream;
@@ -269,6 +275,16 @@ class ChatService {
     final payloadSenderId =
         ChatMessage.asStringOrNull(json['senderId']) ?? message.senderId;
 
+    // Honor the sender's timestamp for ORDERING and display, so a live delivery
+    // is consistent with the same message once it's persisted and paged back
+    // (Firestore stores the sender's stamp, so both must use it — otherwise a
+    // re-delivered old message would jump to "now" and strand at the tail of the
+    // reverse:true list). Defensive parse: absent / malformed → null → the
+    // ChatMessage constructor falls back to now(). Display-only, like
+    // senderName — never a trust anchor.
+    final tsString = ChatMessage.asStringOrNull(json['timestamp']);
+    final payloadTimestamp = tsString != null ? DateTime.tryParse(tsString) : null;
+
     if (text == null) return;
 
     // Skip if we've already seen this message (prevents duplicates)
@@ -309,6 +325,7 @@ class ChatService {
         senderName: senderName,
         senderId: message.senderId ?? 'unknown',
         isResponse: message.topic == LiveKitTopic.dmResponse.wire,
+        timestamp: payloadTimestamp,
         replyToMessageId: reply.messageId,
         replyToText: reply.text,
         replyToSenderName: reply.senderName,
@@ -323,7 +340,9 @@ class ChatService {
         senderId: payloadSenderId ?? _activeBotIdentity,
         conversationId: 'group',
         isBot: true,
+        timestamp: payloadTimestamp,
       ));
+      _sortByTimestamp(_messages); // honor sender-time ordering (see above)
       // Speak the response
       _ttsService.speak(text);
       dispatch([BotSpoke(text: text, context: BotSpokeContext.group)]);
@@ -347,10 +366,12 @@ class ChatService {
         senderId: message.senderId ?? 'unknown',
         conversationId: 'group',
         isLocalUser: false,
+        timestamp: payloadTimestamp,
         replyToMessageId: reply.messageId,
         replyToText: reply.text,
         replyToSenderName: reply.senderName,
       ));
+      _sortByTimestamp(_messages); // honor sender-time ordering (see above)
       _messagesController.add(List.from(_messages));
 
       // Structured @mention list — the trust anchor for the world beacon.
@@ -387,6 +408,7 @@ class ChatService {
     required String senderId,
     required bool isResponse,
     String? id,
+    DateTime? timestamp,
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderName,
@@ -402,6 +424,7 @@ class ChatService {
       conversationId: convId,
       participants: [localUid, senderId],
       isBot: isResponse,
+      timestamp: timestamp,
       replyToMessageId: replyToMessageId,
       replyToText: replyToText,
       replyToSenderName: replyToSenderName,
@@ -419,11 +442,18 @@ class ChatService {
     _conversations[convId] = existing.copyWith(
       peerDisplayName: senderName,
       unreadCount: existing.unreadCount + 1,
-      lastActivity: chatMessage.timestamp,
+      // Conversation recency is RECEIVE time, not the message's (now possibly
+      // sender-stamped, older) content timestamp — a just-received message must
+      // float the thread to the top of the DM list even if its authored time is
+      // old. The message's own timestamp still governs its position in-thread.
+      lastActivity: DateTime.now(),
     );
 
     _dmMessagesByConversation[convId] ??= [];
     _dmMessagesByConversation[convId]!.add(chatMessage);
+    // Keep the thread chronological if a live delivery carries an older
+    // sender-timestamp than what's already loaded (see [_sortByTimestamp]).
+    _sortByTimestamp(_dmMessagesByConversation[convId]!);
 
     // Emit to DM stream.
     _dmStreamControllers[convId] ??=
@@ -843,6 +873,12 @@ class ChatService {
   /// the `finally` block so the UI shows whatever was fetched before failure.
   Future<void> loadHistory(String roomId) async {
     _roomId = roomId;
+    // Reset paging before reseeding: a re-entrant load (or a conversation that
+    // vanished from the roster) must not leave a stale cursor pointing into the
+    // previous load's document positions. The message caches themselves reset
+    // per room via a fresh ChatService (RoomSession creates one per room); this
+    // is the defensive wipe for the same-instance reseed path.
+    _paging.clear();
     final repository = _repository;
     if (repository == null) return;
 
@@ -856,23 +892,12 @@ class ChatService {
     }
   }
 
-  /// Loads conversation IDs and their messages from Firestore.
+  /// Loads conversation IDs and the NEWEST page of each conversation's history
+  /// from Firestore, seeding per-conversation paging state so older pages can
+  /// be fetched on demand ([loadOlderGroupMessages] / [loadOlderDmMessages]).
   ///
   /// Extracted so [loadHistory] can wrap the entire operation in a single
   /// timeout rather than per-query timeouts that can accumulate.
-  /// Keep the first message per [ChatMessage.stableId]. Reloaded DMs can
-  /// contain two docs sharing one transported id (both participants persist a
-  /// copy), which would otherwise assign a single GlobalKey to two rendered
-  /// rows in the DM view and crash. Preserves order.
-  static List<ChatMessage> _dedupeByStableId(List<ChatMessage> msgs) {
-    final seen = <String>{};
-    final out = <ChatMessage>[];
-    for (final m in msgs) {
-      if (seen.add(m.stableId)) out.add(m);
-    }
-    return out;
-  }
-
   Future<void> _fetchAndCacheHistory(
     String roomId,
     ChatMessageRepository repository,
@@ -881,69 +906,25 @@ class ChatService {
         await repository.loadConversationIds(roomId, _liveKitService.userId);
 
     for (final convId in conversationIds) {
-      final loaded = await repository.loadMessages(roomId, convId);
-      if (loaded.isEmpty) continue;
+      final page = await repository.loadMessagePage(roomId, convId);
 
-      // Dedupe by stableId. A DM is persisted by BOTH participants (each calls
-      // saveMessage with `.add()`), so a reload can return two docs sharing one
-      // transported id. Rendering two rows with the same stableId would assign
-      // a single GlobalKey to both bubbles in the DM view — a hard crash
-      // ("Multiple widgets used the same GlobalKey"). Keep the first per
-      // stableId. Also mark loaded ids seen so a later live re-delivery of an
-      // already-loaded message is dropped by the _seenMessageIds guard rather
-      // than appended as a duplicate. (See claude-tasks #20 for the deeper
-      // write-side fix; this is the render-correctness guard.)
-      final messages = _dedupeByStableId(loaded);
-      for (final m in messages) {
-        if (m.id != null) _markSeen(m.id!);
-      }
+      // Seed paging state for this conversation even when the page is empty
+      // (exhausted → no "load older" affordance).
+      _paging[convId] = _ConvPaging()
+        ..cursor = page.cursor
+        ..exhausted = !page.hasMore;
+
+      if (page.messages.isEmpty) continue;
 
       if (convId == 'group') {
-        for (final msg in messages) {
-          // These are re-constructed (rather than reusing `msg`) only to
-          // recompute the locally-derived flags isLocalUser/isBot, which are
-          // not persisted. Every PERSISTED field must be carried through —
-          // dropping one here silently loses it on reload (the reply-field
-          // rehydration bug). Keep this in sync with the DM mapping below.
-          _messages.add(ChatMessage(
-            text: msg.text,
-            id: msg.id,
-            senderName: msg.senderName,
-            senderId: msg.senderId,
-            conversationId: 'group',
-            isLocalUser: msg.senderId == _liveKitService.userId,
-            isBot: msg.senderId != null && isBotIdentity(msg.senderId!),
-            replyToMessageId: msg.replyToMessageId,
-            replyToText: msg.replyToText,
-            replyToSenderName: msg.replyToSenderName,
-            timestamp: msg.timestamp,
-          ));
-        }
-        _messagesController.add(List.from(_messages));
+        _prependGroupPage(page.messages);
       } else {
-        // DM conversation — figure out peer from the conversation ID.
-        // See the group mapping above: carry every persisted field through so a
-        // persisted reply still has its linkage + quote snapshot after reload.
-        _dmMessagesByConversation[convId] = messages.map((msg) {
-          return ChatMessage(
-            text: msg.text,
-            id: msg.id,
-            senderName: msg.senderName,
-            senderId: msg.senderId,
-            conversationId: convId,
-            isLocalUser: msg.senderId == _liveKitService.userId,
-            isBot: msg.senderId != null && isBotIdentity(msg.senderId!),
-            replyToMessageId: msg.replyToMessageId,
-            replyToText: msg.replyToText,
-            replyToSenderName: msg.replyToSenderName,
-            timestamp: msg.timestamp,
-          );
-        }).toList();
+        _prependDmMessages(convId, page.messages);
 
         // Determine peer info from the most recent message not from us.
-        final peerMsg = messages.lastWhere(
+        final peerMsg = page.messages.lastWhere(
           (m) => m.senderId != _liveKitService.userId,
-          orElse: () => messages.last,
+          orElse: () => page.messages.last,
         );
 
         _conversations[convId] ??= Conversation(
@@ -951,11 +932,148 @@ class ChatService {
           type: ConversationType.dm,
           peerId: peerMsg.senderId,
           peerDisplayName: peerMsg.senderName,
-          lastActivity: messages.last.timestamp,
+          lastActivity: page.messages.last.timestamp,
         );
       }
     }
   }
+
+  /// Whether an older page of history MAY exist for [conversationId]. Drives the
+  /// UI's "load older" affordance. False when paging was never seeded (a
+  /// conversation with no persisted history) or history is exhausted.
+  bool hasMoreHistory(String conversationId) {
+    final paging = _paging[conversationId];
+    return paging != null && !paging.exhausted;
+  }
+
+  /// Fetch and prepend the next OLDER page of GROUP history. A no-op when
+  /// history is exhausted, a fetch is already in flight, or there's no
+  /// repository/room. Safe to call repeatedly (e.g. from a scroll listener).
+  Future<void> loadOlderGroupMessages() => _loadOlderPage('group');
+
+  /// Fetch and prepend the next OLDER page for the DM conversation with
+  /// [peerId]. Same guards as [loadOlderGroupMessages].
+  Future<void> loadOlderDmMessages(String peerId) => _loadOlderPage(
+      Conversation.conversationIdFor(_liveKitService.userId, peerId));
+
+  Future<void> _loadOlderPage(String convId) async {
+    final repository = _repository;
+    final roomId = _roomId;
+    if (repository == null || roomId == null) return;
+
+    final paging = _paging[convId];
+    // No cursor / already exhausted / already loading → nothing to do. The
+    // cursor==null guard is what makes a short/empty page terminal: a page that
+    // didn't fill to `limit` returns a null cursor, so we never refetch it.
+    if (paging == null ||
+        paging.exhausted ||
+        paging.loading ||
+        paging.cursor == null) {
+      return;
+    }
+
+    paging.loading = true;
+    try {
+      final page =
+          await repository.loadMessagePage(roomId, convId, after: paging.cursor);
+      paging.cursor = page.cursor;
+      // Latch exhaustion on a short/empty page so we never loop refetching.
+      if (!page.hasMore) paging.exhausted = true;
+
+      if (page.messages.isNotEmpty) {
+        if (convId == 'group') {
+          _prependGroupPage(page.messages);
+        } else {
+          _prependDmMessages(convId, page.messages);
+        }
+      }
+    } catch (e) {
+      // Transient failure — do NOT latch exhausted, so the next scroll retries.
+      _log.warning('Failed to load older messages for $convId', e);
+    } finally {
+      paging.loading = false;
+    }
+  }
+
+  /// Prepend a fetched page of GROUP messages (older than everything already
+  /// loaded) to [_messages], deduped by [ChatMessage.stableId] against what's
+  /// already present.
+  ///
+  /// The dedupe seam that paging introduces: a message can arrive LIVE (and be
+  /// appended + marked seen) before the page containing it is ever loaded — its
+  /// id was never marked seen at load time because that page wasn't loaded.
+  /// When the user later pages back to it, this dedupe skips the copy already
+  /// in [_messages], so the message renders ONCE (at its live-arrival position)
+  /// rather than twice. Marking ids seen additionally drops any FUTURE live
+  /// re-delivery via [_seenMessageIds]. Dedup is against the actual in-memory
+  /// stableId set (uncapped), not the capped [_seenMessageIds], so it holds
+  /// even after seen-id eviction. Also collapses two docs sharing one id (the
+  /// DM double-persist / GlobalKey-collision case). Emits on the group stream.
+  void _prependGroupPage(List<ChatMessage> page) {
+    final present = _messages.map((m) => m.stableId).toSet();
+    final fresh = <ChatMessage>[];
+    for (final msg in page) {
+      if (!present.add(msg.stableId)) continue; // already loaded or live-added
+      if (msg.id != null) _markSeen(msg.id!);
+      fresh.add(_rehydrate(msg, 'group'));
+    }
+    if (fresh.isEmpty) return;
+    _messages.insertAll(0, fresh);
+    // Keep the model chronological. A message can arrive LIVE with an older
+    // timestamp than the newest loaded one (a delayed / re-broadcast delivery);
+    // without a re-sort it would strand at the tail (rendering as newest in the
+    // reverse:true list) even after its page pages in. Stable sort preserves the
+    // relative order of equal-timestamp messages. Chat volumes make this cheap.
+    _sortByTimestamp(_messages);
+    _messagesController.add(List.from(_messages));
+  }
+
+  /// Prepend a fetched page of DM messages for [convId], with the same
+  /// dedupe-by-stableId seam handling as [_prependGroupPage]. Emits on the DM
+  /// stream for [convId].
+  void _prependDmMessages(String convId, List<ChatMessage> page) {
+    final existing = _dmMessagesByConversation[convId] ??= [];
+    final present = existing.map((m) => m.stableId).toSet();
+    final fresh = <ChatMessage>[];
+    for (final msg in page) {
+      if (!present.add(msg.stableId)) continue;
+      if (msg.id != null) _markSeen(msg.id!);
+      fresh.add(_rehydrate(msg, convId));
+    }
+    if (fresh.isEmpty) return;
+    existing.insertAll(0, fresh);
+    _sortByTimestamp(existing); // keep the DM thread chronological (see above)
+    _dmStreamControllers[convId] ??=
+        StreamController<List<ChatMessage>>.broadcast();
+    _dmStreamControllers[convId]!.add(List.from(existing));
+  }
+
+  /// Stable-sort a message list ascending by timestamp. Stable so two messages
+  /// stamped in the same microsecond keep their arrival order. Used to keep the
+  /// in-memory model chronological after a prepend or a live append that may
+  /// introduce an out-of-order (older-timestamped) message.
+  void _sortByTimestamp(List<ChatMessage> list) {
+    mergeSort(list, compare: (a, b) => a.timestamp.compareTo(b.timestamp));
+  }
+
+  /// Reconstruct a loaded message under [conversationId], recomputing the
+  /// locally-derived flags (isLocalUser/isBot, not persisted) while carrying
+  /// EVERY persisted field through — dropping one here silently loses it on
+  /// reload (the reply-field rehydration bug, #494). Used for both group
+  /// (`'group'`) and DM (the `dm_..._...` id) pages.
+  ChatMessage _rehydrate(ChatMessage msg, String conversationId) => ChatMessage(
+        text: msg.text,
+        id: msg.id,
+        senderName: msg.senderName,
+        senderId: msg.senderId,
+        conversationId: conversationId,
+        isLocalUser: msg.senderId == _liveKitService.userId,
+        isBot: msg.senderId != null && isBotIdentity(msg.senderId!),
+        replyToMessageId: msg.replyToMessageId,
+        replyToText: msg.replyToText,
+        replyToSenderName: msg.replyToSenderName,
+        timestamp: msg.timestamp,
+      );
 
   /// Handle a help-response message from the bot.
   void _handleHelpResponse(DataChannelMessage message) {
@@ -1147,4 +1265,16 @@ class ChatService {
     _ttsService.dispose();
     _botStatus.dispose();
   }
+}
+
+/// Mutable per-conversation paging state for eternal windowed history.
+///
+/// [cursor] anchors the next OLDER page (null when there's no older page or the
+/// conversation is empty). [exhausted] latches true once a page returns short/
+/// empty, so the "load older" path never refetches. [loading] guards against a
+/// scroll listener firing overlapping fetches.
+class _ConvPaging {
+  MessageCursor? cursor;
+  bool exhausted = false;
+  bool loading = false;
 }

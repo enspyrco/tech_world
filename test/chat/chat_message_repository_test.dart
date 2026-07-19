@@ -130,14 +130,32 @@ void main() {
       });
     });
 
-    group('loadMessages', () {
-      test('returns messages for a specific conversationId', () async {
+    group('loadMessagePage', () {
+      /// Add [count] group messages with increasing timestamps ("Message 0"
+      /// oldest → "Message N-1" newest).
+      Future<void> seedGroup(int count) async {
+        final messagesRef = fakeFirestore
+            .collection('rooms')
+            .doc('room-1')
+            .collection('messages');
+        for (var i = 0; i < count; i++) {
+          await messagesRef.add({
+            'text': 'Message $i',
+            'senderName': 'User',
+            'senderId': 'user-uid',
+            'conversationId': 'group',
+            'timestamp': DateTime(2024, 6, 15, 10, i).toIso8601String(),
+          });
+        }
+      }
+
+      test('returns messages for a specific conversationId, ascending in page',
+          () async {
         final messagesRef = fakeFirestore
             .collection('rooms')
             .doc('room-1')
             .collection('messages');
 
-        // Add group messages
         await messagesRef.add({
           'text': 'Group message 1',
           'senderName': 'Alice',
@@ -152,7 +170,7 @@ void main() {
           'conversationId': 'group',
           'timestamp': DateTime(2024, 6, 15, 10, 1).toIso8601String(),
         });
-        // Add a DM (should not appear in group query)
+        // A DM must NOT appear in the group query.
         await messagesRef.add({
           'text': 'Private DM',
           'senderName': 'Alice',
@@ -161,12 +179,14 @@ void main() {
           'timestamp': DateTime(2024, 6, 15, 10, 2).toIso8601String(),
         });
 
-        final messages =
-            await repository.loadMessages('room-1', 'group');
+        final page = await repository.loadMessagePage('room-1', 'group');
 
-        expect(messages.length, equals(2));
-        expect(messages[0].text, equals('Group message 1'));
-        expect(messages[1].text, equals('Group message 2'));
+        // Newest-first query, but the page is returned ASCENDING.
+        expect(page.messages.map((m) => m.text),
+            equals(['Group message 1', 'Group message 2']));
+        // Both fit under the default limit → no older page.
+        expect(page.hasMore, isFalse);
+        expect(page.cursor, isNull);
       });
 
       test('returns DM messages filtered by conversationId', () async {
@@ -190,43 +210,94 @@ void main() {
           'timestamp': DateTime(2024, 6, 15, 10, 1).toIso8601String(),
         });
 
-        final messages = await repository.loadMessages(
+        final page = await repository.loadMessagePage(
           'room-1',
           'dm_alice-uid_bob-uid',
         );
 
-        expect(messages.length, equals(1));
-        expect(messages.first.text, equals('Hey Bob'));
+        expect(page.messages.length, equals(1));
+        expect(page.messages.first.text, equals('Hey Bob'));
       });
 
-      test('respects limit parameter', () async {
-        final messagesRef = fakeFirestore
-            .collection('rooms')
-            .doc('room-1')
-            .collection('messages');
+      test('the newest page returns the NEWEST `limit` messages, ascending',
+          () async {
+        await seedGroup(5); // Message 0 (oldest) .. Message 4 (newest)
 
-        for (var i = 0; i < 5; i++) {
-          await messagesRef.add({
-            'text': 'Message $i',
-            'senderName': 'User',
-            'senderId': 'user-uid',
-            'conversationId': 'group',
-            'timestamp':
-                DateTime(2024, 6, 15, 10, i).toIso8601String(),
-          });
-        }
+        final page =
+            await repository.loadMessagePage('room-1', 'group', limit: 3);
 
-        final messages =
-            await repository.loadMessages('room-1', 'group', limit: 3);
-
-        expect(messages.length, equals(3));
+        // Newest 3 (Message 2,3,4), ascending within the page.
+        expect(page.messages.map((m) => m.text),
+            equals(['Message 2', 'Message 3', 'Message 4']));
+        // Filled to the limit → an older page may exist.
+        expect(page.hasMore, isTrue);
+        expect(page.cursor, isNotNull);
       });
 
-      test('returns empty list when no messages exist', () async {
-        final messages =
-            await repository.loadMessages('room-1', 'group');
+      test('the cursor pages BACKWARD to older messages with no overlap',
+          () async {
+        await seedGroup(5);
 
-        expect(messages, isEmpty);
+        final first =
+            await repository.loadMessagePage('room-1', 'group', limit: 3);
+        expect(first.messages.map((m) => m.text),
+            equals(['Message 2', 'Message 3', 'Message 4']));
+
+        final older = await repository.loadMessagePage(
+          'room-1',
+          'group',
+          after: first.cursor,
+          limit: 3,
+        );
+
+        // The remaining 2 older messages, ascending, no overlap with page 1.
+        expect(older.messages.map((m) => m.text),
+            equals(['Message 0', 'Message 1']));
+        // Short page → history exhausted, no further cursor.
+        expect(older.hasMore, isFalse);
+        expect(older.cursor, isNull);
+      });
+
+      test('an exactly-one-full-page conversation exhausts on the next fetch',
+          () async {
+        await seedGroup(3); // exactly limit
+
+        final first =
+            await repository.loadMessagePage('room-1', 'group', limit: 3);
+        expect(first.messages.length, equals(3));
+        // Exactly `limit` → hasMore true (we can't tell it's the last page yet).
+        expect(first.hasMore, isTrue);
+        expect(first.cursor, isNotNull);
+
+        // The next fetch comes back empty → exhausted, latch.
+        final next = await repository.loadMessagePage(
+          'room-1',
+          'group',
+          after: first.cursor,
+          limit: 3,
+        );
+        expect(next.messages, isEmpty);
+        expect(next.hasMore, isFalse);
+        expect(next.cursor, isNull);
+      });
+
+      test('returns an empty exhausted page when no messages exist', () async {
+        final page = await repository.loadMessagePage('room-1', 'group');
+
+        expect(page.messages, isEmpty);
+        expect(page.hasMore, isFalse);
+        expect(page.cursor, isNull);
+      });
+
+      test('rejects a foreign cursor with a named ArgumentError', () async {
+        // Cage-match round 1, Carnot Med: a cursor not minted by THIS repository
+        // (e.g. a fake's MessageCursor) must fail with a clear contract error,
+        // not a confusing internal cast failure.
+        expect(
+          () => repository.loadMessagePage('room-1', 'group',
+              after: const _ForeignCursor()),
+          throwsArgumentError,
+        );
       });
     });
 
@@ -289,4 +360,10 @@ void main() {
       });
     });
   });
+}
+
+/// A [MessageCursor] not produced by [ChatMessageRepository] — used to prove
+/// `loadMessagePage` rejects a foreign cursor rather than casting it blindly.
+class _ForeignCursor extends MessageCursor {
+  const _ForeignCursor();
 }

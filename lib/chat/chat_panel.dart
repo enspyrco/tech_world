@@ -74,6 +74,11 @@ class _ChatPanelState extends State<ChatPanel>
   /// The active `@query`'s anchor index, so a pick knows what span to replace.
   int? _mentionAtIndex;
 
+  /// True while an older-history page for the GROUP conversation is being
+  /// fetched, so the top-of-list loading affordance shows and the scroll
+  /// listener doesn't stack overlapping fetches.
+  bool _loadingOlder = false;
+
   // Clawd's orange color
   static const clawdOrange = Color(0xFFD97757);
 
@@ -81,6 +86,9 @@ class _ChatPanelState extends State<ChatPanel>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    // Fetch older group history as the user scrolls toward the top. With a
+    // reverse:true list, "top" is near maxScrollExtent.
+    _scrollController.addListener(_maybeLoadOlderGroup);
 
     // The panel mounting means the user is now looking at chat — acknowledge
     // any mention of them. Deferred to after the first frame so the ack fires
@@ -182,15 +190,31 @@ class _ChatPanelState extends State<ChatPanel>
     });
     _focusNode.requestFocus();
 
-    // Scroll to bottom after message is added
+    // Scroll to bottom after message is added. With a reverse:true list the
+    // newest message sits at offset 0 (the bottom), so "scroll to bottom" is
+    // animateTo(0), not maxScrollExtent.
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
       }
+    });
+  }
+
+  /// Load an older page of group history when the user scrolls near the top.
+  /// In a reverse:true list the top is near [ScrollPosition.maxScrollExtent].
+  void _maybeLoadOlderGroup() {
+    if (_loadingOlder) return;
+    if (!widget.chatService.hasMoreHistory('group')) return;
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels < pos.maxScrollExtent - 300) return;
+    setState(() => _loadingOlder = true);
+    widget.chatService.loadOlderGroupMessages().whenComplete(() {
+      if (mounted) setState(() => _loadingOlder = false);
     });
   }
 
@@ -432,13 +456,24 @@ class _ChatPanelState extends State<ChatPanel>
               // SelectionArea: drag the mouse across messages to select +
               // copy (Nick's 2026-07-18 request). Timestamps/Reply hints are
               // excluded inside BubbleFooter so copied text stays clean.
+              //
+              // reverse:true opens the list scrolled to the bottom (newest) and
+              // grows upward — the standard chat shape. `messages` stays
+              // ascending (oldest→newest); index 0 (visually the bottom) maps to
+              // the last element. A trailing item (the highest index, visually
+              // the TOP) shows the "loading older" spinner while paging back.
+              final showOlderLoader = _loadingOlder;
               return SelectionArea(
                 child: ListView.builder(
                   controller: _scrollController,
+                  reverse: true,
                   padding: const EdgeInsets.all(16),
-                  itemCount: messages.length,
+                  itemCount: messages.length + (showOlderLoader ? 1 : 0),
                   itemBuilder: (context, index) {
-                    final message = messages[index];
+                    if (index >= messages.length) {
+                      return const _OlderHistoryLoader();
+                    }
+                    final message = messages[messages.length - 1 - index];
                     return _MessageBubble(
                       message: message,
                       onReply: () => _startReply(message),
@@ -863,6 +898,30 @@ class _MessageBubble extends StatelessWidget {
           ),
           if (isLocalUser) const SizedBox(width: 36),
         ],
+      ),
+    );
+  }
+}
+
+/// A small centered spinner shown at the TOP of the reverse:true group message
+/// list while an older page of eternal history is being fetched. The DM thread
+/// view has its own equivalent (the two files don't share private widgets).
+class _OlderHistoryLoader extends StatelessWidget {
+  const _OlderHistoryLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFD97757)),
+          ),
+        ),
       ),
     );
   }
