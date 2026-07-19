@@ -288,6 +288,17 @@ void main() {
         expect(page.hasMore, isFalse);
         expect(page.cursor, isNull);
       });
+
+      test('rejects a foreign cursor with a named ArgumentError', () async {
+        // Cage-match round 1, Carnot Med: a cursor not minted by THIS repository
+        // (e.g. a fake's MessageCursor) must fail with a clear contract error,
+        // not a confusing internal cast failure.
+        expect(
+          () => repository.loadMessagePage('room-1', 'group',
+              after: const _ForeignCursor()),
+          throwsArgumentError,
+        );
+      });
     });
 
     group('loadConversationIds', () {
@@ -349,4 +360,10 @@ void main() {
       });
     });
   });
+}
+
+/// A [MessageCursor] not produced by [ChatMessageRepository] — used to prove
+/// `loadMessagePage` rejects a foreign cursor rather than casting it blindly.
+class _ForeignCursor extends MessageCursor {
+  const _ForeignCursor();
 }

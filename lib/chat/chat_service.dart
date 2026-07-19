@@ -275,6 +275,16 @@ class ChatService {
     final payloadSenderId =
         ChatMessage.asStringOrNull(json['senderId']) ?? message.senderId;
 
+    // Honor the sender's timestamp for ORDERING and display, so a live delivery
+    // is consistent with the same message once it's persisted and paged back
+    // (Firestore stores the sender's stamp, so both must use it — otherwise a
+    // re-delivered old message would jump to "now" and strand at the tail of the
+    // reverse:true list). Defensive parse: absent / malformed → null → the
+    // ChatMessage constructor falls back to now(). Display-only, like
+    // senderName — never a trust anchor.
+    final tsString = ChatMessage.asStringOrNull(json['timestamp']);
+    final payloadTimestamp = tsString != null ? DateTime.tryParse(tsString) : null;
+
     if (text == null) return;
 
     // Skip if we've already seen this message (prevents duplicates)
@@ -315,6 +325,7 @@ class ChatService {
         senderName: senderName,
         senderId: message.senderId ?? 'unknown',
         isResponse: message.topic == LiveKitTopic.dmResponse.wire,
+        timestamp: payloadTimestamp,
         replyToMessageId: reply.messageId,
         replyToText: reply.text,
         replyToSenderName: reply.senderName,
@@ -329,7 +340,9 @@ class ChatService {
         senderId: payloadSenderId ?? _activeBotIdentity,
         conversationId: 'group',
         isBot: true,
+        timestamp: payloadTimestamp,
       ));
+      _sortByTimestamp(_messages); // honor sender-time ordering (see above)
       // Speak the response
       _ttsService.speak(text);
       dispatch([BotSpoke(text: text, context: BotSpokeContext.group)]);
@@ -353,10 +366,12 @@ class ChatService {
         senderId: message.senderId ?? 'unknown',
         conversationId: 'group',
         isLocalUser: false,
+        timestamp: payloadTimestamp,
         replyToMessageId: reply.messageId,
         replyToText: reply.text,
         replyToSenderName: reply.senderName,
       ));
+      _sortByTimestamp(_messages); // honor sender-time ordering (see above)
       _messagesController.add(List.from(_messages));
 
       // Structured @mention list — the trust anchor for the world beacon.
@@ -393,6 +408,7 @@ class ChatService {
     required String senderId,
     required bool isResponse,
     String? id,
+    DateTime? timestamp,
     String? replyToMessageId,
     String? replyToText,
     String? replyToSenderName,
@@ -408,6 +424,7 @@ class ChatService {
       conversationId: convId,
       participants: [localUid, senderId],
       isBot: isResponse,
+      timestamp: timestamp,
       replyToMessageId: replyToMessageId,
       replyToText: replyToText,
       replyToSenderName: replyToSenderName,
@@ -425,11 +442,18 @@ class ChatService {
     _conversations[convId] = existing.copyWith(
       peerDisplayName: senderName,
       unreadCount: existing.unreadCount + 1,
-      lastActivity: chatMessage.timestamp,
+      // Conversation recency is RECEIVE time, not the message's (now possibly
+      // sender-stamped, older) content timestamp — a just-received message must
+      // float the thread to the top of the DM list even if its authored time is
+      // old. The message's own timestamp still governs its position in-thread.
+      lastActivity: DateTime.now(),
     );
 
     _dmMessagesByConversation[convId] ??= [];
     _dmMessagesByConversation[convId]!.add(chatMessage);
+    // Keep the thread chronological if a live delivery carries an older
+    // sender-timestamp than what's already loaded (see [_sortByTimestamp]).
+    _sortByTimestamp(_dmMessagesByConversation[convId]!);
 
     // Emit to DM stream.
     _dmStreamControllers[convId] ??=
@@ -849,6 +873,12 @@ class ChatService {
   /// the `finally` block so the UI shows whatever was fetched before failure.
   Future<void> loadHistory(String roomId) async {
     _roomId = roomId;
+    // Reset paging before reseeding: a re-entrant load (or a conversation that
+    // vanished from the roster) must not leave a stale cursor pointing into the
+    // previous load's document positions. The message caches themselves reset
+    // per room via a fresh ChatService (RoomSession creates one per room); this
+    // is the defensive wipe for the same-instance reseed path.
+    _paging.clear();
     final repository = _repository;
     if (repository == null) return;
 
@@ -985,10 +1015,16 @@ class ChatService {
     for (final msg in page) {
       if (!present.add(msg.stableId)) continue; // already loaded or live-added
       if (msg.id != null) _markSeen(msg.id!);
-      fresh.add(_rehydrateGroup(msg));
+      fresh.add(_rehydrate(msg, 'group'));
     }
     if (fresh.isEmpty) return;
     _messages.insertAll(0, fresh);
+    // Keep the model chronological. A message can arrive LIVE with an older
+    // timestamp than the newest loaded one (a delayed / re-broadcast delivery);
+    // without a re-sort it would strand at the tail (rendering as newest in the
+    // reverse:true list) even after its page pages in. Stable sort preserves the
+    // relative order of equal-timestamp messages. Chat volumes make this cheap.
+    _sortByTimestamp(_messages);
     _messagesController.add(List.from(_messages));
   }
 
@@ -1002,40 +1038,35 @@ class ChatService {
     for (final msg in page) {
       if (!present.add(msg.stableId)) continue;
       if (msg.id != null) _markSeen(msg.id!);
-      fresh.add(_rehydrateDm(msg, convId));
+      fresh.add(_rehydrate(msg, convId));
     }
     if (fresh.isEmpty) return;
     existing.insertAll(0, fresh);
+    _sortByTimestamp(existing); // keep the DM thread chronological (see above)
     _dmStreamControllers[convId] ??=
         StreamController<List<ChatMessage>>.broadcast();
     _dmStreamControllers[convId]!.add(List.from(existing));
   }
 
-  /// Reconstruct a loaded GROUP message, recomputing the locally-derived flags
-  /// (isLocalUser/isBot, not persisted) while carrying EVERY persisted field
-  /// through — dropping one here silently loses it on reload (the reply-field
-  /// rehydration bug, #494). Keep in sync with [_rehydrateDm].
-  ChatMessage _rehydrateGroup(ChatMessage msg) => ChatMessage(
-        text: msg.text,
-        id: msg.id,
-        senderName: msg.senderName,
-        senderId: msg.senderId,
-        conversationId: 'group',
-        isLocalUser: msg.senderId == _liveKitService.userId,
-        isBot: msg.senderId != null && isBotIdentity(msg.senderId!),
-        replyToMessageId: msg.replyToMessageId,
-        replyToText: msg.replyToText,
-        replyToSenderName: msg.replyToSenderName,
-        timestamp: msg.timestamp,
-      );
+  /// Stable-sort a message list ascending by timestamp. Stable so two messages
+  /// stamped in the same microsecond keep their arrival order. Used to keep the
+  /// in-memory model chronological after a prepend or a live append that may
+  /// introduce an out-of-order (older-timestamped) message.
+  void _sortByTimestamp(List<ChatMessage> list) {
+    mergeSort(list, compare: (a, b) => a.timestamp.compareTo(b.timestamp));
+  }
 
-  /// DM counterpart of [_rehydrateGroup]; carries every persisted field.
-  ChatMessage _rehydrateDm(ChatMessage msg, String convId) => ChatMessage(
+  /// Reconstruct a loaded message under [conversationId], recomputing the
+  /// locally-derived flags (isLocalUser/isBot, not persisted) while carrying
+  /// EVERY persisted field through — dropping one here silently loses it on
+  /// reload (the reply-field rehydration bug, #494). Used for both group
+  /// (`'group'`) and DM (the `dm_..._...` id) pages.
+  ChatMessage _rehydrate(ChatMessage msg, String conversationId) => ChatMessage(
         text: msg.text,
         id: msg.id,
         senderName: msg.senderName,
         senderId: msg.senderId,
-        conversationId: convId,
+        conversationId: conversationId,
         isLocalUser: msg.senderId == _liveKitService.userId,
         isBot: msg.senderId != null && isBotIdentity(msg.senderId!),
         replyToMessageId: msg.replyToMessageId,

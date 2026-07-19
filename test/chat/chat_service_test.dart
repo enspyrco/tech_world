@@ -1457,6 +1457,64 @@ void main() {
           hasLength(1),
         );
       });
+
+      // Cage-match round 1, Carnot High: dedup kept uniqueness but not POSITION.
+      // A message delivered live carrying an OLD sender-timestamp must sort into
+      // its chronological place, not strand at the tail (newest, in reverse:true)
+      // — and it must stay put, still single, when its page loads.
+      test('a live message with an OLD sender-timestamp sorts into place, not '
+          'the tail — and stays single when its page loads', () async {
+        fakeLiveKit.connected = true;
+        final repo = PagingChatMessageRepository(
+          latest: [groupMsg('NEW', 'newest', 50)],
+          older: [groupMsg('OLD', 'old', 10)],
+        );
+        final service =
+            ChatService(liveKitService: fakeLiveKit, repository: repo);
+        addTearDown(service.dispose);
+
+        await service.loadHistory('room-1'); // [newest]
+
+        // OLD arrives LIVE but carries its true old timestamp on the wire.
+        fakeLiveKit.simulateChatFromOtherUser('alice-uid', {
+          'text': 'old',
+          'id': 'OLD',
+          'senderName': 'Alice',
+          'timestamp': DateTime(2024, 1, 1, 10, 10).toIso8601String(),
+        });
+        await pumpEventQueue();
+
+        // Sorted ascending despite arriving last: old BEFORE newest.
+        expect(service.currentMessages.map((m) => m.text),
+            equals(['old', 'newest']));
+
+        // Paging OLD's page in keeps it single AND keeps the order.
+        await service.loadOlderGroupMessages();
+        expect(service.currentMessages.where((m) => m.stableId == 'OLD'),
+            hasLength(1));
+        expect(service.currentMessages.map((m) => m.text),
+            equals(['old', 'newest']));
+      });
+
+      // Cage-match round 1, Carnot/Kelvin/Tesla: a re-entrant loadHistory (or a
+      // conversation that vanished from the roster) must not leave a stale
+      // cursor. loadHistory clears `_paging` before reseeding.
+      test('loadHistory clears stale paging state before reseeding', () async {
+        final repo = ResettablePagingRepository();
+        final service =
+            ChatService(liveKitService: fakeLiveKit, repository: repo);
+        addTearDown(service.dispose);
+
+        repo.groupHasMore = true;
+        await service.loadHistory('room-1');
+        expect(service.hasMoreHistory('group'), isTrue);
+
+        // Re-entry: the same conversation now has no older history.
+        repo.groupHasMore = false;
+        await service.loadHistory('room-1');
+        expect(service.hasMoreHistory('group'), isFalse,
+            reason: 'the reseed must clear the stale exhausted/cursor state');
+      });
     });
 
     group('reply rehydration (regression for the second copy-site bug)', () {
@@ -1863,6 +1921,51 @@ class PagingChatMessageRepository implements ChatMessageRepository {
     }
     // The single older page — exhausted afterward.
     return MessagePage(messages: older, cursor: null, hasMore: false);
+  }
+
+  @override
+  Future<void> saveMessage(String roomId, ChatMessage message) async {}
+
+  @override
+  Future<void> saveConversation(
+    String roomId, {
+    required String conversationId,
+    required List<String> participants,
+    required String type,
+    String? lastMessageText,
+  }) async {}
+}
+
+/// A [ChatMessageRepository] whose newest page's `hasMore` can be flipped
+/// between `loadHistory` calls, to prove a reseed clears stale paging state.
+class ResettablePagingRepository implements ChatMessageRepository {
+  bool groupHasMore = false;
+
+  @override
+  Future<Set<String>> loadConversationIds(String roomId, String userId) async =>
+      {'group'};
+
+  @override
+  Future<MessagePage> loadMessagePage(
+    String roomId,
+    String conversationId, {
+    MessageCursor? after,
+    int limit = ChatMessageRepository.defaultPageSize,
+  }) async {
+    if (after != null) return MessagePage.empty;
+    return MessagePage(
+      messages: [
+        ChatMessage(
+          text: 'm',
+          id: 'm',
+          senderName: 'A',
+          senderId: 'a',
+          conversationId: 'group',
+        ),
+      ],
+      cursor: groupHasMore ? const _FakeCursor() : null,
+      hasMore: groupHasMore,
+    );
   }
 
   @override

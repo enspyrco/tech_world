@@ -116,7 +116,11 @@ class ChatMessageRepository {
         .orderBy('timestamp', descending: true);
 
     if (after != null) {
-      query = query.startAfterDocument((after as _FirestoreCursor).doc);
+      if (after is! _FirestoreCursor) {
+        throw ArgumentError(
+            'foreign MessageCursor — cursor must come from this repository');
+      }
+      query = query.startAfterDocument(after.doc);
     }
 
     final snapshot = await query.limit(limit).get();
