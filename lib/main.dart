@@ -50,7 +50,6 @@ import 'package:tech_world/flame/maps/tmx_importer.dart';
 import 'package:tech_world/flame/tiles/tileset_storage_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_service.dart';
-import 'package:tech_world/device/device_capability.dart';
 import 'package:tech_world/preferences/user_preferences.dart';
 import 'package:tech_world/rooms/room_session.dart';
 import 'package:tech_world/timer/countdown_timer_state.dart';
@@ -496,18 +495,14 @@ class _MyAppState extends State<MyApp> {
           if (result == ConnectionResult.connected) {
             wires.complete(Wire.server);
             techWorld.setBotStatus(_session!.chatService.botStatus);
-            // Apply the user's avatar-only preference before any bubble can
-            // be created. Toggle takes effect on next room entry. On a
-            // memory-constrained device (old iOS Safari — see
-            // device_capability.dart) force safe mode on regardless of the
-            // saved preference: full video decode OOM-crashes the tab at world
-            // entry there, so avatar-only is a crash-safety floor, not a
-            // preference.
-            final lowMemory = isLowMemoryDevice();
-            techWorld.setHideVideoBubbles(
-                await UserPreferences.hideVideoBubbles() || lowMemory);
+            // Apply the user's avatar-only / reduce-motion preferences before
+            // any bubble can be created. Toggle takes effect on next room
+            // entry. The setters seal a web-safe-mode floor for at-risk clients
+            // (legacy iOS Safari), so this seam just passes the raw preference —
+            // see TechWorld.setHideVideoBubbles / web_safe_mode.dart.
             techWorld
-                .setReduceMotion(await UserPreferences.reduceMotion() || lowMemory);
+                .setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
+            techWorld.setReduceMotion(await UserPreferences.reduceMotion());
             // A mention arriving while chat is already open auto-acks (the user
             // has already "seen" it). `_chatCollapsed == false` means visible.
             techWorld.isLocalChatOpen = () => !_chatCollapsed.value;
@@ -765,12 +760,9 @@ class _MyAppState extends State<MyApp> {
         if (result == ConnectionResult.connected) {
           final tw = locate<TechWorld>();
           tw.setBotStatus(_session!.chatService.botStatus);
-          // Force safe mode on memory-constrained devices — see the world-entry
-          // seam above and device_capability.dart.
-          final lowMemory = isLowMemoryDevice();
-          tw.setHideVideoBubbles(
-              await UserPreferences.hideVideoBubbles() || lowMemory);
-          tw.setReduceMotion(await UserPreferences.reduceMotion() || lowMemory);
+          // Web-safe-mode floor is sealed in the setters (see the seam above).
+          tw.setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
+          tw.setReduceMotion(await UserPreferences.reduceMotion());
           await tw.connectToLiveKit(userId, _currentDisplayName);
           await _session!.enableMedia();
           await _session!.chatService.loadHistory(room.id);

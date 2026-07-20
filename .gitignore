@@ -126,3 +126,4 @@ plan.md
 
 # Dreamfinder avatar symlinks (local absolute paths — not portable)
 web/avatar/
+web/version.json
