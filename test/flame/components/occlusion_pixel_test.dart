@@ -110,57 +110,64 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     final game = _PixelGame();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          backgroundColor: Colors.black,
-          body: RepaintBoundary(
-            key: const Key('scene'),
-            child: GameWidget(game: game),
+    late final ByteData data;
+    late final int imgW;
+
+    // ALL of it runs inside runAsync — the mock sprite images are produced via
+    // `picture.toImage()` (a real engine round-trip); outside runAsync those
+    // stay pending in the fake-async zone, so on the headless CI rasteriser the
+    // sprites render blank and the sanity check below trips. This mirrors
+    // flame_test's own `testGolden`, which wraps setup + render identically.
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            backgroundColor: Colors.black,
+            body: RepaintBoundary(
+              key: const Key('scene'),
+              child: GameWidget(game: game),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 50));
+      );
+      await tester.pump();
+      await game.ready();
 
-    // Horizontal wall (cap row + face row) across cols 4..8, cap tiles bumped
-    // to the barrier row so they sort with the wall face.
-    final layer = TileLayerData();
-    final overrides = <(int, int), int>{};
-    for (var x = 4; x <= 8; x++) {
-      layer.setTile(x, capRow, const TileRef(tilesetId: 'w', tileIndex: 0));
-      layer.setTile(x, barrierRow, const TileRef(tilesetId: 'w', tileIndex: 0));
-      overrides[(x, capRow)] = barrierRow;
-    }
-    await game.world.add(TileObjectLayerComponent(
-      layerData: layer,
-      registry: game.registry,
-      priorityOverrides: overrides,
-    ));
+      // Horizontal wall (cap row + face row) across cols 4..8, cap tiles bumped
+      // to the barrier row so they sort with the wall face.
+      final layer = TileLayerData();
+      final overrides = <(int, int), int>{};
+      for (var x = 4; x <= 8; x++) {
+        layer.setTile(x, capRow, const TileRef(tilesetId: 'w', tileIndex: 0));
+        layer.setTile(x, barrierRow, const TileRef(tilesetId: 'w', tileIndex: 0));
+        overrides[(x, capRow)] = barrierRow;
+      }
+      await game.world.add(TileObjectLayerComponent(
+        layerData: layer,
+        registry: game.registry,
+        priorityOverrides: overrides,
+      ));
 
-    final player = PlayerComponent(
-      position: Vector2(playerCol * gridSquareSizeDouble, capRow * gridSquareSizeDouble),
-      id: 'p',
-      displayName: 'P',
-    );
-    await game.world.add(player);
-    game.update(0);
-    await tester.pump(const Duration(milliseconds: 50));
+      final player = PlayerComponent(
+        position:
+            Vector2(playerCol * gridSquareSizeDouble, capRow * gridSquareSizeDouble),
+        id: 'p',
+        displayName: 'P',
+      );
+      await game.world.add(player);
+      await game.ready();
+      game.update(0); // compute the per-frame priorities
+      await tester.pump();
 
-    // Read the rendered pixels back. toImage() needs a real engine round-trip
-    // to composite + encode the layer; inside testWidgets' fake-async zone that
-    // callback never fires and the await deadlocks — so escape via runAsync.
-    final boundary =
-        tester.renderObject<RenderRepaintBoundary>(find.byKey(const Key('scene')));
-    late final ui.Image image;
-    late final ByteData data;
-    await tester.runAsync(() async {
-      image = await boundary.toImage(pixelRatio: 1);
+      final boundary = tester
+          .renderObject<RenderRepaintBoundary>(find.byKey(const Key('scene')));
+      final image = await boundary.toImage(pixelRatio: 1);
       data = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+      imgW = image.width;
     });
 
     Color at(int x, int y) {
-      final o = (y * image.width + x) * 4;
+      final o = (y * imgW + x) * 4;
       return Color.fromARGB(
         data.getUint8(o + 3),
         data.getUint8(o),
