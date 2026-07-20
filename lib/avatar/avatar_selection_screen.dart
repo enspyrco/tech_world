@@ -36,14 +36,25 @@ class _AvatarSelectionScreenState extends State<AvatarSelectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E1E),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+      // Scrollable so the content (and crucially the Confirm button) is always
+      // reachable on short viewports — on a phone the avatar cards wrap to more
+      // rows and previously pushed Confirm off the bottom with no way to scroll.
+      // The min-height + Center keeps it vertically centred when it does fit.
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                 const Text(
                   'Choose Your Character',
                   style: TextStyle(
@@ -84,7 +95,11 @@ class _AvatarSelectionScreenState extends State<AvatarSelectionScreen> {
                     ),
                   ),
                 ),
-              ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
