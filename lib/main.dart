@@ -495,10 +495,13 @@ class _MyAppState extends State<MyApp> {
           if (result == ConnectionResult.connected) {
             wires.complete(Wire.server);
             techWorld.setBotStatus(_session!.chatService.botStatus);
-            // Apply the user's avatar-only preference before any bubble can
-            // be created. Toggle takes effect on next room entry.
-            techWorld.setHideVideoBubbles(
-                await UserPreferences.hideVideoBubbles());
+            // Apply the user's avatar-only / reduce-motion preferences before
+            // any bubble can be created. Toggle takes effect on next room
+            // entry. The setters seal a web-safe-mode floor for at-risk clients
+            // (legacy iOS Safari), so this seam just passes the raw preference —
+            // see TechWorld.setHideVideoBubbles / web_safe_mode.dart.
+            techWorld
+                .setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
             techWorld.setReduceMotion(await UserPreferences.reduceMotion());
             // A mention arriving while chat is already open auto-acks (the user
             // has already "seen" it). `_chatCollapsed == false` means visible.
@@ -757,6 +760,7 @@ class _MyAppState extends State<MyApp> {
         if (result == ConnectionResult.connected) {
           final tw = locate<TechWorld>();
           tw.setBotStatus(_session!.chatService.botStatus);
+          // Web-safe-mode floor is sealed in the setters (see the seam above).
           tw.setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
           tw.setReduceMotion(await UserPreferences.reduceMotion());
           await tw.connectToLiveKit(userId, _currentDisplayName);

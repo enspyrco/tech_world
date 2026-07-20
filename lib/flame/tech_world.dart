@@ -12,6 +12,7 @@ import 'package:flame/events.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/bots/bot_config.dart';
+import 'package:tech_world/device/web_safe_mode.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/predefined_challenges.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
@@ -393,11 +394,23 @@ class TechWorld extends World with TapCallbacks {
     _bubbleManager.setBotStatus(status);
   }
 
+  /// Whether this client is forced into web safe mode (avatar-only + reduced
+  /// motion) to survive world entry — currently legacy iOS Safari ≤ 16, which
+  /// OOM-crashes the tab when the full video surface is allocated. Computed
+  /// once (the browser/OS can't change mid-session) and OR-ed into the two
+  /// media setters below so the floor is enforced at the single door: no
+  /// caller — this room-entry seam, a preferences write, a future reconnect —
+  /// can turn video back on for an at-risk client. See `web_safe_mode.dart`.
+  late final bool _forceWebSafeMode = requiresWebSafeMode();
+
   /// Apply the user's "hide video bubbles" preference. Takes effect for
   /// newly-created bubbles only — existing bubbles are not retroactively
   /// swapped. Call before [connectToLiveKit] on room entry.
+  ///
+  /// On a web-safe-mode client the floor wins regardless of [value]: avatar-only
+  /// is a crash-safety floor there, not a preference.
   void setHideVideoBubbles(bool value) {
-    _bubbleManager.hideVideoBubbles = value;
+    _bubbleManager.hideVideoBubbles = value || _forceWebSafeMode;
   }
 
   /// Apply the user's "reduce motion" preference. Disables purely decorative
@@ -406,9 +419,10 @@ class TechWorld extends World with TapCallbacks {
   /// animation (avatar walk, bubble physics, camera) is unaffected.
   ///
   /// Takes effect on next room entry for newly-created bubbles; the shared
-  /// metaball field/merged-video components pick the new value up live.
+  /// metaball field/merged-video components pick the new value up live. Forced
+  /// on for web-safe-mode clients (see [_forceWebSafeMode]) to shed GPU churn.
   void setReduceMotion(bool value) {
-    _bubbleManager.reduceMotion = value;
+    _bubbleManager.reduceMotion = value || _forceWebSafeMode;
   }
 
   /// Set the local player's avatar. Also broadcasts to other participants.
