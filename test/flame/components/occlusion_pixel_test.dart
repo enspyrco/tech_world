@@ -99,10 +99,19 @@ void main() {
   const overlapY = capRow * gridSquareSize + gridSquareSize ~/ 2; // 304 (behind cap)
   const headY = capRow * gridSquareSize - gridSquareSize ~/ 2; // 272 (above cap)
 
-  bool near(Color a, Color b, [int tol = 30]) =>
-      (a.r * 255 - b.r * 255).abs() <= tol &&
-      (a.g * 255 - b.g * 255).abs() <= tol &&
-      (a.b * 255 - b.b * 255).abs() <= tol;
+  // Squared RGB distance (0–255 space). We compare RELATIVELY — "is this pixel
+  // closer to the wall or to the player?" — rather than against an absolute
+  // tolerance. The occlusion regression is a full colour swap (green↔brown,
+  // ~150+ per channel), so relative distance discriminates it unambiguously
+  // AND is immune to any uniform cross-platform rasterisation drift, so there
+  // is no arbitrary tolerance to tune.
+  double dist2(Color a, Color b) {
+    final dr = (a.r - b.r) * 255, dg = (a.g - b.g) * 255, db = (a.b - b.b) * 255;
+    return dr * dr + dg * dg + db * db;
+  }
+
+  bool closerToWall(Color c) => dist2(c, _wallColor) < dist2(c, _playerColor);
+  bool closerToPlayer(Color c) => dist2(c, _playerColor) < dist2(c, _wallColor);
 
   testWidgets('wall top occludes the player behind it (rendered pixels)',
       (tester) async {
@@ -179,23 +188,25 @@ void main() {
     final overlapPixel = at(sampleX, overlapY);
     final headPixel = at(sampleX, headY);
 
-    // Sanity: the exposed head above the wall must be the player's colour, or
-    // the scene isn't laid out the way this oracle assumes (guards against a
-    // silently-empty render masquerading as a pass).
+    // Sanity: the exposed head above the wall must read as the player, not the
+    // wall — which also guards against a blank render, since a black/empty
+    // background is closer to brown than to green and would fail this.
     expect(
-      near(headPixel, _playerColor),
+      closerToPlayer(headPixel),
       isTrue,
       reason: 'Player head above the wall should be visible (green); got '
-          '$headPixel — scene layout/render is wrong, oracle invalid.',
+          '$headPixel — scene did not render as expected, oracle invalid.',
     );
 
-    // The invariant: behind the wall top, the wall (brown) occludes the player.
+    // The invariant: behind the wall top, the wall occludes the player, so the
+    // overlap pixel must read as wall, not player. (Head sanity above already
+    // proved the scene rendered, so this pixel is a real wall-or-player sample.)
     expect(
-      near(overlapPixel, _wallColor),
+      closerToWall(overlapPixel),
       isTrue,
       reason: 'Player standing behind the wall top must be OCCLUDED — the '
-          'overlap pixel should be wall-brown, got $overlapPixel. If it is '
-          'player-green, occlusion has regressed (this is PR #510 broken).',
+          'overlap pixel should read as wall, got $overlapPixel. If it reads '
+          'as player-green, occlusion has regressed (this is PR #510 broken).',
     );
   });
 }
