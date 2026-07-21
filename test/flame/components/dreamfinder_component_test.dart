@@ -190,7 +190,6 @@ void main() {
         await game.world.add(pathComponent);
         await game.world.add(df);
         await game.ready();
-        df.stationary = false; // opt into the wandering loop under test
 
         final initialPos = df.position.clone();
 
@@ -219,7 +218,6 @@ void main() {
         await game.world.add(pathComponent);
         await game.world.add(df);
         await game.ready();
-        df.stationary = false; // opt into the wandering loop under test
 
         // Needs enough time for: initial cooldown (3-8s) + path walk +
         // arrival + working cooldown (5-12s) + second wander start + arrival.
@@ -251,7 +249,6 @@ void main() {
         await game.world.add(pathComponent);
         await game.world.add(df);
         await game.ready();
-        df.stationary = false; // opt into the wandering loop under test
 
         df.noticePlayer(Vector2(320, 160));
 
@@ -293,11 +290,11 @@ void main() {
     );
 
     // -----------------------------------------------------------------------
-    // Stationary mode (kDreamfinderStationary) — the "standing host" default
+    // Bounded wander (kDreamfinderWanderRadius) — the "small patrol" behaviour
     // -----------------------------------------------------------------------
 
     testWithGame<TestGameWithDreamfinder>(
-      'stationary DF stays put after cooldown (never wanders)',
+      'wanderRadius 0 pins DF in place (standing host)',
       TestGameWithDreamfinder.new,
       (game) async {
         final df = DreamfinderComponent(
@@ -310,10 +307,7 @@ void main() {
         await game.world.add(pathComponent);
         await game.world.add(df);
         await game.ready();
-
-        // Default is stationary (kDreamfinderStationary). Assert the premise so
-        // this test is meaningful even if that default is later flipped.
-        expect(df.stationary, isTrue);
+        df.wanderRadius = 0; // stand still
 
         final initialPos = df.position.clone();
         for (var i = 0; i < 200; i++) {
@@ -321,14 +315,14 @@ void main() {
         }
 
         expect(df.position, equals(initialPos),
-            reason: 'Stationary Dreamfinder must never change position');
+            reason: 'wanderRadius 0 must never change position');
         expect(df.current, equals(DreamfinderState.working),
-            reason: 'Stationary Dreamfinder stays in the working idle');
+            reason: 'A pinned Dreamfinder stays in the working idle');
       },
     );
 
     testWithGame<TestGameWithDreamfinder>(
-      'stationary DF reacts in place, does not walk over to greet',
+      'DF greets in place, does not walk over to the player',
       TestGameWithDreamfinder.new,
       (game) async {
         final df = DreamfinderComponent(
@@ -341,7 +335,7 @@ void main() {
         await game.world.add(pathComponent);
         await game.world.add(df);
         await game.ready();
-        expect(df.stationary, isTrue);
+        df.wanderRadius = 0; // isolate greeting from wander movement
 
         final initialPos = df.position.clone();
 
@@ -354,9 +348,44 @@ void main() {
         }
 
         expect(df.position, equals(initialPos),
-            reason: 'Stationary Dreamfinder greets in place, never walks over');
+            reason: 'DF greets in place, never walks over to the player');
         expect(df.current, equals(DreamfinderState.working),
             reason: 'After the surprise glance, DF settles back to working');
+      },
+    );
+
+    testWithGame<TestGameWithDreamfinder>(
+      'bounded wander stays within radius of home',
+      TestGameWithDreamfinder.new,
+      (game) async {
+        final df = DreamfinderComponent(
+          position: Vector2(256, 160), // home cell (8, 5)
+          id: 'bot-dreamfinder',
+          displayName: 'Dreamfinder',
+          pathComponent: pathComponent,
+        );
+
+        await game.world.add(pathComponent);
+        await game.world.add(df);
+        await game.ready();
+        df.wanderRadius = 3;
+
+        const homeX = 8, homeY = 5;
+        var maxDeviation = 0;
+        for (var i = 0; i < 600; i++) {
+          game.update(0.1);
+          final c = df.miniGridPosition;
+          final dx = (c.x - homeX).abs();
+          final dy = (c.y - homeY).abs();
+          final dev = dx > dy ? dx : dy; // Chebyshev distance from home
+          if (dev > maxDeviation) maxDeviation = dev;
+        }
+
+        // +1 tolerance for mid-transit interpolation rounding.
+        expect(maxDeviation, lessThanOrEqualTo(df.wanderRadius + 1),
+            reason: 'DF must stay within its small area (saw $maxDeviation)');
+        expect(maxDeviation, greaterThan(0),
+            reason: 'DF should actually wander off home within the area');
       },
     );
   });
