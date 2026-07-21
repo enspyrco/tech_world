@@ -205,6 +205,12 @@ class _MyAppState extends State<MyApp> {
   final ValueNotifier<bool> _spellbookOpen = ValueNotifier<bool>(false);
   final MapEditorState _mapEditorState = MapEditorState();
   final ValueNotifier<bool> _chatCollapsed = ValueNotifier<bool>(false);
+
+  /// Guards the one-time, width-based default for [_chatCollapsed]. Applied once
+  /// in [didChangeDependencies] (the first point MediaQuery is available), so a
+  /// narrow screen (phone) opens with chat collapsed — but the user's later
+  /// manual toggle is never overridden on rebuild/resize.
+  bool _appliedInitialChatCollapse = false;
   final ValueNotifier<String?> _activeDmPeer = ValueNotifier<String?>(null);
   final SpellSlotService _spellSlotService = SpellSlotService();
   StreamSubscription<AuthUser>? _authSubscription;
@@ -247,6 +253,24 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _initializeApp();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Default the chat panel to collapsed on narrow (phone-width) screens,
+    // where an open side panel crowds out the game world. Width — not device
+    // identity — is the right signal: a small desktop window should behave like
+    // a phone, a landscape tablet should not. Uses the same 800px breakpoint as
+    // the rest of the responsive layout. Applied once so it never fights a user
+    // who later opens chat.
+    if (!_appliedInitialChatCollapse) {
+      _appliedInitialChatCollapse = true;
+      final width = MediaQuery.of(context).size.width;
+      if (width < 800) {
+        _chatCollapsed.value = true;
+      }
+    }
   }
 
   @override
