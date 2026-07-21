@@ -100,6 +100,33 @@ void main() {
     });
   });
 
+  group('isMobileWebUserAgent — embodied-DF sprite fallback gate', () {
+    test('iPhone (any iOS) is mobile', () {
+      expect(isMobileWebUserAgent(userAgent: iphone8IOS16), isTrue);
+      expect(isMobileWebUserAgent(userAgent: iphone17IOS17), isTrue);
+      expect(isMobileWebUserAgent(userAgent: iphone15IOS18), isTrue);
+    });
+    test('iPad is mobile', () {
+      expect(isMobileWebUserAgent(userAgent: ipadIOS16), isTrue);
+    });
+    test('Chrome-on-iOS and Firefox-on-iOS are mobile', () {
+      expect(isMobileWebUserAgent(userAgent: chromeIOS16), isTrue);
+      expect(isMobileWebUserAgent(userAgent: firefoxIOS16), isTrue);
+    });
+    test('Android Chrome is mobile', () {
+      expect(isMobileWebUserAgent(userAgent: androidChrome), isTrue);
+    });
+    test('desktop Chrome and Mac Safari are NOT mobile', () {
+      expect(isMobileWebUserAgent(userAgent: desktopChrome), isFalse);
+      expect(isMobileWebUserAgent(userAgent: macSafari), isFalse);
+    });
+    test('null / empty / garbage → not mobile (positive-ID only)', () {
+      expect(isMobileWebUserAgent(userAgent: null), isFalse);
+      expect(isMobileWebUserAgent(userAgent: ''), isFalse);
+      expect(isMobileWebUserAgent(userAgent: 'not a real ua'), isFalse);
+    });
+  });
+
   group('iosMajorVersion + boundary', () {
     test('parses iPhone UA', () => expect(iosMajorVersion(iphone8IOS16), 16));
     test('parses iPad UA (CPU OS form)',

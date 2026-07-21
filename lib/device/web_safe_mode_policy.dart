@@ -58,3 +58,17 @@ int? iosMajorVersion(String userAgent) {
   if (match == null) return null;
   return int.tryParse(match.group(1)!);
 }
+
+/// True when [userAgent] is a mobile browser (iPhone / iPad / iPod / Android).
+///
+/// Separate concern from safe mode: on mobile WebKit the embodied Dreamfinder's
+/// WebGL-iframe capture renders **black** (mobile WebKit clears the WebGL
+/// drawing buffer, so the `drawImage`→`getImageData` readback in
+/// `canvas_capture_web.dart` reads black). Mobile clients therefore fall back to
+/// DF's 2D sprite, which renders everywhere. Returns `false` for a null UA —
+/// positive identification only (the runtime accessor fails safe on throw).
+bool isMobileWebUserAgent({required String? userAgent}) {
+  if (userAgent == null) return false;
+  return RegExp(r'iPhone|iPad|iPod|Android', caseSensitive: false)
+      .hasMatch(userAgent);
+}

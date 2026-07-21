@@ -7,3 +7,7 @@
 library;
 
 bool requiresWebSafeMode() => false;
+
+/// Native builds don't run the embodied-DF WebGL iframe, so there's nothing to
+/// suppress — always `false`.
+bool isMobileWeb() => false;
