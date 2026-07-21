@@ -271,11 +271,18 @@ class RoomSession {
     });
   }
 
-  /// Enable camera and microphone.
+  /// Enable camera on room entry, but join **muted** (microphone off).
+  ///
+  /// Join-muted is the safe default for a co-located audience — several devices
+  /// with live mics + speakers in one room is an audio-feedback loop. It's also
+  /// standard video-call UX (Zoom/Meet join muted). Capability is preserved, not
+  /// amputated: the mic toggle in the toolbar (`_MicButton`, main.dart) unmutes
+  /// on demand, so remote users can still speak. Video stays on so players see
+  /// each other's bubbles in-world.
   Future<void> enableMedia() async {
     await Future.wait([
       liveKitService.setCameraEnabled(true),
-      liveKitService.setMicrophoneEnabled(true),
+      liveKitService.setMicrophoneEnabled(false),
     ]);
     dispatch([MediaEnabled()]);
   }
