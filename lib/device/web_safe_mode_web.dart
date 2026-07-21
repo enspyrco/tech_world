@@ -22,3 +22,16 @@ bool requiresWebSafeMode() {
     return true;
   }
 }
+
+/// `true` on a mobile browser (see [isMobileWebUserAgent]).
+///
+/// Fails **safe** (returns `true`) if the userAgent read throws — showing DF's
+/// 2D sprite is harmless, whereas a false negative on mobile brings back the
+/// black embodied bubble this suppresses.
+bool isMobileWeb() {
+  try {
+    return isMobileWebUserAgent(userAgent: web.window.navigator.userAgent);
+  } catch (_) {
+    return true;
+  }
+}

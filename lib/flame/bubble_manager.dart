@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart'
     show ValueListenable, ValueNotifier, visibleForTesting;
 
 import 'package:tech_world/bots/bot_config.dart';
+import 'package:tech_world/device/web_safe_mode.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
@@ -64,6 +65,12 @@ class BubbleManager {
   /// before each room entry. Existing bubbles are not retroactively swapped —
   /// the toggle takes effect for newly created bubbles only.
   bool hideVideoBubbles;
+
+  /// Whether this client is a mobile browser, where the embodied Dreamfinder's
+  /// WebGL-iframe capture renders black (see [isMobileWeb]). Computed once — the
+  /// browser can't change mid-session. When true, DF stays a 2D sprite: the
+  /// embodied video bubble is never created and its iframe bridge never loads.
+  final bool _isMobileWeb = isMobileWeb();
 
   /// When true, purely decorative animation on proximity video bubbles
   /// renders in its resting state: no breathing scale, no glow pulse, no
@@ -255,9 +262,11 @@ class BubbleManager {
           final dfParticipant =
               _liveKitService?.getParticipant(dreamfinderIdentity);
           PositionComponent bubble;
-          if (dfParticipant != null && !hideVideoBubbles) {
+          if (dfParticipant != null && !hideVideoBubbles && !_isMobileWeb) {
             bubble = _createDreamfinderVideoBubble(dfParticipant);
           } else {
+            // Mobile web (or hidden video) → the 2D sprite + a status bubble,
+            // not the black embodied WebGL bubble.
             bubble = BotBubbleComponent(botStatus: _botStatus);
           }
           bubble.position =
@@ -337,9 +346,10 @@ class BubbleManager {
           _liveKitService?.getParticipant(dreamfinderIdentity);
       if (dfParticipant == null) return;
 
-      // When the user has hidden video bubbles, never upgrade the DF bubble
-      // to a video bubble — the existing BotBubbleComponent stays in place.
-      if (hideVideoBubbles) return;
+      // When video bubbles are hidden, or on mobile web (where the embodied
+      // WebGL bubble renders black), never upgrade the DF bubble to a video
+      // bubble — the existing BotBubbleComponent stays in place.
+      if (hideVideoBubbles || _isMobileWeb) return;
 
       final hasCanvasCapture = existingBubble is VideoBubbleComponent &&
           existingBubble.externalVideoCapture != null;
@@ -458,6 +468,9 @@ class BubbleManager {
 
   /// Initialize the Dreamfinder 3D avatar bridge (web only).
   void initDreamfinderBridge() {
+    // Mobile web renders the embodied WebGL avatar black, so DF stays a 2D
+    // sprite there — don't load the iframe bridge at all.
+    if (_isMobileWeb) return;
     if (_dreamfinderAvatarBridge != null) return;
     final liveKit = _liveKitService;
     if (liveKit == null) return;
