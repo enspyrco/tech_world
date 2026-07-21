@@ -20,14 +20,16 @@ import 'package:tech_world/flame/tech_world_game.dart';
 ///   Row 1 (y=64):  Working idle — 4 frames, looping
 ///   Row 2 (y=128): Surprise — 4 frames, one-shot
 ///
-/// See [kDreamfinderStationary] for the "standing host" demo mode.
+/// See [kDreamfinderWanderRadius] for how far Dreamfinder roams.
 
-/// When true, Dreamfinder stays planted at his spawn spot: no autonomous
-/// wandering and no walking over to greet arrivals. He still reacts in place
-/// (surprise glance, working-idle animation), so he reads as an attentive host
-/// rather than a frozen statue. A roaming host is distracting during a live
-/// demo — flip to false to restore the full wandering behaviour.
-const bool kDreamfinderStationary = true;
+/// How far (grid cells, Chebyshev) Dreamfinder wanders from his home cell.
+///
+/// He drifts around a small area rather than roaming the whole map — a roaming
+/// host is distracting during a live demo. `0` pins him in place (a standing
+/// host); larger values give a wider patrol. Home is his spawn cell, which is
+/// snapped to the nearest walkable tile (see the spawn logic in tech_world.dart)
+/// so the patrol never centres on a wall.
+const int kDreamfinderWanderRadius = 3;
 
 class DreamfinderComponent
     extends SpriteAnimationGroupComponent<DreamfinderState>
@@ -54,19 +56,18 @@ class DreamfinderComponent
   bool _isGreeting = false;
   bool _serverControlled = false;
 
-  /// See [kDreamfinderStationary]. When true, suppresses both movement sources
-  /// (autonomous wander and the greeting-walk) so DF never changes position;
-  /// he still plays the working-idle and surprise animations in place.
-  /// Mutable so tests (and any future runtime toggle) can flip it.
-  bool stationary = kDreamfinderStationary;
+  /// See [kDreamfinderWanderRadius]. How far DF wanders from [_homeCell] (grid
+  /// cells, Chebyshev). 0 = stays put. Mutable so tests can set it.
+  int wanderRadius = kDreamfinderWanderRadius;
+
+  /// The cell DF wanders around — captured from his spawn in [onLoad] so the
+  /// small patrol orbits wherever he was placed (a walkable cell).
+  (int, int)? _homeCell;
+
   double _wanderCooldown = 0;
   List<MoveEffect> _moveEffects = [];
   List<Direction> _directions = [];
   int _pathSegmentNum = 0;
-
-  /// Interesting positions to wander toward (e.g. terminal locations).
-  /// If empty, picks random walkable grid cells.
-  List<Point<int>> wanderTargets = [];
 
   static const _initialWanderDelay = 3.0;
   static const _minWorkDuration = 5.0;
@@ -83,6 +84,8 @@ class DreamfinderComponent
     // Start in working state — Dreamfinder was here before you arrived.
     current = DreamfinderState.working;
     playing = true;
+    // Home is wherever DF spawned (a walkable cell); the small wander orbits it.
+    _homeCell = miniGridTuple;
     _wanderCooldown = _initialWanderDelay;
     return super.onLoad();
   }
@@ -94,8 +97,7 @@ class DreamfinderComponent
         (position.x.round().abs() % kPriorityStride);
 
     // Tick the wander cooldown when idle/working and not otherwise occupied.
-    // In [stationary] mode DF never wanders, so skip the whole cooldown.
-    if (!_isWandering && !_isGreeting && !_serverControlled && !stationary &&
+    if (!_isWandering && !_isGreeting && !_serverControlled &&
         _wanderCooldown > 0) {
       _wanderCooldown -= dt;
       if (_wanderCooldown <= 0) {
@@ -194,7 +196,9 @@ class DreamfinderComponent
 
   /// Called when a human player joins the room.
   ///
-  /// Triggers the surprise → walk-to-player sequence.
+  /// Triggers a surprise glance in place, then settles back to the working idle.
+  /// DF does not walk over to the player — that would pull him out of his small
+  /// wander area — the [playerPosition] argument is kept for API compatibility.
   void noticePlayer(Vector2 playerPosition) {
     if (_hasNoticedPlayer) return;
     _hasNoticedPlayer = true;
@@ -208,53 +212,21 @@ class DreamfinderComponent
     current = DreamfinderState.surprised;
     playing = true;
 
-    // When surprise finishes, walk toward the player.
+    // When the surprise glance finishes, settle back in place.
     animationTicker?.onComplete = () {
       animationTicker?.onComplete = null;
-      _walkToPlayer(playerPosition);
+      _settleAfterGreeting();
     };
   }
 
-  void _walkToPlayer(Vector2 targetPosition) {
-    // Standing-host mode: the surprise glance has already played; settle back
-    // to the working idle at the same spot instead of walking over. Mirrors the
-    // "already near the player" settle path below.
-    if (stationary) {
-      _isGreeting = false;
-      current = DreamfinderState.working;
-      playing = true;
-      _wanderCooldown = _postGreetingDelay;
-      return;
-    }
-
-    final targetGrid = (
-      (targetPosition.x / gridSquareSizeDouble).round().clamp(0, gridSize - 1),
-      (targetPosition.y / gridSquareSizeDouble).round().clamp(0, gridSize - 1),
-    );
-
-    // Stop 2 cells away from the player so we don't overlap.
-    final myGrid = miniGridTuple;
-    final dx = targetGrid.$1 - myGrid.$1;
-    final dy = targetGrid.$2 - myGrid.$2;
-    final approachTarget = (
-      (targetGrid.$1 - dx.sign * 2).clamp(0, gridSize - 1),
-      (targetGrid.$2 - dy.sign * 2).clamp(0, gridSize - 1),
-    );
-
-    _pathComponent.calculatePath(start: myGrid, end: approachTarget);
-    final directions = _pathComponent.directions;
-    final points = _pathComponent.largeGridPoints;
-
-    if (directions.isEmpty || points.isEmpty) {
-      // Already near the player — greeting is done, resume wandering.
-      _isGreeting = false;
-      current = DreamfinderState.idle;
-      playing = false;
-      _wanderCooldown = _postGreetingDelay;
-      return;
-    }
-
-    _move(directions, points);
+  /// After the surprise glance, return to the working idle in place, then resume
+  /// the bounded wander after [_postGreetingDelay]. DF greets without leaving his
+  /// small patrol area.
+  void _settleAfterGreeting() {
+    _isGreeting = false;
+    current = DreamfinderState.working;
+    playing = true;
+    _wanderCooldown = _postGreetingDelay;
   }
 
   // ---------------------------------------------------------------------------
@@ -276,17 +248,18 @@ class DreamfinderComponent
     _move(directions, points);
   }
 
-  /// Pick a destination: prefer terminal locations, fall back to random grid cell.
+  /// Pick a destination within [wanderRadius] cells of [_homeCell], so DF drifts
+  /// around a small area instead of roaming the whole map. Pathfinding skips any
+  /// wall cell that lands in range (empty path → [_startWander] just retries).
   (int, int) _pickWanderTarget() {
-    if (wanderTargets.isNotEmpty && _random.nextDouble() < 0.7) {
-      final target = wanderTargets[_random.nextInt(wanderTargets.length)];
-      final offset = _random.nextInt(3) - 1;
-      return (
-        (target.x + offset).clamp(0, gridSize - 1),
-        (target.y + 1).clamp(0, gridSize - 1),
-      );
-    }
-    return (_random.nextInt(gridSize), _random.nextInt(gridSize));
+    final home = _homeCell ?? miniGridTuple;
+    if (wanderRadius <= 0) return home;
+    final dx = _random.nextInt(wanderRadius * 2 + 1) - wanderRadius;
+    final dy = _random.nextInt(wanderRadius * 2 + 1) - wanderRadius;
+    return (
+      (home.$1 + dx).clamp(0, gridSize - 1),
+      (home.$2 + dy).clamp(0, gridSize - 1),
+    );
   }
 
   void _resetWanderCooldown() {

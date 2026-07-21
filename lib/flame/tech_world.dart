@@ -593,10 +593,18 @@ class TechWorld extends World with TapCallbacks {
         // (e.g. `agent-{jobId}` instead of `bot-dreamfinder`).
         _bubbleManager.dreamfinderIdentity = participant.identity;
         if (_dreamfinderComponent == null) {
+          // DF's home is a fixed offset from the player spawn, but that offset
+          // can land inside a wall on some maps (e.g. Imagination Center). Snap
+          // it to the nearest walkable cell so DF never spawns in a wall; that
+          // cell becomes the centre of his small wander.
+          final dfCell = _nearestWalkableCell((
+            (spawn.x + 8).clamp(0, gridSize - 1),
+            (spawn.y - 5).clamp(0, gridSize - 1),
+          ));
           final dfComp = DreamfinderComponent(
             position: Vector2(
-              (spawn.x + 8).clamp(0, gridSize - 1) * gridSquareSizeDouble,
-              (spawn.y - 5).clamp(0, gridSize - 1) * gridSquareSizeDouble,
+              dfCell.$1 * gridSquareSizeDouble,
+              dfCell.$2 * gridSquareSizeDouble,
             ),
             id: participant.identity,
             displayName: botConfig.displayName,
@@ -670,6 +678,31 @@ class TechWorld extends World with TapCallbacks {
       // Dreamfinder notices the new human player arriving.
       _dreamfinderComponent?.noticePlayer(playerComponent.position);
     }
+  }
+
+  /// Find the nearest walkable cell to [candidate] (Chebyshev-ring spiral out),
+  /// so a blind spawn offset never lands an entity inside a wall. Returns
+  /// [candidate] unchanged if it is already walkable (or if — impossibly — the
+  /// whole grid is barriers).
+  (int, int) _nearestWalkableCell((int, int) candidate) {
+    final barriers = _barriersComponent.tuples.toSet();
+    bool walkable((int, int) c) =>
+        c.$1 >= 0 &&
+        c.$1 < gridSize &&
+        c.$2 >= 0 &&
+        c.$2 < gridSize &&
+        !barriers.contains(c);
+    if (walkable(candidate)) return candidate;
+    for (var r = 1; r < gridSize; r++) {
+      for (var dx = -r; dx <= r; dx++) {
+        for (var dy = -r; dy <= r; dy++) {
+          if (dx.abs() != r && dy.abs() != r) continue; // ring perimeter only
+          final c = (candidate.$1 + dx, candidate.$2 + dy);
+          if (walkable(c)) return c;
+        }
+      }
+    }
+    return candidate;
   }
 
   /// Handle a participant leaving the room.
