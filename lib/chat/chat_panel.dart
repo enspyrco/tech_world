@@ -5,7 +5,6 @@ import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/composer_field.dart';
 import 'package:tech_world/chat/reply_widgets.dart';
 import 'package:tech_world/chat/chat_service.dart';
-import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/chat/conversation_list_tile.dart';
 import 'package:tech_world/chat/dm_thread_view.dart';
@@ -497,11 +496,14 @@ class _ChatPanelState extends State<ChatPanel>
           ),
         ),
 
-        // Input (with offline banner)
-        ValueListenableBuilder<BotStatus>(
-          valueListenable: widget.chatService.botStatus,
-          builder: (context, botStatus, _) {
-            final isAbsent = botStatus == BotStatus.absent;
+        // Input row. The Group tab is human chat ("Clawd + all players"), so
+        // the composer is NEVER gated on bot presence — humans must be able to
+        // chat whether or not the Clawd bot is online. (Previously the whole
+        // composer disabled + showed a "Clawd is offline" banner when the bot
+        // was absent, silencing everyone. Decoupled: bot absence is invisible
+        // here.)
+        Builder(
+          builder: (context) {
             final replyTarget = _replyTarget;
             return Column(
               mainAxisSize: MainAxisSize.min,
@@ -520,30 +522,6 @@ class _ChatPanelState extends State<ChatPanel>
                     target: replyTarget,
                     onCancel: _cancelReply,
                   ),
-                // Offline banner
-                if (isAbsent)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    color: Colors.amber.shade800.withValues(alpha: 0.3),
-                    child: Row(
-                      children: [
-                        Icon(Icons.cloud_off,
-                            size: 16, color: Colors.amber.shade300),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Clawd is offline',
-                          style: TextStyle(
-                            color: Colors.amber.shade300,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 // Input row
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -559,10 +537,8 @@ class _ChatPanelState extends State<ChatPanel>
                         child: ChatComposerField(
                           controller: _textController,
                           focusNode: _focusNode,
-                          enabled: !isAbsent,
-                          hintText: isAbsent
-                              ? 'Clawd is offline...'
-                              : 'Type a message...',
+                          enabled: true,
+                          hintText: 'Type a message...',
                           onSend: _sendMessage,
                           onChanged: (_) => _onComposerChanged(),
                         ),
@@ -573,33 +549,25 @@ class _ChatPanelState extends State<ChatPanel>
                           valueListenable: _sttService.listening,
                           builder: (context, isListening, _) {
                             return IconButton(
-                              onPressed: isAbsent ? null : _handleMicPress,
+                              onPressed: _handleMicPress,
                               icon: Icon(
                                   isListening ? Icons.mic : Icons.mic_none),
-                              color: isAbsent
-                                  ? Colors.grey[600]
-                                  : isListening
-                                      ? Colors.red
-                                      : clawdOrange,
+                              color: isListening ? Colors.red : clawdOrange,
                               style: IconButton.styleFrom(
-                                backgroundColor: isAbsent
-                                    ? Colors.grey.withValues(alpha: 0.1)
-                                    : isListening
-                                        ? Colors.red.withValues(alpha: 0.2)
-                                        : clawdOrange.withValues(alpha: 0.1),
+                                backgroundColor: isListening
+                                    ? Colors.red.withValues(alpha: 0.2)
+                                    : clawdOrange.withValues(alpha: 0.1),
                               ),
                             );
                           },
                         ),
                       const SizedBox(width: 4),
                       IconButton(
-                        onPressed: isAbsent ? null : _sendMessage,
+                        onPressed: _sendMessage,
                         icon: const Icon(Icons.send),
-                        color: isAbsent ? Colors.grey[600] : clawdOrange,
+                        color: clawdOrange,
                         style: IconButton.styleFrom(
-                          backgroundColor: isAbsent
-                              ? Colors.grey.withValues(alpha: 0.1)
-                              : clawdOrange.withValues(alpha: 0.1),
+                          backgroundColor: clawdOrange.withValues(alpha: 0.1),
                         ),
                       ),
                     ],
