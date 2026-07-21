@@ -190,6 +190,7 @@ void main() {
         await game.world.add(pathComponent);
         await game.world.add(df);
         await game.ready();
+        df.stationary = false; // opt into the wandering loop under test
 
         final initialPos = df.position.clone();
 
@@ -218,6 +219,7 @@ void main() {
         await game.world.add(pathComponent);
         await game.world.add(df);
         await game.ready();
+        df.stationary = false; // opt into the wandering loop under test
 
         // Needs enough time for: initial cooldown (3-8s) + path walk +
         // arrival + working cooldown (5-12s) + second wander start + arrival.
@@ -249,6 +251,7 @@ void main() {
         await game.world.add(pathComponent);
         await game.world.add(df);
         await game.ready();
+        df.stationary = false; // opt into the wandering loop under test
 
         df.noticePlayer(Vector2(320, 160));
 
@@ -286,6 +289,74 @@ void main() {
         }
 
         expect(df.position, equals(posAfterServer));
+      },
+    );
+
+    // -----------------------------------------------------------------------
+    // Stationary mode (kDreamfinderStationary) — the "standing host" default
+    // -----------------------------------------------------------------------
+
+    testWithGame<TestGameWithDreamfinder>(
+      'stationary DF stays put after cooldown (never wanders)',
+      TestGameWithDreamfinder.new,
+      (game) async {
+        final df = DreamfinderComponent(
+          position: Vector2(256, 160),
+          id: 'bot-dreamfinder',
+          displayName: 'Dreamfinder',
+          pathComponent: pathComponent,
+        );
+
+        await game.world.add(pathComponent);
+        await game.world.add(df);
+        await game.ready();
+
+        // Default is stationary (kDreamfinderStationary). Assert the premise so
+        // this test is meaningful even if that default is later flipped.
+        expect(df.stationary, isTrue);
+
+        final initialPos = df.position.clone();
+        for (var i = 0; i < 200; i++) {
+          game.update(0.1);
+        }
+
+        expect(df.position, equals(initialPos),
+            reason: 'Stationary Dreamfinder must never change position');
+        expect(df.current, equals(DreamfinderState.working),
+            reason: 'Stationary Dreamfinder stays in the working idle');
+      },
+    );
+
+    testWithGame<TestGameWithDreamfinder>(
+      'stationary DF reacts in place, does not walk over to greet',
+      TestGameWithDreamfinder.new,
+      (game) async {
+        final df = DreamfinderComponent(
+          position: Vector2(256, 160),
+          id: 'bot-dreamfinder',
+          displayName: 'Dreamfinder',
+          pathComponent: pathComponent,
+        );
+
+        await game.world.add(pathComponent);
+        await game.world.add(df);
+        await game.ready();
+        expect(df.stationary, isTrue);
+
+        final initialPos = df.position.clone();
+
+        // A player arrives far away — DF should glance (surprise) but not walk.
+        df.noticePlayer(Vector2(800, 800));
+        expect(df.current, equals(DreamfinderState.surprised));
+
+        for (var i = 0; i < 200; i++) {
+          game.update(0.1);
+        }
+
+        expect(df.position, equals(initialPos),
+            reason: 'Stationary Dreamfinder greets in place, never walks over');
+        expect(df.current, equals(DreamfinderState.working),
+            reason: 'After the surprise glance, DF settles back to working');
       },
     );
   });

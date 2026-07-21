@@ -19,6 +19,16 @@ import 'package:tech_world/flame/tech_world_game.dart';
 ///   Row 0 (y=0):   Walk cycle — 4 directions × 4 frames
 ///   Row 1 (y=64):  Working idle — 4 frames, looping
 ///   Row 2 (y=128): Surprise — 4 frames, one-shot
+///
+/// See [kDreamfinderStationary] for the "standing host" demo mode.
+
+/// When true, Dreamfinder stays planted at his spawn spot: no autonomous
+/// wandering and no walking over to greet arrivals. He still reacts in place
+/// (surprise glance, working-idle animation), so he reads as an attentive host
+/// rather than a frozen statue. A roaming host is distracting during a live
+/// demo — flip to false to restore the full wandering behaviour.
+const bool kDreamfinderStationary = true;
+
 class DreamfinderComponent
     extends SpriteAnimationGroupComponent<DreamfinderState>
     with HasGameReference<TechWorldGame>
@@ -43,6 +53,12 @@ class DreamfinderComponent
   bool _isWandering = false;
   bool _isGreeting = false;
   bool _serverControlled = false;
+
+  /// See [kDreamfinderStationary]. When true, suppresses both movement sources
+  /// (autonomous wander and the greeting-walk) so DF never changes position;
+  /// he still plays the working-idle and surprise animations in place.
+  /// Mutable so tests (and any future runtime toggle) can flip it.
+  bool stationary = kDreamfinderStationary;
   double _wanderCooldown = 0;
   List<MoveEffect> _moveEffects = [];
   List<Direction> _directions = [];
@@ -78,7 +94,8 @@ class DreamfinderComponent
         (position.x.round().abs() % kPriorityStride);
 
     // Tick the wander cooldown when idle/working and not otherwise occupied.
-    if (!_isWandering && !_isGreeting && !_serverControlled &&
+    // In [stationary] mode DF never wanders, so skip the whole cooldown.
+    if (!_isWandering && !_isGreeting && !_serverControlled && !stationary &&
         _wanderCooldown > 0) {
       _wanderCooldown -= dt;
       if (_wanderCooldown <= 0) {
@@ -199,6 +216,17 @@ class DreamfinderComponent
   }
 
   void _walkToPlayer(Vector2 targetPosition) {
+    // Standing-host mode: the surprise glance has already played; settle back
+    // to the working idle at the same spot instead of walking over. Mirrors the
+    // "already near the player" settle path below.
+    if (stationary) {
+      _isGreeting = false;
+      current = DreamfinderState.working;
+      playing = true;
+      _wanderCooldown = _postGreetingDelay;
+      return;
+    }
+
     final targetGrid = (
       (targetPosition.x / gridSquareSizeDouble).round().clamp(0, gridSize - 1),
       (targetPosition.y / gridSquareSizeDouble).round().clamp(0, gridSize - 1),
