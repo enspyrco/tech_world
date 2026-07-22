@@ -383,10 +383,12 @@ void main() {
         manager.setLiveKitService(mockLiveKit);
       });
 
-      test('enables camera within the (tight) enable threshold', () {
-        // 3 squares away — at the video enable threshold (3).
+      test('enables camera as soon as the bubble is visible (at the edge)', () {
+        // 5 squares away — exactly the visual threshold, where the bubble
+        // appears. Video enables here too (decode-across-visible), so the
+        // bubble always has a live — if blurred — frame; no black band.
         remotePlayers['remote-1'] = PlayerComponent(
-          position: Vector2(256, 160), // 3 away
+          position: Vector2(320, 160), // 5 away
           id: 'remote-1',
           displayName: 'Remote',
         );
@@ -397,11 +399,11 @@ void main() {
             .called(1);
       });
 
-      test('does not enable camera between enable and visual thresholds', () {
-        // 4 squares away — bubble is visible (≤5) so an avatar bubble forms,
-        // but video stays OFF because the enable threshold (3) is tighter.
+      test('does not enable a camera beyond visual range (no bubble)', () {
+        // 6 squares away — past the visual threshold, so no bubble and no
+        // decode: nothing to paint means nothing to forward.
         remotePlayers['remote-1'] = PlayerComponent(
-          position: Vector2(288, 160), // 4 away
+          position: Vector2(352, 160), // 6 away
           id: 'remote-1',
           displayName: 'Remote',
         );
@@ -412,29 +414,30 @@ void main() {
             () => mockLiveKit.setParticipantVideoEnabled('remote-1', true));
       });
 
-      test('wider hysteresis: holds between enable(3) and disable(5), cuts past',
+      test('holds through the 1-square disable hysteresis, cuts past visual+1',
           () {
         final remote = PlayerComponent(
-          position: Vector2(256, 160), // 3 away — at enable threshold
+          position: Vector2(320, 160), // 5 away — at the visual edge
           id: 'remote-1',
           displayName: 'Remote',
         );
         remotePlayers['remote-1'] = remote;
 
-        // Enters enable range → camera turns on.
+        // Visible → camera turns on.
         manager.update(0.016);
         verify(() => mockLiveKit.setParticipantVideoEnabled('remote-1', true))
             .called(1);
 
-        // Drifts to 5 — inside the wider hysteresis band (> enable 3, ≤ disable
-        // 5). Camera must NOT cut.
-        remote.position = Vector2(320, 160); // 5 away
+        // Drifts to 6 — one square past the visual edge (bubble gone), inside
+        // the disable hysteresis (≤ _videoDisableThreshold 6). Camera holds so a
+        // peer parked on the line doesn't re-keyframe every jitter.
+        remote.position = Vector2(352, 160); // 6 away
         manager.update(0.016);
         verifyNever(
             () => mockLiveKit.setParticipantVideoEnabled('remote-1', false));
 
-        // Drifts past the disable threshold (6 > 5) → camera cuts.
-        remote.position = Vector2(352, 160); // 6 away
+        // Drifts past the disable threshold (7 > 6) → camera cuts.
+        remote.position = Vector2(384, 160); // 7 away
         manager.update(0.016);
         verify(() => mockLiveKit.setParticipantVideoEnabled('remote-1', false))
             .called(1);
@@ -483,9 +486,9 @@ void main() {
         manager.update(0.016);
         expect(predicate('remote-1'), isTrue);
 
-        // Peer walks out of range → desire cleared → a late/re-subscribe reads
-        // false and stays OFF (far cameras never decode).
-        remotePlayers['remote-1']!.position = Vector2(352, 160); // 6 away
+        // Peer walks well out of range (past the disable hysteresis) → desire
+        // cleared → a late/re-subscribe reads false and stays OFF.
+        remotePlayers['remote-1']!.position = Vector2(384, 160); // 7 away
         manager.update(0.016);
         expect(predicate('remote-1'), isFalse);
       });

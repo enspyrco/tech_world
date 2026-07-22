@@ -24,6 +24,7 @@ import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
+import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -168,13 +169,24 @@ class BubbleManager {
   static const int _audioEnableThreshold = 4; // grid squares — audio turns on
   static const int _audioDisableThreshold = 5; // grid squares — audio cuts off
 
-  // Video uses a WIDER hysteresis band than audio (2 squares vs 1): enabling a
-  // camera track costs a renegotiation + a keyframe, far more than an audio
-  // enable, so a peer hovering at the boundary must cross a bigger gap before
-  // the SFU forward toggles. The disable threshold is capped at [_visualThreshold]
-  // so we never decode video for a player whose bubble we wouldn't even paint.
-  static const int _videoEnableThreshold = 3; // grid squares — video turns on
-  static const int _videoDisableThreshold = 5; // grid squares — video cuts off
+  // Video decodes across the whole VISIBLE range: enable exactly when a bubble
+  // appears (≤ _visualThreshold), so a visible bubble always has a live (if
+  // blurred) frame — no black band, no avatar↔video swap. Proximity depth-of-
+  // field (see [_updateVideoBlur]) makes far video maximally blurred, so the
+  // enable/disable at the visual edge happens under cover of blur (no pop) and
+  // a boundary flap is invisible. One square of disable-hysteresis past the
+  // edge damps renegotiation churn for a peer parked on the line (the only real
+  // cost of a video toggle); the tiny decode-past-visible window it buys is the
+  // accepted trade for not re-keyframing every time they jitter.
+  static const int _videoEnableThreshold = _visualThreshold; // 5
+  static const int _videoDisableThreshold = _visualThreshold + 1; // 6
+
+  // Proximity depth-of-field: video is fully sharp within [_videoSharpWithin]
+  // squares and ramps to [_videoMaxBlurSigma] px of Gaussian blur out at the
+  // visual edge. "Resolution scales with proximity" — the visual twin of the
+  // audio volume fade.
+  static const double _videoSharpWithin = 1.0; // squares — crisp this close
+  static const double _videoMaxBlurSigma = 10.0; // px blur at the visual edge
   static const int _audioFullVolumeDistance = 1; // ≤ this = full volume; fades out to _audioDisableThreshold
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
@@ -264,6 +276,7 @@ class BubbleManager {
         _setBubbleOpacity(_playerBubbles[playerId]!, distance);
         _updateParticipantAudio(playerId, distance);
         _updateParticipantVideo(playerId, distance);
+        _updateVideoBlur(playerId, playerComponent);
       } else {
         // Beyond visual range — ensure audio AND camera video are disabled.
         _updateParticipantAudio(playerId, distance);
@@ -836,6 +849,22 @@ class BubbleManager {
         )]);
       }
     }
+  }
+
+  /// Proximity depth-of-field: set the video bubble's Gaussian-blur sigma from
+  /// the local player's CONTINUOUS (sub-grid, pixel-derived) distance, so the
+  /// focus pull is buttery as you walk rather than stepping per grid square.
+  /// No-op for avatar bubbles (camera-less peers) and any non-video bubble.
+  void _updateVideoBlur(String playerId, PlayerComponent playerComponent) {
+    final bubble = _playerBubbles[playerId];
+    if (bubble is! VideoBubbleComponent) return;
+    final squares =
+        (_localPlayer.position - playerComponent.position).length /
+            gridSquareSize;
+    final t = ((squares - _videoSharpWithin) /
+            (_visualThreshold - _videoSharpWithin))
+        .clamp(0.0, 1.0);
+    bubble.blurSigma = _videoMaxBlurSigma * t;
   }
 
   /// Volume curve for the distance fade: full within [_audioFullVolumeDistance],
