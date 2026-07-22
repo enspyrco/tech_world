@@ -203,6 +203,12 @@ class BubbleManager {
   /// Called when LiveKitService becomes available (after connectToLiveKit).
   void setLiveKitService(LiveKitService service) {
     _liveKitService = service;
+    // Register the camera-desire seam so the TrackSubscribedEvent handler can
+    // reconcile a fresh/re-subscribed camera to what this gate currently wants
+    // (the single reconcile point — see reconcileRemoteVideoOnSubscribe). The
+    // gate latches DESIRE in _videoEnabledParticipants; subscribe applies it.
+    service.cameraDesiredForIdentity =
+        (identity) => _videoEnabledParticipants.contains(identity);
   }
 
   /// Called when ChatService becomes available (after room join).
@@ -546,6 +552,9 @@ class BubbleManager {
       _liveKitService?.publishDfProximity(near: false);
     }
     _wasNearDreamfinder = false;
+    // Drop the camera-desire seam so a torn-down gate's closure can't answer
+    // a late subscribe on a stale _videoEnabledParticipants set.
+    _liveKitService?.cameraDesiredForIdentity = null;
     _liveKitService = null;
     _dreamfinderAvatarBridge?.dispose();
     _dreamfinderAvatarBridge = null;

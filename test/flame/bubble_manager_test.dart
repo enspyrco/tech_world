@@ -456,6 +456,39 @@ void main() {
         verifyNever(
             () => mockLiveKit.setParticipantVideoEnabled('remote-1', true));
       });
+
+      test(
+          'registers a camera-desire predicate tracking the enabled set '
+          '(the subscribe-reconcile seam that fixes the latch race)', () {
+        // Capture the predicate BubbleManager registered on the service in
+        // setUp. On a TrackSubscribedEvent, LiveKitService reads THIS to decide
+        // whether a fresh/re-subscribed camera should be ON — so it must always
+        // reflect the gate's live desire, never a stale latch.
+        final captured =
+            verify(() => mockLiveKit.cameraDesiredForIdentity = captureAny())
+                .captured;
+        final predicate = captured.last as bool Function(String);
+
+        // Nobody near yet → not desired.
+        expect(predicate('remote-1'), isFalse);
+
+        // Peer already within enable range: the gate latches desire. A camera
+        // that subscribes NOW (after the gate fired) must be reconciled ON —
+        // the predicate says so, which is exactly what closes the race.
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(256, 160), // 3 away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        manager.update(0.016);
+        expect(predicate('remote-1'), isTrue);
+
+        // Peer walks out of range → desire cleared → a late/re-subscribe reads
+        // false and stays OFF (far cameras never decode).
+        remotePlayers['remote-1']!.position = Vector2(352, 160); // 6 away
+        manager.update(0.016);
+        expect(predicate('remote-1'), isFalse);
+      });
     });
 
     group('Dreamfinder proximity signal', () {
