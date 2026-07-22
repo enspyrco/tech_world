@@ -179,6 +179,7 @@ void main() {
         AvBubbleCreated() => 'av_bubble_create',
         AvBubbleRemoved() => 'av_bubble_remove',
         AvAudioGateChanged() => 'av_audio_gate',
+        AvVideoGateChanged() => 'av_video_gate',
         AvFrameDecodeError() => 'av_frame_error',
         AvSpeakingChanged() => 'av_speaking',
       };

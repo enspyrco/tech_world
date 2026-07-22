@@ -109,6 +109,15 @@ class VideoBubbleComponent extends PositionComponent {
 
   // Shader support
   ui.FragmentShader? _shader;
+
+  /// Proximity depth-of-field: Gaussian blur sigma (px) applied to the video
+  /// image. 0 = sharp. Driven by [BubbleManager] from the local player's
+  /// distance — soft when far, crisp when near — so video resolves as you
+  /// approach, and the decode enable/disable at the visual edge happens under
+  /// maximum blur (no visible pop). Uses the native Skia [ui.ImageFilter.blur]
+  /// (a canvas primitive), NOT a custom fragment shader, so none of the
+  /// CanvasKit/WASM GLSL constraints apply.
+  double blurSigma = 0.0;
   double _time = 0;
   double _glowIntensity = 0.0;
   Color _glowColor = Colors.green;
@@ -769,6 +778,14 @@ class VideoBubbleComponent extends PositionComponent {
       // if (_shader != null && ui.ImageFilter.isShaderFilterSupported) {
       //   paint.imageFilter = ui.ImageFilter.shader(_shader!);
       // }
+
+      // Proximity depth-of-field: blur the whole video layer by the current
+      // sigma. Native Skia blur (no custom GLSL) — applied to the saveLayer so
+      // the composited video image is blurred as one, cheap at bubble size.
+      if (blurSigma > 0.05) {
+        paint.imageFilter =
+            ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma);
+      }
 
       canvas.saveLayer(
         Rect.fromCircle(center: center, radius: radius + 10),
