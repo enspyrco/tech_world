@@ -544,6 +544,10 @@ class BubbleManager {
     _mergedBubble = null;
     _audioEnabledParticipants.clear();
     _audioVolumes.clear();
+    // Like the audio set above, we drop bookkeeping without an active
+    // per-participant disable: clear() runs only in the room-teardown sequence
+    // (paired with disconnect + dispose), and the SFU stops forwarding every
+    // track on disconnect — so there is no still-forwarding camera to turn off.
     _videoEnabledParticipants.clear();
     // Emit a final exit so Dreamfinder doesn't hold a stale near:true after we
     // tear down while the player was in range (cage match PR #481 — Carnot).
@@ -794,7 +798,11 @@ class BubbleManager {
     // Avatar-only clients (mobile web / hidden-video safe mode) never PAINT
     // remote video, so they must never DECODE it: the gate stays permanently
     // disabled. This is what makes proximity-gating also close the safe-mode
-    // decode gap — no old-device-specific code needed.
+    // decode gap — no old-device-specific code needed. `hideVideoBubbles` is a
+    // live toggle, so flipping it to true while a camera is enabled leaves a
+    // ~1-frame (≤16ms) decode window until this gate disables on the next
+    // update — bounded, rare (a manual safe-mode flip), and identical to how
+    // the audio gate reacts to any state change on the following frame.
     final avatarOnly = hideVideoBubbles || _isMobileWeb;
 
     final hasVideo = _videoEnabledParticipants.contains(playerId);

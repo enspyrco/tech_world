@@ -612,8 +612,11 @@ class LiveKitService {
   /// near peer whose gate fired before the track subscribed would stay dark
   /// (cage-match #519, Carnot + Tesla).
   ///
-  /// Dreamfinder is excluded (separate iframe-canvas path). Screen-share is
-  /// excluded by [setParticipantVideoEnabled] (camera-source only).
+  /// Dreamfinder is excluded (separate iframe-canvas path). This runs for ANY
+  /// remote video subscribe, including screen-share — but [setParticipantVideoEnabled]
+  /// only ever touches the participant's CAMERA publication, so a screen-share
+  /// subscribe merely (harmlessly) re-reconciles that participant's camera to
+  /// the gate's desire; the screen-share itself is never disabled.
   @visibleForTesting
   void reconcileRemoteVideoOnSubscribe({
     required bool isVideoTrack,
