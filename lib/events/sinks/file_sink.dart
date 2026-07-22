@@ -65,6 +65,7 @@ bool _isAvEvent(AppEvent event) => switch (event) {
       AvBubbleCreated() => true,
       AvBubbleRemoved() => true,
       AvAudioGateChanged() => true,
+      AvVideoGateChanged() => true,
       AvFrameDecodeError() => true,
       AvSpeakingChanged() => true,
       _ => false,

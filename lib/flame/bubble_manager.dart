@@ -111,6 +111,12 @@ class BubbleManager {
   final Map<String, PositionComponent> _playerBubbles = {};
   final Map<String, Vector2> _bubbleDisplacements = {};
   final Set<String> _audioEnabledParticipants = {};
+
+  /// Participants whose CAMERA video the proximity gate currently has enabled
+  /// (SFU forwarding + local decode ON). Sibling of [_audioEnabledParticipants];
+  /// starts empty because every camera track is disabled on subscribe, so the
+  /// set matches the SFU's actual state. See [_updateParticipantVideo].
+  final Set<String> _videoEnabledParticipants = {};
   /// Last volume pushed to LiveKit per participant, so the per-frame fade only
   /// writes when the value actually changes (distance is an int → rarely).
   final Map<String, double> _audioVolumes = {};
@@ -161,6 +167,14 @@ class BubbleManager {
   // the old see-but-can't-hear dead zone (audio was ≤2 while bubbles were ≤5).
   static const int _audioEnableThreshold = 4; // grid squares — audio turns on
   static const int _audioDisableThreshold = 5; // grid squares — audio cuts off
+
+  // Video uses a WIDER hysteresis band than audio (2 squares vs 1): enabling a
+  // camera track costs a renegotiation + a keyframe, far more than an audio
+  // enable, so a peer hovering at the boundary must cross a bigger gap before
+  // the SFU forward toggles. The disable threshold is capped at [_visualThreshold]
+  // so we never decode video for a player whose bubble we wouldn't even paint.
+  static const int _videoEnableThreshold = 3; // grid squares — video turns on
+  static const int _videoDisableThreshold = 5; // grid squares — video cuts off
   static const int _audioFullVolumeDistance = 1; // ≤ this = full volume; fades out to _audioDisableThreshold
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
@@ -243,9 +257,11 @@ class BubbleManager {
 
         _setBubbleOpacity(_playerBubbles[playerId]!, distance);
         _updateParticipantAudio(playerId, distance);
+        _updateParticipantVideo(playerId, distance);
       } else {
-        // Beyond visual range — ensure audio is disabled.
+        // Beyond visual range — ensure audio AND camera video are disabled.
         _updateParticipantAudio(playerId, distance);
+        _updateParticipantVideo(playerId, distance);
       }
     }
 
@@ -501,6 +517,7 @@ class BubbleManager {
     // audio bookkeeping here to avoid leaking map entries until teardown.
     _audioEnabledParticipants.remove(playerId);
     _audioVolumes.remove(playerId);
+    _videoEnabledParticipants.remove(playerId);
     _replaceBubble(playerId, null, 'remove-bubble-api');
   }
 
@@ -521,6 +538,7 @@ class BubbleManager {
     _mergedBubble = null;
     _audioEnabledParticipants.clear();
     _audioVolumes.clear();
+    _videoEnabledParticipants.clear();
     // Emit a final exit so Dreamfinder doesn't hold a stale near:true after we
     // tear down while the player was in range (cage match PR #481 — Carnot).
     // Best-effort; the bot also self-heals on our ParticipantDisconnected.
@@ -749,6 +767,56 @@ class BubbleManager {
         if (service.setParticipantAudioVolume(playerId, volume)) {
           _audioVolumes[playerId] = volume;
         }
+      }
+    }
+  }
+
+  /// Proximity gate for a remote participant's CAMERA video — the sole enabler
+  /// of camera decode (every camera track is disabled on subscribe). Mirrors
+  /// [_updateParticipantAudio]'s hard enable/disable boundary, minus the volume
+  /// fade (video has no per-square ramp). Called every frame for each remote
+  /// player, near and far.
+  void _updateParticipantVideo(String playerId, int distance) {
+    // No LiveKit service yet (pre-connect / post-teardown) → don't latch a gate
+    // change we can't send, or it sticks once the service comes up.
+    final service = _liveKitService;
+    if (service == null) return;
+
+    // Avatar-only clients (mobile web / hidden-video safe mode) never PAINT
+    // remote video, so they must never DECODE it: the gate stays permanently
+    // disabled. This is what makes proximity-gating also close the safe-mode
+    // decode gap — no old-device-specific code needed.
+    final avatarOnly = hideVideoBubbles || _isMobileWeb;
+
+    final hasVideo = _videoEnabledParticipants.contains(playerId);
+
+    // Wider hysteresis than audio (see [_videoEnableThreshold]): enable only
+    // when solidly in range, disable once past the visual threshold — or
+    // immediately if the client is (or becomes) avatar-only.
+    final shouldEnable =
+        !hasVideo && !avatarOnly && distance <= _videoEnableThreshold;
+    final shouldDisable =
+        hasVideo && (avatarOnly || distance > _videoDisableThreshold);
+
+    if (shouldEnable) {
+      _videoEnabledParticipants.add(playerId);
+      service.setParticipantVideoEnabled(playerId, true);
+      if (avDiagnosticsEnabled) {
+        dispatch([AvVideoGateChanged(
+          participant: playerId,
+          enabled: true,
+          distance: distance,
+        )]);
+      }
+    } else if (shouldDisable) {
+      _videoEnabledParticipants.remove(playerId);
+      service.setParticipantVideoEnabled(playerId, false);
+      if (avDiagnosticsEnabled) {
+        dispatch([AvVideoGateChanged(
+          participant: playerId,
+          enabled: false,
+          distance: distance,
+        )]);
       }
     }
   }

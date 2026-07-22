@@ -554,6 +554,55 @@ class LiveKitService {
     }
   }
 
+  /// Enable or disable a remote participant's CAMERA video (server-side
+  /// [RemoteTrackPublication.enable]/[RemoteTrackPublication.disable]).
+  ///
+  /// Used for proximity-based video: stop the SFU forwarding (and this client
+  /// decoding into memory) a player's camera when they're out of range, so
+  /// decode load scales with NEARBY participants instead of everyone in the
+  /// room. Symmetric with [setParticipantAudioEnabled] (#594).
+  ///
+  /// Only CAMERA tracks are gated — screen-share ([TrackSource.screenShareVideo])
+  /// is deliberately left forwarded, since a shared screen must stay visible
+  /// regardless of avatar proximity. A track whose source is still unknown is
+  /// skipped (left enabled): fail-safe, and the per-frame gate re-evaluates it
+  /// once the source resolves.
+  void setParticipantVideoEnabled(String identity, bool enabled) {
+    final participant = _room?.remoteParticipants[identity];
+    if (participant == null) return;
+
+    for (final publication in participant.videoTrackPublications) {
+      if (publication.source != TrackSource.camera) continue;
+      if (enabled) {
+        publication.enable();
+      } else {
+        publication.disable();
+      }
+    }
+  }
+
+  /// Disable a freshly-subscribed remote CAMERA video track unconditionally.
+  ///
+  /// Called from the [TrackSubscribedEvent] handler. Camera video is proximity-
+  /// gated: [BubbleManager]'s per-frame gate is the SOLE enabler and only turns
+  /// a track on when the local player is in range (and not in avatar-only mode).
+  /// Disabling on subscribe closes the window where a fresh track would be
+  /// forwarded+decoded from anywhere before the gate's first near-frame — the
+  /// same pattern as [disableDreamfinderAudioOnSubscribe].
+  ///
+  /// Dreamfinder is excluded: DF's video is a separate iframe-canvas path, not a
+  /// gated WebRTC camera track. Screen-share is excluded by
+  /// [setParticipantVideoEnabled] (camera-source only).
+  @visibleForTesting
+  void disableRemoteVideoOnSubscribe({
+    required bool isVideoTrack,
+    required String identity,
+  }) {
+    if (isVideoTrack && !isDreamfinderIdentity(identity)) {
+      setParticipantVideoEnabled(identity, false);
+    }
+  }
+
   /// Set the playback volume (0.0–1.0) for a remote participant's audio.
   ///
   /// Used by the proximity layer to fade voices by distance instead of hard
@@ -1027,6 +1076,14 @@ class LiveKitService {
         // would be audible from anywhere before the gate's first tick.
         disableDreamfinderAudioOnSubscribe(
           isAudioTrack: event.track is AudioTrack,
+          identity: event.participant.identity,
+        );
+        // Disable a freshly-subscribed camera track unconditionally; the
+        // BubbleManager proximity gate re-enables it when the local player is
+        // in range. Closes the window where a fresh remote camera would be
+        // forwarded+decoded from anywhere before the gate's first tick.
+        disableRemoteVideoOnSubscribe(
+          isVideoTrack: event.track is VideoTrack,
           identity: event.participant.identity,
         );
       })

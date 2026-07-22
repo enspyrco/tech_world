@@ -1256,6 +1256,38 @@ final class AvAudioGateChanged extends AppEvent {
   PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
+/// The proximity gate enabled or disabled a remote participant's CAMERA video
+/// (server-side subscription toggle). Sibling of [AvAudioGateChanged]; emitted
+/// only under `avDiagnosticsEnabled` so a `getStats()` decode-load readout can
+/// be correlated with the exact near/far transition that caused it.
+final class AvVideoGateChanged extends AppEvent {
+  AvVideoGateChanged({
+    required this.participant,
+    required this.enabled,
+    required this.distance,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  final String participant;
+  final bool enabled;
+  final int distance;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'av_video_gate_changed',
+        'participant': participant,
+        'enabled': enabled,
+        'distance': distance,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identity.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
 /// A video frame failed to decode.
 final class AvFrameDecodeError extends AppEvent {
   AvFrameDecodeError({

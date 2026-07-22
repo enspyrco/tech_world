@@ -97,6 +97,8 @@ void consoleSink(AppEvent event) {
       'AvBubbleRemoved: $participant',
     AvAudioGateChanged(:final participant, :final enabled, :final distance) =>
       'AvAudioGate: $participant ${enabled ? 'ENABLED' : 'DISABLED'} dist=$distance',
+    AvVideoGateChanged(:final participant, :final enabled, :final distance) =>
+      'AvVideoGate: $participant ${enabled ? 'ENABLED' : 'DISABLED'} dist=$distance',
     AvFrameDecodeError(:final participant, :final error) =>
       'AvFrameDecodeError: $participant $error',
     AvSpeakingChanged(:final participant, :final speaking) =>
