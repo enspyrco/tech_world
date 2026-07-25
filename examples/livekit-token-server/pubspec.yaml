@@ -1,0 +1,15 @@
+name: livekit_token_server
+description: >-
+  Reference LiveKit token endpoint (server-side). A workspace member that
+  imports `realm` but is NOT imported by it — one of the two structural
+  artifacts that make the engine-vs-server-package boundary real (the other is
+  the engine deps whitelist in CI, migration step 4). See DESIGN.md.
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.6.0
+resolution: workspace
+dependencies:
+  realm:
+    path: ../../packages/realm

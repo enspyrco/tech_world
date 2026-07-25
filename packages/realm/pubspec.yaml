@@ -1,0 +1,16 @@
+name: realm
+description: >-
+  Realm — a multiplayer worldbuilding engine. Hosts named rooms; each room
+  instantiates a World. Provides the shared substrate (identity, presence,
+  voice, room transport, blob storage) so a world can be just its own
+  vocabulary. See DESIGN.md for the architectural pin.
+publish_to: none
+version: 0.0.1
+# LICENSE intentionally omitted — the engine's license is an OPEN decision
+# (task #1059). Sources currently disagree (handoff/memory say "Apache-2.0";
+# DESIGN.md says "AGPL v3 + open-core"). No LICENSE file lands until #1059
+# is resolved; do NOT infer the license from this skeleton.
+
+environment:
+  sdk: ^3.6.0
+resolution: workspace

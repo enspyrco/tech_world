@@ -1,0 +1,12 @@
+name: realm_firebase
+description: >-
+  Firebase-backed implementations of Realm engine interfaces
+  (FirebaseAuthProvider, FirestoreRoomConfigStore, FirebaseStorageProvider).
+  Implementations land in migration step 4; skeleton reserves the namespace.
+publish_to: none
+version: 0.0.1
+# LICENSE deferred with the engine — see task #1059 and packages/realm/pubspec.yaml.
+
+environment:
+  sdk: ^3.6.0
+resolution: workspace
