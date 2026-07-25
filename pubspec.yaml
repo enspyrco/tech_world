@@ -1,4 +1,15 @@
 name: tech_world
+
+# Realm engine extraction — migration step 2 (workspace scaffold).
+# Members are empty skeletons; no code has moved yet. See
+# packages/realm/DESIGN.md for the architectural pin and migration plan.
+# `worlds/tech_world/` is intentionally NOT a member yet — it would collide
+# with this root package's name and holds no code until the step-6
+# TechWorld-wrap PR, where the root-vs-world naming is resolved.
+workspace:
+  - packages/realm
+  - packages/realm_firebase
+  - examples/livekit-token-server
 description: "A world of tech adventures."
 publish_to: "none"
 version: 0.0.0+1
