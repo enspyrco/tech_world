@@ -41,17 +41,17 @@ Recorded here so a later hand does not rediscover them the hard way:
   client. The engine's projection-by-audience interface describes the *fix*, not today's
   behaviour. No live collision yet (nothing in `lib/` imports `package:realm`); the existing
   class is absorbed at step 7.
-- **`worldType` and `FoyerVisibility` exist on no room document.** Rooms carry `isPublic`
+- **`worldType` and `RoomVisibility` exist on no room document.** Rooms carry `isPublic`
   (bool) and no world type at all. `WorldTypeRegistry` has nothing to validate against, and
   bool→3-state is a data migration with a default-on-read for every legacy doc. Use
-  `FoyerVisibility.tryParse` at that boundary — `parse` throws, and every legacy doc is an
+  `RoomVisibility.tryParse` at that boundary — `parse` throws, and every legacy doc is an
   unknown wire value.
 - **Web Google sign-in cannot be a `signIn(AuthMethod)` call.** The shipping web flow is a
   two-phase GIS handshake (render a Google-owned button, receive events) — there is no
   method to call and await. The extension point is right for native and for future providers;
   the web-Google consumer migration needs its own shape.
 - **`NewRoomSpec` was referenced in this doc but never defined.** Step 3 defines it concretely
-  (`room_config_store.dart`): `worldConfig` opaque, `foyerVisibility` defaulting to `private`.
+  (`room_config_store.dart`): `worldConfig` opaque, `visibility` defaulting to `private`.
 - **`RoomData.fromFirestore` performs writes during a read** (self-healing rename/wall-style
   migrations). A no-leak `RoomConfigStore.getRoom` cannot self-heal inside a parse; that logic
   relocates in step 5.
@@ -69,7 +69,7 @@ Two findings from the step-3 cage-match are real but out of scope for an interfa
 PR; tracked here so they're addressed at the right step rather than lost:
 
 - **`PublicProjection` semantic opacity is impl-enforced, not type-enforced.** The
-  audience-narrowed return types stop a `FullProjection` from flowing to the foyer, and
+  audience-narrowed return types stop a `FullProjection` from flowing to an out-of-room observer, and
   `userIdHash` is now a branded `UserIdHash` (not `String`) so a raw `UserId` can't be
   *accidentally* assigned into it — but the brand does not prove the value is actually
   room-salted (hashing needs a crypto dep the no-leak rule forbids), and `opaqueAvatarRef`
@@ -100,7 +100,7 @@ PR; tracked here so they're addressed at the right step rather than lost:
   mints `userLeft`/`disconnect` in v1), or accept it here (Tesla).
 
 - **`RoomConfigStore` has no metadata-update door.** `updateRoomConfig` patches only
-  `worldConfig`; there is no contract method to rename a room, change its `foyerVisibility`,
+  `worldConfig`; there is no contract method to rename a room, change its `visibility`,
   or edit `editorIds` — all of which the real `RoomService` does (`updateRoomName`,
   `setPublic`, `addEditor`/`removeEditor`). Step 5 must either add an explicit metadata-update
   surface to this interface or it will invent a side channel that bypasses the no-leak
@@ -364,7 +364,7 @@ This means each provider plugin ships with a small server-side exchange referenc
 abstract interface class RoomConfigStore {
   Future<List<RoomDescriptor>> listRooms({
     UserId? ownedBy,
-    FoyerVisibility? minVisibility,  // null = no filter
+    RoomVisibility? minVisibility,  // null = no filter
   });
   Future<RoomDescriptor?> getRoom(RoomId roomId);
   Stream<RoomDescriptor> watchRoom(RoomId roomId);
@@ -378,9 +378,9 @@ class RoomDescriptor {
   final WorldTypeId worldType;             // branded — registered worlds only
   final Map<String, Object?> worldConfig;  // opaque to engine; each World owns parseConfig()
   final UserId ownerId;                    // NOT full RealmUser — listRooms() feeds a public
-  final String? ownerDisplayName;          // foyer; owner email/username/claims must not leak there
+  final String? ownerDisplayName;          // listing; owner email/username/claims must not leak there
   final List<UserId> editorIds;
-  final FoyerVisibility foyerVisibility;
+  final RoomVisibility visibility;
   // NOTE: federation's `connectedTo` field is deliberately NOT here in v1.
   // Reserving the type (`RoomRef` sealed below) is cheap; reserving a field on
   // the public listing contract is not. `listRooms()` returns RoomDescriptor —
@@ -459,31 +459,31 @@ class WorldTypeRegistry {
   }
 }
 
-enum FoyerVisibility {
+enum RoomVisibility {
   public('public'),
   unlisted('unlisted'),
   private('private');
 
-  const FoyerVisibility(this.wire);
+  const RoomVisibility(this.wire);
   final String wire;
 
   /// Parse strictly. Unknown wire strings throw rather than silently
   /// downgrading to `.private` — a typo in the wire format should surface
   /// loudly, not quietly change a room's visibility. Use this when you
   /// want a non-nullable result and an explicit exception on miss.
-  static FoyerVisibility parse(String wire) =>
+  static RoomVisibility parse(String wire) =>
       values.firstWhere((v) => v.wire == wire,
                        orElse: () => throw ArgumentError.value(
-                           wire, 'wire', 'Unknown FoyerVisibility'));
+                           wire, 'wire', 'Unknown RoomVisibility'));
 
   /// Try-parse variant: returns null on miss instead of throwing. Idiomatic
   /// at trust boundaries (Firestore reads, LiveKit metadata reads) where the
   /// caller wants to decide their own fallback policy without try/catch:
-  /// `FoyerVisibility.tryParse(wire) ?? FoyerVisibility.private`. Both
+  /// `RoomVisibility.tryParse(wire) ?? RoomVisibility.private`. Both
   /// `parse` and `tryParse` ship together — see
   /// `feedback_seal_matches_architecture.md` for the "two doors at the
   /// boundary" principle.
-  static FoyerVisibility? tryParse(String wire) {
+  static RoomVisibility? tryParse(String wire) {
     for (final v in values) {
       if (v.wire == wire) return v;
     }
@@ -620,9 +620,9 @@ Why this isn't strictly a Dart interface: the engine never *calls a method* on t
 
 ### 5. `PresenceService`
 
-The "watch a room's participants without joining it" primitive. Powers the foyer's cross-room presence display (avatars of who's in each visible room) and, eventually, federation's cross-instance presence layer.
+The "watch a room's participants without joining it" primitive. Powers any surface that shows presence in rooms the viewer hasn't joined — a foyer, an adjacent-room indicator, a spectator mode — and, eventually, federation's cross-instance presence layer.
 
-**Critical PII boundary**: presence data includes user IDs, display names, and join times — all classified as PII by the existing `pii_policy.dart`. A naive cross-room watch API would broadcast that PII to any caller who can name a room. This interface uses **typed sealed projections with audience-narrowed return types** to enforce audience-appropriate shapes at the *type level*, not just by implementation discipline: full-fidelity presence is available only inside a room you've joined; cross-room (foyer) watching exposes a public projection that reveals less *and cannot syntactically express the in-room fields*.
+**Critical PII boundary**: presence data includes user IDs, display names, and join times — all classified as PII by the existing `pii_policy.dart`. A naive cross-room watch API would broadcast that PII to any caller who can name a room. This interface uses **typed sealed projections with audience-narrowed return types** to enforce audience-appropriate shapes at the *type level*, not just by implementation discipline: full-fidelity presence is available only inside a room you've joined; out-of-room watching exposes a public projection that reveals less *and cannot syntactically express the in-room fields*.
 
 ```dart
 abstract interface class PresenceService {
@@ -633,11 +633,11 @@ abstract interface class PresenceService {
   Stream<Set<FullProjection>> watchInRoom(RoomId roomId, RealmUser viewer);
 
   /// Watch the low-fidelity presence stream for a room the caller is NOT in.
-  /// Only emits for rooms whose foyerVisibility = public (private/unlisted
+  /// Only emits for rooms whose visibility = public (private/unlisted
   /// rooms refuse). Return type is narrowed to PublicProjection so a buggy
   /// implementation cannot leak in-room PII (display names, raw userId, join
-  /// times) into the foyer projection — the type literally can't hold them.
-  Stream<Set<PublicProjection>> watchFromFoyer(RoomId roomId, RealmUser viewer);
+  /// times) into the public projection — the type literally can't hold them.
+  Stream<Set<PublicProjection>> watchPublicPresence(RoomId roomId, RealmUser viewer);
 }
 
 /// Sealed projection base. Carries NO data — every PII-bearing field lives
@@ -673,12 +673,12 @@ class FullProjection extends PeerPresence {
 final class PublicProjection extends PeerPresence {   // `final` leaf — no cross-package subclass
   const PublicProjection({
     required this.userIdHash,     // stable per-room SHA256(roomId || userId)[:8]
-    this.opaqueAvatarRef,         // optional opaque ref the foyer can render
+    this.opaqueAvatarRef,         // optional opaque ref an out-of-room observer can render
   });
   final UserIdHash userIdHash;    // branded, NOT String — a raw UserId can't be assigned here
   final Uri? opaqueAvatarRef;     // optional; absent if user opted out
   // Deliberately: no `joinedAt`. Timing info is in-room-PII per pii_policy.dart;
-  // exposing it cross-room would let any foyer observer build a longitudinal
+  // exposing it cross-room would let any out-of-room observer build a longitudinal
   // profile of who-was-where-when. The PublicProjection's job is "is anyone
   // there? how many? render placeholders" — not activity surveillance.
 }
@@ -688,10 +688,10 @@ final class PublicProjection extends PeerPresence {   // `final` leaf — no cro
 
 **Authorization rules** (enforced by `PresenceService` implementations):
 - `watchInRoom` succeeds only if `viewer` is currently present in `roomId` (LiveKit participant check).
-- `watchFromFoyer` succeeds only if `roomId.foyerVisibility == public`. Unlisted and private rooms refuse — the foyer cannot enumerate them at all.
-- Users may opt out of `opaqueAvatarRef` exposure (a per-user setting); `userIdHash` is always emitted because the foyer needs *some* token to render a presence indicator (otherwise it can't tell "3 people inside" from "0 people inside").
+- `watchPublicPresence` succeeds only if `roomId.visibility == public`. Unlisted and private rooms refuse — an out-of-room observer cannot enumerate them at all.
+- Users may opt out of `opaqueAvatarRef` exposure (a per-user setting); `userIdHash` is always emitted because a presence indicator needs *some* token to render (otherwise it can't tell "3 people inside" from "0 people inside").
 - The hash uses the room ID as salt so the same user appears different across rooms — prevents cross-room user identification via the public projection.
-- **userIdHash collision posture**: 8 bytes = 64-bit per-room collision space. Deliberately weaker than full SHA256 so two co-present users *could* in principle collide to the same hash; the foyer accepts this as the cost of unlinkability (a longer hash gives an attacker a near-certain join-key to other rooms). The collision rate inside a single room remains negligible at any plausible room size.
+- **userIdHash collision posture**: 8 bytes = 64-bit per-room collision space. Deliberately weaker than full SHA256 so two co-present users *could* in principle collide to the same hash; the public projection accepts this as the cost of unlinkability (a longer hash gives an attacker a near-certain join-key to other rooms). The collision rate inside a single room remains negligible at any plausible room size.
 
 Cheap by design: no media subscription, no data-channel subscription, no voice. Updated when the room's participant list changes.
 
@@ -727,12 +727,13 @@ abstract interface class World {
   /// .disconnect; .portalTransit is reserved for v2 federation.
   Future<void> onLeave(LeaveReason reason);
 
-  /// Render a renderer-neutral snapshot of this room's current state for
-  /// the foyer. Returns null if this World shouldn't appear in foyers
-  /// (FoyerWorld returns null — foyers don't appear in foyers).
-  /// **No Flutter types in the return value** — the foyer wraps RoomPreview
-  /// in its own renderer. This keeps the engine portable across rendering
-  /// stacks (Flame, raw CustomPainter, future 3D, text-mode bots, etc.).
+  /// Render a renderer-neutral snapshot of this room's current state for a
+  /// room-listing surface such as a foyer. Returns null if this World
+  /// shouldn't appear in room listings (a foyer world returns null — a foyer
+  /// doesn't list itself).
+  /// **No Flutter types in the return value** — the consuming renderer wraps
+  /// RoomPreview in its own rendering stack. This keeps the engine portable
+  /// across rendering stacks (Flame, raw CustomPainter, future 3D, text-mode bots, etc.).
   Future<RoomPreview?> previewSnapshot();
 }
 
@@ -746,8 +747,8 @@ enum LeaveReason {
 }
 
 /// Renderer-neutral preview value, sealed so the "image XOR vector" invariant
-/// is enforced by the type system rather than by prose discipline. A foyer
-/// renders previews via `switch (preview) { case RasterPreview …; case
+/// is enforced by the type system rather than by prose discipline. A renderer
+/// walks the variants via `switch (preview) { case RasterPreview …; case
 /// VectorPreview …; case EmptyPreview … }` — exhaustive, no nullable-pair
 /// ambiguity, no "both populated" failure mode.
 sealed class RoomPreview {
@@ -755,20 +756,20 @@ sealed class RoomPreview {
   final PreviewHints worldHints;
 }
 
-/// Raster snapshot of room state. PNG / WebP bytes the foyer can blit.
+/// Raster snapshot of room state. PNG / WebP bytes a renderer can blit.
 class RasterPreview extends RoomPreview {
   const RasterPreview({required this.image, required super.worldHints});
   final Uint8List image;
 }
 
-/// Vector shape list. The foyer renders these in whatever style it likes
+/// Vector shape list. A renderer draws these in whatever style it likes
 /// (theme-coloured, dimmed, etc.) without the World committing to pixels.
 class VectorPreview extends RoomPreview {
   const VectorPreview({required this.shapes, required super.worldHints});
   final List<PreviewShape> shapes;
 }
 
-/// "I have no visual to show, just give me hints." The foyer renders a
+/// "I have no visual to show, just give me hints." The renderer draws a
 /// generic placeholder (counts + activity label) and nothing more.
 class EmptyPreview extends RoomPreview {
   const EmptyPreview({required super.worldHints});
@@ -797,33 +798,33 @@ class PreviewHints {
 ///
 /// **VectorPreview rendering contract** — binding on every consumer of
 /// `RoomPreview` that switches on `VectorPreview` and walks `shapes`. This
-/// is the foyer renderer's consumption surface (the foyer fetches each
-/// room's `RoomPreview` via `World.previewSnapshot()`), but the rule
-/// generalises to operator-built foyers, debug tooling, and any other
+/// is the room-listing renderer's consumption surface (the renderer fetches
+/// each room's `RoomPreview` via `World.previewSnapshot()`), but the rule
+/// generalises to operator-built listings, debug tooling, and any other
 /// consumer of `RoomPreview` that handles `VectorPreview`. It does NOT
-/// bind `PresenceService.watchFromFoyer` consumers — those see
+/// bind `PresenceService.watchPublicPresence` consumers — those see
 /// `PublicProjection`, which carries `opaqueAvatarRef` not `PreviewShape`.
 /// (Round-6 cage-match correction: the round-5 spiral pinned this contract
 /// at the wrong consumer surface.)
 ///   1. **Per-shape skip, not per-preview discard.** Unknown shapes within a
 ///      `VectorPreview` are SKIPPED INDIVIDUALLY. Known sibling shapes inside
-///      the same preview MUST still render. The foyer never discards a whole
+///      the same preview MUST still render. A renderer never discards a whole
 ///      preview because one shape is unrecognized.
 ///   2. **Telemetry, not error.** Encountering an unknown shape emits an
 ///      `UnknownPreviewShapeEncountered` event via the engine's event sink
 ///      (PII policy: `nonPii`; goes to remote telemetry). Operators detect
-///      worlds shipping shapes their foyer can't render by watching for these
+///      worlds shipping shapes their renderer can't render by watching for these
 ///      events.
-///   3. **No exceptions cross the foyer boundary.** Previews render during
-///      foyer scroll; one bad shape MUST NOT propagate an exception that
-///      halts the foyer. Renderers wrap individual shape rendering in a
+///   3. **No exceptions cross the render boundary.** Previews render during
+///      listing scroll; one bad shape MUST NOT propagate an exception that
+///      halts the listing. Renderers wrap individual shape rendering in a
 ///      try/catch and treat any rendering error as a skip with a separate
 ///      `PreviewShapeRenderFailed` event.
 ///
 /// **Enforcement artifacts** (named per `feedback_name_the_enforcing_artifact.md`):
 ///   - The engine ships a `realm_test::vectorPreviewConformance(consumer)`
 ///     contract test (lands at migration step 3 alongside the engine
-///     interfaces). Foyer implementations and any other `VectorPreview`
+///     interfaces). Room-listing implementations and any other `VectorPreview`
 ///     consumer run the conformance test; CI failure on miss.
 ///   - The engine ships a `RoomPreviewRenderer` mixin (also step 3) with a
 ///     default `renderShapes(List<PreviewShape>)` that implements all three
@@ -877,7 +878,7 @@ The contract evolution rule: **never add abstract methods to `World` after v1.0;
 
 **Sealed types and enums are a separate evolution surface**. Adding a subtype to a sealed hierarchy or a value to an enum **is a breaking change for downstream code that pattern-matches exhaustively** — the analyzer will flag every non-exhaustive switch. Two categories must be distinguished:
 
-**Audience-bounded sealed surfaces (managed-breaking):** `LeaveReason`, `FoyerVisibility`, `PeerPresence` (the sealed projection), `RoomPreview` (the sealed kind XOR — `RasterPreview` | `VectorPreview` | `EmptyPreview`), `RoomRef`. These types' variant sets live entirely within the engine's audience contract. Adding a variant is a **breaking change** for consumers' exhaustive switches; the engine commits to publishing a changelog entry every time one grows, so consumers know to expect compiler errors at upgrade time and what to switch on. This is the deliberate cost of sealed-type discipline: consumers benefit from exhaustiveness today; additions land as **minor-version bumps with a migration note**, not as "additive" changes in the SemVer-minor sense.
+**Audience-bounded sealed surfaces (managed-breaking):** `LeaveReason`, `RoomVisibility`, `PeerPresence` (the sealed projection), `RoomPreview` (the sealed kind XOR — `RasterPreview` | `VectorPreview` | `EmptyPreview`), `RoomRef`. These types' variant sets live entirely within the engine's audience contract. Adding a variant is a **breaking change** for consumers' exhaustive switches; the engine commits to publishing a changelog entry every time one grows, so consumers know to expect compiler errors at upgrade time and what to switch on. This is the deliberate cost of sealed-type discipline: consumers benefit from exhaustiveness today; additions land as **minor-version bumps with a migration note**, not as "additive" changes in the SemVer-minor sense.
 
 **Plugin-extension interfaces (additive-non-breaking):** `AuthMethod`, `TokenEndpointAuthStrategy`, `PreviewShape`, plus the registry-validated branded ID open sets (`WorldTypeId`, `StorageBackendId`, `AuthProviderId`). These types are **interfaces**, not sealed. Adding a new implementation is non-breaking by design — no changelog entry, no version bump, no migration note. Consumers branching on these types do so non-exhaustively (`switch` with `default:`, or `is`-checks for the variants they understand). Anyone re-sealing one of these types under the misunderstanding that they're sealed surfaces violates the round-3 chord principle — see `feedback_seal_matches_architecture.md`.
 
@@ -983,7 +984,7 @@ Where new users land. Not a special-cased login screen — a real `World` like a
 
 A hall with windows along the walls, one window per public room in the operator's Realm installation. Through each window, you can see the room beyond — a small live scene rendered via `World.previewSnapshot()` of that room. Tech World rooms show a tilemap thumbnail with avatar dots; RepoBodyWorld rooms show a silhouette of the plaza; future Worlds show whatever they want.
 
-Each window is labeled with the room's display name and shows activity badges: count of people present (from `PresenceService.watchFromFoyer`, which emits `PublicProjection` only — no names, no userIds, no join times), voice-active indicator, optional world-specific hints ("live coding", "DM running", "quiet"). Walking close to a window doesn't unmask anyone: the foyer renders the room-scoped opaque avatars (`opaqueAvatarRef`) at higher fidelity, but identity stays withheld. The foyer never reveals who is in a room you're not in — to see names you have to walk through the window and join. This is the type-enforced privacy contract from the engine made visible in the UX.
+Each window is labeled with the room's display name and shows activity badges: count of people present (from `PresenceService.watchPublicPresence`, which emits `PublicProjection` only — no names, no userIds, no join times), voice-active indicator, optional world-specific hints ("live coding", "DM running", "quiet"). Walking close to a window doesn't unmask anyone: the foyer renders the room-scoped opaque avatars (`opaqueAvatarRef`) at higher fidelity, but identity stays withheld. The foyer never reveals who is in a room you're not in — to see names you have to walk through the window and join. This is the type-enforced privacy contract from the engine made visible in the UX.
 
 Walking through a window enters that room. Walking back to the room's exit returns to the foyer.
 

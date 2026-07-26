@@ -1,9 +1,10 @@
 import 'dart:typed_data';
 
-/// A renderer-neutral snapshot of a room, for display in a foyer.
+/// A renderer-neutral snapshot of a room, for display in a room-listing
+/// surface such as a foyer.
 ///
 /// Sealed so the "image XOR vector" invariant is enforced by the type system
-/// rather than by prose discipline. A foyer renders previews with an
+/// rather than by prose discipline. A renderer walks the variants with an
 /// exhaustive `switch` — no nullable-pair ambiguity, no "both populated"
 /// failure mode.
 ///
@@ -19,7 +20,7 @@ sealed class RoomPreview {
   final PreviewHints worldHints;
 }
 
-/// A raster snapshot — PNG/WebP bytes the foyer can blit directly.
+/// A raster snapshot — PNG/WebP bytes a renderer can blit directly.
 final class RasterPreview extends RoomPreview {
   /// Creates a raster preview from encoded [image] bytes.
   const RasterPreview({required this.image, required super.worldHints});
@@ -28,10 +29,10 @@ final class RasterPreview extends RoomPreview {
   final Uint8List image;
 }
 
-/// A vector shape list the foyer renders in whatever style it likes.
+/// A vector shape list a renderer draws in whatever style it likes.
 ///
-/// Lets a world describe its shape without committing to pixels, so the foyer
-/// can theme, dim, or scale the preview to match its own presentation.
+/// Lets a world describe its shape without committing to pixels, so the
+/// renderer can theme, dim, or scale the preview to match its own presentation.
 final class VectorPreview extends RoomPreview {
   /// Creates a vector preview from [shapes].
   const VectorPreview({required this.shapes, required super.worldHints});
@@ -42,7 +43,7 @@ final class VectorPreview extends RoomPreview {
 
 /// "I have no visual to show — just use the hints."
 ///
-/// The foyer renders a generic placeholder from [RoomPreview.worldHints] and
+/// The renderer draws a generic placeholder from [RoomPreview.worldHints] and
 /// nothing more.
 final class EmptyPreview extends RoomPreview {
   /// Creates a hints-only preview.
@@ -79,20 +80,20 @@ class PreviewHints {
 /// ## VectorPreview rendering contract
 ///
 /// Binding on every consumer of [RoomPreview] that switches on
-/// [VectorPreview] and walks [VectorPreview.shapes] — the reference foyer,
-/// operator-built foyers, and debug tooling alike. It does NOT bind
-/// `PresenceService.watchFromFoyer` consumers, which see `PublicProjection`
+/// [VectorPreview] and walks [VectorPreview.shapes] — the reference room-listing
+/// UI, operator-built listings, and debug tooling alike. It does NOT bind
+/// `PresenceService.watchPublicPresence` consumers, which see `PublicProjection`
 /// (carrying an opaque avatar ref, not shapes).
 ///
 /// 1. **Per-shape skip, not per-preview discard.** Unknown shapes are skipped
 ///    individually. Known sibling shapes in the same preview MUST still
-///    render. A foyer never discards a whole preview over one unrecognised
+///    render. A renderer never discards a whole preview over one unrecognised
 ///    shape.
 /// 2. **Telemetry, not error.** An unknown shape emits an
 ///    `UnknownPreviewShapeEncountered` event (PII policy: non-PII) so
-///    operators can detect worlds shipping shapes their foyer can't render.
-/// 3. **No exceptions cross the foyer boundary.** Previews render during foyer
-///    scroll; one bad shape MUST NOT halt the foyer. Renderers wrap each shape
+///    operators can detect worlds shipping shapes their renderer can't render.
+/// 3. **No exceptions cross the render boundary.** Previews render during
+///    listing scroll; one bad shape MUST NOT halt the listing. Renderers wrap each shape
 ///    in a try/catch and treat any failure as a skip plus a separate
 ///    `PreviewShapeRenderFailed` event.
 ///
@@ -128,7 +129,7 @@ class RectPreviewShape implements PreviewShape {
 
 /// A text run, in the world's own preview coordinate space.
 ///
-/// The foyer chooses the font, size and colour — the world supplies only the
+/// The renderer chooses the font, size and colour — the world supplies only the
 /// string and where it sits.
 class TextPreviewShape implements PreviewShape {
   /// Creates a text run at [origin].

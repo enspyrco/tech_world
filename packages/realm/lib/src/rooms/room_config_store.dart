@@ -10,7 +10,7 @@ abstract interface class RoomConfigStore {
   /// Lists rooms the caller is allowed to see.
   ///
   /// [ownedBy] filters to one owner. [minVisibility] keeps rooms at least as
-  /// visible as the given level, compared via [FoyerVisibility.isAtLeast] (the
+  /// visible as the given level, compared via [RoomVisibility.isAtLeast] (the
   /// explicit rank, not declaration order) — so `minVisibility: unlisted`
   /// returns `public` and `unlisted` rooms but not `private` ones. `null` means
   /// no filter on that axis.
@@ -19,7 +19,7 @@ abstract interface class RoomConfigStore {
   /// assertion that the caller may see it.
   Future<List<RoomDescriptor>> listRooms({
     UserId? ownedBy,
-    FoyerVisibility? minVisibility,
+    RoomVisibility? minVisibility,
   });
 
   /// Fetches one room, or `null` if it does not exist or is not visible.
@@ -48,7 +48,7 @@ class RoomDescriptor {
     required this.id,
     required this.displayName,
     required this.worldType,
-    required this.foyerVisibility,
+    required this.visibility,
     required this.ownerId,
     this.worldConfig = const {},
     this.ownerDisplayName,
@@ -64,8 +64,8 @@ class RoomDescriptor {
   /// Which world this room instantiates. Registry-validated.
   final WorldTypeId worldType;
 
-  /// How visible this room is from the foyer.
-  final FoyerVisibility foyerVisibility;
+  /// How visible this room is.
+  final RoomVisibility visibility;
 
   /// Per-world configuration, **opaque to the engine**.
   ///
@@ -85,9 +85,9 @@ class RoomDescriptor {
   ///
   /// **This is the only owner PII a room listing exposes — deliberately.** An
   /// earlier shape carried a full `RealmUser` here, which meant `listRooms()`
-  /// (and therefore a public foyer enumerating every room) handed out every
-  /// owner's email, username and provider claims. That is the same audience
-  /// boundary `PresenceService` hashes for, left wide open on the listing path
+  /// (and therefore any public room listing enumerating every room) handed out
+  /// every owner's email, username and provider claims. That is the same
+  /// audience boundary `PresenceService` hashes for, left wide open on the listing path
   /// (Tesla's catch). Narrowing to id + display name closes it, and matches the
   /// real room record, which stores `ownerId` + `ownerDisplayName`, never a
   /// joined user.
@@ -117,7 +117,7 @@ class NewRoomSpec {
     required this.worldType,
     required this.ownerId,
     this.worldConfig = const {},
-    this.foyerVisibility = FoyerVisibility.private,
+    this.visibility = RoomVisibility.private,
     this.editorIds = const [],
   });
 
@@ -135,21 +135,22 @@ class NewRoomSpec {
 
   /// Initial visibility.
   ///
-  /// Defaults to [FoyerVisibility.private] — a room becomes visible by an
+  /// Defaults to [RoomVisibility.private] — a room becomes visible by an
   /// explicit act, never by forgetting to pass an argument.
-  final FoyerVisibility foyerVisibility;
+  final RoomVisibility visibility;
 
   /// Users granted edit rights at creation.
   final List<UserId> editorIds;
 }
 
-/// How visible a room is from the foyer.
+/// How visible a room is — from a foyer, an adjacent-room indicator, or any
+/// surface that lists rooms.
 ///
 /// An audience-bounded sealed surface: adding a value here IS a breaking
 /// change for consumers' exhaustive switches, and lands as a minor-version
 /// bump with a migration note.
-enum FoyerVisibility {
-  /// Listed in the foyer; anyone may watch its public presence projection.
+enum RoomVisibility {
+  /// Listed publicly; anyone may watch its public presence projection.
   public('public', 3),
 
   /// Not listed, but reachable by anyone holding the room id.
@@ -158,7 +159,7 @@ enum FoyerVisibility {
   /// Not listed and not reachable without an explicit grant.
   private('private', 1);
 
-  const FoyerVisibility(this.wire, this.rank);
+  const RoomVisibility(this.wire, this.rank);
 
   /// The on-the-wire representation, stable across renames of the Dart value.
   final String wire;
@@ -179,7 +180,7 @@ enum FoyerVisibility {
   /// The one sanctioned way to compare visibilities — encapsulates the [rank]
   /// ordering so no consumer reaches for `.index` or `.rank` and re-derives the
   /// comparison (and its polarity) by hand.
-  bool isAtLeast(FoyerVisibility other) => rank >= other.rank;
+  bool isAtLeast(RoomVisibility other) => rank >= other.rank;
 
   /// Parses [wire] strictly.
   ///
@@ -187,12 +188,12 @@ enum FoyerVisibility {
   /// downgrading to [private] — a typo in the wire format should surface
   /// loudly, not quietly change a room's visibility. Use this when you want a
   /// non-nullable result and an explicit exception on miss.
-  static FoyerVisibility parse(String wire) => values.firstWhere(
+  static RoomVisibility parse(String wire) => values.firstWhere(
         (v) => v.wire == wire,
         orElse: () => throw ArgumentError.value(
           wire,
           'wire',
-          'Unknown FoyerVisibility',
+          'Unknown RoomVisibility',
         ),
       );
 
@@ -200,12 +201,12 @@ enum FoyerVisibility {
   ///
   /// Idiomatic at trust boundaries (backend reads, room-metadata reads) where
   /// the caller wants to choose its own fallback policy without a try/catch:
-  /// `FoyerVisibility.tryParse(wire) ?? FoyerVisibility.private`.
+  /// `RoomVisibility.tryParse(wire) ?? RoomVisibility.private`.
   ///
   /// Both doors ship together on purpose — throwing and try-parsing are
   /// different jobs, and forcing one caller to emulate the other is where
   /// silent visibility downgrades come from.
-  static FoyerVisibility? tryParse(String wire) {
+  static RoomVisibility? tryParse(String wire) {
     for (final v in values) {
       if (v.wire == wire) return v;
     }

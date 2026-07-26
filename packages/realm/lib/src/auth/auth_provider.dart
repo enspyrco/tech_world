@@ -49,7 +49,7 @@ abstract interface class AuthProvider {
 ///
 /// Adding an implementation is non-breaking: no changelog entry, no version
 /// bump. Contrast with the audience-bounded sealed surfaces ([LeaveReason],
-/// [FoyerVisibility], `PeerPresence`, `RoomPreview`, `RoomRef`) where adding a
+/// [RoomVisibility], `PeerPresence`, `RoomPreview`, `RoomRef`) where adding a
 /// variant IS a break.
 abstract interface class AuthMethod {}
 
@@ -157,7 +157,7 @@ extension type const AuthProviderId(String value) {
 /// A user, as the engine understands one.
 ///
 /// Several fields are PII. The engine treats them as such: they are available
-/// in-room, but the foyer's cross-room presence projection cannot express
+/// in-room, but the out-of-room presence projection cannot express
 /// them. See `PresenceService`.
 class RealmUser {
   /// Creates a user projection.

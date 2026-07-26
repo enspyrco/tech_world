@@ -4,11 +4,11 @@ import 'package:realm/realm.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('FoyerVisibility wire parsing', () {
+  group('RoomVisibility wire parsing', () {
     test('round-trips every value', () {
-      for (final v in FoyerVisibility.values) {
-        expect(FoyerVisibility.parse(v.wire), v);
-        expect(FoyerVisibility.tryParse(v.wire), v);
+      for (final v in RoomVisibility.values) {
+        expect(RoomVisibility.parse(v.wire), v);
+        expect(RoomVisibility.tryParse(v.wire), v);
       }
     });
 
@@ -18,21 +18,21 @@ void main() {
       // private room into the foyer; if it were `private`, a typo silently
       // hides a room its owner believes is listed. Both are worse than a
       // crash, so the strict door crashes.
-      expect(() => FoyerVisibility.parse('pubic'), throwsArgumentError);
-      expect(() => FoyerVisibility.parse(''), throwsArgumentError);
+      expect(() => RoomVisibility.parse('pubic'), throwsArgumentError);
+      expect(() => RoomVisibility.parse(''), throwsArgumentError);
     });
 
     test('tryParse returns null rather than choosing a fallback', () {
       // The lenient door exists for trust boundaries, but it still refuses to
       // pick the fallback for you — the caller states the policy at the call
-      // site: `tryParse(wire) ?? FoyerVisibility.private`.
-      expect(FoyerVisibility.tryParse('pubic'), isNull);
+      // site: `tryParse(wire) ?? RoomVisibility.private`.
+      expect(RoomVisibility.tryParse('pubic'), isNull);
     });
 
     test('wire values are snake_case-stable, not tied to Dart names', () {
-      expect(FoyerVisibility.public.wire, 'public');
-      expect(FoyerVisibility.unlisted.wire, 'unlisted');
-      expect(FoyerVisibility.private.wire, 'private');
+      expect(RoomVisibility.public.wire, 'public');
+      expect(RoomVisibility.unlisted.wire, 'unlisted');
+      expect(RoomVisibility.private.wire, 'private');
     });
   });
 
