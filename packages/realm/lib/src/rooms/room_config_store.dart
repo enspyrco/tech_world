@@ -1,4 +1,3 @@
-import '../auth/auth_provider.dart';
 import '../ids.dart';
 import 'world_type.dart';
 
@@ -10,8 +9,12 @@ import 'world_type.dart';
 abstract interface class RoomConfigStore {
   /// Lists rooms the caller is allowed to see.
   ///
-  /// [ownedBy] filters to one owner; [minVisibility] filters to rooms at or
-  /// above a visibility level. `null` means no filter on that axis.
+  /// [ownedBy] filters to one owner. [minVisibility] filters by visibility,
+  /// where the ordering is **most public first**: `public` is the most visible,
+  /// then `unlisted`, then `private` (mirroring [FoyerVisibility]'s declaration
+  /// order). "min" means "at least this visible", so `minVisibility: unlisted`
+  /// returns `public` and `unlisted` rooms but not `private` ones. `null` means
+  /// no filter on that axis.
   ///
   /// Authorization is the implementation's job: this returning a room is an
   /// assertion that the caller may see it.
@@ -47,8 +50,9 @@ class RoomDescriptor {
     required this.displayName,
     required this.worldType,
     required this.foyerVisibility,
+    required this.ownerId,
     this.worldConfig = const {},
-    this.owner,
+    this.ownerDisplayName,
     this.editorIds = const [],
   });
 
@@ -75,8 +79,20 @@ class RoomDescriptor {
   /// sets, body layouts) out of the engine's contract.
   final Map<String, Object?> worldConfig;
 
-  /// The room's owner, if the implementation resolves owner identity.
-  final RealmUser? owner;
+  /// The room owner's id. Every room has an owner.
+  final UserId ownerId;
+
+  /// The owner's display name, denormalised so a listing needs no profile join.
+  ///
+  /// **This is the only owner PII a room listing exposes — deliberately.** An
+  /// earlier shape carried a full `RealmUser` here, which meant `listRooms()`
+  /// (and therefore a public foyer enumerating every room) handed out every
+  /// owner's email, username and provider claims. That is the same audience
+  /// boundary `PresenceService` hashes for, left wide open on the listing path
+  /// (Tesla's catch). Narrowing to id + display name closes it, and matches the
+  /// real room record, which stores `ownerId` + `ownerDisplayName`, never a
+  /// joined user.
+  final String? ownerDisplayName;
 
   /// Users granted edit rights beyond the owner.
   final List<UserId> editorIds;

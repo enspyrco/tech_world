@@ -41,7 +41,10 @@ void main() {
         throwsA(isA<WorldTypeNotRegistered>()),
       );
 
-      registry.register('tech_world', _StubWorld.new);
+      final id = registry.register('tech_world', _StubWorld.new);
+      // register returns the branded id directly — no need to re-parse the wire
+      // string, which is the door where a re-threaded string could drift.
+      expect(id.value, 'tech_world');
       expect(WorldTypeId.parse('tech_world', registry).value, 'tech_world');
     });
 
@@ -82,6 +85,7 @@ void main() {
         displayName: 'Wizards Tower',
         worldType: WorldTypeId.parse('tech_world', registry),
         foyerVisibility: FoyerVisibility.public,
+        ownerId: const UserId('owner-1'),
       );
 
       final world = registry.instantiate(descriptor);

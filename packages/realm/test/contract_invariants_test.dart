@@ -50,6 +50,14 @@ void main() {
     test('unknown wire strings return null', () {
       expect(LeaveReason.tryParse('kicked'), isNull);
     });
+
+    test('parse is the strict door — throws on unknown, symmetric with tryParse',
+        () {
+      for (final v in LeaveReason.values) {
+        expect(LeaveReason.parse(v.wire), v);
+      }
+      expect(() => LeaveReason.parse('kicked'), throwsArgumentError);
+    });
   });
 
   group('RoomRef federation reservation', () {
@@ -59,15 +67,17 @@ void main() {
     });
 
     test('FederatedRoomRef cannot be constructed in v1', () {
-      // Reserved-but-never-emitted. The type exists so that v2 can start
-      // emitting it without breaking any exhaustive switch; the assertion is
-      // what stops "exists" from sliding into "used" before federation is real.
+      // Reserved-but-never-emitted. The type exists so v2 can start emitting it
+      // without breaking any exhaustive switch; the unconditional throw is what
+      // stops "exists" from sliding into "used" before federation is real.
+      // UnsupportedError (not AssertionError) so the guard holds in release and
+      // profile builds too — asserts are stripped there, a throw is not.
       expect(
         () => FederatedRoomRef(
           operatorUri: Uri.parse('https://other.example'),
           roomId: const RoomId('room-1'),
         ),
-        throwsA(isA<AssertionError>()),
+        throwsUnsupportedError,
       );
     });
 

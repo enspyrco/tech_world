@@ -52,11 +52,16 @@ class WorldTypeRegistry {
 
   final Map<String, World Function(RoomDescriptor)> _registered = {};
 
-  /// Registers [factory] under the [wire] string.
+  /// Registers [factory] under the [wire] string and returns its branded id.
+  ///
+  /// Returning the [WorldTypeId] means a caller that has just registered a type
+  /// holds a validated id without threading [wire] back through
+  /// [WorldTypeId.parse] — one door, no chance for the re-parsed string to
+  /// drift from the registered one (Tesla's catch).
   ///
   /// Throws [StateError] if [wire] is already registered and [allowOverride]
   /// is false.
-  void register(
+  WorldTypeId register(
     String wire,
     World Function(RoomDescriptor) factory, {
     bool allowOverride = false,
@@ -66,6 +71,7 @@ class WorldTypeRegistry {
           'Pass allowOverride: true to replace.');
     }
     _registered[wire] = factory;
+    return WorldTypeId._(wire);
   }
 
   /// Whether [wire] names a registered world type.

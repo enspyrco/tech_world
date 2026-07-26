@@ -93,6 +93,18 @@ enum LeaveReason {
   /// The on-the-wire representation, stable across renames of the Dart value.
   final String wire;
 
+  /// Parses [wire] strictly, throwing [ArgumentError] on an unknown string.
+  ///
+  /// Ships alongside [tryParse] as the same "two doors at the boundary" pair as
+  /// [FoyerVisibility] — a strict door for callers that want a loud failure on
+  /// a malformed wire value, a lenient one for callers that choose their own
+  /// fallback.
+  static LeaveReason parse(String wire) => values.firstWhere(
+        (v) => v.wire == wire,
+        orElse: () =>
+            throw ArgumentError.value(wire, 'wire', 'Unknown LeaveReason'),
+      );
+
   /// Parses [wire], returning `null` on an unknown string.
   static LeaveReason? tryParse(String wire) {
     for (final v in values) {

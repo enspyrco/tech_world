@@ -26,23 +26,33 @@ class LocalRoomRef extends RoomRef {
 
 /// A room on another operator's instance. **Declared in v1, emitted only in v2.**
 ///
-/// v1 implementations MUST NOT construct this. The assertion below gives
-/// debug builds a loud failure on accidental construction; release-mode v1
-/// builds rely on `realm_lints` rule (c), and until that ships, on cage-match
-/// grep for `FederatedRoomRef(`.
+/// The type is *declared* in v1 so that every consumer's exhaustive `switch`
+/// over [RoomRef] already carries an arm for it — which is exactly what lets v2
+/// begin *emitting* it without breaking a single switch. But v1 must never
+/// *construct* one, and the constructor enforces that by throwing
+/// unconditionally.
+///
+/// **Why an unconditional `throw`, not an `assert`** (Kelvin + Tesla's catch): a
+/// constructor `assert` is stripped from release and profile builds, so the
+/// reservation would hold in tests and dev but silently evaporate exactly where
+/// users run. A `throw` is a runtime law in every build mode. There is no
+/// performance cost to guard against — constructing this in v1 is never a hot
+/// path; it is never meant to happen at all.
+///
+/// **v2 activation** replaces this constructor body (same file, same sealed
+/// surface — the [RoomRef] family and every consumer switch stay untouched).
+/// There is deliberately no mutable "federation active" flag to flip: a flag
+/// would have to live library-private in this file anyway (so a sibling v2
+/// file couldn't reach it), and it was the very thing forcing the release-strip
+/// hole. Deleting it removes the coupling instead of guarding it.
 class FederatedRoomRef extends RoomRef {
-  /// References [roomId] hosted by the operator at [operatorUri].
-  ///
-  /// Throws in debug builds while federation is inactive, which is always in
-  /// v1 — see the class doc.
-  FederatedRoomRef({required this.operatorUri, required this.roomId})
-      : assert(
-          _federationActive,
-          'FederatedRoomRef cannot be constructed in v1 — reserved but never '
-          'emitted per the v1 federation constraints. If you see this in a v2 '
-          'stack trace, the federation capability was not activated before '
-          'construction.',
-        );
+  /// Always throws in v1 — see the class doc.
+  FederatedRoomRef({required this.operatorUri, required this.roomId}) {
+    throw UnsupportedError(
+      'FederatedRoomRef is reserved for v2 federation and cannot be '
+      'constructed in v1.',
+    );
+  }
 
   /// Base URI of the operator hosting [roomId].
   final Uri operatorUri;
@@ -50,19 +60,3 @@ class FederatedRoomRef extends RoomRef {
   /// The referenced room, in the remote operator's id space.
   final RoomId roomId;
 }
-
-/// Whether cross-operator federation is active in this process.
-///
-/// v1 never flips this — it exists so the [FederatedRoomRef] assertion has
-/// something to read, and so v2's `FederationGraphStore` gets a single,
-/// greppable switch to flip at init rather than an `assert` the engine has to
-/// delete.
-///
-/// Deliberately **library-private**: no consumer outside the engine can flip
-/// it, so no consumer can talk itself past the v1 guard. v2's federation code
-/// ships inside this library and flips it there.
-///
-/// Deliberately **not `const`**: a const `false` would let the compiler treat
-/// the assertion as dead code, which is exactly the enforcement we want alive.
-// ignore: prefer_final_fields
-bool _federationActive = false;

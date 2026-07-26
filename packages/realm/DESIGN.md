@@ -63,6 +63,30 @@ Recorded here so a later hand does not rediscover them the hard way:
   `BubbleManager`** since this doc was written. None are mentioned here; step 6's wrap PR
   wraps a `TechWorld` that is thinner and more collaborator-heavy than the design pictured.
 
+### Cage-match residuals carried forward (PR #521, step-3 review)
+
+Two findings from the step-3 cage-match are real but out of scope for an interfaces-only
+PR; tracked here so they're addressed at the right step rather than lost:
+
+- **`PublicProjection` semantic opacity is impl-enforced, not type-enforced.** The
+  audience-narrowed return types stop a `FullProjection` from flowing to the foyer, but
+  `PublicProjection.userIdHash` / `opaqueAvatarRef` are a bare `String` / `Uri?` — a lazy
+  implementation could put a raw `userId` or a stable cross-room avatar URL in them and
+  re-identify users across rooms. The engine cannot mint the room-salted hash itself
+  (hashing needs a crypto dep the no-leak rule forbids), so a branded `UserIdHash` here
+  would be a name tag, not a key. The real close is the `realm_test` conformance package
+  (Open Q #10) asserting the salt property against each implementation — deferred with the
+  rest of `realm_test`, not bodged with a half-brand that gives false assurance.
+
+- **Branded ids don't carry registry identity.** A `WorldTypeId` parsed against registry A
+  can be passed to `instantiate` on registry B if the wire string collides. The design's
+  "one registry per engine instance" model treats cross-registry mixing as a misuse it
+  doesn't defend at the type level; enforcing registry-identity in the brand is heavier than
+  a v1 with no multi-tenant runtime warrants. Revisit if/when multiple live registries share
+  one process. (`RoomId` / `UserId` staying open `extension type(String)` is deliberate and
+  NOT on this list: the reconcile confirmed rooms use Firestore 20-char auto-ids, so
+  enforcing a UUID shape would reject the ids actually in use.)
+
 ## Why
 
 Two pulls converged this week:
