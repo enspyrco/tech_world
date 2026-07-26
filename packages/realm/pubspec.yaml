@@ -6,11 +6,16 @@ description: >-
   vocabulary. See DESIGN.md for the architectural pin.
 publish_to: none
 version: 0.0.1
-# LICENSE intentionally omitted — the engine's license is an OPEN decision
-# (task #1059). Sources currently disagree (handoff/memory say "Apache-2.0";
-# DESIGN.md says "AGPL v3 + open-core"). No LICENSE file lands until #1059
-# is resolved; do NOT infer the license from this skeleton.
+# LICENSE file not yet shipped. The license itself is DECIDED — AGPL v3 with a
+# linking exception, so that worlds built on the engine may carry any license
+# (see DESIGN.md, "License and business model"). What remains is wording, not
+# choice: AGPL-plus-linking-exception is less standard than the GPL Classpath
+# exception and wants a legal read, then a CLA, then the NOTICE/header sweep.
 
 environment:
   sdk: ^3.6.0
+
 resolution: workspace
+
+dev_dependencies:
+  test: ^1.25.0

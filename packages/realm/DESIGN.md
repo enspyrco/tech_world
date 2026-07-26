@@ -11,6 +11,58 @@ This document is the architectural pin. It must be cage-matched before any extra
 - Will become: `packages/realm/README.md` once the engine is extracted and the package publishes.
 - Decision posture: provisional. Names, interface shapes, and scoping are open until the cage-match closes.
 
+### Migration progress
+
+- **Step 1 (design + cage-match): done.** This doc, 6-round cage-matched, merged.
+- **Step 2 (workspace scaffold): done.** Merged as PR #520 — root became a Dart/Flutter
+  pub workspace with three empty members (`packages/realm`, `packages/realm_firebase`,
+  `examples/livekit-token-server`).
+- **Step 3 (engine interfaces): in review.** The five interfaces + `World` + the two
+  registries now live in `packages/realm/lib/src/`, exported from `realm.dart`.
+  Declarations and value types only — **no implementations, and zero consumers wired**,
+  so the "CI green, no behaviour change" promise is literal rather than nominal. CI now
+  iterates workspace members (root `flutter test` does not descend into them).
+
+### Migration reality — what a code reconcile found the interfaces will meet (2026-07-26)
+
+The interface shapes below were pinned 2026-06-03, ~7 weeks before a read-only reconcile
+against the current `lib/`. The interfaces held up; the value of the reconcile was mapping
+where the *consumer migration* (steps 5–7) will meet resistance the design did not name.
+Recorded here so a later hand does not rediscover them the hard way:
+
+- **`AuthProvider.getCredential` + `LiveKitTokenEndpoint`/`BearerCredential` is greenfield,
+  not a refactor.** The client holds no token today: `retrieveLiveKitToken` is a Firebase
+  *callable* (`livekit_service.dart`), auth attached transparently by the SDK. There is no
+  `getIdToken` anywhere on `AuthService`. Wiring the bearer/HTTP model is a build, and the
+  per-provider exchange server (`examples/<provider>-exchange/`) is unstarted.
+- **`PresenceService` is a name collision with a different concept.** A class of that name
+  already exists (`lib/rooms/presence_service.dart`): one Firestore doc per user *globally*,
+  `watchAll()` broadcasting full display names / avatars / userIds / `lastSeen` to every
+  client. The engine's projection-by-audience interface describes the *fix*, not today's
+  behaviour. No live collision yet (nothing in `lib/` imports `package:realm`); the existing
+  class is absorbed at step 7.
+- **`worldType` and `FoyerVisibility` exist on no room document.** Rooms carry `isPublic`
+  (bool) and no world type at all. `WorldTypeRegistry` has nothing to validate against, and
+  bool→3-state is a data migration with a default-on-read for every legacy doc. Use
+  `FoyerVisibility.tryParse` at that boundary — `parse` throws, and every legacy doc is an
+  unknown wire value.
+- **Web Google sign-in cannot be a `signIn(AuthMethod)` call.** The shipping web flow is a
+  two-phase GIS handshake (render a Google-owned button, receive events) — there is no
+  method to call and await. The extension point is right for native and for future providers;
+  the web-Google consumer migration needs its own shape.
+- **`NewRoomSpec` was referenced in this doc but never defined.** Step 3 defines it concretely
+  (`room_config_store.dart`): `worldConfig` opaque, `foyerVisibility` defaulting to `private`.
+- **`RoomData.fromFirestore` performs writes during a read** (self-healing rename/wall-style
+  migrations). A no-leak `RoomConfigStore.getRoom` cannot self-heal inside a parse; that logic
+  relocates in step 5.
+- **`RoomSession` reads no room config today** — `RoomData` arrives fully-formed from its
+  caller; its only direct Firestore touch is an existence-only room-deletion listener. So
+  step 6's "`RoomSession` reads `worldType` from `RoomConfigStore`" is a *new* responsibility,
+  not a redirect. Open Questions #5 and #8 remain accurate; the DI seam count is now five.
+- **`TechWorld` has delegated substantial state to `LiveKitGameBridge`, `DoorManager` and
+  `BubbleManager`** since this doc was written. None are mentioned here; step 6's wrap PR
+  wraps a `TechWorld` that is thinner and more collaborator-heavy than the design pictured.
+
 ## Why
 
 Two pulls converged this week:
@@ -917,7 +969,7 @@ A single mechanical refactor PR can't do this — too much surface. The path:
 
 1. **Design note + cage-match** (this doc). Pin the contract.
 2. **Workspace scaffold PR**. Create `packages/realm/`, `packages/realm_firebase/`, `worlds/tech_world/` (initially empty), AND `examples/livekit-token-server/` as a workspace member with its own `pubspec.yaml` (importing `packages/realm/` but not imported by it). Set up Dart workspace, ensure `flutter test` + `flutter analyze --fatal-infos` run across all members. No code moves yet. CI green. **Note**: the `examples/livekit-token-server/` member is one of the two structural artifacts that make the engine-vs-server-package boundary real (the other lands in step 4 below). Until both exist, the boundary the design pin claims is aspirational.
-3. **Engine interface PR**. Define `AuthProvider`, `RoomConfigStore`, `StorageProvider`, `LiveKitTokenEndpoint`, `PresenceService` in `packages/realm/`, plus the `World` abstract interface class (and the `WorldTypeRegistry` + `StorageBackendRegistry` instance types the engine entry point threads through). No implementations yet. CI green.
+3. **Engine interface PR** — *done, in review.* Define `AuthProvider`, `RoomConfigStore`, `StorageProvider`, `LiveKitTokenEndpoint`, `PresenceService` in `packages/realm/`, plus the `World` abstract interface class (and the `WorldTypeRegistry` + `StorageBackendRegistry` instance types the engine entry point threads through). No implementations yet. CI green. The `realm_lints` (Open Q #9) and `realm_test` conformance (Open Q #10) packages were deliberately **deferred to their own PR** — an analyzer plugin and a conformance harness each dominate review, and the design's compensating control (cage-match grep) already covers the interim. The `VectorPreview` rendering contract ships prose-grade until then. CI change landed with this step: root `flutter test` does **not** descend into workspace members (root `flutter analyze` does — both verified empirically under the pinned toolchain), so both workflows now iterate members.
 4. **Provider plugin PR**. Implement Firebase-backed versions in `packages/realm_firebase/`: `FirebaseAuthProvider`, `FirestoreRoomConfigStore`, `FirebaseStorageProvider`. Tech World still calls Firebase directly. Wire the **engine-package dependency whitelist** into CI: a `dart pub deps --json` check that fails the build if `packages/realm/`'s resolved transitive deps contain any signing/HMAC/crypto primitive (e.g. `crypto`, `cryptography`, `pointycastle`). This is the second structural artifact for the engine-vs-server-package boundary (paired with `examples/livekit-token-server/` from step 2) — the structural mechanism that prevents a future PR from re-adding `SignedRequest` or any other secret-bearing strategy to the engine package. CI green.
 5. **Consumer migration PRs** (one per consumer, parallel-safe). Move `AuthService` callers to `AuthProvider`. Move Firestore room reads to `RoomConfigStore`. Move `firebase_storage` calls to `StorageProvider`. Each PR is small, cage-matchable.
 6. **`TechWorld` wrap PR**. Refactor `TechWorld` → `class TechWorld extends flame.World with TapCallbacks implements World` (per the single-inheritance constraint — World is an interface, not a base class). `RoomSession` reads `worldType` from `RoomConfigStore`, dispatches via `WorldTypeRegistry`. Code moves from `lib/` to `worlds/tech_world/lib/`. CI green. **Behavior change is limited to native bundle paths**: iOS `cc.imagineering.techWorld` bundle ID and Firebase config tied to that ID are preserved; `pubspec.yaml` asset paths require adjustment; `lib/main.dart` stays as a thin shell at the workspace root that wires up worlds. The claim is NOT "zero behavior change for everything" — it's "zero gameplay behavior change for existing Tech World users, with documented native-bundle changes contained to a sub-step (6.5: bundle-path migration)".
