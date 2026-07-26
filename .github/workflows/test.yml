@@ -49,6 +49,44 @@ jobs:
         run: flutter analyze --fatal-infos
       - name: Run tests with coverage
         run: flutter test --coverage
+      - name: Run workspace member tests
+        # `flutter test` at the workspace root does NOT descend into member
+        # packages (verified empirically under this pinned Flutter: root
+        # `flutter analyze` IS workspace-wide, root `flutter test` is NOT).
+        # Without this loop a member's tests — e.g. the engine's no-leak guard
+        # in packages/realm — silently never run. Auto-discovers by globbing
+        # for a test/ dir under each member root so a new member is covered
+        # without editing this workflow.
+        run: |
+          set -e
+          shopt -s nullglob  # unmatched globs expand to nothing, not a literal
+          tested=0
+          for testdir in packages/*/test examples/*/test worlds/*/test; do
+            [ -d "$testdir" ] || continue
+            pkg=$(dirname "$testdir")
+            # Pick the runner by package type: a Flutter package (declares the
+            # flutter SDK) needs `flutter test`; a pure-Dart package uses `dart
+            # test`. Hardcoding `dart test` would fail on the first Flutter
+            # member (e.g. packages/realm_firebase in step 4) for the wrong
+            # reason, tempting a "fix" by deleting the step (Tesla's catch).
+            if grep -qE '^\s*(sdk:\s*flutter|flutter:)' "$pkg/pubspec.yaml" 2>/dev/null; then
+              echo "== flutter test in $pkg =="
+              (cd "$pkg" && flutter test)
+            else
+              echo "== dart test in $pkg =="
+              (cd "$pkg" && dart test)
+            fi
+            tested=$((tested + 1))
+          done
+          echo "workspace member packages tested: $tested"
+          # Fail closed: a layout rename or a lost test/ dir would make the glob
+          # match nothing and the loop exit 0 — the silent-skip this whole step
+          # exists to prevent. If nothing was found, that is the failure, not a
+          # pass.
+          if [ "$tested" -eq 0 ]; then
+            echo "ERROR: no workspace member tests were discovered — expected at least packages/realm/test. Layout drift?" >&2
+            exit 1
+          fi
       - name: Install lcov
         run: sudo apt-get install -y lcov
       - name: Remove untestable files from coverage

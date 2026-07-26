@@ -11,6 +11,103 @@ This document is the architectural pin. It must be cage-matched before any extra
 - Will become: `packages/realm/README.md` once the engine is extracted and the package publishes.
 - Decision posture: provisional. Names, interface shapes, and scoping are open until the cage-match closes.
 
+### Migration progress
+
+- **Step 1 (design + cage-match): done.** This doc, 6-round cage-matched, merged.
+- **Step 2 (workspace scaffold): done.** Merged as PR #520 — root became a Dart/Flutter
+  pub workspace with three empty members (`packages/realm`, `packages/realm_firebase`,
+  `examples/livekit-token-server`).
+- **Step 3 (engine interfaces): in review.** The five interfaces + `World` + the two
+  registries now live in `packages/realm/lib/src/`, exported from `realm.dart`.
+  Declarations and value types only — **no implementations, and zero consumers wired**,
+  so the "CI green, no behaviour change" promise is literal rather than nominal. CI now
+  iterates workspace members (root `flutter test` does not descend into them).
+
+### Migration reality — what a code reconcile found the interfaces will meet (2026-07-26)
+
+The interface shapes below were pinned 2026-06-03, ~7 weeks before a read-only reconcile
+against the current `lib/`. The interfaces held up; the value of the reconcile was mapping
+where the *consumer migration* (steps 5–7) will meet resistance the design did not name.
+Recorded here so a later hand does not rediscover them the hard way:
+
+- **`AuthProvider.getCredential` + `LiveKitTokenEndpoint`/`BearerCredential` is greenfield,
+  not a refactor.** The client holds no token today: `retrieveLiveKitToken` is a Firebase
+  *callable* (`livekit_service.dart`), auth attached transparently by the SDK. There is no
+  `getIdToken` anywhere on `AuthService`. Wiring the bearer/HTTP model is a build, and the
+  per-provider exchange server (`examples/<provider>-exchange/`) is unstarted.
+- **`PresenceService` is a name collision with a different concept.** A class of that name
+  already exists (`lib/rooms/presence_service.dart`): one Firestore doc per user *globally*,
+  `watchAll()` broadcasting full display names / avatars / userIds / `lastSeen` to every
+  client. The engine's projection-by-audience interface describes the *fix*, not today's
+  behaviour. No live collision yet (nothing in `lib/` imports `package:realm`); the existing
+  class is absorbed at step 7.
+- **`worldType` and `FoyerVisibility` exist on no room document.** Rooms carry `isPublic`
+  (bool) and no world type at all. `WorldTypeRegistry` has nothing to validate against, and
+  bool→3-state is a data migration with a default-on-read for every legacy doc. Use
+  `FoyerVisibility.tryParse` at that boundary — `parse` throws, and every legacy doc is an
+  unknown wire value.
+- **Web Google sign-in cannot be a `signIn(AuthMethod)` call.** The shipping web flow is a
+  two-phase GIS handshake (render a Google-owned button, receive events) — there is no
+  method to call and await. The extension point is right for native and for future providers;
+  the web-Google consumer migration needs its own shape.
+- **`NewRoomSpec` was referenced in this doc but never defined.** Step 3 defines it concretely
+  (`room_config_store.dart`): `worldConfig` opaque, `foyerVisibility` defaulting to `private`.
+- **`RoomData.fromFirestore` performs writes during a read** (self-healing rename/wall-style
+  migrations). A no-leak `RoomConfigStore.getRoom` cannot self-heal inside a parse; that logic
+  relocates in step 5.
+- **`RoomSession` reads no room config today** — `RoomData` arrives fully-formed from its
+  caller; its only direct Firestore touch is an existence-only room-deletion listener. So
+  step 6's "`RoomSession` reads `worldType` from `RoomConfigStore`" is a *new* responsibility,
+  not a redirect. Open Questions #5 and #8 remain accurate; the DI seam count is now five.
+- **`TechWorld` has delegated substantial state to `LiveKitGameBridge`, `DoorManager` and
+  `BubbleManager`** since this doc was written. None are mentioned here; step 6's wrap PR
+  wraps a `TechWorld` that is thinner and more collaborator-heavy than the design pictured.
+
+### Cage-match residuals carried forward (PR #521, step-3 review)
+
+Two findings from the step-3 cage-match are real but out of scope for an interfaces-only
+PR; tracked here so they're addressed at the right step rather than lost:
+
+- **`PublicProjection` semantic opacity is impl-enforced, not type-enforced.** The
+  audience-narrowed return types stop a `FullProjection` from flowing to the foyer, and
+  `userIdHash` is now a branded `UserIdHash` (not `String`) so a raw `UserId` can't be
+  *accidentally* assigned into it — but the brand does not prove the value is actually
+  room-salted (hashing needs a crypto dep the no-leak rule forbids), and `opaqueAvatarRef`
+  is still a `Uri?` a stable CDN URL can smuggle identity through. The brand closes the API
+  footgun; the crypto/opacity obligation stays with the implementation and is verified by
+  the `realm_test` conformance package (Open Q #10) — deferred with the rest of `realm_test`,
+  not bodged with a mint path the engine can't hold.
+
+- **Branded ids don't carry registry identity, and extension types are forgeable by cast.**
+  A `WorldTypeId` parsed against registry A can be passed to `instantiate` on registry B if
+  the wire string collides, and because `extension type` is erased at runtime, `'tech_world'
+  as WorldTypeId` forges one outright. The design's "one registry per engine instance" model
+  treats cross-registry mixing as a misuse it doesn't defend at the type level; enforcing
+  registry-identity in the brand is heavier than a v1 with no multi-tenant runtime warrants.
+  **Interim rule for consumers: every read path re-`parse`s the wire against its registry and
+  never trusts a cast** (Tesla). Revisit if/when multiple live registries share one process.
+  (`RoomId` / `UserId` staying open `extension type(String)` is deliberate and NOT on this
+  list: the reconcile confirmed rooms use Firestore 20-char auto-ids, so enforcing a UUID
+  shape would reject the ids actually in use.)
+
+- **`LeaveReason.portalTransit` is reserved-but-freely-emittable.** Unlike `FederatedRoomRef`
+  — whose constructor throws, so v1 cannot produce one in any build mode — `portalTransit`
+  is a plain enum value any v1 caller can pass to `onLeave`. An enum value can't guard its
+  own emission the way a constructor can. There is no v1 consumer to mislead yet, and
+  DESIGN's canonical consumer pattern already fail-fasts on it, but the asymmetry is real:
+  the first "portal preview" that emits it will have every exhaustive switch "handle" a state
+  that shouldn't exist. Close when federation lands (an engine-owned leave factory that only
+  mints `userLeft`/`disconnect` in v1), or accept it here (Tesla).
+
+- **`RoomConfigStore` has no metadata-update door.** `updateRoomConfig` patches only
+  `worldConfig`; there is no contract method to rename a room, change its `foyerVisibility`,
+  or edit `editorIds` — all of which the real `RoomService` does (`updateRoomName`,
+  `setPublic`, `addEditor`/`removeEditor`). Step 5 must either add an explicit metadata-update
+  surface to this interface or it will invent a side channel that bypasses the no-leak
+  boundary. Named here rather than added speculatively, per the design's own "extract on
+  second use, not speculation" rule — the shape firms up when step 5 has a real consumer
+  (Tesla).
+
 ## Why
 
 Two pulls converged this week:
@@ -280,7 +377,8 @@ class RoomDescriptor {
   final String displayName;
   final WorldTypeId worldType;             // branded — registered worlds only
   final Map<String, Object?> worldConfig;  // opaque to engine; each World owns parseConfig()
-  final RealmUser? owner;
+  final UserId ownerId;                    // NOT full RealmUser — listRooms() feeds a public
+  final String? ownerDisplayName;          // foyer; owner email/username/claims must not leak there
   final List<UserId> editorIds;
   final FoyerVisibility foyerVisibility;
   // NOTE: federation's `connectedTo` field is deliberately NOT here in v1.
@@ -572,12 +670,12 @@ class FullProjection extends PeerPresence {
   final Map<String, Object?> worldMetadata;  // opaque, parsed by World
 }
 
-class PublicProjection extends PeerPresence {
+final class PublicProjection extends PeerPresence {   // `final` leaf — no cross-package subclass
   const PublicProjection({
     required this.userIdHash,     // stable per-room SHA256(roomId || userId)[:8]
-    required this.opaqueAvatarRef,  // optional opaque ref the foyer can render
+    this.opaqueAvatarRef,         // optional opaque ref the foyer can render
   });
-  final String userIdHash;        // NOT user-identifying across rooms
+  final UserIdHash userIdHash;    // branded, NOT String — a raw UserId can't be assigned here
   final Uri? opaqueAvatarRef;     // optional; absent if user opted out
   // Deliberately: no `joinedAt`. Timing info is in-room-PII per pii_policy.dart;
   // exposing it cross-room would let any foyer observer build a longitudinal
@@ -917,7 +1015,7 @@ A single mechanical refactor PR can't do this — too much surface. The path:
 
 1. **Design note + cage-match** (this doc). Pin the contract.
 2. **Workspace scaffold PR**. Create `packages/realm/`, `packages/realm_firebase/`, `worlds/tech_world/` (initially empty), AND `examples/livekit-token-server/` as a workspace member with its own `pubspec.yaml` (importing `packages/realm/` but not imported by it). Set up Dart workspace, ensure `flutter test` + `flutter analyze --fatal-infos` run across all members. No code moves yet. CI green. **Note**: the `examples/livekit-token-server/` member is one of the two structural artifacts that make the engine-vs-server-package boundary real (the other lands in step 4 below). Until both exist, the boundary the design pin claims is aspirational.
-3. **Engine interface PR**. Define `AuthProvider`, `RoomConfigStore`, `StorageProvider`, `LiveKitTokenEndpoint`, `PresenceService` in `packages/realm/`, plus the `World` abstract interface class (and the `WorldTypeRegistry` + `StorageBackendRegistry` instance types the engine entry point threads through). No implementations yet. CI green.
+3. **Engine interface PR** — *done, in review.* Define `AuthProvider`, `RoomConfigStore`, `StorageProvider`, `LiveKitTokenEndpoint`, `PresenceService` in `packages/realm/`, plus the `World` abstract interface class (and the `WorldTypeRegistry` + `StorageBackendRegistry` instance types the engine entry point threads through). No implementations yet. CI green. The `realm_lints` (Open Q #9) and `realm_test` conformance (Open Q #10) packages were deliberately **deferred to their own PR** — an analyzer plugin and a conformance harness each dominate review, and the design's compensating control (cage-match grep) already covers the interim. The `VectorPreview` rendering contract ships prose-grade until then. CI change landed with this step: root `flutter test` does **not** descend into workspace members (root `flutter analyze` does — both verified empirically under the pinned toolchain), so both workflows now iterate members.
 4. **Provider plugin PR**. Implement Firebase-backed versions in `packages/realm_firebase/`: `FirebaseAuthProvider`, `FirestoreRoomConfigStore`, `FirebaseStorageProvider`. Tech World still calls Firebase directly. Wire the **engine-package dependency whitelist** into CI: a `dart pub deps --json` check that fails the build if `packages/realm/`'s resolved transitive deps contain any signing/HMAC/crypto primitive (e.g. `crypto`, `cryptography`, `pointycastle`). This is the second structural artifact for the engine-vs-server-package boundary (paired with `examples/livekit-token-server/` from step 2) — the structural mechanism that prevents a future PR from re-adding `SignedRequest` or any other secret-bearing strategy to the engine package. CI green.
 5. **Consumer migration PRs** (one per consumer, parallel-safe). Move `AuthService` callers to `AuthProvider`. Move Firestore room reads to `RoomConfigStore`. Move `firebase_storage` calls to `StorageProvider`. Each PR is small, cage-matchable.
 6. **`TechWorld` wrap PR**. Refactor `TechWorld` → `class TechWorld extends flame.World with TapCallbacks implements World` (per the single-inheritance constraint — World is an interface, not a base class). `RoomSession` reads `worldType` from `RoomConfigStore`, dispatches via `WorldTypeRegistry`. Code moves from `lib/` to `worlds/tech_world/lib/`. CI green. **Behavior change is limited to native bundle paths**: iOS `cc.imagineering.techWorld` bundle ID and Firebase config tied to that ID are preserved; `pubspec.yaml` asset paths require adjustment; `lib/main.dart` stays as a thin shell at the workspace root that wires up worlds. The claim is NOT "zero behavior change for everything" — it's "zero gameplay behavior change for existing Tech World users, with documented native-bundle changes contained to a sub-step (6.5: bundle-path migration)".
@@ -971,32 +1069,40 @@ Three increasingly ambitious federation models, named for vocabulary, none imple
      const RoomRef();
    }
    /// Same-operator room reference. v1 emits; v2 also emits.
-   class LocalRoomRef extends RoomRef {
+   /// `final` leaf: sealed root + final leaves = a closed value hierarchy no
+   /// other package can subclass.
+   final class LocalRoomRef extends RoomRef {
      const LocalRoomRef(this.roomId);
      final RoomId roomId;
    }
    /// Cross-operator federation reference. **Declared in v1, emitted only in v2.**
-   /// v1 implementations MUST NOT construct this; the assertion below catches
-   /// accidental construction in dev/debug builds. v2 disables the assertion
-   /// inside `FederationGraphStore` via a `@FederationCapability` annotation
-   /// + an analyzer rule (see `realm_lints` open question).
-   /// v1 consumers MUST handle this in exhaustive switches; canonical pattern
-   /// for the v1 branch is shown below the code block.
-   class FederatedRoomRef extends RoomRef {
-     FederatedRoomRef({required this.operatorUri, required this.roomId})
-         : assert(_federationActive, 'FederatedRoomRef cannot be constructed in v1 — '
-             'reserved-but-never-emitted per the v1 federation constraints. '
-             'If you see this in a v2 stack trace, the federation capability '
-             'token was not set before construction.');
+   /// v1 implementations MUST NOT construct this — the constructor throws
+   /// UNCONDITIONALLY (an `assert` would be stripped from release/profile builds,
+   /// so the reservation would evaporate exactly where users run). There is
+   /// deliberately no mutable "federation active" flag: it was the very thing
+   /// forcing the release-strip hole. v2 activation is a *federation* concern,
+   /// deferred with the rest of it — the engine will introduce the sanctioned
+   /// mint path (likely a capability-token factory: private ctor + public
+   /// factory requiring a token only the federation subsystem can mint) rather
+   /// than a downstream package editing this file (which would violate
+   /// open/closed). v1's only commitment is: this type exists in the sealed
+   /// family but cannot be constructed.
+   final class FederatedRoomRef extends RoomRef {
+     FederatedRoomRef({required this.operatorUri, required this.roomId}) {
+       throw UnsupportedError(
+         'FederatedRoomRef is reserved for v2 federation and cannot be '
+         'constructed in v1.',
+       );
+     }
      final Uri operatorUri;
      final RoomId roomId;
    }
-   /// Top-level capability flag flipped by v2's `FederationGraphStore` at
-   /// init. v1 never flips it. The assert above gives v1 dev/debug builds
-   /// a loud failure on accidental construction; release-mode v1 builds
-   /// still pay the discipline cost in `realm_lints` rule (c).
-   bool _federationActive = false;
    ```
+
+   The contract test asserts `throwsUnsupportedError` rather than
+   `throwsA(isA<AssertionError>())`, so the reservation is proven in every build
+   mode — a test that only proved it under asserts-on would be silent about the
+   release build where it matters.
 
    The choice here is "reserve in the family, defer emission" rather than "add the variant later." The former preserves consumers' exhaustive switches across v1↔v2; the latter would break them. The discipline cost — v1 consumers writing a `case FederatedRoomRef()` arm for a thing that doesn't happen — is the price of a sealed family that remains stable across federation rollout.
 

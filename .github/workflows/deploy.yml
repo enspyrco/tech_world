@@ -58,6 +58,36 @@ jobs:
         run: flutter analyze --fatal-infos
       - name: Run tests with coverage
         run: flutter test --coverage
+      - name: Run workspace member tests
+        # See test.yml for why this loop exists: root `flutter test` does not
+        # descend into workspace members, so the engine's tests would silently
+        # never gate a deploy without it.
+        run: |
+          set -e
+          shopt -s nullglob  # unmatched globs expand to nothing, not a literal
+          tested=0
+          for testdir in packages/*/test examples/*/test worlds/*/test; do
+            [ -d "$testdir" ] || continue
+            pkg=$(dirname "$testdir")
+            # Runner by package type — see test.yml for the rationale (a Flutter
+            # member needs `flutter test`, not `dart test`).
+            if grep -qE '^\s*(sdk:\s*flutter|flutter:)' "$pkg/pubspec.yaml" 2>/dev/null; then
+              echo "== flutter test in $pkg =="
+              (cd "$pkg" && flutter test)
+            else
+              echo "== dart test in $pkg =="
+              (cd "$pkg" && dart test)
+            fi
+            tested=$((tested + 1))
+          done
+          echo "workspace member packages tested: $tested"
+          # Fail closed: a layout rename or a lost test/ dir would make the glob
+          # match nothing and the loop exit 0 — the silent-skip this step exists
+          # to prevent. Nothing found is the failure, not a pass.
+          if [ "$tested" -eq 0 ]; then
+            echo "ERROR: no workspace member tests were discovered — expected at least packages/realm/test. Layout drift?" >&2
+            exit 1
+          fi
       - name: Install lcov
         run: sudo apt-get install -y lcov
       - name: Remove untestable files from coverage
