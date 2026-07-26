@@ -13,6 +13,13 @@ import 'room_config_store.dart';
 /// - **test isolation** — parallel tests construct disjoint registries;
 /// - **hot reload** — no leftover registrations survive a restart;
 /// - **multi-tenancy** — different operators register different world types.
+///
+/// **The brand is a parse aid, not a capability.** Being an `extension type`, it
+/// is erased at runtime and forgeable by cast (`'tech_world' as WorldTypeId`),
+/// and it carries no registry watermark — an id parsed against one registry will
+/// dispatch on another that shares the wire string. So every trust-boundary read
+/// path must re-`parse` the wire against its own registry and never trust a cast
+/// or a threaded value as proof of registration.
 extension type const WorldTypeId._(String value) {
   /// Constructs from a wire string, validating against [registry].
   ///

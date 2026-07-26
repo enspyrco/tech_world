@@ -69,14 +69,14 @@ Two findings from the step-3 cage-match are real but out of scope for an interfa
 PR; tracked here so they're addressed at the right step rather than lost:
 
 - **`PublicProjection` semantic opacity is impl-enforced, not type-enforced.** The
-  audience-narrowed return types stop a `FullProjection` from flowing to the foyer, but
-  `PublicProjection.userIdHash` / `opaqueAvatarRef` are a bare `String` / `Uri?` — a lazy
-  implementation could put a raw `userId` or a stable cross-room avatar URL in them and
-  re-identify users across rooms. The engine cannot mint the room-salted hash itself
-  (hashing needs a crypto dep the no-leak rule forbids), so a branded `UserIdHash` here
-  would be a name tag, not a key. The real close is the `realm_test` conformance package
-  (Open Q #10) asserting the salt property against each implementation — deferred with the
-  rest of `realm_test`, not bodged with a half-brand that gives false assurance.
+  audience-narrowed return types stop a `FullProjection` from flowing to the foyer, and
+  `userIdHash` is now a branded `UserIdHash` (not `String`) so a raw `UserId` can't be
+  *accidentally* assigned into it — but the brand does not prove the value is actually
+  room-salted (hashing needs a crypto dep the no-leak rule forbids), and `opaqueAvatarRef`
+  is still a `Uri?` a stable CDN URL can smuggle identity through. The brand closes the API
+  footgun; the crypto/opacity obligation stays with the implementation and is verified by
+  the `realm_test` conformance package (Open Q #10) — deferred with the rest of `realm_test`,
+  not bodged with a mint path the engine can't hold.
 
 - **Branded ids don't carry registry identity, and extension types are forgeable by cast.**
   A `WorldTypeId` parsed against registry A can be passed to `instantiate` on registry B if
@@ -377,7 +377,8 @@ class RoomDescriptor {
   final String displayName;
   final WorldTypeId worldType;             // branded — registered worlds only
   final Map<String, Object?> worldConfig;  // opaque to engine; each World owns parseConfig()
-  final RealmUser? owner;
+  final UserId ownerId;                    // NOT full RealmUser — listRooms() feeds a public
+  final String? ownerDisplayName;          // foyer; owner email/username/claims must not leak there
   final List<UserId> editorIds;
   final FoyerVisibility foyerVisibility;
   // NOTE: federation's `connectedTo` field is deliberately NOT here in v1.
@@ -669,12 +670,12 @@ class FullProjection extends PeerPresence {
   final Map<String, Object?> worldMetadata;  // opaque, parsed by World
 }
 
-class PublicProjection extends PeerPresence {
+final class PublicProjection extends PeerPresence {   // `final` leaf — no cross-package subclass
   const PublicProjection({
     required this.userIdHash,     // stable per-room SHA256(roomId || userId)[:8]
-    required this.opaqueAvatarRef,  // optional opaque ref the foyer can render
+    this.opaqueAvatarRef,         // optional opaque ref the foyer can render
   });
-  final String userIdHash;        // NOT user-identifying across rooms
+  final UserIdHash userIdHash;    // branded, NOT String — a raw UserId can't be assigned here
   final Uri? opaqueAvatarRef;     // optional; absent if user opted out
   // Deliberately: no `joinedAt`. Timing info is in-room-PII per pii_policy.dart;
   // exposing it cross-room would let any foyer observer build a longitudinal

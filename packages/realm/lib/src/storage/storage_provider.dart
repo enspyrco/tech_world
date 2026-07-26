@@ -43,6 +43,10 @@ class BlobRef {
 ///
 /// Same instance-not-singleton discipline as `WorldTypeRegistry`: a registry
 /// is threaded from the engine entry point rather than consulted globally.
+///
+/// Like `WorldTypeId`, the brand is a parse aid, not a capability — erased at
+/// runtime, forgeable by cast, and carrying no registry watermark. Trust-boundary
+/// read paths re-`parse` the wire; they don't trust a cast.
 extension type const StorageBackendId._(String value) {
   /// Constructs from a wire string, validating against [registry].
   ///
