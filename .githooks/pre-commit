@@ -24,13 +24,24 @@ if [ -n "$staged" ]; then
         exit 1
     fi
 
-    # Pattern 2: long hex literal in any source/config file
-    if echo "$staged" | grep -E "^\+\+\+ b/" | grep -vE "(\.lock|\.json|test/.*fixture|node_modules/)" > /dev/null && \
-       echo "$staged" | grep -qE "^\+.*['\"][a-f0-9]{40,}['\"]"; then
-        echo "❌ Pre-commit blocked: long hex literal in staged change (40+ chars)."
-        echo "   If this is a checksum/hash and not a secret, exempt it explicitly via path."
-        exit 1
-    fi
+    # Pattern 2: long hex literal (40+ chars) in a non-exempt source/config file.
+    # The exemption MUST be scoped to the file the hex lives in. An earlier
+    # version AND-ed two whole-diff greps ("any non-exempt file touched?" &&
+    # "any 40+ hex anywhere?"), which false-positived whenever a commit touched
+    # a .dart file AND a pubspec.lock sha256 in the same diff — forcing
+    # --no-verify on PRs #520/#521. Iterate per-file so the exemption and the
+    # hex always refer to the same file (#2256).
+    while IFS= read -r _file; do
+        case "$_file" in
+            *.lock|*.json|*test/*fixture*|*node_modules/*) continue ;;
+        esac
+        if git diff --cached --diff-filter=AM -- "$_file" | grep -qE "^\+.*['\"][a-f0-9]{40,}['\"]"; then
+            echo "❌ Pre-commit blocked: long hex literal in staged change (40+ chars) in $_file."
+            echo "   If this is a checksum/hash and not a secret, exempt it explicitly via path."
+            echo "   Override (NOT recommended): git commit --no-verify"
+            exit 1
+        fi
+    done < <(git diff --cached --diff-filter=AM --name-only)
 
     # Pattern 3: known third-party API key shapes
     if echo "$staged" | grep -qE "^\+.*\b(sk-[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|AKIA[A-Z0-9]{16}|AIzaSy[A-Za-z0-9_-]{33})\b"; then
