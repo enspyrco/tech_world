@@ -122,5 +122,11 @@ void main() {
         throwsStateError,
       );
     });
+
+    test('register returns the branded id — one door, symmetric with worlds', () {
+      final id = StorageBackendRegistry().register('minio');
+      expect(id.value, 'minio');
+      expect(id, isA<StorageBackendId>());
+    });
   });
 }

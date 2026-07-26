@@ -9,7 +9,8 @@ import 'dart:typed_data';
 ///
 /// An audience-bounded sealed surface: adding a variant IS a breaking change
 /// for consumers' exhaustive switches, and lands as a minor-version bump with
-/// a migration note.
+/// a migration note. Leaves are `final` (`sealed` root + `final` leaves) so the
+/// hierarchy is closed at both ends — no other package can subclass a variant.
 sealed class RoomPreview {
   /// Creates a preview carrying [worldHints].
   const RoomPreview({required this.worldHints});
@@ -19,7 +20,7 @@ sealed class RoomPreview {
 }
 
 /// A raster snapshot — PNG/WebP bytes the foyer can blit directly.
-class RasterPreview extends RoomPreview {
+final class RasterPreview extends RoomPreview {
   /// Creates a raster preview from encoded [image] bytes.
   const RasterPreview({required this.image, required super.worldHints});
 
@@ -31,7 +32,7 @@ class RasterPreview extends RoomPreview {
 ///
 /// Lets a world describe its shape without committing to pixels, so the foyer
 /// can theme, dim, or scale the preview to match its own presentation.
-class VectorPreview extends RoomPreview {
+final class VectorPreview extends RoomPreview {
   /// Creates a vector preview from [shapes].
   const VectorPreview({required this.shapes, required super.worldHints});
 
@@ -43,7 +44,7 @@ class VectorPreview extends RoomPreview {
 ///
 /// The foyer renders a generic placeholder from [RoomPreview.worldHints] and
 /// nothing more.
-class EmptyPreview extends RoomPreview {
+final class EmptyPreview extends RoomPreview {
   /// Creates a hints-only preview.
   const EmptyPreview({required super.worldHints});
 }

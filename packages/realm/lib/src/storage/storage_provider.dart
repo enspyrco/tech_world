@@ -80,15 +80,21 @@ class StorageBackendRegistry {
 
   final Set<String> _registered = {};
 
-  /// Registers [wire] as a known backend.
+  /// Registers [wire] as a known backend and returns its branded id.
+  ///
+  /// Returns the [StorageBackendId] for the same one-door reason as
+  /// [WorldTypeRegistry.register]: a caller that just registered a backend
+  /// holds a validated id without threading [wire] back through
+  /// [StorageBackendId.parse].
   ///
   /// Throws [StateError] if already registered and [allowOverride] is false.
-  void register(String wire, {bool allowOverride = false}) {
+  StorageBackendId register(String wire, {bool allowOverride = false}) {
     if (!allowOverride && _registered.contains(wire)) {
       throw StateError('StorageBackend "$wire" is already registered. '
           'Pass allowOverride: true to replace.');
     }
     _registered.add(wire);
+    return StorageBackendId._(wire);
   }
 
   /// Whether [wire] names a registered backend.

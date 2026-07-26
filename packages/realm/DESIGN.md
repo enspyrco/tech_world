@@ -1047,32 +1047,40 @@ Three increasingly ambitious federation models, named for vocabulary, none imple
      const RoomRef();
    }
    /// Same-operator room reference. v1 emits; v2 also emits.
-   class LocalRoomRef extends RoomRef {
+   /// `final` leaf: sealed root + final leaves = a closed value hierarchy no
+   /// other package can subclass.
+   final class LocalRoomRef extends RoomRef {
      const LocalRoomRef(this.roomId);
      final RoomId roomId;
    }
    /// Cross-operator federation reference. **Declared in v1, emitted only in v2.**
-   /// v1 implementations MUST NOT construct this; the assertion below catches
-   /// accidental construction in dev/debug builds. v2 disables the assertion
-   /// inside `FederationGraphStore` via a `@FederationCapability` annotation
-   /// + an analyzer rule (see `realm_lints` open question).
-   /// v1 consumers MUST handle this in exhaustive switches; canonical pattern
-   /// for the v1 branch is shown below the code block.
-   class FederatedRoomRef extends RoomRef {
-     FederatedRoomRef({required this.operatorUri, required this.roomId})
-         : assert(_federationActive, 'FederatedRoomRef cannot be constructed in v1 — '
-             'reserved-but-never-emitted per the v1 federation constraints. '
-             'If you see this in a v2 stack trace, the federation capability '
-             'token was not set before construction.');
+   /// v1 implementations MUST NOT construct this — the constructor throws
+   /// UNCONDITIONALLY (an `assert` would be stripped from release/profile builds,
+   /// so the reservation would evaporate exactly where users run). There is
+   /// deliberately no mutable "federation active" flag: it was the very thing
+   /// forcing the release-strip hole. v2 activation is a *federation* concern,
+   /// deferred with the rest of it — the engine will introduce the sanctioned
+   /// mint path (likely a capability-token factory: private ctor + public
+   /// factory requiring a token only the federation subsystem can mint) rather
+   /// than a downstream package editing this file (which would violate
+   /// open/closed). v1's only commitment is: this type exists in the sealed
+   /// family but cannot be constructed.
+   final class FederatedRoomRef extends RoomRef {
+     FederatedRoomRef({required this.operatorUri, required this.roomId}) {
+       throw UnsupportedError(
+         'FederatedRoomRef is reserved for v2 federation and cannot be '
+         'constructed in v1.',
+       );
+     }
      final Uri operatorUri;
      final RoomId roomId;
    }
-   /// Top-level capability flag flipped by v2's `FederationGraphStore` at
-   /// init. v1 never flips it. The assert above gives v1 dev/debug builds
-   /// a loud failure on accidental construction; release-mode v1 builds
-   /// still pay the discipline cost in `realm_lints` rule (c).
-   bool _federationActive = false;
    ```
+
+   The contract test asserts `throwsUnsupportedError` rather than
+   `throwsA(isA<AssertionError>())`, so the reservation is proven in every build
+   mode — a test that only proved it under asserts-on would be silent about the
+   release build where it matters.
 
    The choice here is "reserve in the family, defer emission" rather than "add the variant later." The former preserves consumers' exhaustive switches across v1↔v2; the latter would break them. The discipline cost — v1 consumers writing a `case FederatedRoomRef()` arm for a thing that doesn't happen — is the price of a sealed family that remains stable across federation rollout.
 

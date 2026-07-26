@@ -69,6 +69,14 @@ jobs:
             tested=$((tested + 1))
           done
           echo "workspace member packages tested: $tested"
+          # Fail closed: a layout rename or a lost test/ dir would make the glob
+          # match nothing and the loop exit 0 — the silent-skip this whole step
+          # exists to prevent. If nothing was found, that is the failure, not a
+          # pass.
+          if [ "$tested" -eq 0 ]; then
+            echo "ERROR: no workspace member tests were discovered — expected at least packages/realm/test. Layout drift?" >&2
+            exit 1
+          fi
       - name: Install lcov
         run: sudo apt-get install -y lcov
       - name: Remove untestable files from coverage

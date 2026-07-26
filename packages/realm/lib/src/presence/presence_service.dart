@@ -30,6 +30,12 @@ abstract interface class PresenceService {
   ///
   /// Implementations MUST check membership — this succeeds only if [viewer] is
   /// currently present in [roomId].
+  ///
+  /// **Snapshot semantics, not delta**: each emitted `Set` is the *complete*
+  /// current participant set, not a diff. Because equality is on [userId], a
+  /// consumer folding deltas would silently drop field updates (a changed
+  /// `displayName`), so the contract is a full set per event — the implementer
+  /// re-emits the whole set on any change. Applies to both watch methods.
   Stream<Set<FullProjection>> watchInRoom(RoomId roomId, RealmUser viewer);
 
   /// Watches low-fidelity presence for a room [viewer] is NOT inside.
@@ -47,7 +53,13 @@ abstract interface class PresenceService {
 /// go on the subtype authorised to expose them.
 ///
 /// An audience-bounded sealed surface: adding a variant IS a breaking change
-/// for consumers' exhaustive switches.
+/// for consumers' exhaustive switches. The leaves are `final` so the closure is
+/// total — `sealed` alone stops another package from adding a NEW direct
+/// subtype, but not from *subclassing a leaf* (`class Leaky extends
+/// PublicProjection { String email; }`) and smuggling in-room PII onto the
+/// foyer type while still satisfying `Stream<Set<PublicProjection>>`. `sealed`
+/// root + `final` leaves is the Dart 3 idiom for a genuinely closed value
+/// hierarchy (Tesla's catch).
 sealed class PeerPresence {
   /// Creates a presence projection.
   const PeerPresence();
@@ -57,7 +69,7 @@ sealed class PeerPresence {
 ///
 /// Equality is on [userId] — participants are unique per room, and the
 /// `Set` semantics of [PresenceService.watchInRoom] depend on it.
-class FullProjection extends PeerPresence {
+final class FullProjection extends PeerPresence {
   /// Creates a full-fidelity projection.
   const FullProjection({
     required this.userId,
@@ -96,7 +108,7 @@ class FullProjection extends PeerPresence {
 ///
 /// Its job is "is anyone there? how many? render placeholders" — not activity
 /// surveillance. Equality is on [userIdHash].
-class PublicProjection extends PeerPresence {
+final class PublicProjection extends PeerPresence {
   /// Creates a public projection.
   const PublicProjection({required this.userIdHash, this.opaqueAvatarRef});
 

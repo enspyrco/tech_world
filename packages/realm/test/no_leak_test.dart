@@ -47,6 +47,19 @@ void main() {
       'dart:js_interop',
       'dart:js_util',
       'package:web/',
+      // Platform seams that would break the engine's portability claim (web,
+      // text-mode bots, any non-VM host) — Tesla's catch.
+      'dart:io',
+      'dart:ffi',
+      'dart:isolate',
+      'dart:mirrors',
+      // Relative-import escape into a sibling workspace package
+      // (`import '../../realm_firebase/lib/...'`) — bypasses the `package:` bans
+      // AND needs no dependency entry, so it would render the whole rule
+      // decorative. Legitimate intra-package imports climb at most one level
+      // (from `lib/src/<area>/` to `lib/src/`), never two, so any `../../`
+      // is an escape (Tesla's catch).
+      '../../',
     ];
 
     late final List<File> sources;

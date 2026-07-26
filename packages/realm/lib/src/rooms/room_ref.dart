@@ -16,7 +16,7 @@ sealed class RoomRef {
 }
 
 /// A room on this operator's instance. Emitted by v1 and v2 alike.
-class LocalRoomRef extends RoomRef {
+final class LocalRoomRef extends RoomRef {
   /// References the local room [roomId].
   const LocalRoomRef(this.roomId);
 
@@ -39,13 +39,18 @@ class LocalRoomRef extends RoomRef {
 /// performance cost to guard against — constructing this in v1 is never a hot
 /// path; it is never meant to happen at all.
 ///
-/// **v2 activation** replaces this constructor body (same file, same sealed
-/// surface — the [RoomRef] family and every consumer switch stay untouched).
-/// There is deliberately no mutable "federation active" flag to flip: a flag
-/// would have to live library-private in this file anyway (so a sibling v2
-/// file couldn't reach it), and it was the very thing forcing the release-strip
-/// hole. Deleting it removes the coupling instead of guarding it.
-class FederatedRoomRef extends RoomRef {
+/// **v2 activation is deferred with the rest of federation** and is NOT "a
+/// downstream package edits this constructor" — that would be an open/closed
+/// violation (Kelvin's catch). When federation lands, the engine itself
+/// introduces the sanctioned mint path (a capability-token factory is the
+/// likely shape: a private constructor plus a public factory that requires a
+/// token only the federation subsystem can produce). Designing that mint is a
+/// federation concern, so it waits; v1's only commitment is the guarantee below
+/// — this type exists in the sealed family but cannot be constructed. There is
+/// deliberately no mutable "federation active" flag: a flag was the very thing
+/// forcing the release-strip hole, and deleting it removes the coupling instead
+/// of guarding it.
+final class FederatedRoomRef extends RoomRef {
   /// Always throws in v1 — see the class doc.
   FederatedRoomRef({required this.operatorUri, required this.roomId}) {
     throw UnsupportedError(
