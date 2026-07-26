@@ -9,10 +9,9 @@ import 'world_type.dart';
 abstract interface class RoomConfigStore {
   /// Lists rooms the caller is allowed to see.
   ///
-  /// [ownedBy] filters to one owner. [minVisibility] filters by visibility,
-  /// where the ordering is **most public first**: `public` is the most visible,
-  /// then `unlisted`, then `private` (mirroring [FoyerVisibility]'s declaration
-  /// order). "min" means "at least this visible", so `minVisibility: unlisted`
+  /// [ownedBy] filters to one owner. [minVisibility] keeps rooms at least as
+  /// visible as the given level, compared via [FoyerVisibility.isAtLeast] (the
+  /// explicit rank, not declaration order) — so `minVisibility: unlisted`
   /// returns `public` and `unlisted` rooms but not `private` ones. `null` means
   /// no filter on that axis.
   ///
@@ -151,18 +150,36 @@ class NewRoomSpec {
 /// bump with a migration note.
 enum FoyerVisibility {
   /// Listed in the foyer; anyone may watch its public presence projection.
-  public('public'),
+  public('public', 3),
 
   /// Not listed, but reachable by anyone holding the room id.
-  unlisted('unlisted'),
+  unlisted('unlisted', 2),
 
   /// Not listed and not reachable without an explicit grant.
-  private('private');
+  private('private', 1);
 
-  const FoyerVisibility(this.wire);
+  const FoyerVisibility(this.wire, this.rank);
 
   /// The on-the-wire representation, stable across renames of the Dart value.
   final String wire;
+
+  /// How visible this level is — higher is more public.
+  ///
+  /// An **explicit** rank, deliberately not `Enum.index`: [minVisibility]
+  /// filtering is an authorization decision, and coupling it to declaration
+  /// order means inserting a new value (say `friendsOnly` between [public] and
+  /// [unlisted]) would silently renumber every level and rewrite every filter's
+  /// meaning. The rank is the named invariant; declaration order is free to
+  /// change (Tesla's catch). Compare via [isAtLeast], never by touching this
+  /// directly.
+  final int rank;
+
+  /// Whether this level is at least as public as [other].
+  ///
+  /// The one sanctioned way to compare visibilities — encapsulates the [rank]
+  /// ordering so no consumer reaches for `.index` or `.rank` and re-derives the
+  /// comparison (and its polarity) by hand.
+  bool isAtLeast(FoyerVisibility other) => rank >= other.rank;
 
   /// Parses [wire] strictly.
   ///

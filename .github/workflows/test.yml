@@ -64,8 +64,18 @@ jobs:
           for testdir in packages/*/test examples/*/test worlds/*/test; do
             [ -d "$testdir" ] || continue
             pkg=$(dirname "$testdir")
-            echo "== dart test in $pkg =="
-            (cd "$pkg" && dart test)
+            # Pick the runner by package type: a Flutter package (declares the
+            # flutter SDK) needs `flutter test`; a pure-Dart package uses `dart
+            # test`. Hardcoding `dart test` would fail on the first Flutter
+            # member (e.g. packages/realm_firebase in step 4) for the wrong
+            # reason, tempting a "fix" by deleting the step (Tesla's catch).
+            if grep -qE '^\s*(sdk:\s*flutter|flutter:)' "$pkg/pubspec.yaml" 2>/dev/null; then
+              echo "== flutter test in $pkg =="
+              (cd "$pkg" && flutter test)
+            else
+              echo "== dart test in $pkg =="
+              (cd "$pkg" && dart test)
+            fi
             tested=$((tested + 1))
           done
           echo "workspace member packages tested: $tested"

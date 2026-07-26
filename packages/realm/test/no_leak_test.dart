@@ -138,8 +138,13 @@ void main() {
       // `^dependencies:\s*$` only caught the bare-header block form and sailed
       // straight past the inline map — a load-bearing test with a shape hole
       // (Kelvin + Tesla's catch).
+      // Also reject `dependency_overrides:` — a loaded gun that can inject a
+      // backend into the resolved tree with no `dependencies:` entry at all
+      // (Tesla's catch). `^dependenc(ies|y_overrides):` catches both while
+      // still skipping `dev_dependencies` (starts with `dev_`).
       final hasRuntimeDeps =
-          RegExp(r'^dependencies:', multiLine: true).hasMatch(pubspec);
+          RegExp(r'^dependenc(ies|y_overrides):', multiLine: true)
+              .hasMatch(pubspec);
 
       expect(
         hasRuntimeDeps,
@@ -160,13 +165,17 @@ void main() {
       // synthetic pubspecs so a regression can't quietly reopen the hole — the
       // real-file assertion above can only ever see the (empty) real pubspec.
       bool detects(String yaml) =>
-          RegExp(r'^dependencies:', multiLine: true).hasMatch(yaml);
+          RegExp(r'^dependenc(ies|y_overrides):', multiLine: true)
+              .hasMatch(yaml);
 
       // Must DETECT a declared runtime dependency, however it's written:
       expect(detects('name: x\ndependencies:\n  http: any\n'), isTrue,
           reason: 'block form');
       expect(detects('name: x\ndependencies: {http: any}\n'), isTrue,
           reason: 'inline map form');
+      // …including the dependency_overrides loaded gun:
+      expect(detects('name: x\ndependency_overrides:\n  http: any\n'), isTrue,
+          reason: 'dependency_overrides must be caught');
 
       // Must NOT fire on the legitimately-present dev_dependencies block, nor
       // on a deps-free pubspec:

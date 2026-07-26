@@ -155,7 +155,7 @@ void main() {
       // delivery), and the Set semantics are what collapse it back to one.
       final payload = ['a1b2c3d4', 'a1b2c3d4', 'ffffffff'];
       final projections =
-          payload.map((h) => PublicProjection(userIdHash: h)).toSet();
+          payload.map((h) => PublicProjection(userIdHash: UserIdHash(h))).toSet();
 
       expect(projections, hasLength(2));
     });
@@ -163,9 +163,18 @@ void main() {
     test('a foyer projection still counts opted-out users', () {
       // opaqueAvatarRef is optional; userIdHash is not. Without that, a room
       // full of opted-out users would be indistinguishable from an empty one.
-      const opted = PublicProjection(userIdHash: 'a1b2c3d4');
+      const opted = PublicProjection(userIdHash: UserIdHash('a1b2c3d4'));
       expect(opted.opaqueAvatarRef, isNull);
-      expect(opted.userIdHash, isNotEmpty);
+      expect(opted.userIdHash.value, isNotEmpty);
+    });
+
+    test('UserIdHash is a distinct type from a raw String / UserId', () {
+      // The whole point of the brand: a raw userId cannot be assigned to the
+      // hash slot without an explicit wrap, so the accidental-passthrough
+      // that would drop a real id into the foyer cannot type-check.
+      const hash = UserIdHash('a1b2c3d4');
+      expect(hash.value, 'a1b2c3d4');
+      expect(hash, isA<UserIdHash>());
     });
   });
 

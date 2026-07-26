@@ -78,14 +78,35 @@ PR; tracked here so they're addressed at the right step rather than lost:
   (Open Q #10) asserting the salt property against each implementation — deferred with the
   rest of `realm_test`, not bodged with a half-brand that gives false assurance.
 
-- **Branded ids don't carry registry identity.** A `WorldTypeId` parsed against registry A
-  can be passed to `instantiate` on registry B if the wire string collides. The design's
-  "one registry per engine instance" model treats cross-registry mixing as a misuse it
-  doesn't defend at the type level; enforcing registry-identity in the brand is heavier than
-  a v1 with no multi-tenant runtime warrants. Revisit if/when multiple live registries share
-  one process. (`RoomId` / `UserId` staying open `extension type(String)` is deliberate and
-  NOT on this list: the reconcile confirmed rooms use Firestore 20-char auto-ids, so
-  enforcing a UUID shape would reject the ids actually in use.)
+- **Branded ids don't carry registry identity, and extension types are forgeable by cast.**
+  A `WorldTypeId` parsed against registry A can be passed to `instantiate` on registry B if
+  the wire string collides, and because `extension type` is erased at runtime, `'tech_world'
+  as WorldTypeId` forges one outright. The design's "one registry per engine instance" model
+  treats cross-registry mixing as a misuse it doesn't defend at the type level; enforcing
+  registry-identity in the brand is heavier than a v1 with no multi-tenant runtime warrants.
+  **Interim rule for consumers: every read path re-`parse`s the wire against its registry and
+  never trusts a cast** (Tesla). Revisit if/when multiple live registries share one process.
+  (`RoomId` / `UserId` staying open `extension type(String)` is deliberate and NOT on this
+  list: the reconcile confirmed rooms use Firestore 20-char auto-ids, so enforcing a UUID
+  shape would reject the ids actually in use.)
+
+- **`LeaveReason.portalTransit` is reserved-but-freely-emittable.** Unlike `FederatedRoomRef`
+  — whose constructor throws, so v1 cannot produce one in any build mode — `portalTransit`
+  is a plain enum value any v1 caller can pass to `onLeave`. An enum value can't guard its
+  own emission the way a constructor can. There is no v1 consumer to mislead yet, and
+  DESIGN's canonical consumer pattern already fail-fasts on it, but the asymmetry is real:
+  the first "portal preview" that emits it will have every exhaustive switch "handle" a state
+  that shouldn't exist. Close when federation lands (an engine-owned leave factory that only
+  mints `userLeft`/`disconnect` in v1), or accept it here (Tesla).
+
+- **`RoomConfigStore` has no metadata-update door.** `updateRoomConfig` patches only
+  `worldConfig`; there is no contract method to rename a room, change its `foyerVisibility`,
+  or edit `editorIds` — all of which the real `RoomService` does (`updateRoomName`,
+  `setPublic`, `addEditor`/`removeEditor`). Step 5 must either add an explicit metadata-update
+  surface to this interface or it will invent a side channel that bypasses the no-leak
+  boundary. Named here rather than added speculatively, per the design's own "extract on
+  second use, not speculation" rule — the shape firms up when step 5 has a real consumer
+  (Tesla).
 
 ## Why
 

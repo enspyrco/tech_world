@@ -104,6 +104,23 @@ final class FullProjection extends PeerPresence {
   int get hashCode => userId.hashCode;
 }
 
+/// A per-room, salted digest of a user's id — the foyer's presence token.
+///
+/// A branded `String` so the hash slot cannot be filled by an *accidental*
+/// assignment of a raw [UserId]: both are strings, and without the brand the
+/// compiler cannot tell them apart, so a hurried mapper writing `userId.value`
+/// into a `String userIdHash` field would type-check clean and drop the raw id
+/// straight into the foyer (Tesla's catch). The brand forces the conversion to
+/// be written out (`UserIdHash(digest)`).
+///
+/// It does NOT prove the value is actually salted — the engine cannot hash
+/// (crypto is a dependency the no-leak rule forbids). That the digest is
+/// genuinely `SHA256(roomId || userId)[:8]` and not a stable global hash stays
+/// an implementation obligation the `realm_test` conformance package (Open
+/// Q #10) checks. The brand closes the API footgun; the conformance test closes
+/// the crypto one.
+extension type const UserIdHash(String value) {}
+
 /// Low-fidelity presence, safe to show to someone outside the room.
 ///
 /// Its job is "is anyone there? how many? render placeholders" — not activity
@@ -116,14 +133,15 @@ final class PublicProjection extends PeerPresence {
   ///
   /// Salted with the room id so the same user appears as a different value in
   /// every room — cross-room identification via the public projection is not
-  /// possible.
+  /// possible. Typed [UserIdHash], not `String`, so a raw [UserId] cannot be
+  /// assigned here by accident.
   ///
   /// **Collision posture is deliberate.** Eight bytes is a 64-bit per-room
   /// space, so two co-present users could in principle collide. The foyer
   /// accepts that: a longer hash would give an attacker a near-certain join
   /// key into other rooms, and the collision rate inside one room is negligible
   /// at any plausible room size. Unlinkability beats precision here.
-  final String userIdHash;
+  final UserIdHash userIdHash;
 
   /// An opaque avatar reference the foyer may render, or `null` if the user
   /// opted out.
@@ -131,6 +149,15 @@ final class PublicProjection extends PeerPresence {
   /// [userIdHash] is always emitted even when this is `null`, because the
   /// foyer needs *some* token to distinguish "three people inside" from
   /// "nobody inside".
+  ///
+  /// **Named trust hole** (Tesla's catch): the type says "opaque" but a `Uri`
+  /// can carry identity — a stable provider avatar URL
+  /// (`https://…/a/<userId>=s96`) is a cross-room join key *stronger* than the
+  /// 8-byte hash above. The engine cannot enforce opacity here without owning
+  /// the minting path; an implementation MUST supply a ref embedding no stable
+  /// cross-room identity (an engine-minted opaque token the foyer resolves, not
+  /// a raw CDN URL). Implementation obligation checked by `realm_test`, not a
+  /// type guarantee.
   final Uri? opaqueAvatarRef;
 
   // Deliberately no `joinedAt`. Timing is in-room PII: exposing it cross-room
