@@ -11,7 +11,11 @@ set -e
 # --- Secret scan ----------------------------------------------------------
 echo "Scanning staged diff for secrets..."
 
-staged=$(git diff --cached --diff-filter=AM)
+# AMR (not AM): include Renames so a commit whose ONLY staged change is a
+# rename+edit still enters the secret scan. With an AM-only gate, a pure-R
+# commit produces an empty $staged, skips this whole block, and Pattern 2's
+# own AMR loop would never even run (cage-match #522, Tesla).
+staged=$(git diff --cached --diff-filter=AMR)
 
 # Skip empty diffs
 if [ -n "$staged" ]; then
@@ -38,6 +42,13 @@ if [ -n "$staged" ]; then
     # *.json exemption was a secret-bypass (a 40+hex in service-account.json
     # would never be scanned); a real secret that "loves JSON" must still trip.
     # Add a specific path here only when a genuine checksum false-positives.
+    # ACCEPTED RESIDUAL (cage-match #522, Tesla): the exemption is by suffix, so
+    # a deliberately-named `secrets.lock` / `creds-lock.json` would evade the hex
+    # scan. This hook defends against ACCIDENTAL commits, not a motivated author
+    # crafting a lockfile-shaped name; pinning to exact basenames
+    # (pubspec.lock|package-lock.json|…) would re-invite the false-positives on
+    # every new lockfile type that this fix exists to kill. Suffix + this note is
+    # the deliberate tradeoff.
     #
     # -z / read -d '': NUL-delimited so a path containing spaces OR newlines is
     # one iteration, not split (a newline'd path could otherwise skip its scan).
