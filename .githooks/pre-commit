@@ -58,7 +58,7 @@ if [ -n "$staged" ]; then
         case "$_file" in
             *.lock|*-lock.json|*test/*fixture*|*node_modules/*) continue ;;
         esac
-        if git diff --cached --diff-filter=AMR -- "$_file" | grep -qE "^\+.*['\"][a-f0-9]{40,}['\"]"; then
+        if git diff --cached --diff-filter=AMR -- "$_file" | grep -qE "^\+.*['\"][a-fA-F0-9]{40,}['\"]"; then
             echo "❌ Pre-commit blocked: long hex literal in staged change (40+ chars) in $_file."
             echo "   If this is a checksum/hash and not a secret, exempt it explicitly via path."
             echo "   Override (NOT recommended): git commit --no-verify"
