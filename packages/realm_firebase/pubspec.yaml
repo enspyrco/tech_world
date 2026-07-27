@@ -9,6 +9,7 @@ version: 0.0.1
 
 environment:
   sdk: ^3.6.0
+  flutter: ">=3.0.0"
 
 resolution: workspace
 
@@ -17,6 +18,11 @@ resolution: workspace
 # engine transitive-deps whitelist in packages/realm/test. Firebase versions
 # track the root app's pubspec so the shared workspace resolution is unchanged.
 dependencies:
+  # realm_firebase is a Flutter package: its firebase_* plugins pull in dart:ui,
+  # so its tests need `flutter test`, not `dart test`. Declaring the flutter SDK
+  # both makes that true and lets CI's member-test loop detect the right runner.
+  flutter:
+    sdk: flutter
   realm:
     path: ../realm
   firebase_auth: ^6.1.0
