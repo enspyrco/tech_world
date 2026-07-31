@@ -31,6 +31,6 @@ dependencies:
 
 dev_dependencies:
   test: ^1.25.0
-  fake_cloud_firestore: ^4.0.1
+  fake_cloud_firestore: ^4.2.0 # 4.2.0 is the first to support cloud_firestore 6.7.x
   firebase_storage_mocks: ^0.8.1
   firebase_auth_mocks: ^0.15.2

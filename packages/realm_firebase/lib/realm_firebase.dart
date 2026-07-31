@@ -16,3 +16,4 @@
 library;
 
 export 'src/firebase_storage_provider.dart';
+export 'src/firestore_room_config_store.dart';
