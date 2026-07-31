@@ -84,7 +84,7 @@ void main() {
         id: const RoomId('room-1'),
         displayName: 'Wizards Tower',
         worldType: WorldTypeId.parse('tech_world', registry),
-        foyerVisibility: FoyerVisibility.public,
+        visibility: RoomVisibility.public,
         ownerId: const UserId('owner-1'),
       );
 

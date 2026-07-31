@@ -3,7 +3,8 @@ import '../ids.dart';
 
 /// Watching who is in a room — including rooms you have not joined.
 ///
-/// Powers the foyer's cross-room presence display and, eventually,
+/// Powers any surface that shows presence in rooms the viewer hasn't joined —
+/// a foyer, an adjacent-room indicator, a spectator mode — and, eventually,
 /// federation's cross-instance presence layer.
 ///
 /// ## Why this is engine, not world
@@ -19,7 +20,7 @@ import '../ids.dart';
 /// cross-room watch API would broadcast that to anyone who can name a room.
 /// This interface uses **audience-narrowed return types** so the boundary is
 /// enforced by the compiler rather than by implementation discipline:
-/// in-room watchers get [FullProjection], foyer watchers get
+/// in-room watchers get [FullProjection], out-of-room watchers get
 /// [PublicProjection], and a buggy implementation cannot emit the wrong one
 /// because the return type forbids it.
 ///
@@ -41,8 +42,11 @@ abstract interface class PresenceService {
   /// Watches low-fidelity presence for a room [viewer] is NOT inside.
   ///
   /// Succeeds only for rooms whose visibility is public; unlisted and private
-  /// rooms refuse, so a foyer cannot enumerate them at all.
-  Stream<Set<PublicProjection>> watchFromFoyer(RoomId roomId, RealmUser viewer);
+  /// rooms refuse, so an out-of-room observer cannot enumerate them at all.
+  Stream<Set<PublicProjection>> watchPublicPresence(
+    RoomId roomId,
+    RealmUser viewer,
+  );
 }
 
 /// A peer's presence, at whatever fidelity the audience is entitled to.
@@ -57,7 +61,7 @@ abstract interface class PresenceService {
 /// total — `sealed` alone stops another package from adding a NEW direct
 /// subtype, but not from *subclassing a leaf* (`class Leaky extends
 /// PublicProjection { String email; }`) and smuggling in-room PII onto the
-/// foyer type while still satisfying `Stream<Set<PublicProjection>>`. `sealed`
+/// public projection type while still satisfying `Stream<Set<PublicProjection>>`. `sealed`
 /// root + `final` leaves is the Dart 3 idiom for a genuinely closed value
 /// hierarchy (Tesla's catch).
 sealed class PeerPresence {
@@ -104,13 +108,13 @@ final class FullProjection extends PeerPresence {
   int get hashCode => userId.hashCode;
 }
 
-/// A per-room, salted digest of a user's id — the foyer's presence token.
+/// A per-room, salted digest of a user's id — the public presence token.
 ///
 /// A branded `String` so the hash slot cannot be filled by an *accidental*
 /// assignment of a raw [UserId]: both are strings, and without the brand the
 /// compiler cannot tell them apart, so a hurried mapper writing `userId.value`
 /// into a `String userIdHash` field would type-check clean and drop the raw id
-/// straight into the foyer (Tesla's catch). The brand forces the conversion to
+/// straight into an out-of-room projection (Tesla's catch). The brand forces the conversion to
 /// be written out (`UserIdHash(digest)`).
 ///
 /// It does NOT prove the value is actually salted — the engine cannot hash
@@ -137,31 +141,31 @@ final class PublicProjection extends PeerPresence {
   /// assigned here by accident.
   ///
   /// **Collision posture is deliberate.** Eight bytes is a 64-bit per-room
-  /// space, so two co-present users could in principle collide. The foyer
+  /// space, so two co-present users could in principle collide. This projection
   /// accepts that: a longer hash would give an attacker a near-certain join
   /// key into other rooms, and the collision rate inside one room is negligible
   /// at any plausible room size. Unlinkability beats precision here.
   final UserIdHash userIdHash;
 
-  /// An opaque avatar reference the foyer may render, or `null` if the user
-  /// opted out.
+  /// An opaque avatar reference an out-of-room observer may render, or `null`
+  /// if the user opted out.
   ///
-  /// [userIdHash] is always emitted even when this is `null`, because the
-  /// foyer needs *some* token to distinguish "three people inside" from
-  /// "nobody inside".
+  /// [userIdHash] is always emitted even when this is `null`, because a
+  /// presence indicator needs *some* token to distinguish "three people inside"
+  /// from "nobody inside".
   ///
   /// **Named trust hole** (Tesla's catch): the type says "opaque" but a `Uri`
   /// can carry identity — a stable provider avatar URL
   /// (`https://…/a/<userId>=s96`) is a cross-room join key *stronger* than the
   /// 8-byte hash above. The engine cannot enforce opacity here without owning
   /// the minting path; an implementation MUST supply a ref embedding no stable
-  /// cross-room identity (an engine-minted opaque token the foyer resolves, not
-  /// a raw CDN URL). Implementation obligation checked by `realm_test`, not a
+  /// cross-room identity (an engine-minted opaque token the observer resolves,
+  /// not a raw CDN URL). Implementation obligation checked by `realm_test`, not a
   /// type guarantee.
   final Uri? opaqueAvatarRef;
 
   // Deliberately no `joinedAt`. Timing is in-room PII: exposing it cross-room
-  // would let any foyer observer build a longitudinal profile of who was where,
+  // would let any out-of-room observer build a longitudinal profile of who was where,
   // when.
 
   @override

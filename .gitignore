@@ -32,6 +32,10 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+# Workspace member build dirs — /build/ above is repo-root-anchored only, so
+# nested members (packages/*, examples/*) need their own patterns.
+packages/*/build/
+examples/*/build/
 pubspec.lock
 
 # Symbolication related

@@ -58,13 +58,14 @@ abstract interface class World {
   /// Called when the local user leaves, for any reason.
   Future<void> onLeave(LeaveReason reason);
 
-  /// A renderer-neutral snapshot of this room for display in a foyer.
+  /// A renderer-neutral snapshot of this room for display in a room-listing
+  /// surface such as a foyer.
   ///
-  /// Returns `null` if this world shouldn't appear in foyers — a foyer
-  /// returns `null`, since foyers don't appear inside foyers.
+  /// Returns `null` if this world shouldn't appear in room listings — a foyer
+  /// world returns `null`, since a foyer doesn't list itself.
   ///
-  /// **No Flutter types in the return value.** The foyer wraps the result in
-  /// its own renderer, which is what keeps the engine portable across
+  /// **No Flutter types in the return value.** The consuming renderer wraps the
+  /// result in its own rendering stack, which is what keeps the engine portable across
   /// rendering stacks — Flame, `CustomPainter`, 3D, or a text-mode bot.
   Future<RoomPreview?> previewSnapshot();
 }
@@ -96,7 +97,7 @@ enum LeaveReason {
   /// Parses [wire] strictly, throwing [ArgumentError] on an unknown string.
   ///
   /// Ships alongside [tryParse] as the same "two doors at the boundary" pair as
-  /// [FoyerVisibility] — a strict door for callers that want a loud failure on
+  /// [RoomVisibility] — a strict door for callers that want a loud failure on
   /// a malformed wire value, a lenient one for callers that choose their own
   /// fallback.
   static LeaveReason parse(String wire) => values.firstWhere(

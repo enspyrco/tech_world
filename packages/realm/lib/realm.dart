@@ -20,7 +20,7 @@
 ///
 /// ## Two evolution surfaces, never confused
 ///
-/// **Audience-bounded sealed surfaces** — [LeaveReason], [FoyerVisibility],
+/// **Audience-bounded sealed surfaces** — [LeaveReason], [RoomVisibility],
 /// [PeerPresence], [RoomPreview], [RoomRef]. Their variant sets live entirely
 /// within the engine's audience contract. Adding a variant is a **breaking
 /// change** for consumers' exhaustive switches; each addition ships as a
