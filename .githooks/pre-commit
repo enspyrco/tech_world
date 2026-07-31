@@ -11,7 +11,11 @@ set -e
 # --- Secret scan ----------------------------------------------------------
 echo "Scanning staged diff for secrets..."
 
-staged=$(git diff --cached --diff-filter=AM)
+# AMR (not AM): include Renames so a commit whose ONLY staged change is a
+# rename+edit still enters the secret scan. With an AM-only gate, a pure-R
+# commit produces an empty $staged, skips this whole block, and Pattern 2's
+# own AMR loop would never even run (cage-match #522, Tesla).
+staged=$(git diff --cached --diff-filter=AMR)
 
 # Skip empty diffs
 if [ -n "$staged" ]; then
@@ -24,13 +28,43 @@ if [ -n "$staged" ]; then
         exit 1
     fi
 
-    # Pattern 2: long hex literal in any source/config file
-    if echo "$staged" | grep -E "^\+\+\+ b/" | grep -vE "(\.lock|\.json|test/.*fixture|node_modules/)" > /dev/null && \
-       echo "$staged" | grep -qE "^\+.*['\"][a-f0-9]{40,}['\"]"; then
-        echo "❌ Pre-commit blocked: long hex literal in staged change (40+ chars)."
-        echo "   If this is a checksum/hash and not a secret, exempt it explicitly via path."
-        exit 1
-    fi
+    # Pattern 2: long hex literal (40+ chars) in a non-exempt source/config file.
+    # The exemption MUST be scoped to the file the hex lives in. An earlier
+    # version AND-ed two whole-diff greps ("any non-exempt file touched?" &&
+    # "any 40+ hex anywhere?"), which false-positived whenever a commit touched
+    # a .dart file AND a pubspec.lock sha256 in the same diff — forcing
+    # --no-verify on PRs #520/#521. Iterate per-file so the exemption and the
+    # hex always refer to the same file (#2256).
+    #
+    # Exemptions are SURGICAL, not carpet-bombed (cage-match #522, Kelvin+Tesla):
+    # only files that legitimately carry dependency checksums — lockfiles
+    # (*.lock, *-lock.json) — plus test fixtures and vendored deps. A blanket
+    # *.json exemption was a secret-bypass (a 40+hex in service-account.json
+    # would never be scanned); a real secret that "loves JSON" must still trip.
+    # Add a specific path here only when a genuine checksum false-positives.
+    # ACCEPTED RESIDUAL (cage-match #522, Tesla): the exemption is by suffix, so
+    # a deliberately-named `secrets.lock` / `creds-lock.json` would evade the hex
+    # scan. This hook defends against ACCIDENTAL commits, not a motivated author
+    # crafting a lockfile-shaped name; pinning to exact basenames
+    # (pubspec.lock|package-lock.json|…) would re-invite the false-positives on
+    # every new lockfile type that this fix exists to kill. Suffix + this note is
+    # the deliberate tradeoff.
+    #
+    # -z / read -d '': NUL-delimited so a path containing spaces OR newlines is
+    # one iteration, not split (a newline'd path could otherwise skip its scan).
+    # --diff-filter=AMR: include Renames — a rename+edit (R) can carry a new
+    # secret on its + lines; A/M alone would never scan it.
+    while IFS= read -r -d '' _file; do
+        case "$_file" in
+            *.lock|*-lock.json|*test/*fixture*|*node_modules/*) continue ;;
+        esac
+        if git diff --cached --diff-filter=AMR -- "$_file" | grep -qE "^\+.*['\"][a-fA-F0-9]{40,}['\"]"; then
+            echo "❌ Pre-commit blocked: long hex literal in staged change (40+ chars) in $_file."
+            echo "   If this is a checksum/hash and not a secret, exempt it explicitly via path."
+            echo "   Override (NOT recommended): git commit --no-verify"
+            exit 1
+        fi
+    done < <(git diff --cached --diff-filter=AMR --name-only -z)
 
     # Pattern 3: known third-party API key shapes
     if echo "$staged" | grep -qE "^\+.*\b(sk-[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|AKIA[A-Z0-9]{16}|AIzaSy[A-Za-z0-9_-]{33})\b"; then
