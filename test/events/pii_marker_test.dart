@@ -58,7 +58,7 @@ void main() {
     // asserts on a known concrete type.
     void check(AppEvent event, PiiPolicy expected) {
       final declared = switch (event) {
-        // PII subtypes (26)
+        // PII subtypes (27)
         SpellCastFailed() => PiiPolicy.pii,
         RoomJoined() => PiiPolicy.pii,
         UserSignedIn() => PiiPolicy.pii,
@@ -84,6 +84,7 @@ void main() {
         AvBubbleCreated() => PiiPolicy.pii,
         AvBubbleRemoved() => PiiPolicy.pii,
         AvAudioGateChanged() => PiiPolicy.pii,
+        AvVideoGateChanged() => PiiPolicy.pii,
         AvSpeakingChanged() => PiiPolicy.pii,
         AvFrameDecodeError() => PiiPolicy.pii,
         // Non-PII subtypes (19)
@@ -131,7 +132,7 @@ void main() {
       // here for the runtime classification to be pinned — see the
       // group comment above for what this list does and does not prove.
       final piiEvents = <AppEvent>[
-        // PII (26)
+        // PII (27)
         SpellCastFailed(
           reason: CastFailureReason.noMatch,
           transcript: 'ignis',
@@ -159,7 +160,7 @@ void main() {
           severity: LogSeverity.info,
           message: 'm',
         ),
-        // AV pipeline PII (9)
+        // AV pipeline PII (10)
         AvPipelineSnapshot(
           participant: 'alice',
           hasVideoTrack: true,
@@ -186,6 +187,11 @@ void main() {
         ),
         AvBubbleRemoved(participant: 'alice'),
         AvAudioGateChanged(
+          participant: 'alice',
+          enabled: true,
+          distance: 2,
+        ),
+        AvVideoGateChanged(
           participant: 'alice',
           enabled: true,
           distance: 2,
@@ -246,8 +252,8 @@ void main() {
       // Cardinality cross-check: keeps this list and the switch above
       // honest against the same expected subtype count. Bump together
       // when adding a new subtype.
-      expect(events.length, 45);
-      expect(piiEvents.length, 26);
+      expect(events.length, 46);
+      expect(piiEvents.length, 27);
       expect(nonPiiEvents.length, 19);
 
       for (final event in piiEvents) {

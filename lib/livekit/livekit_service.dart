@@ -554,6 +554,79 @@ class LiveKitService {
     }
   }
 
+  /// Enable or disable a remote participant's CAMERA video (server-side
+  /// [RemoteTrackPublication.enable]/[RemoteTrackPublication.disable]).
+  ///
+  /// Used for proximity-based video: stop the SFU forwarding (and this client
+  /// decoding into memory) a player's camera when they're out of range, so
+  /// decode load scales with NEARBY participants instead of everyone in the
+  /// room. Symmetric with [setParticipantAudioEnabled] (#594).
+  ///
+  /// Only CAMERA tracks are gated — screen-share ([TrackSource.screenShareVideo])
+  /// is deliberately left forwarded, since a shared screen must stay visible
+  /// regardless of avatar proximity.
+  ///
+  /// Invariant this relies on: a remote publication's [TrackPublication.source]
+  /// comes from the publisher's track metadata and is present by the time the
+  /// subscriber sees the publication (camera / screenShareVideo), so the
+  /// `unknown` window is effectively nil for remote tracks. An unknown-source
+  /// track is left forwarded. In the pathological case (a camera whose source
+  /// never resolves), a far peer could keep decoding — a bounded DECODE miss,
+  /// not a correctness break, and vanishingly unlikely given the invariant. We
+  /// accept that over the alternative (gate everything except explicit
+  /// screen-share), which would risk disabling a screen-share that is
+  /// momentarily unknown and then never re-enabling it.
+  void setParticipantVideoEnabled(String identity, bool enabled) {
+    final participant = _room?.remoteParticipants[identity];
+    if (participant == null) return;
+
+    for (final publication in participant.videoTrackPublications) {
+      if (publication.source != TrackSource.camera) continue;
+      if (enabled) {
+        publication.enable();
+      } else {
+        publication.disable();
+      }
+    }
+  }
+
+  /// The proximity gate's current desire for a remote identity's camera video:
+  /// true iff the gate wants it forwarded+decoded right now. Set by
+  /// [BubbleManager] (which owns the per-frame proximity state); null before a
+  /// gate is wired (treated as "not desired").
+  ///
+  /// This is the coordination seam that makes [TrackSubscribedEvent] the SINGLE
+  /// reconcile point for camera state — see [reconcileRemoteVideoOnSubscribe].
+  bool Function(String identity)? cameraDesiredForIdentity;
+
+  /// Apply the proximity gate's CURRENT desire to a freshly-subscribed remote
+  /// CAMERA track — the single reconcile point for camera forwarding.
+  ///
+  /// A subscribe resets wire state (LiveKit forwards by default), so we must
+  /// (re)assert the gate's intent here rather than blindly disable: a peer
+  /// already in range wants their fresh — or re-subscribed — camera ON, and a
+  /// far peer wants it OFF. Because BOTH the enable and disable decisions flow
+  /// through this one edge (default OFF when the gate has no opinion), the gate
+  /// and the subscribe handler are never two racing writers: the gate latches
+  /// DESIRE, this reconciles EFFECT. Closes the latch-vs-subscribe race where a
+  /// near peer whose gate fired before the track subscribed would stay dark
+  /// (cage-match #519, Carnot + Tesla).
+  ///
+  /// Dreamfinder is excluded (separate iframe-canvas path). This runs for ANY
+  /// remote video subscribe, including screen-share — but [setParticipantVideoEnabled]
+  /// only ever touches the participant's CAMERA publication, so a screen-share
+  /// subscribe merely (harmlessly) re-reconciles that participant's camera to
+  /// the gate's desire; the screen-share itself is never disabled.
+  @visibleForTesting
+  void reconcileRemoteVideoOnSubscribe({
+    required bool isVideoTrack,
+    required String identity,
+  }) {
+    if (!isVideoTrack || isDreamfinderIdentity(identity)) return;
+    final desired = cameraDesiredForIdentity?.call(identity) ?? false;
+    setParticipantVideoEnabled(identity, desired);
+  }
+
   /// Set the playback volume (0.0–1.0) for a remote participant's audio.
   ///
   /// Used by the proximity layer to fade voices by distance instead of hard
@@ -1027,6 +1100,15 @@ class LiveKitService {
         // would be audible from anywhere before the gate's first tick.
         disableDreamfinderAudioOnSubscribe(
           isAudioTrack: event.track is AudioTrack,
+          identity: event.participant.identity,
+        );
+        // Reconcile a freshly-subscribed camera track to the proximity gate's
+        // current desire (single reconcile point — see the method). A near
+        // peer's fresh/re-subscribed camera is turned ON here; everyone else's
+        // is turned OFF, so a subscribe can never leave a far camera decoding
+        // nor a near camera dark.
+        reconcileRemoteVideoOnSubscribe(
+          isVideoTrack: event.track is VideoTrack,
           identity: event.participant.identity,
         );
       })

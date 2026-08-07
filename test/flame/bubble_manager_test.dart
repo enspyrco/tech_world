@@ -350,6 +350,150 @@ void main() {
       });
     });
 
+    group('video threshold', () {
+      late BubbleManager manager;
+      late MockLiveKitService mockLiveKit;
+      late PlayerComponent localPlayer;
+      late Map<String, PlayerComponent> remotePlayers;
+
+      setUp(() {
+        mockLiveKit = MockLiveKitService();
+        // The proximity loop drives the audio gate too; stub it so update()
+        // doesn't throw while we assert on the video gate.
+        when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
+            .thenReturn(true);
+        when(() => mockLiveKit.setParticipantVideoEnabled(any(), any()))
+            .thenReturn(null);
+        when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
+        localPlayer = PlayerComponent(
+          position: Vector2(160, 160),
+          id: 'local-user',
+          displayName: 'Local',
+        );
+        remotePlayers = {};
+
+        manager = BubbleManager(
+          localPlayer: localPlayer,
+          addComponent: (_) {},
+          remotePlayers: remotePlayers,
+          bots: {},
+        );
+        manager.setLiveKitService(mockLiveKit);
+      });
+
+      test('enables camera as soon as the bubble is visible (at the edge)', () {
+        // 5 squares away — exactly the visual threshold, where the bubble
+        // appears. Video enables here too (decode-across-visible), so the
+        // bubble always has a live — if blurred — frame; no black band.
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(320, 160), // 5 away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+
+        manager.update(0.016);
+
+        verify(() => mockLiveKit.setParticipantVideoEnabled('remote-1', true))
+            .called(1);
+      });
+
+      test('does not enable a camera beyond visual range (no bubble)', () {
+        // 6 squares away — past the visual threshold, so no bubble and no
+        // decode: nothing to paint means nothing to forward.
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(352, 160), // 6 away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+
+        manager.update(0.016);
+
+        verifyNever(
+            () => mockLiveKit.setParticipantVideoEnabled('remote-1', true));
+      });
+
+      test('holds through the 1-square disable hysteresis, cuts past visual+1',
+          () {
+        final remote = PlayerComponent(
+          position: Vector2(320, 160), // 5 away — at the visual edge
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        remotePlayers['remote-1'] = remote;
+
+        // Visible → camera turns on.
+        manager.update(0.016);
+        verify(() => mockLiveKit.setParticipantVideoEnabled('remote-1', true))
+            .called(1);
+
+        // Drifts to 6 — one square past the visual edge (bubble gone), inside
+        // the disable hysteresis (≤ _videoDisableThreshold 6). Camera holds so a
+        // peer parked on the line doesn't re-keyframe every jitter.
+        remote.position = Vector2(352, 160); // 6 away
+        manager.update(0.016);
+        verifyNever(
+            () => mockLiveKit.setParticipantVideoEnabled('remote-1', false));
+
+        // Drifts past the disable threshold (7 > 6) → camera cuts.
+        remote.position = Vector2(384, 160); // 7 away
+        manager.update(0.016);
+        verify(() => mockLiveKit.setParticipantVideoEnabled('remote-1', false))
+            .called(1);
+      });
+
+      test('avatar-only client (hideVideoBubbles) never enables camera decode',
+          () {
+        manager.hideVideoBubbles = true;
+        // Right on top of the local player (distance 1) — well inside every
+        // threshold. An avatar-only client must still never turn on decode.
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(192, 160), // 1 away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+
+        manager.update(0.016);
+
+        verifyNever(
+            () => mockLiveKit.setParticipantVideoEnabled('remote-1', true));
+      });
+
+      test(
+          'registers a camera-desire predicate tracking the enabled set '
+          '(the subscribe-reconcile seam that fixes the latch race)', () {
+        // Capture the predicate BubbleManager registered on the service in
+        // setUp. On a TrackSubscribedEvent, LiveKitService reads THIS to decide
+        // whether a fresh/re-subscribed camera should be ON — so it must always
+        // reflect the gate's live desire, never a stale latch.
+        final captured =
+            verify(() => mockLiveKit.cameraDesiredForIdentity = captureAny())
+                .captured;
+        final predicate = captured.last as bool Function(String);
+
+        // Nobody near yet → not desired.
+        expect(predicate('remote-1'), isFalse);
+
+        // Peer already within enable range: the gate latches desire. A camera
+        // that subscribes NOW (after the gate fired) must be reconciled ON —
+        // the predicate says so, which is exactly what closes the race.
+        remotePlayers['remote-1'] = PlayerComponent(
+          position: Vector2(256, 160), // 3 away
+          id: 'remote-1',
+          displayName: 'Remote',
+        );
+        manager.update(0.016);
+        expect(predicate('remote-1'), isTrue);
+
+        // Peer walks well out of range (past the disable hysteresis) → desire
+        // cleared → a late/re-subscribe reads false and stays OFF.
+        remotePlayers['remote-1']!.position = Vector2(384, 160); // 7 away
+        manager.update(0.016);
+        expect(predicate('remote-1'), isFalse);
+      });
+    });
+
     group('Dreamfinder proximity signal', () {
       late BubbleManager manager;
       late MockLiveKitService mockLiveKit;
