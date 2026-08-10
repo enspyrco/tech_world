@@ -28,6 +28,7 @@ dependencies:
   firebase_auth: ^6.1.0
   cloud_firestore: ^6.0.2
   firebase_storage: ^13.0.5
+  http: ^1.2.0 # getCredential POSTs the Firebase ID token to the exchange endpoint
 
 dev_dependencies:
   test: ^1.25.0
