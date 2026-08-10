@@ -67,12 +67,13 @@ void main() {
         subject: const UserId('u'),
         provider: AuthProviderId.firebase,
       );
-      // Flip the last character of the signature segment.
+      // Flip the FIRST signature char — it encodes real high bits of byte 0.
+      // (The LAST char holds don't-care padding bits, so flipping it can be a
+      // no-op and the tampered token would still verify.)
       final parts = cred.token.split('.');
       final sig = parts[2];
       final tampered =
-          '${parts[0]}.${parts[1]}.${sig.substring(0, sig.length - 1)}'
-          '${sig.endsWith('A') ? 'B' : 'A'}';
+          '${parts[0]}.${parts[1]}.${sig[0] == 'A' ? 'B' : 'A'}${sig.substring(1)}';
 
       expect(
         () => verifier.verify(tampered),
