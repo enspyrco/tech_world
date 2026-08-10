@@ -113,6 +113,33 @@ void main() {
       );
     });
 
+    test('a naive (zone-less) expiresAt → RealmAuthCredentialInvalid', () {
+      final client = MockClient((_) async => http.Response(
+            jsonEncode({'token': 't', 'expiresAt': '2026-08-10T09:00:00'}),
+            200,
+          ));
+      expect(
+        providerWith(auth: signedInAuth(), client: client).getCredential(),
+        throwsA(isA<RealmAuthCredentialInvalid>()),
+      );
+    });
+
+    test('a 400 is a credential failure, not a network error', () {
+      final client = MockClient((_) async => http.Response('bad', 400));
+      expect(
+        providerWith(auth: signedInAuth(), client: client).getCredential(),
+        throwsA(isA<RealmAuthCredentialInvalid>()),
+      );
+    });
+
+    test('a 500 is a network error', () {
+      final client = MockClient((_) async => http.Response('oops', 500));
+      expect(
+        providerWith(auth: signedInAuth(), client: client).getCredential(),
+        throwsA(isA<RealmAuthNetworkError>()),
+      );
+    });
+
     test('valid-but-wrong-shape 200 body (JSON array) fails closed', () {
       // Regression: `jsonDecode(...) as Map` would throw an uncaught TypeError
       // on a non-object body; it must fail closed instead.

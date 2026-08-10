@@ -18,6 +18,8 @@
 /// [RealmUser] projection inside the room, per the engine's PII posture.
 library;
 
+import 'dart:convert';
+
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:realm/realm.dart';
 
@@ -49,10 +51,12 @@ class RealmCredentialIssuer {
     this.audience = realmLiveKitAudience,
     this.ttl = const Duration(hours: 1),
   }) : _key = signingKey {
-    // Fail closed on a misconfigured lifetime — a non-positive ttl would mint a
-    // credential that is already expired the instant it is issued.
-    if (ttl <= Duration.zero) {
-      throw ArgumentError.value(ttl, 'ttl', 'must be positive');
+    // Fail closed on a misconfigured lifetime. Guard on whole SECONDS, not just
+    // `> Duration.zero`: `exp`/`iat` are integer seconds, so a sub-second ttl
+    // (e.g. 999ms) would floor to `exp == iat` and mint an already-dead
+    // credential while passing a naive `> zero` check.
+    if (ttl.inSeconds < 1) {
+      throw ArgumentError.value(ttl, 'ttl', 'must be at least one second');
     }
   }
 
@@ -129,6 +133,15 @@ class RealmCredentialVerifier {
   /// malformed structure, or missing required claims. There is no partial
   /// acceptance: the caller either gets trustworthy claims or an exception.
   VerifiedRealmClaims verify(String token) {
+    // Pin the algorithm. dart_jsonwebtoken's verify dispatches on the token
+    // HEADER's `alg` (`JWTAlgorithm.fromName(header['alg'])`), not the key type,
+    // and exposes no algorithm parameter — so reject anything but ES256 before
+    // verifying, closing the algorithm-confusion surface and matching the Node
+    // verifier's explicit `algorithms: ['ES256']` pin.
+    if (_headerAlg(token) != 'ES256') {
+      throw const RealmCredentialRejected('unexpected or missing algorithm');
+    }
+
     final JWT jwt;
     try {
       jwt = JWT.verify(
@@ -160,6 +173,21 @@ class RealmCredentialVerifier {
       subject: UserId(sub),
       provider: AuthProviderId(prov),
     );
+  }
+
+  /// The `alg` from the token's JWS header, or null if the token is malformed.
+  /// Any decode failure returns null (→ rejected), never throws.
+  static String? _headerAlg(String token) {
+    final parts = token.split('.');
+    if (parts.length != 3) return null;
+    try {
+      final decoded =
+          jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[0]))));
+      final alg = decoded is Map ? decoded['alg'] : null;
+      return alg is String ? alg : null;
+    } catch (_) {
+      return null;
+    }
   }
 }
 

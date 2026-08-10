@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:livekit_token_server/livekit_token_server.dart';
 import 'package:realm/realm.dart';
@@ -33,14 +35,14 @@ void main() {
       expect(claims.provider.value, AuthProviderId.firebase.value);
     });
 
-    test('a non-positive ttl is rejected at construction', () {
-      expect(
-        () => RealmCredentialIssuer(
-          signingKey: keys.privateKey,
-          ttl: Duration.zero,
-        ),
-        throwsA(isA<ArgumentError>()),
-      );
+    test('a non-positive or sub-second ttl is rejected at construction', () {
+      for (final bad in [Duration.zero, const Duration(milliseconds: 999)]) {
+        expect(
+          () => RealmCredentialIssuer(signingKey: keys.privateKey, ttl: bad),
+          throwsA(isA<ArgumentError>()),
+          reason: 'ttl $bad should be rejected',
+        );
+      }
     });
 
     test('RealmCredential.expiresAt equals the token exp exactly', () {
@@ -154,6 +156,25 @@ void main() {
     test('garbage input is rejected, not crashed on', () {
       expect(
         () => verifier.verify('not-a-jwt'),
+        throwsA(isA<RealmCredentialRejected>()),
+      );
+    });
+
+    test('a token whose header alg is not ES256 is rejected (alg pinned)', () {
+      // Take a valid token and swap its header to claim alg=none — the pin must
+      // reject it BEFORE signature verification, closing algorithm confusion.
+      final cred = issuer.issue(
+        subject: const UserId('u'),
+        provider: AuthProviderId.firebase,
+      );
+      final parts = cred.token.split('.');
+      final noneHeader = base64Url
+          .encode(utf8.encode('{"alg":"none","typ":"JWT"}'))
+          .replaceAll('=', '');
+      final swapped = '$noneHeader.${parts[1]}.${parts[2]}';
+
+      expect(
+        () => verifier.verify(swapped),
         throwsA(isA<RealmCredentialRejected>()),
       );
     });

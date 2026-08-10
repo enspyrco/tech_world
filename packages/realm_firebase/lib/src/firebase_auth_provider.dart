@@ -145,24 +145,26 @@ class FirebaseAuthProvider implements AuthProvider {
           .timeout(exchangeTimeout);
     } on TimeoutException catch (_) {
       throw const RealmAuthNetworkError('exchange request timed out');
-    } on http.ClientException catch (e) {
-      throw RealmAuthNetworkError('exchange request failed: ${e.message}');
+    } on Exception catch (e) {
+      // Any transport failure (ClientException, SocketException, TLS handshake,
+      // …) must not escape as a raw type — the AuthProvider contract requires a
+      // RealmAuthException. Fail closed as a network error.
+      throw RealmAuthNetworkError('exchange request failed: $e');
     }
 
-    switch (response.statusCode) {
-      case 200:
-        return _parseCredential(response.body);
-      case 401 || 403:
-        throw const RealmAuthCredentialInvalid(
-          'exchange endpoint rejected the ID token',
-        );
-      case 429:
-        throw const RealmAuthRateLimited('exchange endpoint rate-limited');
-      default:
-        throw RealmAuthNetworkError(
-          'exchange endpoint returned HTTP ${response.statusCode}',
-        );
+    final status = response.statusCode;
+    if (status == 200) return _parseCredential(response.body);
+    if (status == 429) {
+      throw const RealmAuthRateLimited('exchange endpoint rate-limited');
     }
+    // A 4xx is the exchange rejecting the request/credential → re-auth, not
+    // retry. 5xx and anything else is a server/transport fault → network.
+    if (status >= 400 && status < 500) {
+      throw RealmAuthCredentialInvalid(
+        'exchange endpoint rejected the request (HTTP $status)',
+      );
+    }
+    throw RealmAuthNetworkError('exchange endpoint returned HTTP $status');
   }
 
   RealmCredential _parseCredential(String body) {
@@ -182,10 +184,16 @@ class FirebaseAuthProvider implements AuthProvider {
           'exchange response missing token or expiresAt',
         );
       }
-      return RealmCredential(
-        token: token,
-        expiresAt: DateTime.parse(expiresRaw),
-      );
+      final expiresAt = DateTime.parse(expiresRaw);
+      // Reject a naive (zone-less) timestamp: Dart parses it as LOCAL time, so
+      // credential expiry would become client-timezone dependent — wrong at a
+      // security boundary. Require a Z/offset (→ isUtc after parse).
+      if (!expiresAt.isUtc) {
+        throw const RealmAuthCredentialInvalid(
+          'exchange expiresAt must be UTC (Z or explicit offset)',
+        );
+      }
+      return RealmCredential(token: token, expiresAt: expiresAt);
     } on FormatException catch (e) {
       throw RealmAuthCredentialInvalid('malformed exchange response: ${e.message}');
     }
