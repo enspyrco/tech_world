@@ -1,0 +1,175 @@
+/// The Realm-issued credential JWT — the opaque token wrapped in a
+/// [RealmCredential] (`packages/realm/DESIGN.md`, "Credential exchange
+/// boundary").
+///
+/// **Asymmetric by construction (ES256).** The credential-exchange handler
+/// holds the *private* key and MINTS ([RealmCredentialIssuer]); the LiveKit
+/// mint handler holds only the *public* key and VERIFIES
+/// ([RealmCredentialVerifier]). This is what makes DESIGN.md's claim — "the
+/// signing key is scoped to the exchange handler, so a bug in the mint handler
+/// cannot forge a `RealmCredential`" — structurally true rather than
+/// aspirational: the mint side never possesses the signing key, so no mint-side
+/// defect can produce a token that verifies. A symmetric (HMAC) scheme would
+/// hand the mint handler the signing key and void that property.
+///
+/// The token deliberately carries only what the mint side needs to authorize:
+/// the [UserId] subject and the exchange-attested [AuthProviderId] provenance.
+/// PII (display name, email) never enters the credential — it stays on the
+/// [RealmUser] projection inside the room, per the engine's PII posture.
+library;
+
+import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
+import 'package:realm/realm.dart';
+
+/// Issuer (`iss`) claim identifying credentials minted by a Realm exchange.
+const realmIssuer = 'realm';
+
+/// Audience (`aud`) claim naming the Realm LiveKit mint endpoint. The mint
+/// handler rejects any token not scoped to it, so a credential minted for one
+/// Realm-internal endpoint cannot be replayed against another.
+const realmLiveKitAudience = 'realm:livekit-mint';
+
+/// Mints Realm credentials. **Exchange-side only** — holds the ES256 private
+/// key. Instantiate this exclusively in the credential-exchange handler, after
+/// it has verified the caller's provider-native credential (Firebase ID token,
+/// etc.) against the provider's real signing authority.
+class RealmCredentialIssuer {
+  /// Creates an issuer signing with the ES256 [signingKey].
+  ///
+  /// Loading the key is the caller's concern — production parses PEM from its
+  /// secret store (`ECPrivateKey(pemFromEnv)`); tests generate an ephemeral
+  /// keypair. Keeping the load out of this class means no key material is ever
+  /// hard-coded or committed.
+  ///
+  /// [ttl] is the credential lifetime; keep it short (default 1h) — revocation
+  /// is by expiry, not a per-request store read (DESIGN.md, resolved 2026-08-10).
+  RealmCredentialIssuer({
+    required ECPrivateKey signingKey,
+    this.issuer = realmIssuer,
+    this.audience = realmLiveKitAudience,
+    this.ttl = const Duration(hours: 1),
+  }) : _key = signingKey;
+
+  final ECPrivateKey _key;
+
+  /// The `iss` claim stamped on every minted credential.
+  final String issuer;
+
+  /// The `aud` claim stamped on every minted credential.
+  final String audience;
+
+  /// How long a minted credential stays valid.
+  final Duration ttl;
+
+  /// Mints a credential attesting that [subject], vouched for by [provider],
+  /// may call the Realm LiveKit mint endpoint until [RealmCredential.expiresAt].
+  ///
+  /// [issuedAt] is injectable for deterministic tests; defaults to now (UTC).
+  RealmCredential issue({
+    required UserId subject,
+    required AuthProviderId provider,
+    DateTime? issuedAt,
+  }) {
+    final iat = (issuedAt ?? DateTime.now()).toUtc();
+    final expiresAt = iat.add(ttl);
+    // `exp` is set directly (not via sign's `expiresIn`) so RealmCredential's
+    // advertised expiry is byte-for-byte the token's authoritative `exp`.
+    final jwt = JWT(
+      <String, dynamic>{
+        'prov': provider.value,
+        'iat': iat.millisecondsSinceEpoch ~/ 1000,
+        'exp': expiresAt.millisecondsSinceEpoch ~/ 1000,
+      },
+      issuer: issuer,
+      subject: subject.value,
+      audience: Audience.one(audience),
+    );
+    final token = jwt.sign(_key, algorithm: JWTAlgorithm.ES256, noIssueAt: true);
+    return RealmCredential(token: token, expiresAt: expiresAt);
+  }
+}
+
+/// Verifies Realm credentials. **Mint-side only** — holds the ES256 *public*
+/// key, never the private key. A defect here cannot forge a credential; the
+/// worst it can do is wrongly reject a valid one (fail-closed).
+class RealmCredentialVerifier {
+  /// Creates a verifier checking signatures against the ES256 [publicKey].
+  /// [issuer] and [audience] must match the issuer's. The mint handler holds
+  /// ONLY this public key — never the private key — so it cannot mint.
+  RealmCredentialVerifier({
+    required ECPublicKey publicKey,
+    this.issuer = realmIssuer,
+    this.audience = realmLiveKitAudience,
+  }) : _key = publicKey;
+
+  final ECPublicKey _key;
+
+  /// The `iss` claim required on an accepted credential.
+  final String issuer;
+
+  /// The `aud` claim required on an accepted credential.
+  final String audience;
+
+  /// Verifies [token] and returns the exchange-attested claims.
+  ///
+  /// Throws [RealmCredentialRejected] on ANY failure — bad signature (including
+  /// a token signed by a different key), expiry, wrong issuer/audience,
+  /// malformed structure, or missing required claims. There is no partial
+  /// acceptance: the caller either gets trustworthy claims or an exception.
+  VerifiedRealmClaims verify(String token) {
+    final JWT jwt;
+    try {
+      jwt = JWT.verify(
+        token,
+        _key,
+        issuer: issuer,
+        audience: Audience.one(audience),
+      );
+    } on JWTException catch (e) {
+      // JWTExpiredException, JWTInvalidException (bad sig / wrong iss / wrong
+      // aud), JWTParseException — all collapse to one fail-closed outcome.
+      throw RealmCredentialRejected(e.message);
+    }
+
+    final payload = jwt.payload;
+    final sub = jwt.subject ?? (payload is Map ? payload['sub'] as String? : null);
+    final prov = payload is Map ? payload['prov'] : null;
+    if (sub == null || sub.isEmpty) {
+      throw const RealmCredentialRejected('missing subject claim');
+    }
+    if (prov is! String || prov.isEmpty) {
+      throw const RealmCredentialRejected('missing provider-provenance claim');
+    }
+    return VerifiedRealmClaims(
+      subject: UserId(sub),
+      provider: AuthProviderId(prov),
+    );
+  }
+}
+
+/// The trustworthy claims a [RealmCredentialVerifier] extracts from a valid
+/// credential. Provenance here IS exchange-verified — unlike
+/// [RealmUser.providerIds], it is safe to gate authorization on.
+class VerifiedRealmClaims {
+  /// Creates a verified-claims value.
+  const VerifiedRealmClaims({required this.subject, required this.provider});
+
+  /// The authenticated user the credential vouches for.
+  final UserId subject;
+
+  /// Which provider the exchange verified when it minted the credential.
+  final AuthProviderId provider;
+}
+
+/// A credential failed verification. Carries a non-sensitive [reason] for logs;
+/// never echo it to an unauthenticated caller as anything but a generic 401.
+class RealmCredentialRejected implements Exception {
+  /// Creates a rejection carrying a short, credential-free [reason].
+  const RealmCredentialRejected(this.reason);
+
+  /// Why verification failed. Contains no token bytes or key material.
+  final String reason;
+
+  @override
+  String toString() => 'RealmCredentialRejected: $reason';
+}

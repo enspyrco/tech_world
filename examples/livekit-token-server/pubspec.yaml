@@ -13,3 +13,17 @@ resolution: workspace
 dependencies:
   realm:
     path: ../../packages/realm
+  # Server-side ONLY. Signing/crypto primitives live here, never in
+  # `packages/realm/` (the client bundle) — the engine deps-whitelist test
+  # (packages/realm/test/engine_deps_whitelist_test.dart) fails the build if a
+  # crypto primitive ever appears in the engine's transitive deps. ES256 lets
+  # the exchange handler hold the private key and the mint handler hold only the
+  # public key — see realm_credential_jwt.dart.
+  dart_jsonwebtoken: ^3.4.1
+
+dev_dependencies:
+  test: ^1.25.0
+  # Tests generate ephemeral ES256 keypairs in-process (see test/support/
+  # ec_keys.dart) so no private-key PEM is ever committed — the gitleaks
+  # pre-commit gate blocks key material, and rightly so.
+  pointycastle: ^4.0.0
