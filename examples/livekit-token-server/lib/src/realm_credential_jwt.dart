@@ -48,7 +48,13 @@ class RealmCredentialIssuer {
     this.issuer = realmIssuer,
     this.audience = realmLiveKitAudience,
     this.ttl = const Duration(hours: 1),
-  }) : _key = signingKey;
+  }) : _key = signingKey {
+    // Fail closed on a misconfigured lifetime — a non-positive ttl would mint a
+    // credential that is already expired the instant it is issued.
+    if (ttl <= Duration.zero) {
+      throw ArgumentError.value(ttl, 'ttl', 'must be positive');
+    }
+  }
 
   final ECPrivateKey _key;
 
@@ -70,15 +76,21 @@ class RealmCredentialIssuer {
     required AuthProviderId provider,
     DateTime? issuedAt,
   }) {
-    final iat = (issuedAt ?? DateTime.now()).toUtc();
-    final expiresAt = iat.add(ttl);
-    // `exp` is set directly (not via sign's `expiresIn`) so RealmCredential's
-    // advertised expiry is byte-for-byte the token's authoritative `exp`.
+    // JWT `exp`/`iat` are whole-second UNIX times. Compute those integer seconds
+    // FIRST and derive `expiresAt` back from the exp second, so the advertised
+    // [RealmCredential.expiresAt] is byte-for-byte the token's authoritative
+    // `exp` — no sub-second tail where a client believes a rejected token is
+    // still live.
+    final iatSeconds =
+        (issuedAt ?? DateTime.now()).toUtc().millisecondsSinceEpoch ~/ 1000;
+    final expSeconds = iatSeconds + ttl.inSeconds;
+    final expiresAt =
+        DateTime.fromMillisecondsSinceEpoch(expSeconds * 1000, isUtc: true);
     final jwt = JWT(
       <String, dynamic>{
         'prov': provider.value,
-        'iat': iat.millisecondsSinceEpoch ~/ 1000,
-        'exp': expiresAt.millisecondsSinceEpoch ~/ 1000,
+        'iat': iatSeconds,
+        'exp': expSeconds,
       },
       issuer: issuer,
       subject: subject.value,
@@ -132,13 +144,17 @@ class RealmCredentialVerifier {
     }
 
     final payload = jwt.payload;
-    final sub = jwt.subject ?? (payload is Map ? payload['sub'] as String? : null);
+    // Extract with type CHECKS, never `as` casts: a validly-signed token can
+    // still carry a non-string `sub`/`prov` (e.g. a number), and `x as String`
+    // would throw a raw TypeError that escapes the fail-closed contract. Every
+    // malformed-claim shape must collapse to RealmCredentialRejected.
+    final sub = jwt.subject ?? (payload is Map ? payload['sub'] : null);
     final prov = payload is Map ? payload['prov'] : null;
-    if (sub == null || sub.isEmpty) {
-      throw const RealmCredentialRejected('missing subject claim');
+    if (sub is! String || sub.isEmpty) {
+      throw const RealmCredentialRejected('missing or non-string subject claim');
     }
     if (prov is! String || prov.isEmpty) {
-      throw const RealmCredentialRejected('missing provider-provenance claim');
+      throw const RealmCredentialRejected('missing or non-string provider claim');
     }
     return VerifiedRealmClaims(
       subject: UserId(sub),

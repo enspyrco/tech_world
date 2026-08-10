@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart' as fb;
@@ -27,20 +28,48 @@ class FirebaseAuthProvider implements AuthProvider {
   /// Creates a provider over [auth] (defaults to `FirebaseAuth.instance`),
   /// exchanging Firebase ID tokens for [RealmCredential]s at [exchangeEndpoint].
   ///
-  /// [httpClient] is a DI seam for tests; defaults to a fresh [http.Client].
+  /// [httpClient] is a DI seam for tests; defaults to a fresh [http.Client]
+  /// (owned by this provider and closed by [dispose]). [exchangeTimeout] bounds
+  /// the exchange POST so a stalled endpoint can't hang auth forever.
+  ///
+  /// [exchangeEndpoint] MUST be https — the Firebase ID token is POSTed to it,
+  /// and over plain http that native credential travels in the clear. Set
+  /// [allowInsecureExchangeEndpoint] only for local dev against `http://`.
   FirebaseAuthProvider({
     required this.exchangeEndpoint,
     fb.FirebaseAuth? auth,
     http.Client? httpClient,
+    this.exchangeTimeout = const Duration(seconds: 30),
+    bool allowInsecureExchangeEndpoint = false,
   })  : _auth = auth ?? fb.FirebaseAuth.instance,
-        _http = httpClient ?? http.Client();
+        _http = httpClient ?? http.Client(),
+        _ownsHttpClient = httpClient == null {
+    if (!allowInsecureExchangeEndpoint && !exchangeEndpoint.isScheme('https')) {
+      throw ArgumentError.value(
+        exchangeEndpoint,
+        'exchangeEndpoint',
+        'must be https so the Firebase ID token is not sent in cleartext; '
+            'set allowInsecureExchangeEndpoint: true only for local dev',
+      );
+    }
+  }
 
   /// The Realm credential-exchange endpoint. Receives the Firebase ID token,
   /// returns `{"token": <opaque>, "expiresAt": <ISO-8601>}`.
   final Uri exchangeEndpoint;
 
+  /// Upper bound on the exchange POST before it fails as a network error.
+  final Duration exchangeTimeout;
+
   final fb.FirebaseAuth _auth;
   final http.Client _http;
+  final bool _ownsHttpClient;
+
+  /// Releases the internally-created HTTP client. No-op when the caller injected
+  /// their own client (they own its lifecycle).
+  void dispose() {
+    if (_ownsHttpClient) _http.close();
+  }
 
   @override
   RealmUser? get currentUser {
@@ -107,11 +136,15 @@ class FirebaseAuthProvider implements AuthProvider {
 
     final http.Response response;
     try {
-      response = await _http.post(
-        exchangeEndpoint,
-        headers: const {'content-type': 'application/json'},
-        body: jsonEncode({'idToken': idToken}),
-      );
+      response = await _http
+          .post(
+            exchangeEndpoint,
+            headers: const {'content-type': 'application/json'},
+            body: jsonEncode({'idToken': idToken}),
+          )
+          .timeout(exchangeTimeout);
+    } on TimeoutException catch (_) {
+      throw const RealmAuthNetworkError('exchange request timed out');
     } on http.ClientException catch (e) {
       throw RealmAuthNetworkError('exchange request failed: ${e.message}');
     }
@@ -172,6 +205,9 @@ class FirebaseAuthProvider implements AuthProvider {
   /// Display-only — [AuthProviderId] must never gate access (a provider string
   /// is forgeable; trust comes from the exchange-verified [RealmCredential]).
   Set<AuthProviderId> _providerIds(fb.User u) {
+    // Anonymous is a deliberate singleton: no external provider vouched for the
+    // identity, so `firebase` (added below for real sign-ins as the verifying
+    // authority) would be misleading — there is nothing for it to have verified.
     if (u.isAnonymous) return {AuthProviderId.anonymous};
     final ids = <AuthProviderId>{};
     for (final info in u.providerData) {

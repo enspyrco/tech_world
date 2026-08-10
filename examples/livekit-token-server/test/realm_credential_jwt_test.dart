@@ -1,3 +1,4 @@
+import 'package:dart_jsonwebtoken/dart_jsonwebtoken.dart';
 import 'package:livekit_token_server/livekit_token_server.dart';
 import 'package:realm/realm.dart';
 import 'package:test/test.dart';
@@ -30,6 +31,16 @@ void main() {
 
       expect(claims.subject.value, 'user-abc');
       expect(claims.provider.value, AuthProviderId.firebase.value);
+    });
+
+    test('a non-positive ttl is rejected at construction', () {
+      expect(
+        () => RealmCredentialIssuer(
+          signingKey: keys.privateKey,
+          ttl: Duration.zero,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
     test('RealmCredential.expiresAt equals the token exp exactly', () {
@@ -82,17 +93,34 @@ void main() {
     });
 
     test('an expired credential is rejected', () {
-      final expiredIssuer = RealmCredentialIssuer(
-        signingKey: keys.privateKey,
-        ttl: const Duration(seconds: -10), // exp already in the past
-      );
-      final cred = expiredIssuer.issue(
+      // Issued two hours ago with the default 1h ttl → exp is in the past.
+      final cred = issuer.issue(
         subject: const UserId('u'),
         provider: AuthProviderId.firebase,
+        issuedAt: DateTime.now().subtract(const Duration(hours: 2)),
       );
 
       expect(
         () => verifier.verify(cred.token),
+        throwsA(isA<RealmCredentialRejected>()),
+      );
+    });
+
+    test('a validly-signed token with no sub claim is rejected (fail closed)',
+        () {
+      // Reachable malformed case: a correctly-signed token that simply omits
+      // sub. (dart_jsonwebtoken coerces a *numeric* sub to a string, so the
+      // reviewers' "non-string sub → TypeError" path is not reachable via this
+      // library — the type-checked extraction in verify() guards it regardless.)
+      final token = JWT(
+        {'prov': 'google'},
+        issuer: realmIssuer,
+        audience: Audience.one(realmLiveKitAudience),
+      ).sign(keys.privateKey, algorithm: JWTAlgorithm.ES256,
+          expiresIn: const Duration(hours: 1));
+
+      expect(
+        () => verifier.verify(token),
         throwsA(isA<RealmCredentialRejected>()),
       );
     });

@@ -140,6 +140,46 @@ void main() {
     });
   });
 
+  group('exchange endpoint safety', () {
+    test('a non-https exchange endpoint is rejected at construction', () {
+      expect(
+        () => FirebaseAuthProvider(
+          exchangeEndpoint: Uri.parse('http://insecure.example/exchange'),
+          auth: MockFirebaseAuth(),
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('http is allowed only under the explicit dev flag', () {
+      expect(
+        () => FirebaseAuthProvider(
+          exchangeEndpoint: Uri.parse('http://localhost:8080/exchange'),
+          auth: MockFirebaseAuth(),
+          allowInsecureExchangeEndpoint: true,
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('a stalled exchange times out as RealmAuthNetworkError', () {
+      final client = MockClient((_) async {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        return http.Response('{}', 200);
+      });
+      final provider = FirebaseAuthProvider(
+        exchangeEndpoint: exchangeUrl,
+        auth: signedInAuth(),
+        httpClient: client,
+        exchangeTimeout: const Duration(milliseconds: 20),
+      );
+      expect(
+        provider.getCredential(),
+        throwsA(isA<RealmAuthNetworkError>()),
+      );
+    });
+  });
+
   test('signOut clears currentUser', () async {
     final provider = providerWith(auth: signedInAuth());
     expect(provider.currentUser, isNotNull);
