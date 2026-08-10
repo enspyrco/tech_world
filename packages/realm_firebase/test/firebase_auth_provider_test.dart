@@ -112,6 +112,16 @@ void main() {
         throwsA(isA<RealmAuthCredentialInvalid>()),
       );
     });
+
+    test('valid-but-wrong-shape 200 body (JSON array) fails closed', () {
+      // Regression: `jsonDecode(...) as Map` would throw an uncaught TypeError
+      // on a non-object body; it must fail closed instead.
+      final client = MockClient((_) async => http.Response('["nope"]', 200));
+      expect(
+        providerWith(auth: signedInAuth(), client: client).getCredential(),
+        throwsA(isA<RealmAuthCredentialInvalid>()),
+      );
+    });
   });
 
   group('signIn', () {

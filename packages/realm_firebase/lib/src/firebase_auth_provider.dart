@@ -134,10 +134,17 @@ class FirebaseAuthProvider implements AuthProvider {
 
   RealmCredential _parseCredential(String body) {
     try {
-      final json = jsonDecode(body) as Map<String, Object?>;
-      final token = json['token'] as String?;
-      final expiresRaw = json['expiresAt'] as String?;
-      if (token == null || token.isEmpty || expiresRaw == null) {
+      final decoded = jsonDecode(body);
+      // A 200 with valid-but-wrong-shape JSON (an array, a bare string) must
+      // fail closed, not throw an uncaught cast error.
+      if (decoded is! Map) {
+        throw const RealmAuthCredentialInvalid(
+          'exchange response was not a JSON object',
+        );
+      }
+      final token = decoded['token'];
+      final expiresRaw = decoded['expiresAt'];
+      if (token is! String || token.isEmpty || expiresRaw is! String) {
         throw const RealmAuthCredentialInvalid(
           'exchange response missing token or expiresAt',
         );
