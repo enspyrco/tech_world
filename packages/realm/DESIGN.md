@@ -358,6 +358,12 @@ Ships in Realm:
 
 This means each provider plugin ships with a small server-side exchange reference implementation (`examples/<provider>-exchange/`). The "GitHub OAuth ≠ OIDC ID token" issue resolves because GitHub access tokens never reach the engine or LiveKit — they're terminated at the GitHub plugin's exchange endpoint. Operators who don't want to run a per-provider exchange service can use the bundled Firebase Auth path (Firebase handles provider-side verification for Google/Apple/email and emits an ID token that the Firebase exchange impl translates into a `RealmCredential`).
 
+**Resolved decisions (2026-08-10), so `FirebaseAuthProvider.getCredential()` (#2293) can be built against a settled contract:**
+
+- **`RealmCredential` is a distinct opaque token, NOT a thin wrapper over the Firebase ID token.** The `RealmCredential` interface already commits to "never carries a provider-native token"; wrapping the ID token would break that invariant, permanently couple the LiveKit-mint endpoint to Firebase verification, and forfeit the multi-provider portability that is the exchange boundary's entire reason to exist. The exchange step is therefore real, not a pass-through.
+- **The `RealmCredential` token is a stateless, Realm-issued signed JWT** (short TTL, self-verifying — the mint endpoint checks a signature, no per-request storage read). Hard mid-session revocation is explicitly out of scope for v1: at a ≤1h TTL it is a weak requirement for a game, and the live kill-switch that *does* matter (ban/kick) is a LiveKit server-side session revoke, a different lever from credential expiry. Revisit only if a DB-backed revocable handle is later required.
+- **Deployment: one service, two logical handlers** for the Firebase path — `exchangeCredential` (verify Firebase ID token via Admin SDK → mint the Realm JWT) and the LiveKit mint handler co-deploy on OCI, but stay separate handlers in code so a future per-provider exchange (e.g. GitHub) can split to its own service without touching the mint path. The Realm-JWT **signing key is scoped to the exchange handler only**, so a bug in the mint handler cannot forge a `RealmCredential`. The exchange handler is the sole trust-establishment point (provider verification happens only there) — rate-limit and audit it; the mint handler MUST reject anything that is not a valid Realm JWT (never a raw ID token, or the exchange boundary is bypassable).
+
 ### 2. `RoomConfigStore`
 
 ```dart
@@ -563,7 +569,9 @@ Ships in Realm:
 
 ### 4. `LiveKitTokenEndpoint`
 
-This is a **deployment-shape contract**, surfaced to the engine as a thin Dart config value. The engine holds a config (URL + auth strategy); the real implementation is whatever HTTP service stands at that URL. Reference implementations live in `examples/livekit-token-server/` (Node, Go, Rust variants); the production endpoint we ship is a Firebase Cloud Function.
+This is a **deployment-shape contract**, surfaced to the engine as a thin Dart config value. The engine holds a config (URL + auth strategy); the real implementation is whatever HTTP service stands at that URL. Reference implementations live in `examples/livekit-token-server/` (Node, Go, Rust variants).
+
+**Deployment decision (resolved 2026-08-10 — Tech World's production endpoint is an OCI service, NOT a Firebase Cloud Function).** LiveKit is self-hosted on OCI (Caddy TLS, Redis for dispatch), so the LiveKit API secret already lives on that box in `livekit.yaml`. Minting a token is "read those keys, sign a JWT, embed `RoomAgentDispatch`" — pure `livekit-server-sdk`, no Firebase dependency. The pre-engine app used a Firebase **callable** (`retrieveLiveKitToken`, an `onCall`) purely because the client was already a Firebase Auth client and `onCall` verified the auth context for free — a convenience from before LiveKit was self-hosted, not an architectural need. That callable also does not match the engine's transport contract (plain HTTPS + `Authorization: Bearer <RealmCredential.token>`; a callable has no bearer slot), so the migration replaces it with a plain HTTP mint endpoint on OCI, behind the same Caddy, reading the same `livekit.yaml` keys. Firebase leaves the real-time path entirely. What Firebase still does — provider **identity** (the OAuth dance for Google/Apple/email) — is a separate own-vs-keep decision, deliberately NOT bundled into this migration (tracked as its own task); the exchange step below verifies a Firebase ID token via the Admin SDK, which is a library that also runs on OCI.
 
 ```dart
 class LiveKitTokenEndpoint {
