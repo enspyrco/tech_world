@@ -194,6 +194,10 @@ void main() {
       );
     });
 
+    test('success("") is rejected — success means a usable token', () {
+      expect(() => TokenResult.success(''), throwsA(isA<AssertionError>()));
+    });
+
     test('sealed subtypes carry the right getters', () {
       const ok = TokenResult.success('lk');
       expect(ok, isA<TokenSuccess>());

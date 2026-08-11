@@ -1009,7 +1009,10 @@ class LiveKitService {
           .httpsCallable('retrieveLiveKitToken')
           .call({'roomName': roomName});
       final token = result.data as String?;
-      return token != null
+      // Empty like null: an empty token would otherwise "succeed" and fail
+      // later as roomFailed, mislabelling a mint bug (the realm path already
+      // rejects empty via _parseToken; keep the CF path symmetric).
+      return (token != null && token.isNotEmpty)
           ? TokenResult.success(token)
           : const TokenResult.failure(ConnectionResult.tokenUnknownError);
     } on FirebaseFunctionsException catch (e) {
@@ -1174,8 +1177,12 @@ sealed class TokenResult {
 
 /// A successful token fetch.
 class TokenSuccess extends TokenResult {
-  /// Wraps the minted LiveKit access [token].
-  const TokenSuccess(this.token) : super();
+  /// Wraps the minted LiveKit access [token], which must be non-empty — success
+  /// means "usable token", not merely "non-null string" (asserted in debug; the
+  /// construction sites reject empty in all modes).
+  const TokenSuccess(this.token)
+      : assert(token != '', 'TokenSuccess requires a non-empty token'),
+        super();
 
   @override
   final String token;

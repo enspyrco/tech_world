@@ -386,9 +386,15 @@ class RoomSession {
           return;
         }
 
-        // Auth errors won't resolve with retries — stop immediately.
-        if (result == ConnectionResult.tokenAuthError) {
-          _log.warning('Auth error — aborting reconnection');
+        // Non-retryable results stop reconnection immediately: tokenAuthError
+        // (needs re-sign-in) and tokenUnknownError (permanent 4xx / malformed
+        // response — won't succeed unchanged). Only tokenNetworkError is
+        // genuinely transient, so only it keeps walking the backoff schedule.
+        // This makes RealmTokenSource's classification real end-to-end rather
+        // than mapping 4xx→unknown and then retrying it anyway.
+        if (result == ConnectionResult.tokenAuthError ||
+            result == ConnectionResult.tokenUnknownError) {
+          _log.warning('Non-retryable token result ($result) — aborting reconnection');
           connectionMessage.value = failureMessageFor(result);
           _onStateChanged();
           return;

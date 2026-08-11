@@ -579,6 +579,50 @@ void main() {
       await lostCtrl.close();
     });
 
+    test('aborts immediately on tokenUnknownError (permanent, not retryable)',
+        () async {
+      final liveKit = _FakeLiveKit();
+      final stubs = _stubLiveKit(liveKit);
+      final lostCtrl = stubs.connectionLost;
+      var connectCalls = 0;
+      var initialConnectDone = false;
+      when(liveKit.connect).thenAnswer((_) async {
+        connectCalls++;
+        if (!initialConnectDone) {
+          initialConnectDone = true;
+          return ConnectionResult.connected;
+        }
+        return ConnectionResult.tokenUnknownError;
+      });
+
+      final session = RoomSession.create(
+        room: _testRoom,
+        userId: 'user-1',
+        displayName: 'User 1',
+        avatarId: 'npc11',
+        onStateChanged: () {},
+        onReconnectWorld: () async {},
+        onRoomDeleted: () {},
+        chatMessageRepository:
+            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+        liveKitService: liveKit,
+        firestore: FakeFirebaseFirestore(),
+        reconnectDelays: zeroDelays,
+      );
+
+      await session.connect();
+      connectCalls = 0;
+
+      lostCtrl.add('permanent-error');
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+
+      expect(connectCalls, 1,
+          reason: 'unknown/permanent error should abort after 1 try');
+
+      await session.leave();
+      await lostCtrl.close();
+    });
+
     test('succeeds on second attempt and clears failure state', () async {
       final liveKit = _FakeLiveKit();
       final stubs = _stubLiveKit(liveKit);
