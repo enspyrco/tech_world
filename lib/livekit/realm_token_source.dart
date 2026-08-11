@@ -116,12 +116,23 @@ class RealmTokenSource {
 
     final RealmCredential credential;
     try {
-      credential = await authProvider.getCredential();
+      // Bound hop 1 too: the exchange POST inside getCredential is already
+      // bounded, but the Firebase ID-token fetch (user.getIdToken) is not — an
+      // unbounded await there would strand connect() in `connecting` forever.
+      credential = await authProvider.getCredential().timeout(timeout);
     } on RealmAuthCredentialInvalid {
       // The exchange rejected the identity — re-auth, don't retry.
       return const TokenResult.failure(ConnectionResult.tokenAuthError);
     } on RealmAuthException {
       // Network, rate-limit, cancelled: retryable transport faults.
+      return const TokenResult.failure(ConnectionResult.tokenNetworkError);
+    } on TimeoutException {
+      return const TokenResult.failure(ConnectionResult.tokenNetworkError);
+    } on Exception {
+      // Defense-in-depth: the AuthProvider contract says getCredential only
+      // throws RealmAuthException, but if a provider ever leaks a raw library
+      // exception, treat it as a retryable transport fault rather than letting
+      // it escape unclassified.
       return const TokenResult.failure(ConnectionResult.tokenNetworkError);
     }
 

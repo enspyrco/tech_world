@@ -367,11 +367,18 @@ class LiveKitService {
     try {
       // Get token: realm-token-server via the injected token source, or the
       // legacy retrieveLiveKitToken Cloud Function when no source is set.
-      final tokenResult = await _retrieveToken();
-      if (tokenResult.token == null) {
-        _log.warning('Failed to retrieve token');
-        _connectionState = _ConnectionState.disconnected;
-        return tokenResult.connectionResult;
+      final String token;
+      switch (await _retrieveToken()) {
+        case TokenFailure(:final connectionResult):
+          _log.warning('Failed to retrieve token');
+          _connectionState = _ConnectionState.disconnected;
+          // A failure must never report `connected` (asserted in debug); coerce
+          // in release so a mis-constructed failure can't fake a joined room.
+          return connectionResult == ConnectionResult.connected
+              ? ConnectionResult.tokenUnknownError
+              : connectionResult;
+        case TokenSuccess(token: final t):
+          token = t;
       }
 
       // Create room with options
@@ -406,7 +413,7 @@ class LiveKitService {
       // candidates are tried alongside direct UDP.
       await _room!.connect(
         _serverUrl,
-        tokenResult.token!,
+        token,
         connectOptions: const ConnectOptions(
           rtcConfiguration: RTCConfiguration(
             iceTransportPolicy: RTCIceTransportPolicy.all,
@@ -1130,36 +1137,64 @@ class LiveKitService {
 
 /// Result of a token fetch — either a token, or a classified failure.
 ///
-/// Public because it is the return type of the injectable token source
-/// (the `tokenSource` injected into [LiveKitService]). Carrying the [ConnectionResult] (rather than
-/// a bare `String?`) lets the source distinguish an auth failure — which must
-/// abort reconnection and bounce the user to sign-in — from a retryable network
-/// failure. The app's realm-backed source maps `RealmAuthException` subtypes to
-/// the right classification; see `realm_token_source.dart`.
-class TokenResult {
-  /// A successful fetch carrying the LiveKit access [token].
-  const TokenResult.success(String this.token)
-      : connectionResult = ConnectionResult.connected;
+/// A `sealed` success/failure union (the house idiom for a closed result
+/// hierarchy — cf. `CastResult` in the design standard). Carrying the
+/// [ConnectionResult] rather than a bare `String?` lets the source distinguish
+/// an auth failure — which must abort reconnection and bounce the user to
+/// sign-in — from a retryable network failure. The realm-backed source maps
+/// `RealmAuthException` subtypes to the right classification; see
+/// `realm_token_source.dart`.
+///
+/// The [token] / [connectionResult] getters are retained for ergonomic reads;
+/// consumers that need the token should pattern-match on [TokenSuccess] /
+/// [TokenFailure] so the non-null token is type-checked rather than `!`-asserted.
+sealed class TokenResult {
+  const TokenResult();
 
-  /// A failed fetch classified by [connectionResult] (never
+  /// A successful fetch carrying the LiveKit access token.
+  const factory TokenResult.success(String token) = TokenSuccess;
+
+  /// A failed fetch classified by a failure [ConnectionResult] (never
   /// [ConnectionResult.connected]).
-  ///
-  /// The assert makes the illegal `failure(connected)` state unrepresentable:
-  /// with `token == null` it would otherwise drive `connect()` to return
-  /// `connected` for a room it never joined (a caught cage-match finding, PR
-  /// #528).
-  const TokenResult.failure(this.connectionResult)
-      : token = null,
-        assert(
-          connectionResult != ConnectionResult.connected,
-          'TokenResult.failure must carry a failure result, not connected',
-        );
+  const factory TokenResult.failure(ConnectionResult connectionResult) =
+      TokenFailure;
 
   /// The LiveKit access token on success; `null` on failure.
-  final String? token;
+  String? get token => switch (this) {
+        TokenSuccess(:final token) => token,
+        TokenFailure() => null,
+      };
 
-  /// The [ConnectionResult] describing the outcome — [ConnectionResult.connected]
-  /// on success, or a specific failure reason otherwise.
+  /// [ConnectionResult.connected] on success, or the failure reason otherwise.
+  ConnectionResult get connectionResult => switch (this) {
+        TokenSuccess() => ConnectionResult.connected,
+        TokenFailure(:final connectionResult) => connectionResult,
+      };
+}
+
+/// A successful token fetch.
+class TokenSuccess extends TokenResult {
+  /// Wraps the minted LiveKit access [token].
+  const TokenSuccess(this.token) : super();
+
+  @override
+  final String token;
+}
+
+/// A classified token-fetch failure.
+class TokenFailure extends TokenResult {
+  /// [connectionResult] must be a failure reason, never
+  /// [ConnectionResult.connected] — the assert makes the illegal state
+  /// unrepresentable in debug/CI; `connect()` coerces it in release too (a
+  /// caught cage-match finding, PR #528).
+  const TokenFailure(this.connectionResult)
+      : assert(
+          connectionResult != ConnectionResult.connected,
+          'TokenResult.failure must carry a failure result, not connected',
+        ),
+        super();
+
+  @override
   final ConnectionResult connectionResult;
 }
 

@@ -193,6 +193,32 @@ void main() {
         throwsA(isA<AssertionError>()),
       );
     });
+
+    test('sealed subtypes carry the right getters', () {
+      const ok = TokenResult.success('lk');
+      expect(ok, isA<TokenSuccess>());
+      expect(ok.token, 'lk');
+      expect(ok.connectionResult, ConnectionResult.connected);
+      const bad = TokenResult.failure(ConnectionResult.tokenAuthError);
+      expect(bad, isA<TokenFailure>());
+      expect(bad.token, isNull);
+      expect(bad.connectionResult, ConnectionResult.tokenAuthError);
+    });
+  });
+
+  group('.firebase lazy constructor', () {
+    test('constructs and disposes without touching Firebase when fetch never ran',
+        () {
+      // The production path builds its FirebaseAuthProvider lazily at first
+      // fetch, so construction + dispose must not require Firebase.initializeApp.
+      final source = RealmTokenSource.firebase(
+        exchangeEndpoint: Uri.parse('https://realm.example/exchange'),
+        endpoint: endpoint,
+        roomName: 'l_room',
+        httpClient: MockClient((_) async => http.Response('{}', 500)),
+      );
+      expect(source.dispose, returnsNormally);
+    });
   });
 
   group('hop 1 — credential exchange failures map before hop 2 runs', () {
