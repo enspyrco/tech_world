@@ -157,11 +157,13 @@ class FirebaseAuthProvider implements AuthProvider {
     if (status == 429) {
       throw const RealmAuthRateLimited('exchange endpoint rate-limited');
     }
-    // A 4xx is the exchange rejecting the request/credential → re-auth, not
-    // retry. 5xx and anything else is a server/transport fault → network.
-    if (status >= 400 && status < 500) {
+    // Only 400/401/403 mean "the exchange rejected THIS credential" → re-auth.
+    // Other 4xx (404 wrong path, 408 timeout, 413, …) and all 5xx are transport
+    // /server faults → network (retry), not a reason to bounce the user to
+    // sign-in.
+    if (status == 400 || status == 401 || status == 403) {
       throw RealmAuthCredentialInvalid(
-        'exchange endpoint rejected the request (HTTP $status)',
+        'exchange endpoint rejected the credential (HTTP $status)',
       );
     }
     throw RealmAuthNetworkError('exchange endpoint returned HTTP $status');
@@ -191,6 +193,13 @@ class FirebaseAuthProvider implements AuthProvider {
       if (!expiresAt.isUtc) {
         throw const RealmAuthCredentialInvalid(
           'exchange expiresAt must be UTC (Z or explicit offset)',
+        );
+      }
+      // Reject an already-expired credential at parse rather than caching a
+      // corpse and only discovering it at mint.
+      if (!expiresAt.isAfter(DateTime.now().toUtc())) {
+        throw const RealmAuthCredentialInvalid(
+          'exchange returned an already-expired credential',
         );
       }
       return RealmCredential(token: token, expiresAt: expiresAt);
@@ -228,6 +237,11 @@ class FirebaseAuthProvider implements AuthProvider {
           ids.add(AuthProviderId.github);
         case 'password':
           ids.add(AuthProviderId.emailPassword);
+        default:
+          // Unknown wire (phone, microsoft.com, a future/custom provider):
+          // keep it as an open-set id rather than dropping it, so the display
+          // surface stays truthful. AuthProviderId is an open set by design.
+          ids.add(AuthProviderId(info.providerId));
       }
     }
     // Firebase is always the verifying authority for this plugin.

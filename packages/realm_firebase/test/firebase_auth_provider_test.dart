@@ -57,13 +57,14 @@ void main() {
         () async {
       String? sentBody;
       Uri? sentUrl;
+      final expiry = DateTime.now().toUtc().add(const Duration(hours: 1));
       final client = MockClient((req) async {
         sentBody = req.body;
         sentUrl = req.url;
         return http.Response(
           jsonEncode({
             'token': 'realm-opaque-token',
-            'expiresAt': '2026-08-10T09:00:00Z',
+            'expiresAt': expiry.toIso8601String(),
           }),
           200,
         );
@@ -73,7 +74,7 @@ void main() {
           await providerWith(auth: signedInAuth(), client: client).getCredential();
 
       expect(cred.token, 'realm-opaque-token');
-      expect(cred.expiresAt, DateTime.utc(2026, 8, 10, 9));
+      expect(cred.expiresAt, expiry);
       expect(sentUrl, exchangeUrl);
       // The native Firebase ID token was sent to the exchange, not handed back.
       expect(sentBody, contains('idToken'));
@@ -137,6 +138,29 @@ void main() {
       expect(
         providerWith(auth: signedInAuth(), client: client).getCredential(),
         throwsA(isA<RealmAuthNetworkError>()),
+      );
+    });
+
+    test('a 404 is a network error, not a credential failure', () {
+      final client = MockClient((_) async => http.Response('nope', 404));
+      expect(
+        providerWith(auth: signedInAuth(), client: client).getCredential(),
+        throwsA(isA<RealmAuthNetworkError>()),
+      );
+    });
+
+    test('an already-expired 200 credential is rejected', () {
+      final past = DateTime.now()
+          .toUtc()
+          .subtract(const Duration(minutes: 5))
+          .toIso8601String();
+      final client = MockClient((_) async => http.Response(
+            jsonEncode({'token': 't', 'expiresAt': past}),
+            200,
+          ));
+      expect(
+        providerWith(auth: signedInAuth(), client: client).getCredential(),
+        throwsA(isA<RealmAuthCredentialInvalid>()),
       );
     });
 

@@ -157,6 +157,14 @@ class RealmCredentialVerifier {
     }
 
     final payload = jwt.payload;
+    // Require an `exp` claim. dart_jsonwebtoken only CHECKS exp when present, so
+    // a validly-signed token that omits it would never expire — breaking the
+    // revocation-by-expiry invariant. Reject a missing/non-numeric exp so no
+    // immortal credential can pass, even from a buggy exchange.
+    final exp = payload is Map ? payload['exp'] : null;
+    if (exp is! int) {
+      throw const RealmCredentialRejected('missing or non-numeric exp claim');
+    }
     // Extract with type CHECKS, never `as` casts: a validly-signed token can
     // still carry a non-string `sub`/`prov` (e.g. a number), and `x as String`
     // would throw a raw TypeError that escapes the fail-closed contract. Every

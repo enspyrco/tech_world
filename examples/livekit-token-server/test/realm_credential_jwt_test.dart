@@ -160,6 +160,21 @@ void main() {
       );
     });
 
+    test('a validly-signed token with NO exp claim is rejected (no immortal '
+        'credentials)', () {
+      final token = JWT(
+        {'prov': 'google'},
+        issuer: realmIssuer,
+        subject: 'u',
+        audience: Audience.one(realmLiveKitAudience),
+      ).sign(keys.privateKey, algorithm: JWTAlgorithm.ES256); // no expiresIn → no exp
+
+      expect(
+        () => verifier.verify(token),
+        throwsA(isA<RealmCredentialRejected>()),
+      );
+    });
+
     test('a token whose header alg is not ES256 is rejected (alg pinned)', () {
       // Take a valid token and swap its header to claim alg=none — the pin must
       // reject it BEFORE signature verification, closing algorithm confusion.
