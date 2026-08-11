@@ -1,5 +1,7 @@
 import 'package:realm/realm.dart';
 
+export 'src/realm_credential_jwt.dart';
+
 /// Reference LiveKit token endpoint skeleton (migration step 2).
 ///
 /// This file exists to pin the engine-vs-server dependency direction: the
