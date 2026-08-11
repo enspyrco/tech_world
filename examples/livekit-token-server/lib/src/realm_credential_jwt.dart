@@ -80,6 +80,15 @@ class RealmCredentialIssuer {
     required AuthProviderId provider,
     DateTime? issuedAt,
   }) {
+    // Fail at the mint boundary (the sole trust-establishment point), not only
+    // at verify: an empty subject/provider is a hollow claim the verifier would
+    // reject anyway, so never sign one.
+    if (subject.value.isEmpty) {
+      throw ArgumentError.value(subject, 'subject', 'must not be empty');
+    }
+    if (provider.value.isEmpty) {
+      throw ArgumentError.value(provider, 'provider', 'must not be empty');
+    }
     // JWT `exp`/`iat` are whole-second UNIX times. Compute those integer seconds
     // FIRST and derive `expiresAt` back from the exp second, so the advertised
     // [RealmCredential.expiresAt] is byte-for-byte the token's authoritative

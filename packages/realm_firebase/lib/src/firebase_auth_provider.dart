@@ -78,8 +78,15 @@ class FirebaseAuthProvider implements AuthProvider {
   }
 
   @override
-  Stream<RealmUser?> userChanges() =>
-      _auth.userChanges().map((u) => u == null ? null : _toRealmUser(u));
+  Stream<RealmUser?> userChanges() => _auth
+          .userChanges()
+          .map((u) => u == null ? null : _toRealmUser(u))
+          .handleError((Object e) {
+        // A stream ERROR is part of the public surface too — a Firebase
+        // exception must not cross the boundary untranslated.
+        if (e is fb.FirebaseAuthException) throw _translateAuthException(e);
+        throw RealmAuthNetworkError('user stream error: $e');
+      });
 
   @override
   Future<void> signOut() => _auth.signOut();
@@ -126,12 +133,19 @@ class FirebaseAuthProvider implements AuthProvider {
     final String idToken;
     try {
       final token = await user.getIdToken(forceRefresh);
-      if (token == null || token.isEmpty) {
+      if (token == null || token.trim().isEmpty) {
         throw const RealmAuthCredentialInvalid('Firebase returned no ID token');
       }
       idToken = token;
+    } on RealmAuthException {
+      rethrow;
     } on fb.FirebaseAuthException catch (e) {
       throw _translateAuthException(e);
+    } on Exception catch (e) {
+      // A platform-channel fault (PlatformException, …) must not escape the
+      // AuthProvider contract untranslated — same fail-closed posture as the
+      // HTTP path below.
+      throw RealmAuthNetworkError('failed to fetch ID token: $e');
     }
 
     final http.Response response;

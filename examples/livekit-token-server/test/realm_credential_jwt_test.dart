@@ -45,6 +45,19 @@ void main() {
       }
     });
 
+    test('issue() rejects an empty subject or provider at the mint boundary', () {
+      expect(
+        () => issuer.issue(
+            subject: const UserId(''), provider: AuthProviderId.firebase),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => issuer.issue(
+            subject: const UserId('u'), provider: const AuthProviderId('')),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
     test('RealmCredential.expiresAt equals the token exp exactly', () {
       final iat = DateTime.utc(2026, 8, 10, 7, 0, 0);
       final cred = issuer.issue(
