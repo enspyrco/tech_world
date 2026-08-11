@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
+import 'package:realm/realm.dart' show BearerCredential, LiveKitTokenEndpoint;
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/config/realm_token_config.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/realm_token_source.dart';
 import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/presence_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
@@ -50,7 +53,9 @@ class RoomSession {
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
     List<Duration>? reconnectDelays,
+    RealmTokenSource? realmTokenSource,
   })  : _firestore = firestore,
+        _realmTokenSource = realmTokenSource,
         _presenceService = presenceService,
         _onStateChanged = onStateChanged,
         _onReconnectWorld = onReconnectWorld,
@@ -75,6 +80,11 @@ class RoomSession {
   /// the room browser can render occupant avatars without a profile lookup.
   final String avatarId;
   final FirebaseFirestore _firestore;
+
+  /// The realm-backed LiveKit token source, or `null` for a test-injected
+  /// [LiveKitService]. Owned here: disposed in [leave] (closes its mint HTTP
+  /// client and, since it built one, the Firebase auth provider).
+  final RealmTokenSource? _realmTokenSource;
 
   /// Writes/clears this user's presence in the shared-world `/presence`
   /// collection across the connection lifecycle.
@@ -145,12 +155,32 @@ class RoomSession {
     @visibleForTesting PresenceService? presenceService,
     @visibleForTesting List<Duration>? reconnectDelays,
   }) {
-    final liveKit = liveKitService ??
-        LiveKitService(
-          userId: userId,
-          displayName: displayName,
-          roomName: room.id,
-        );
+    // Build the realm-backed token path for the production LiveKitService: the
+    // strangler-fig cutover from the retrieveLiveKitToken Cloud Function. A
+    // test-injected [liveKitService] brings its own token seam, so skip it.
+    // The source builds its Firebase auth provider lazily at first fetch, so
+    // this stays Firebase-free at construction (tests build create() without
+    // Firebase.initializeApp).
+    RealmTokenSource? realmTokenSource;
+    final LiveKitService liveKit;
+    if (liveKitService != null) {
+      liveKit = liveKitService;
+    } else {
+      realmTokenSource = RealmTokenSource.firebase(
+        exchangeEndpoint: realmExchangeEndpoint,
+        endpoint: LiveKitTokenEndpoint(
+          url: realmLiveKitTokenEndpoint,
+          authStrategy: const BearerCredential(),
+        ),
+        roomName: room.id,
+      );
+      liveKit = LiveKitService(
+        userId: userId,
+        displayName: displayName,
+        roomName: room.id,
+        tokenSource: realmTokenSource.fetch,
+      );
+    }
     final chatRepo = chatMessageRepository ?? ChatMessageRepository();
     final chat = ChatService(
       liveKitService: liveKit,
@@ -196,6 +226,7 @@ class RoomSession {
       onReconnectWorld: onReconnectWorld,
       onRoomDeleted: onRoomDeleted,
       reconnectDelays: reconnectDelays,
+      realmTokenSource: realmTokenSource,
     );
   }
 
@@ -425,6 +456,9 @@ class RoomSession {
     proximityService.dispose();
     timerService.dispose();
     await liveKitService.dispose();
+    // Close the token-path resources (HTTP client + lazily-built Firebase auth
+    // provider). No-op when a test injected the LiveKitService (null then).
+    _realmTokenSource?.dispose();
     _oracleService = null;
 
     connectionFailed.dispose();

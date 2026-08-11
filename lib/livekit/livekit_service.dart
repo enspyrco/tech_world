@@ -99,11 +99,11 @@ class LiveKitService {
     required this.userId,
     required this.displayName,
     this.roomName = 'tech-world',
-    @visibleForTesting Future<String?> Function()? tokenRetriever,
+    Future<TokenResult> Function()? tokenSource,
     @visibleForTesting void Function(String identity)? silenceParticipantAudio,
     @visibleForTesting void Function(String identity)? muteParticipantVolume,
     @visibleForTesting Iterable<String> Function()? remoteParticipantIdentities,
-  }) : _tokenRetriever = tokenRetriever {
+  }) : _tokenSource = tokenSource {
     // Seams for unit-testing the DF-silence logic without faking the LiveKit
     // SDK. Default to the real server-side disable / the live `Room`'s
     // participant set. Assigned in the constructor body (not the initializer
@@ -121,7 +121,13 @@ class LiveKitService {
   final String userId;
   final String displayName;
   final String roomName;
-  final Future<String?> Function()? _tokenRetriever;
+  /// Production token source, injected by [RoomSession]. When set, it fully
+  /// owns token retrieval (Firebase login → RealmCredential → LiveKit token via
+  /// the realm-token-server) and its classified [TokenResult] is used directly.
+  /// When `null`, [_retrieveToken] falls back to the legacy `retrieveLiveKitToken`
+  /// Cloud Function — the one-line rollback for the strangler-fig cutover. Also
+  /// the seam through which tests inject a canned token.
+  final Future<TokenResult> Function()? _tokenSource;
 
   /// Effect invoked to silence a participant's audio (server-side disable).
   ///
@@ -973,13 +979,13 @@ class LiveKitService {
     }
   }
 
-  Future<_TokenResult> _retrieveToken() async {
-    if (_tokenRetriever != null) {
-      final token = await _tokenRetriever();
-      return token != null
-          ? _TokenResult.success(token)
-          : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
+  Future<TokenResult> _retrieveToken() async {
+    if (_tokenSource != null) {
+      return _tokenSource();
     }
+    // Legacy fallback (rollback path): the retrieveLiveKitToken Cloud Function.
+    // Retained until the realm-token-server cutover is proven live — see
+    // tech_world/CLAUDE.md and claude-tasks #13.
     try {
       _log.info('Retrieving token for room "$roomName"');
       final result = await FirebaseFunctions.instance
@@ -987,19 +993,19 @@ class LiveKitService {
           .call({'roomName': roomName});
       final token = result.data as String?;
       return token != null
-          ? _TokenResult.success(token)
-          : const _TokenResult.failure(ConnectionResult.tokenUnknownError);
+          ? TokenResult.success(token)
+          : const TokenResult.failure(ConnectionResult.tokenUnknownError);
     } on FirebaseFunctionsException catch (e) {
       _log.warning('Token retrieval failed', e);
       if (e.code == 'unauthenticated' || e.code == 'permission-denied') {
-        return const _TokenResult.failure(ConnectionResult.tokenAuthError);
+        return const TokenResult.failure(ConnectionResult.tokenAuthError);
       }
-      return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
+      return const TokenResult.failure(ConnectionResult.tokenNetworkError);
     } catch (e) {
       // Generic catch handles timeouts, network errors, and other transient
       // failures not covered by FirebaseFunctionsException above.
       _log.warning('Token retrieval failed', e);
-      return const _TokenResult.failure(ConnectionResult.tokenNetworkError);
+      return const TokenResult.failure(ConnectionResult.tokenNetworkError);
     }
   }
 
@@ -1112,12 +1118,24 @@ class LiveKitService {
   }
 }
 
-/// Internal result from [LiveKitService._retrieveToken].
-class _TokenResult {
-  const _TokenResult.success(String this.token)
+/// Result of a token fetch — either a token, or a classified failure.
+///
+/// Public because it is the return type of the injectable token source
+/// ([LiveKitService.tokenSource]). Carrying the [ConnectionResult] (rather than
+/// a bare `String?`) lets the source distinguish an auth failure — which must
+/// abort reconnection and bounce the user to sign-in — from a retryable network
+/// failure. The app's realm-backed source maps `RealmAuthException` subtypes to
+/// the right classification; see `realm_token_source.dart`.
+class TokenResult {
+  /// A successful fetch carrying the LiveKit access [token].
+  const TokenResult.success(String this.token)
       : connectionResult = ConnectionResult.connected;
-  const _TokenResult.failure(this.connectionResult) : token = null;
 
+  /// A failed fetch classified by [connectionResult] (never
+  /// [ConnectionResult.connected]).
+  const TokenResult.failure(this.connectionResult) : token = null;
+
+  /// The LiveKit access token on success; `null` on failure.
   final String? token;
 
   /// The [ConnectionResult] describing the outcome — [ConnectionResult.connected]
