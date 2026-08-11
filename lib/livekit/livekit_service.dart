@@ -365,7 +365,8 @@ class LiveKitService {
     _log.info('Connecting to LiveKit...');
 
     try {
-      // Get token from Firebase Function
+      // Get token: realm-token-server via the injected token source, or the
+      // legacy retrieveLiveKitToken Cloud Function when no source is set.
       final tokenResult = await _retrieveToken();
       if (tokenResult.token == null) {
         _log.warning('Failed to retrieve token');
@@ -981,7 +982,16 @@ class LiveKitService {
 
   Future<TokenResult> _retrieveToken() async {
     if (_tokenSource != null) {
-      return _tokenSource();
+      try {
+        return await _tokenSource();
+      } catch (e) {
+        // RealmTokenSource already classifies every Exception into a
+        // TokenResult; this guards the seam against an unexpected NON-Exception
+        // escape (an Error, a future injector bug) so it can't fall through to
+        // connect()'s outer catch and be mislabelled roomFailed.
+        _log.warning('Token source threw unexpectedly', e);
+        return const TokenResult.failure(ConnectionResult.tokenUnknownError);
+      }
     }
     // Legacy fallback (rollback path): the retrieveLiveKitToken Cloud Function.
     // Retained until the realm-token-server cutover is proven live — see
@@ -1121,7 +1131,7 @@ class LiveKitService {
 /// Result of a token fetch — either a token, or a classified failure.
 ///
 /// Public because it is the return type of the injectable token source
-/// ([LiveKitService.tokenSource]). Carrying the [ConnectionResult] (rather than
+/// (the `tokenSource` injected into [LiveKitService]). Carrying the [ConnectionResult] (rather than
 /// a bare `String?`) lets the source distinguish an auth failure — which must
 /// abort reconnection and bounce the user to sign-in — from a retryable network
 /// failure. The app's realm-backed source maps `RealmAuthException` subtypes to
@@ -1133,7 +1143,17 @@ class TokenResult {
 
   /// A failed fetch classified by [connectionResult] (never
   /// [ConnectionResult.connected]).
-  const TokenResult.failure(this.connectionResult) : token = null;
+  ///
+  /// The assert makes the illegal `failure(connected)` state unrepresentable:
+  /// with `token == null` it would otherwise drive `connect()` to return
+  /// `connected` for a room it never joined (a caught cage-match finding, PR
+  /// #528).
+  const TokenResult.failure(this.connectionResult)
+      : token = null,
+        assert(
+          connectionResult != ConnectionResult.connected,
+          'TokenResult.failure must carry a failure result, not connected',
+        );
 
   /// The LiveKit access token on success; `null` on failure.
   final String? token;

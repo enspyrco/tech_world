@@ -97,6 +97,20 @@ class RealmTokenSource {
 
   /// Runs both hops and returns a classified [TokenResult].
   Future<TokenResult> fetch() async {
+    // Honor the engine's declared auth strategy rather than assuming Bearer.
+    // The engine ships only [BearerCredential] (the sole client-safe strategy),
+    // so anything else is a build-time misconfiguration, not a runtime state —
+    // fail closed instead of silently sending a bearer the endpoint may reject.
+    if (endpoint.authStrategy is! BearerCredential) {
+      return const TokenResult.failure(ConnectionResult.tokenUnknownError);
+    }
+
+    // Lazy single-init of the Firebase provider (`.firebase` mode). Safe without
+    // a lock ONLY because there is no `await` between the null-check and the
+    // assignment (so it's atomic within a microtask) AND because
+    // LiveKitService's concurrent-connect guard serializes fetch() calls. If a
+    // future caller invokes fetch() outside that guard, add a lock — two
+    // providers would otherwise be built and one http client would leak.
     final authProvider = _authProvider ??=
         FirebaseAuthProvider(exchangeEndpoint: _exchangeEndpoint!);
 
@@ -139,13 +153,18 @@ class RealmTokenSource {
       case 401 || 403:
         // The mint rejected the credential → re-auth (don't retry forever).
         return const TokenResult.failure(ConnectionResult.tokenAuthError);
-      case 400:
-        // Malformed request (a client bug — roomName is always sent). Not an
-        // auth failure and not meaningfully retryable.
-        return const TokenResult.failure(ConnectionResult.tokenUnknownError);
-      default:
-        // 429 + 5xx + anything else: retryable network/server faults.
+      case 429:
+        // Rate-limited: genuinely retryable.
         return const TokenResult.failure(ConnectionResult.tokenNetworkError);
+      case >= 500:
+        // Server fault: retryable.
+        return const TokenResult.failure(ConnectionResult.tokenNetworkError);
+      default:
+        // Other 4xx (400 bad request, 404 wrong path, 415 unsupported media, …):
+        // permanent integration errors. Not auth, and NOT meaningfully
+        // retryable — surface as unknown so reconnect doesn't burn its backoff
+        // schedule looping on a request that will never succeed unchanged.
+        return const TokenResult.failure(ConnectionResult.tokenUnknownError);
     }
   }
 

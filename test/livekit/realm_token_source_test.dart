@@ -33,6 +33,12 @@ class _FakeAuthProvider implements AuthProvider {
   Stream<RealmUser?> userChanges() => throw UnimplementedError();
 }
 
+/// A non-Bearer strategy — the engine ships none client-side, so the source
+/// must fail closed rather than send a bearer against it.
+class _UnknownStrategy implements TokenEndpointAuthStrategy {
+  const _UnknownStrategy();
+}
+
 void main() {
   final endpoint = LiveKitTokenEndpoint(
     url: Uri.parse('https://realm.example/livekit-token'),
@@ -119,6 +125,17 @@ void main() {
       expect(result.connectionResult, ConnectionResult.tokenUnknownError);
     });
 
+    test('404/415 → tokenUnknownError (permanent, not a retry-loop)', () async {
+      for (final code in [404, 415]) {
+        final result = await sourceWith(
+          auth: _FakeAuthProvider.credential(credential),
+          client: MockClient((_) async => http.Response('nope', code)),
+        ).fetch();
+        expect(result.connectionResult, ConnectionResult.tokenUnknownError,
+            reason: 'HTTP $code should be unknown, not network');
+      }
+    });
+
     test('429 → tokenNetworkError (retryable)', () async {
       final result = await sourceWith(
         auth: _FakeAuthProvider.credential(credential),
@@ -127,12 +144,15 @@ void main() {
       expect(result.connectionResult, ConnectionResult.tokenNetworkError);
     });
 
-    test('500 → tokenNetworkError (retryable)', () async {
-      final result = await sourceWith(
-        auth: _FakeAuthProvider.credential(credential),
-        client: MockClient((_) async => http.Response('boom', 500)),
-      ).fetch();
-      expect(result.connectionResult, ConnectionResult.tokenNetworkError);
+    test('500/503 → tokenNetworkError (retryable server fault)', () async {
+      for (final code in [500, 503]) {
+        final result = await sourceWith(
+          auth: _FakeAuthProvider.credential(credential),
+          client: MockClient((_) async => http.Response('boom', code)),
+        ).fetch();
+        expect(result.connectionResult, ConnectionResult.tokenNetworkError,
+            reason: 'HTTP $code should be retryable network');
+      }
     });
 
     test('transport exception → tokenNetworkError', () async {
@@ -141,6 +161,37 @@ void main() {
         client: MockClient((_) async => throw http.ClientException('down')),
       ).fetch();
       expect(result.connectionResult, ConnectionResult.tokenNetworkError);
+    });
+  });
+
+  group('auth-strategy guard — fail closed on anything but Bearer', () {
+    test('non-Bearer strategy → tokenUnknownError, hop 1 never runs', () async {
+      final auth = _FakeAuthProvider.credential(credential);
+      var hopCalled = false;
+      final result = await RealmTokenSource(
+        authProvider: auth,
+        endpoint: LiveKitTokenEndpoint(
+          url: Uri.parse('https://realm.example/livekit-token'),
+          authStrategy: const _UnknownStrategy(),
+        ),
+        roomName: 'l_room',
+        httpClient: MockClient((_) async {
+          hopCalled = true;
+          return http.Response('{}', 200);
+        }),
+      ).fetch();
+      expect(result.connectionResult, ConnectionResult.tokenUnknownError);
+      expect(hopCalled, isFalse);
+      expect(auth.getCredentialCalls, 0);
+    });
+  });
+
+  group('TokenResult illegal-state guard', () {
+    test('failure(connected) is unrepresentable (assert)', () {
+      expect(
+        () => TokenResult.failure(ConnectionResult.connected),
+        throwsA(isA<AssertionError>()),
+      );
     });
   });
 

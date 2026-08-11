@@ -6,11 +6,16 @@
 /// elsewhere without a code change. Defaults to the production dark deployment.
 library;
 
-/// Base URL of the realm-token-server (no trailing slash).
-const String kRealmTokenBase = String.fromEnvironment(
+const String _kRealmTokenBaseRaw = String.fromEnvironment(
   'REALM_TOKEN_BASE',
   defaultValue: 'https://realm-token.imagineering.cc',
 );
+
+/// Base URL of the realm-token-server, with any trailing slash(es) stripped so
+/// `'$kRealmTokenBase/exchange'` can never become `'…//exchange'` (a
+/// `--dart-define` with a trailing slash is an easy footgun at an auth boundary).
+final String kRealmTokenBase =
+    _kRealmTokenBaseRaw.replaceAll(RegExp(r'/+$'), '');
 
 /// Hop 1: `POST` a Firebase ID token, receive an opaque `RealmCredential`.
 Uri get realmExchangeEndpoint => Uri.parse('$kRealmTokenBase/exchange');
