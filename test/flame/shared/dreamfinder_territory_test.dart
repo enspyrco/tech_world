@@ -24,6 +24,16 @@ void main() {
       expect(rect.maxY, 4);
     });
 
+    test('floors a negative radius to 0 (never inverts min > max)', () {
+      final rect = const DreamfinderTerritory(center: Point(20, 20), radius: -3)
+          .resolve(50);
+      expect(rect.minX, 20);
+      expect(rect.maxX, 20);
+      expect(rect.minY, 20);
+      expect(rect.maxY, 20);
+      expect(rect.maxX >= rect.minX, isTrue);
+    });
+
     test('clamps to the far edge (never exceeds gridSize - 1)', () {
       final rect = const DreamfinderTerritory(center: Point(49, 49), radius: 3)
           .resolve(50);

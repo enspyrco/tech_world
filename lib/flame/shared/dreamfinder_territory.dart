@@ -30,12 +30,21 @@ class DreamfinderTerritory {
 
   /// Clamp the authored square to the grid, yielding the concrete inclusive
   /// cell rectangle every consumer reads.
-  TerritoryRect resolve(int gridSize) => TerritoryRect(
-        minX: (center.x - radius).clamp(0, gridSize - 1),
-        minY: (center.y - radius).clamp(0, gridSize - 1),
-        maxX: (center.x + radius).clamp(0, gridSize - 1),
-        maxY: (center.y + radius).clamp(0, gridSize - 1),
-      );
+  ///
+  /// A negative [radius] is floored to 0 so the result always has min <= max —
+  /// otherwise consumers that sample `nextInt(maxX - minX + 1)` would throw on a
+  /// negative width. This is the single point where the rect is made valid, so
+  /// the bot (which only parses client-resolved rects) never sees an inverted
+  /// square.
+  TerritoryRect resolve(int gridSize) {
+    final r = radius < 0 ? 0 : radius;
+    return TerritoryRect(
+      minX: (center.x - r).clamp(0, gridSize - 1),
+      minY: (center.y - r).clamp(0, gridSize - 1),
+      maxX: (center.x + r).clamp(0, gridSize - 1),
+      maxY: (center.y + r).clamp(0, gridSize - 1),
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
