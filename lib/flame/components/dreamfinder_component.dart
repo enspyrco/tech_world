@@ -255,6 +255,24 @@ class DreamfinderComponent
       return;
     }
 
+    // Confine the whole path to the square: pathfinding can route around a
+    // barrier and briefly outside the territory. If so, abandon this target and
+    // re-pick next tick rather than step DF outside his drawn zone. (The bot,
+    // authoritative when online, enforces the same via findPath bounds.)
+    final rect = territory;
+    if (rect != null) {
+      final escapes = points.any((p) {
+        return !rect.contains(
+          p.x.round() ~/ gridSquareSize,
+          p.y.round() ~/ gridSquareSize,
+        );
+      });
+      if (escapes) {
+        _wanderCooldown = 2.0;
+        return;
+      }
+    }
+
     _isWandering = true;
     _move(directions, points);
   }

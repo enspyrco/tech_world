@@ -80,6 +80,12 @@ void main() {
       expect(TerritoryRect.tryParse([1, 2, 3]), isNull);
       expect(TerritoryRect.tryParse([1, 2, 3, 4, 5]), isNull);
     });
+
+    test('tryParse returns null (not throws) on non-numeric elements', () {
+      expect(TerritoryRect.tryParse(['a', 2, 3, 4]), isNull);
+      expect(TerritoryRect.tryParse([1, null, 3, 4]), isNull);
+      expect(TerritoryRect.tryParse([1, 2, 3, [4]]), isNull);
+    });
   });
 
   group('GameMap.resolveDreamfinderTerritory', () {

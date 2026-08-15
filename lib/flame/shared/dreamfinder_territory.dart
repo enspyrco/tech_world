@@ -67,6 +67,9 @@ class TerritoryRect {
   /// `map-info`). Returns null if the shape is wrong.
   static TerritoryRect? tryParse(List<dynamic>? wire) {
     if (wire == null || wire.length != 4) return null;
+    // Guard element types too — a non-num (String/null/nested) means a wrong
+    // shape, so return null rather than throwing on the cast.
+    if (wire.any((e) => e is! num)) return null;
     final ints = wire.map((e) => (e as num).round()).toList();
     return TerritoryRect(
       minX: ints[0],

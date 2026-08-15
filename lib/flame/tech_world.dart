@@ -30,6 +30,7 @@ import 'package:tech_world/flame/maps/barrier_occlusion.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_territory_component.dart';
+import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/speech_bubble_component.dart';
 import 'package:tech_world/flame/components/tile_floor_component.dart';
@@ -604,6 +605,7 @@ class TechWorld extends World with TapCallbacks {
           // cell so he never stands in a wall.
           final dfCell = _nearestWalkableCell(
             (territory.center.x, territory.center.y),
+            bounds: territory,
           );
           final dfComp = DreamfinderComponent(
             position: Vector2(
@@ -692,14 +694,16 @@ class TechWorld extends World with TapCallbacks {
   /// so a blind spawn offset never lands an entity inside a wall. Returns
   /// [candidate] unchanged if it is already walkable (or if — impossibly — the
   /// whole grid is barriers).
-  (int, int) _nearestWalkableCell((int, int) candidate) {
+  (int, int) _nearestWalkableCell((int, int) candidate, {TerritoryRect? bounds}) {
     final barriers = _barriersComponent.tuples.toSet();
     bool walkable((int, int) c) =>
         c.$1 >= 0 &&
         c.$1 < gridSize &&
         c.$2 >= 0 &&
         c.$2 < gridSize &&
-        !barriers.contains(c);
+        !barriers.contains(c) &&
+        // Prefer an in-territory seat so DF starts inside his drawn square.
+        (bounds == null || bounds.contains(c.$1, c.$2));
     if (walkable(candidate)) return candidate;
     for (var r = 1; r < gridSize; r++) {
       for (var dx = -r; dx <= r; dx++) {
@@ -725,6 +729,18 @@ class TechWorld extends World with TapCallbacks {
     if (df == null) return;
     final territory = currentMap.value.resolveDreamfinderTerritory(gridSize);
     df.territory = territory;
+    // Re-seat the sprite into the new square. The bot (when online) will drive
+    // DF's position via moveFromServer, but this keeps the affordance and the
+    // host together immediately on a switch and fixes the bot-offline fallback,
+    // which would otherwise pathfind from the old spot toward the new square.
+    final dfCell = _nearestWalkableCell(
+      (territory.center.x, territory.center.y),
+      bounds: territory,
+    );
+    df.position = Vector2(
+      dfCell.$1 * gridSquareSizeDouble,
+      dfCell.$2 * gridSquareSizeDouble,
+    );
     if (_dreamfinderTerritoryComponent != null) {
       remove(_dreamfinderTerritoryComponent!);
     }
