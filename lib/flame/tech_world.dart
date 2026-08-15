@@ -728,20 +728,25 @@ class TechWorld extends World with TapCallbacks {
     final df = _dreamfinderComponent;
     if (df == null) return;
     final territory = currentMap.value.resolveDreamfinderTerritory(gridSize);
-    df.territory = territory;
-    // Re-seat the sprite into the new square. The bot (when online) will drive
-    // DF's position via moveFromServer, but this keeps the affordance and the
-    // host together immediately on a switch and fixes the bot-offline fallback,
-    // which would otherwise pathfind from the old spot toward the new square.
-    final dfCell = _nearestWalkableCell(
-      (territory.center.x, territory.center.y),
-      bounds: territory,
-    );
-    df.position = Vector2(
-      dfCell.$1 * gridSquareSizeDouble,
-      dfCell.$2 * gridSquareSizeDouble,
-    );
-    if (_dreamfinderTerritoryComponent != null) {
+    if (_dreamfinderTerritoryComponent == null) {
+      // First call (spawn): the constructor already seated DF; just record the
+      // territory. Don't cancel effects / reset animation before onLoad has run.
+      df.territory = territory;
+    } else {
+      // Map switch: cancel any in-flight movement and re-seat DF into the new
+      // square atomically, so a running walk can't drag him back out. (The bot,
+      // when online, also reseats and drives position via moveFromServer.)
+      final dfCell = _nearestWalkableCell(
+        (territory.center.x, territory.center.y),
+        bounds: territory,
+      );
+      df.reseatTo(
+        Vector2(
+          dfCell.$1 * gridSquareSizeDouble,
+          dfCell.$2 * gridSquareSizeDouble,
+        ),
+        territory,
+      );
       remove(_dreamfinderTerritoryComponent!);
     }
     final overlay = DreamfinderTerritoryComponent(territory: territory);

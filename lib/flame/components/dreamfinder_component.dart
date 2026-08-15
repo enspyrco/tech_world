@@ -306,6 +306,26 @@ class DreamfinderComponent
   @visibleForTesting
   (int, int) debugPickWanderTarget() => _pickWanderTarget();
 
+  /// Cancel any in-flight movement and re-seat DF into [newTerritory] at
+  /// [newPosition] atomically — used on a map switch.
+  ///
+  /// Without cancelling the active [MoveEffect]s first, a running walk would
+  /// keep interpolating toward its old-map target and drag DF straight back out
+  /// of the freshly-drawn square.
+  void reseatTo(Vector2 newPosition, TerritoryRect newTerritory) {
+    _removeAllEffects();
+    animationTicker?.onComplete = null;
+    _isWandering = false;
+    _isGreeting = false;
+    _serverControlled = false;
+    territory = newTerritory;
+    position = newPosition;
+    _homeCell = miniGridTuple;
+    current = DreamfinderState.working;
+    playing = true;
+    _wanderCooldown = _postGreetingDelay;
+  }
+
   void _resetWanderCooldown() {
     _wanderCooldown = _minWorkDuration +
         _random.nextDouble() * (_maxWorkDuration - _minWorkDuration);
