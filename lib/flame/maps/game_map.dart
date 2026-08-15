@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:collection/collection.dart';
 import 'package:tech_world/flame/maps/door_data.dart';
 import 'package:tech_world/flame/maps/terminal_mode.dart';
+import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/flame/tiles/tile_layer_data.dart';
 import 'package:tech_world/flame/tiles/tileset.dart';
 import 'package:tech_world/map_editor/terrain_grid.dart';
@@ -30,6 +31,7 @@ class GameMap {
     this.walls = const {},
     this.doors = const [],
     this.terminalMode = TerminalMode.code,
+    this.dreamfinderTerritory,
   });
 
   /// Unique identifier for this map.
@@ -96,6 +98,34 @@ class GameMap {
   /// this to [TerminalMode.prompt] for prompt spell challenges.
   final TerminalMode terminalMode;
 
+  /// Where Dreamfinder walks, listens, and is drawn — his "square".
+  ///
+  /// Optional and authored per map. When null, a sensible default is derived
+  /// from [spawnPoint] by [resolveDreamfinderTerritory], so existing maps need
+  /// no change. This is the single authored definition of the territory; every
+  /// consumer (overlay, wander bound, audio gate) reads the *resolved* form.
+  final DreamfinderTerritory? dreamfinderTerritory;
+
+  /// Resolve Dreamfinder's territory to a concrete, grid-clamped cell rect.
+  ///
+  /// This is the *only* place the territory is computed. The client publishes
+  /// the result to the bot over `map-info`, so the drawn box, the wander
+  /// bound, and the audio gate all read one definition and cannot drift.
+  ///
+  /// When [dreamfinderTerritory] is null, the default centres the square a
+  /// short walk from player [spawnPoint] (matching where Dreamfinder has
+  /// always spawned) with radius [kDreamfinderTerritoryRadius].
+  TerritoryRect resolveDreamfinderTerritory(int gridSize) {
+    final territory = dreamfinderTerritory ??
+        DreamfinderTerritory(
+          center: Point(
+            (spawnPoint.x + 8).clamp(0, gridSize - 1),
+            (spawnPoint.y - 5).clamp(0, gridSize - 1),
+          ),
+        );
+    return territory.resolve(gridSize);
+  }
+
   /// Whether this map uses tileset-based rendering.
   bool get usesTilesets =>
       tilesetIds.isNotEmpty ||
@@ -125,7 +155,8 @@ class GameMap {
           _tilesetListEquality.equals(customTilesets, other.customTilesets) &&
           _wallsEquality.equals(walls, other.walls) &&
           _doorListEquality.equals(doors, other.doors) &&
-          terminalMode == other.terminalMode;
+          terminalMode == other.terminalMode &&
+          dreamfinderTerritory == other.dreamfinderTerritory;
 
   @override
   int get hashCode => Object.hash(
@@ -142,5 +173,6 @@ class GameMap {
         _wallsEquality.hash(walls),
         _doorListEquality.hash(doors),
         terminalMode,
+        dreamfinderTerritory,
       );
 }

@@ -774,6 +774,11 @@ class LiveKitService {
       'spawnPoint': [map.spawnPoint.x, map.spawnPoint.y],
       'gridSize': gridSize,
       'cellSize': gridSquareSize,
+      // Dreamfinder's square, resolved to a concrete cell rect [minX,minY,maxX,
+      // maxY]. Resolved once here so the bot's wander bound + audio gate read
+      // the same box the client draws.
+      'dreamfinderTerritory':
+          map.resolveDreamfinderTerritory(gridSize).toWire(),
     };
     await publishJson(
       message,
