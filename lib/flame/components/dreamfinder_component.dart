@@ -3,11 +3,13 @@ import 'dart:math';
 
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
+import 'package:meta/meta.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/dreamfinder_state.dart';
+import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 
 /// Dreamfinder's in-world character component.
@@ -40,7 +42,16 @@ class DreamfinderComponent
     required this.id,
     required this.displayName,
     required PathComponent pathComponent,
+    this.territory,
   }) : _pathComponent = pathComponent;
+
+  /// Dreamfinder's square. When set, the fallback (bot-offline) wander stays
+  /// inside it, matching the bot's authoritative bound. Null in tests that
+  /// don't exercise territory.
+  ///
+  /// Mutable so a map switch can repoint it without respawning DF (see
+  /// `TechWorld._refreshDreamfinderTerritory`).
+  TerritoryRect? territory;
 
   @override
   String id;
@@ -244,14 +255,42 @@ class DreamfinderComponent
       return;
     }
 
+    // Confine the whole path to the square: pathfinding can route around a
+    // barrier and briefly outside the territory. If so, abandon this target and
+    // re-pick next tick rather than step DF outside his drawn zone. (The bot,
+    // authoritative when online, enforces the same via findPath bounds.)
+    final rect = territory;
+    if (rect != null) {
+      final escapes = points.any((p) {
+        return !rect.contains(
+          p.x.round() ~/ gridSquareSize,
+          p.y.round() ~/ gridSquareSize,
+        );
+      });
+      if (escapes) {
+        _wanderCooldown = 2.0;
+        return;
+      }
+    }
+
     _isWandering = true;
     _move(directions, points);
   }
 
-  /// Pick a destination within [wanderRadius] cells of [_homeCell], so DF drifts
-  /// around a small area instead of roaming the whole map. Pathfinding skips any
-  /// wall cell that lands in range (empty path → [_startWander] just retries).
+  /// Pick a destination inside DF's square, so he drifts around a small area
+  /// instead of roaming the whole map. Pathfinding skips any wall cell that
+  /// lands in range (empty path → [_startWander] just retries).
+  ///
+  /// Prefers the resolved [territory] rect (same bound the bot uses) when set;
+  /// otherwise falls back to [wanderRadius] cells around [_homeCell].
   (int, int) _pickWanderTarget() {
+    final rect = territory;
+    if (rect != null) {
+      return (
+        rect.minX + _random.nextInt(rect.maxX - rect.minX + 1),
+        rect.minY + _random.nextInt(rect.maxY - rect.minY + 1),
+      );
+    }
     final home = _homeCell ?? miniGridTuple;
     if (wanderRadius <= 0) return home;
     final dx = _random.nextInt(wanderRadius * 2 + 1) - wanderRadius;
@@ -260,6 +299,31 @@ class DreamfinderComponent
       (home.$1 + dx).clamp(0, gridSize - 1),
       (home.$2 + dy).clamp(0, gridSize - 1),
     );
+  }
+
+  /// Exposes [_pickWanderTarget] so tests can assert the fallback wander stays
+  /// inside DF's square.
+  @visibleForTesting
+  (int, int) debugPickWanderTarget() => _pickWanderTarget();
+
+  /// Cancel any in-flight movement and re-seat DF into [newTerritory] at
+  /// [newPosition] atomically — used on a map switch.
+  ///
+  /// Without cancelling the active [MoveEffect]s first, a running walk would
+  /// keep interpolating toward its old-map target and drag DF straight back out
+  /// of the freshly-drawn square.
+  void reseatTo(Vector2 newPosition, TerritoryRect newTerritory) {
+    _removeAllEffects();
+    animationTicker?.onComplete = null;
+    _isWandering = false;
+    _isGreeting = false;
+    _serverControlled = false;
+    territory = newTerritory;
+    position = newPosition;
+    _homeCell = miniGridTuple;
+    current = DreamfinderState.working;
+    playing = true;
+    _wanderCooldown = _postGreetingDelay;
   }
 
   void _resetWanderCooldown() {

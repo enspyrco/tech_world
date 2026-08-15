@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flame/components.dart';
 import 'package:flame_test/flame_test.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/shared/dreamfinder_state.dart';
+import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 
 class TestGameWithDreamfinder extends TechWorldGame {
@@ -388,5 +391,26 @@ void main() {
             reason: 'DF should actually wander off home within the area');
       },
     );
+
+    test('fallback wander targets stay inside the territory rect', () {
+      // Radius-3 square at (20,20) → cells 17..23 on both axes.
+      final territory =
+          const DreamfinderTerritory(center: Point(20, 20), radius: 3)
+              .resolve(50);
+      final df = DreamfinderComponent(
+        position: Vector2(20 * 32, 20 * 32),
+        id: 'bot-dreamfinder',
+        displayName: 'Dreamfinder',
+        pathComponent: pathComponent,
+        territory: territory,
+      );
+
+      // Sample many picks — every one must land inside the square.
+      for (var i = 0; i < 500; i++) {
+        final (x, y) = df.debugPickWanderTarget();
+        expect(territory.contains(x, y), isTrue,
+            reason: 'picked ($x,$y) outside territory');
+      }
+    });
   });
 }

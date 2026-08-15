@@ -29,6 +29,8 @@ import 'package:tech_world/flame/door_manager.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
+import 'package:tech_world/flame/components/dreamfinder_territory_component.dart';
+import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/speech_bubble_component.dart';
 import 'package:tech_world/flame/components/tile_floor_component.dart';
@@ -122,6 +124,7 @@ class TechWorld extends World with TapCallbacks {
   /// Defaults to closed.
   bool Function() isLocalChatOpen = () => false;
   DreamfinderComponent? _dreamfinderComponent;
+  DreamfinderTerritoryComponent? _dreamfinderTerritoryComponent;
   late final BubbleManager _bubbleManager;
   late final DoorManager _doorManager;
   // Participant saved when DF joins before onLoad completes (pathComponent
@@ -593,14 +596,17 @@ class TechWorld extends World with TapCallbacks {
         // (e.g. `agent-{jobId}` instead of `bot-dreamfinder`).
         _bubbleManager.dreamfinderIdentity = participant.identity;
         if (_dreamfinderComponent == null) {
-          // DF's home is a fixed offset from the player spawn, but that offset
-          // can land inside a wall on some maps (e.g. Imagination Center). Snap
-          // it to the nearest walkable cell so DF never spawns in a wall; that
-          // cell becomes the centre of his small wander.
-          final dfCell = _nearestWalkableCell((
-            (spawn.x + 8).clamp(0, gridSize - 1),
-            (spawn.y - 5).clamp(0, gridSize - 1),
-          ));
+          // Dreamfinder's territory — the square he walks, is heard within, and
+          // is drawn around. Resolved once from the map (the single source of
+          // truth; the same rect is shipped to the bot via publishMapInfo).
+          final territory =
+              currentMap.value.resolveDreamfinderTerritory(gridSize);
+          // Spawn DF at the territory centre, snapped to the nearest walkable
+          // cell so he never stands in a wall.
+          final dfCell = _nearestWalkableCell(
+            (territory.center.x, territory.center.y),
+            bounds: territory,
+          );
           final dfComp = DreamfinderComponent(
             position: Vector2(
               dfCell.$1 * gridSquareSizeDouble,
@@ -609,10 +615,14 @@ class TechWorld extends World with TapCallbacks {
             id: participant.identity,
             displayName: botConfig.displayName,
             pathComponent: _pathComponent!,
+            territory: territory,
           );
           _dreamfinderComponent = dfComp;
           _bubbleManager.dreamfinderComponent = dfComp;
           add(dfComp);
+          // Draw the listening zone beneath the characters so players can see
+          // where to stand to be heard.
+          _refreshDreamfinderTerritory();
 
           // If the local user is already connected, notice them.
           if (_userPlayerComponent.id.isNotEmpty) {
@@ -684,14 +694,16 @@ class TechWorld extends World with TapCallbacks {
   /// so a blind spawn offset never lands an entity inside a wall. Returns
   /// [candidate] unchanged if it is already walkable (or if — impossibly — the
   /// whole grid is barriers).
-  (int, int) _nearestWalkableCell((int, int) candidate) {
+  (int, int) _nearestWalkableCell((int, int) candidate, {TerritoryRect? bounds}) {
     final barriers = _barriersComponent.tuples.toSet();
     bool walkable((int, int) c) =>
         c.$1 >= 0 &&
         c.$1 < gridSize &&
         c.$2 >= 0 &&
         c.$2 < gridSize &&
-        !barriers.contains(c);
+        !barriers.contains(c) &&
+        // Prefer an in-territory seat so DF starts inside his drawn square.
+        (bounds == null || bounds.contains(c.$1, c.$2));
     if (walkable(candidate)) return candidate;
     for (var r = 1; r < gridSize; r++) {
       for (var dx = -r; dx <= r; dx++) {
@@ -705,6 +717,43 @@ class TechWorld extends World with TapCallbacks {
     return candidate;
   }
 
+  /// Re-resolve Dreamfinder's territory for the current map and update both his
+  /// wander bound and the drawn overlay.
+  ///
+  /// Called at spawn and on every map switch. DF and his overlay persist across
+  /// a switch (they're not map components), while the bot reseats DF to the new
+  /// map's territory from the fresh map-info — so without this the drawn box
+  /// would strand on the old map's square while DF walked to the new one.
+  void _refreshDreamfinderTerritory() {
+    final df = _dreamfinderComponent;
+    if (df == null) return;
+    final territory = currentMap.value.resolveDreamfinderTerritory(gridSize);
+    if (_dreamfinderTerritoryComponent == null) {
+      // First call (spawn): the constructor already seated DF; just record the
+      // territory. Don't cancel effects / reset animation before onLoad has run.
+      df.territory = territory;
+    } else {
+      // Map switch: cancel any in-flight movement and re-seat DF into the new
+      // square atomically, so a running walk can't drag him back out. (The bot,
+      // when online, also reseats and drives position via moveFromServer.)
+      final dfCell = _nearestWalkableCell(
+        (territory.center.x, territory.center.y),
+        bounds: territory,
+      );
+      df.reseatTo(
+        Vector2(
+          dfCell.$1 * gridSquareSizeDouble,
+          dfCell.$2 * gridSquareSizeDouble,
+        ),
+        territory,
+      );
+      remove(_dreamfinderTerritoryComponent!);
+    }
+    final overlay = DreamfinderTerritoryComponent(territory: territory);
+    _dreamfinderTerritoryComponent = overlay;
+    add(overlay);
+  }
+
   /// Handle a participant leaving the room.
   void _handleParticipantLeft(RemoteParticipant participant) {
     _log.info('LiveKit participant left: ${participant.identity}');
@@ -713,6 +762,10 @@ class TechWorld extends World with TapCallbacks {
         _dreamfinderComponent != null) {
       remove(_dreamfinderComponent!);
       _dreamfinderComponent = null;
+      if (_dreamfinderTerritoryComponent != null) {
+        remove(_dreamfinderTerritoryComponent!);
+        _dreamfinderTerritoryComponent = null;
+      }
       _bubbleManager.dreamfinderComponent = null;
       _bubbleManager.handleDreamfinderLeft();
     } else if (_botCharacterComponents.containsKey(participant.identity)) {
@@ -1316,6 +1369,10 @@ class TechWorld extends World with TapCallbacks {
       playerGridPosition.value = resolvedMap.spawnPoint;
 
       currentMap.value = resolvedMap;
+
+      // Keep DF's square (wander bound + drawn overlay) in step with the new
+      // map, so it doesn't strand on the previous map's territory.
+      _refreshDreamfinderTerritory();
 
       // Notify the bot about the new map layout.
       _liveKitService?.publishMapInfo(resolvedMap);
