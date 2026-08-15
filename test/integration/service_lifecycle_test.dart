@@ -15,7 +15,7 @@ void main() {
         service = LiveKitService(
           userId: 'test-user',
           displayName: 'Test',
-          tokenRetriever: () async => 'fake-token',
+          tokenSource: () async => const TokenResult.success('fake-token'),
         );
       });
 
@@ -32,7 +32,8 @@ void main() {
         final failingService = LiveKitService(
           userId: 'test-user',
           displayName: 'Test',
-          tokenRetriever: () async => null,
+          tokenSource: () async =>
+              const TokenResult.failure(ConnectionResult.tokenUnknownError),
         );
         addTearDown(failingService.dispose);
 
@@ -50,14 +51,15 @@ void main() {
 
         // Create a service that hangs during token retrieval to simulate
         // an in-progress connection.
-        final hangCompleter = Completer<String?>();
+        final hangCompleter = Completer<TokenResult>();
         final hangingService = LiveKitService(
           userId: 'test-user',
           displayName: 'Test',
-          tokenRetriever: () => hangCompleter.future,
+          tokenSource: () => hangCompleter.future,
         );
         addTearDown(() async {
-          hangCompleter.complete(null); // Unblock to allow cleanup.
+          hangCompleter.complete(
+            const TokenResult.failure(ConnectionResult.tokenUnknownError)); // Unblock.
           await hangingService.dispose();
         });
 
@@ -88,7 +90,7 @@ void main() {
         final service = LiveKitService(
           userId: 'test-user',
           displayName: 'Test',
-          tokenRetriever: () async => 'fake-token',
+          tokenSource: () async => const TokenResult.success('fake-token'),
         );
         addTearDown(service.dispose);
 

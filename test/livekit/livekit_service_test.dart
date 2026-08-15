@@ -259,11 +259,11 @@ void main() {
     group('concurrent connection guard', () {
       test('second connect returns immediately while first is in-flight',
           () async {
-        final tokenCompleter = Completer<String?>();
+        final tokenCompleter = Completer<TokenResult>();
         final service = LiveKitService(
           userId: 'test-user',
           displayName: 'Test',
-          tokenRetriever: () => tokenCompleter.future,
+          tokenSource: () => tokenCompleter.future,
         );
 
         // Start first connect — blocks on token retrieval.
@@ -274,7 +274,8 @@ void main() {
         expect(secondResult, equals(ConnectionResult.alreadyConnected));
 
         // Finish the first connect (null token → connection fails).
-        tokenCompleter.complete(null);
+        tokenCompleter.complete(
+            const TokenResult.failure(ConnectionResult.tokenUnknownError));
         final firstResult = await firstConnect;
         expect(firstResult, equals(ConnectionResult.tokenUnknownError));
 
@@ -288,7 +289,8 @@ void main() {
         final service = LiveKitService(
           userId: 'test-user',
           displayName: 'Test',
-          tokenRetriever: () async => null,
+          tokenSource: () async =>
+              const TokenResult.failure(ConnectionResult.tokenUnknownError),
         );
 
         // First connect fails (null token).
