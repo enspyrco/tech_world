@@ -3,6 +3,7 @@ import 'package:flame_test/flame_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/shared/direction.dart';
+import 'package:tech_world/flame/shared/player_anim_state.dart';
 import 'package:tech_world/flame/tech_world_game.dart';
 
 /// A test version of TechWorldGame that uses mock images for PlayerComponent testing
@@ -12,10 +13,12 @@ class TestGameWithMockImages extends TechWorldGame {
   @override
   Future<void> onLoad() async {
     // Generate and add mock images instead of loading from assets
-    // Sprite sheet is 384x256 (12 frames of 32x64 for 4 directions)
-    images.add('NPC11.png', await generateImage(384, 256));
-    images.add('NPC12.png', await generateImage(384, 256));
-    images.add('NPC13.png', await generateImage(384, 256));
+    // Sprite sheet matches the REAL asset: 512x64 = 16 cells of 32x64.
+    // 12 walk cells (4 directions x 3 frames) + 4 wave-emote cells (12-15).
+    // Previously 384x256, which matched no shipping sprite in the repo.
+    images.add('NPC11.png', await generateImage(512, 64));
+    images.add('NPC12.png', await generateImage(512, 64));
+    images.add('NPC13.png', await generateImage(512, 64));
     images.add('single_room.png', await generateImage(800, 600));
     images.add('claude_bot.png', await generateImage(48, 48));
 
@@ -43,8 +46,8 @@ void main() {
 
         // After onLoad, animations should be set
         expect(player.animations, isNotNull);
-        expect(player.animations!.length, equals(8)); // 8 directions
-        expect(player.current, equals(Direction.down)); // Default direction
+        expect(player.animations!.length, equals(9)); // 8 walk + wave
+        expect(player.current, equals(PlayerAnimState.walkDown));
         expect(player.anchor, equals(Anchor.centerLeft));
       },
     );
@@ -94,7 +97,7 @@ void main() {
         player.move(directions, points);
 
         // Player should have started moving and changed direction
-        expect(player.current, equals(Direction.right));
+        expect(player.current, equals(PlayerAnimState.walkRight));
         expect(player.playing, isTrue);
       },
     );
@@ -139,11 +142,11 @@ void main() {
 
         // First move
         player.move([Direction.right], [Vector2(0, 0), Vector2(32, 0)]);
-        expect(player.current, equals(Direction.right));
+        expect(player.current, equals(PlayerAnimState.walkRight));
 
         // Second move should replace the first
         player.move([Direction.down], [Vector2(0, 0), Vector2(0, 32)]);
-        expect(player.current, equals(Direction.down));
+        expect(player.current, equals(PlayerAnimState.walkDown));
       },
     );
 
@@ -174,12 +177,97 @@ void main() {
 
         for (final direction in movementDirections) {
           expect(
-            player.animations!.containsKey(direction),
+            player.animations!.containsKey(
+              PlayerAnimState.forDirection(direction),
+            ),
             isTrue,
             reason: 'Should have animation for $direction',
           );
         }
-        expect(player.animations!.length, equals(8));
+        // 8 walk states + the wave emote (sprite cells 12-15). The mock sheet
+        // is full-width, so the wave strip is present.
+        expect(player.animations!.length, equals(9));
+        expect(
+          player.animations!.containsKey(PlayerAnimState.wave),
+          isTrue,
+          reason: 'Full-width sheet should carry the wave strip',
+        );
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
+      'wave plays the emote and restores the facing when it completes',
+      TestGameWithMockImages.new,
+      (game) async {
+        final player = PlayerComponent(
+          position: Vector2.zero(),
+          id: 'test',
+          displayName: 'Test',
+        );
+        await game.world.add(player);
+        await game.ready();
+
+        // Face right, so the restore target is NOT the default walkDown —
+        // otherwise the assertion would pass even if _facing were ignored.
+        player.move([Direction.right], [Vector2(0, 0), Vector2(32, 0)]);
+        expect(player.current, equals(PlayerAnimState.walkRight));
+
+        player.wave();
+        expect(player.isWaving, isTrue);
+
+        // 4 frames x 0.15s = 0.6s; run past the end.
+        for (var i = 0; i < 80; i++) {
+          game.update(0.01);
+        }
+
+        expect(player.isWaving, isFalse, reason: 'one-shot must not loop');
+        expect(
+          player.current,
+          equals(PlayerAnimState.walkRight),
+          reason: 'should restore the facing it had before waving',
+        );
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
+      'wave is a no-op while already waving (mash guard)',
+      TestGameWithMockImages.new,
+      (game) async {
+        final player = PlayerComponent(
+          position: Vector2.zero(),
+          id: 'test',
+          displayName: 'Test',
+        );
+        await game.world.add(player);
+        await game.ready();
+
+        player.wave();
+        game.update(0.3); // mid-wave
+        final ticker = player.animationTicker;
+        player.wave(); // mash
+        expect(player.animationTicker, same(ticker));
+        expect(player.isWaving, isTrue);
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
+      'movement interrupts a wave',
+      TestGameWithMockImages.new,
+      (game) async {
+        final player = PlayerComponent(
+          position: Vector2.zero(),
+          id: 'test',
+          displayName: 'Test',
+        );
+        await game.world.add(player);
+        await game.ready();
+
+        player.wave();
+        expect(player.isWaving, isTrue);
+
+        player.move([Direction.up], [Vector2(0, 0), Vector2(0, -32)]);
+        expect(player.isWaving, isFalse);
+        expect(player.current, equals(PlayerAnimState.walkUp));
       },
     );
 
@@ -199,8 +287,8 @@ void main() {
 
         expect(player.spriteAsset, equals('NPC12.png'));
         expect(player.animations, isNotNull);
-        expect(player.animations!.length, equals(8));
-        expect(player.current, equals(Direction.down));
+        expect(player.animations!.length, equals(9));
+        expect(player.current, equals(PlayerAnimState.walkDown));
       },
     );
 
@@ -225,8 +313,8 @@ void main() {
         expect(player.spriteAsset, equals('NPC13.png'));
         // Animations should still be valid after rebuild
         expect(player.animations, isNotNull);
-        expect(player.animations!.length, equals(8));
-        expect(player.current, equals(Direction.down));
+        expect(player.animations!.length, equals(9));
+        expect(player.current, equals(PlayerAnimState.walkDown));
       },
     );
 

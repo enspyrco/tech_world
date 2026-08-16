@@ -31,6 +31,7 @@ import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_territory_component.dart';
 import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
+import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/speech_bubble_component.dart';
 import 'package:tech_world/flame/components/tile_floor_component.dart';
@@ -438,6 +439,33 @@ class TechWorld extends World with TapCallbacks {
   // Position tracking for proximity detection
   Point<int> get localPlayerPosition => _userPlayerComponent.miniGridPosition;
   String get localPlayerId => _userPlayerComponent.id;
+
+  /// Play the local player's emote and broadcast it to the room.
+  ///
+  /// Plays locally first so it feels instant and still works offline — LiveKit
+  /// does not loop your own publishData back, so the local play is not a
+  /// duplicate, it is the only way the sender sees their own wave.
+  void emote(EmoteId emote) {
+    switch (emote) {
+      case EmoteId.wave:
+        _userPlayerComponent.wave();
+    }
+    _liveKitService?.publishEmote(emote);
+  }
+
+  /// A remote player emoted. [senderUid] is transport-verified by the bridge.
+  ///
+  /// Silently ignored for an unknown player: a peer can emote before we have
+  /// seen a position/heartbeat for them, and an emote is not worth
+  /// materialising a component that has nowhere to stand yet.
+  void _handleRemoteEmote(String senderUid, EmoteId emote) {
+    final player = _otherPlayerComponentsMap[senderUid];
+    if (player == null) return;
+    switch (emote) {
+      case EmoteId.wave:
+        player.wave();
+    }
+  }
 
   Map<String, Point<int>> get otherPlayerPositions {
     final positions = _otherPlayerComponentsMap.map(
@@ -933,6 +961,7 @@ class TechWorld extends World with TapCallbacks {
           messageId: messageId,
         );
       },
+      onRemoteEmote: _handleRemoteEmote,
       onMapInfoRequested: () =>
           _liveKitService?.publishMapInfo(currentMap.value),
       onMapSwitchReceived: (mapId) {

@@ -11,6 +11,7 @@ import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
+import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/infra/infra_health_service.dart';
 import 'package:tech_world/livekit/data_topic.dart';
@@ -54,6 +55,8 @@ class LiveKitGameBridge {
     // world via the dispatched [PlayersMentioned] event (so the SENDER, whose
     // own publishData LiveKit does not loop back, still witnesses it).
     required void Function(String ackerUid, String messageId) onMentionAck,
+    // Emotes — the emoting player is the transport sender, never the payload.
+    required void Function(String senderUid, EmoteId emote) onRemoteEmote,
     // Map
     required void Function() onMapInfoRequested,
     required void Function(String mapId) onMapSwitchReceived,
@@ -72,6 +75,7 @@ class LiveKitGameBridge {
         _onSpeechTranscript = onSpeechTranscript,
         _onDoorUnlock = onDoorUnlock,
         _onMentionAck = onMentionAck,
+        _onRemoteEmote = onRemoteEmote,
         _onMapInfoRequested = onMapInfoRequested,
         _onMapSwitchReceived = onMapSwitchReceived,
         _onConnectionLost = onConnectionLost;
@@ -91,6 +95,7 @@ class LiveKitGameBridge {
   final void Function(DataChannelMessage) _onSpeechTranscript;
   final void Function(DataChannelMessage) _onDoorUnlock;
   final void Function(String ackerUid, String messageId) _onMentionAck;
+  final void Function(String senderUid, EmoteId emote) _onRemoteEmote;
   final void Function() _onMapInfoRequested;
   final void Function(String) _onMapSwitchReceived;
   final void Function() _onConnectionLost;
@@ -112,6 +117,7 @@ class LiveKitGameBridge {
   StreamSubscription<DataChannelMessage>? _speechTranscriptSub;
   StreamSubscription<DataChannelMessage>? _doorUnlockSub;
   StreamSubscription<DataChannelMessage>? _mentionAckSub;
+  StreamSubscription<DataChannelMessage>? _emoteSub;
 
   InfraHealthService? _infraHealthService;
 
@@ -244,6 +250,25 @@ class LiveKitGameBridge {
       _onMentionAck(msg.senderId ?? 'unknown', messageId);
     });
 
+    // ── Emotes ───────────────────────────────────────────────────────────
+    // The emoting player is the TRANSPORT sender, never the payload — a peer
+    // can only wave its own avatar, never puppet someone else's. An unknown
+    // `kind` is dropped rather than defaulted: a future emote arriving from a
+    // newer client must render as nothing, not as the wrong animation.
+    _emoteSub = _liveKitService.dataReceived
+        .where((msg) => msg.topic == LiveKitTopic.emote.wire)
+        .listen((msg) {
+      final json = msg.json;
+      if (json == null) return;
+      final kind = json['kind'];
+      if (kind is! String) return;
+      final emote = EmoteId.parse(kind);
+      if (emote == null) return;
+      final senderId = msg.senderId;
+      if (senderId == null) return;
+      _onRemoteEmote(senderId, emote);
+    });
+
     // ── Infrastructure health ────────────────────────────────────────────
     _infraHealthService = InfraHealthService(
       liveKitService: _liveKitService,
@@ -307,6 +332,8 @@ class LiveKitGameBridge {
     _doorUnlockSub = null;
     _mentionAckSub?.cancel();
     _mentionAckSub = null;
+    _emoteSub?.cancel();
+    _emoteSub = null;
 
     _infraHealthService?.dispose();
     Locator.remove<InfraHealthService>();

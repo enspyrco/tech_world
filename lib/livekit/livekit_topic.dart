@@ -17,6 +17,14 @@ enum LiveKitTopic {
   // ── Avatar ────────────────────────────────────────────────────────────────
   avatar('avatar'),
 
+  /// A player emote (currently just the wave). Payload `{kind: <EmoteId.wire>}`.
+  ///
+  /// The emoting player is the transport-verified `senderId`, never the payload
+  /// — same rule as [mentionAck], so a peer can only make its OWN avatar wave.
+  /// Unreliable: an emote is a momentary flourish, and a dropped one is better
+  /// than a late one arriving after the moment has passed.
+  emote('emote'),
+
   // ── Map ───────────────────────────────────────────────────────────────────
   mapInfo('map-info'),
   mapInfoRequest('map-info-request'),

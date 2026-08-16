@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
 import 'package:tech_world/flame/shared/direction.dart';
+import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/keyboard_movement.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
@@ -70,6 +71,18 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
     }
 
     final key = event.logicalKey;
+
+    // Emote: fires on key-DOWN only, so OS auto-repeat can't machine-gun the
+    // data channel while the key is held. [PlayerComponent.wave] is itself a
+    // no-op while a wave is in flight, so a mash is bounded on both ends.
+    if (key == LogicalKeyboardKey.keyE) {
+      final techWorld = world;
+      if (event is KeyDownEvent && techWorld is TechWorld) {
+        techWorld.emote(EmoteId.wave);
+      }
+      return KeyEventResult.handled;
+    }
+
     // Only track keys that actually request movement; ignore everything else.
     if (directionForKey(key) == null) return KeyEventResult.ignored;
 

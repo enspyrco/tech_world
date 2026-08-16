@@ -15,6 +15,7 @@ import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
+import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/agent_hello.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
@@ -299,6 +300,20 @@ class LiveKitService {
       'spriteAsset': avatar.spriteAsset,
     };
     await publishJson(message, topic: LiveKitTopic.avatar.wire);
+  }
+
+  /// Broadcast a one-shot emote from the local player.
+  ///
+  /// No `playerId` in the payload: receivers attribute the emote to the
+  /// transport-verified `senderId`, so a peer can only ever wave its own
+  /// avatar. Unreliable — an emote is a momentary flourish, and dropping one is
+  /// better than replaying it after the moment has passed.
+  Future<void> publishEmote(EmoteId emote) async {
+    await publishJson(
+      {'kind': emote.wireName},
+      topic: LiveKitTopic.emote.wire,
+      reliable: false,
+    );
   }
 
   PlayerPath? _parsePlayerPath(Map<String, dynamic> json) {
