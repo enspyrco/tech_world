@@ -181,10 +181,10 @@ packages:
     dependency: "direct main"
     description:
       name: code_forge_web
-      sha256: "1b6b5a61b1aa5cc9a06dbc310dba513d6b4dfa98c96d355a6339b1cdfd696db5"
+      sha256: "6d454a9001de9e4dba748445c0b5ae9e0ad218ea5760f625def7ad00c2fc39aa"
       url: "https://pub.dev"
     source: hosted
-    version: "2.9.0"
+    version: "2.10.0"
   collection:
     dependency: "direct main"
     description:
