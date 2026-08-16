@@ -50,13 +50,19 @@ if [ -n "$staged" ]; then
     # every new lockfile type that this fix exists to kill. Suffix + this note is
     # the deliberate tradeoff.
     #
+    # `*/swiftpm/Package.resolved` is Xcode's SPM lockfile — same checksum class as
+    # *.lock (it pins git revision SHAs of public packages), but Apple named it
+    # `.resolved`. Scoped to the swiftpm/ directory rather than a bare `*.resolved`
+    # suffix, so a crafted `secrets.resolved` elsewhere in the tree still trips the
+    # scan — tighter than the residual above, not looser.
+    #
     # -z / read -d '': NUL-delimited so a path containing spaces OR newlines is
     # one iteration, not split (a newline'd path could otherwise skip its scan).
     # --diff-filter=AMR: include Renames — a rename+edit (R) can carry a new
     # secret on its + lines; A/M alone would never scan it.
     while IFS= read -r -d '' _file; do
         case "$_file" in
-            *.lock|*-lock.json|*test/*fixture*|*node_modules/*) continue ;;
+            *.lock|*-lock.json|*/swiftpm/Package.resolved|*test/*fixture*|*node_modules/*) continue ;;
         esac
         if git diff --cached --diff-filter=AMR -- "$_file" | grep -qE "^\+.*['\"][a-fA-F0-9]{40,}['\"]"; then
             echo "❌ Pre-commit blocked: long hex literal in staged change (40+ chars) in $_file."
