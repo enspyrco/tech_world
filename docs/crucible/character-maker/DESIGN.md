@@ -16,13 +16,37 @@ level on top** — and have **other players see it**. The codebase standard says
 bubble both peers render, without regressing the security boundary that protects the renderer.
 
 **Capability invariant (grade against these verbs, not "it compiles"):** a user can **MAKE** a
-character (presets + freehand pixels), **SEE** it (composited locally into the 384×64 sheet), and
+character (presets + freehand pixels), **SEE** it (composited locally into the 512×64 sheet), and
 **HAVE OTHERS SEE** it (survives the peer's gate and renders identically on their machine).
 
-**The render contract everything resolves to** (`player_component.dart` `_buildAnimations`): a
-**384×64** RGBA sprite sheet — 32×64 px/frame, 3 frames/direction, 4 horizontal direction-strips
-`down | left | up | right`; left/right reused for diagonals. **This is twelve 32×64 cells**, not one
-canvas — the animation-consistency fact the editor must honor (§3.5).
+**The render contract everything resolves to** — verified against the ACTUAL asset
+(`assets/images/NPC11.png`), not inferred from the code:
+
+A **512×64** RGBA sprite sheet = **sixteen** 32×64 cells. `_buildAnimations()` reads only the
+**first twelve** (`frameCount=3`, `sectionWidth = 3*32 = 96`, four strips at x=0/96/192/288):
+
+| cells | x range | content |
+|---|---|---|
+| 0–2 | 0–96 | **down** (front) |
+| 3–5 | 96–192 | **left** (side) |
+| 6–8 | 192–288 | **up** (back) |
+| 9–11 | 288–384 | **right** — pixel-identical opaque counts to 3–5, i.e. a mirror |
+| 12–15 | 384–512 | **UNUSED** — an arms-raised wave/emote animation, drawn and shipped but never wired to any renderer |
+
+Left/right are reused for the diagonals. **Assets are 512 wide; the renderer consumes 384 of them.**
+
+⚠️ Both numbers matter and they are NOT interchangeable:
+- **Asset/canvas invariant = 512×64** → a `width == 384` assert would reject every existing sprite.
+- **Raw RGBA byte count = 512 × 64 × 4 = 131,072** (not 98,304) → this is the integrity constant in
+  §3.4; the old value would have rejected every legitimate edit.
+
+Corrected 2026-08-16 by opening the PNG during the Step-0 spike. The wrong constant survived
+RESEARCH, the Fold self-pass, and BOTH four-family Temper rounds — everyone reasoned from
+`frameCount * 32` in the code and nobody looked at the image.
+
+The editor canvas is the full 512×64 (16 cells), so the unused emote frames stay authorable and the
+wave animation can be wired up later without a spec-version bump. **Sixteen cells, not one canvas**
+— the animation-consistency fact the editor must honor (§3.5).
 
 ---
 
@@ -31,7 +55,7 @@ canvas — the animation-consistency fact the editor must honor (§3.5).
 **The rigid dimension is the security primitive.** Most custom-avatar systems pick one of two losing
 ends: lock to presets (no freedom) or accept image uploads and fight decoder CVEs forever. This
 design gets arbitrary-pixel freedom *and* a near-zero decoder attack surface by exploiting the fixed
-384×64 contract: **peer-authored pixels travel as raw RGBA, never as an encoded image, so no codec
+512×64 contract: **peer-authored pixels travel as raw RGBA, never as an encoded image, so no codec
 ever runs on peer-controlled bytes — on the way *out* (mint) OR the way *in* (render).** The
 constraint that limits authoring is what makes accepting arbitrary pixels safe. That inversion is the
 heart of the design — and it is only true if the *writer* is codec-free too (Temper flaw 3, §3.5).
@@ -84,12 +108,12 @@ final class CompositeAvatar {
 
 /// A pixel edit: a locator to raw-RGBA bytes in the engine's blob store (§3.3). Sealed — two
 /// flavours that transmit identically ({kind,uid,hash}) and differ ONLY in how they render (§3.2).
-/// The AUTHOR additionally holds the CPU Uint8List(98304) source-of-truth locally (§3.5);
+/// The AUTHOR additionally holds the CPU Uint8List(131072) source-of-truth locally (§3.5);
 /// peers only ever need {kind,uid,hash} to fetch, verify, and render.
 sealed class PixelEdit {
   const PixelEdit({required this.uid, required this.hash});
   final String uid;   // owner — locator for the blob path `avatars/{uid}/{hash}` (Temper flaw 4)
-  final String hash;  // SHA-256 of the canonical 98,304 RGBA bytes (integrity, Temper flaw 2)
+  final String hash;  // SHA-256 of the canonical 131,072 RGBA bytes (integrity, Temper flaw 2)
 }
 
 /// Decorate-on-top: an additive delta (transparent except where painted), `srcOver` on the
@@ -100,7 +124,7 @@ final class OverlayEdit extends PixelEdit {
   final String basePartsHash; // parts fingerprint painted against (Temper r2, Carnot) — editor keep/clear assist
 }
 
-/// Full custom sheet: the bytes ARE the final 384×64. Rendered directly; `parts` retained only
+/// Full custom sheet: the bytes ARE the final 512×64. Rendered directly; `parts` retained only
 /// as editor seed / provenance (frozen). Enables erase + destructive edits (Temper r2, Carnot).
 final class CanvasEdit extends PixelEdit {
   const CanvasEdit({required super.uid, required super.hash});
@@ -137,9 +161,9 @@ composites any `CompositeAvatar` with zero fetch (claim C1).
   - `OverlayEdit` → `srcOver` the delta `ui.Image` on top of the composited parts, same `ImageComposition`
     pass. Parts stay live. An all-transparent delta is a no-op ⇒ render `parts` only (Temper flaw 12, n=0).
   - `CanvasEdit` → render the fetched raster **directly** (it IS the final sheet); parts are not drawn
-    (frozen seed). Same 384×64, same slicer.
+    (frozen seed). Same 512×64, same slicer.
 - Result cached keyed by the **whole `AvatarSpec`** (parts record + layer hash). Composite once per
-  distinct spec, never per-frame (RESEARCH Q4). Hand the cached 384×64 image to the existing
+  distinct spec, never per-frame (RESEARCH Q4). Hand the cached 512×64 image to the existing
   `_buildAnimations()` slicer — **the renderer does not change.**
 - **Caches REFCOUNTED (F2).** Peers sharing a spec (or a layer hash — content-addressing dedups) share
   one cache entry; `dispose()` only when the refcount hits zero. Never dispose-on-first-leaver.
@@ -160,14 +184,14 @@ composites any `CompositeAvatar` with zero fetch (claim C1).
   defines:
   ```dart
   abstract interface class BlobStore {           // content-addressed, engine-level
-    Future<void> put(String uid, String hash, Uint8List bytes384x64); // exactly 98304 bytes
+    Future<void> put(String uid, String hash, Uint8List bytes512x64); // exactly 131072 bytes
     Future<Uint8List?> get(String uid, String hash);                  // null = miss
   }
   ```
   **Tech World provides `FirebaseBlobStore`** (Storage under `avatars/{uid}/{hash}`); another World
   supplies its own. Mirrors the moderation-pluggable split.
 - **Storage rules (Tech World adapter):** *write* = `request.auth.uid == uid` **and**
-  `request.resource.size == 98304` **and** content-type locked. *read* = **get-by-exact-path for any
+  `request.resource.size == 131072` **and** content-type locked. *read* = **get-by-exact-path for any
   authenticated user** (Temper flaw 7 + r2 Tesla: exact `avatars/{uid}/{hash}` GET, never a prefix
   **list** — a listable prefix collapses "room peer" into "any authed user can enumerate a user's blobs").
 - **Profile persistence:** the player's `AvatarSpec` persists to their Firestore profile — **including
@@ -187,7 +211,7 @@ composites any `CompositeAvatar` with zero fetch (claim C1).
 2. **`edit`** (optional, either variant — identical verify) → (a) well-formed `{kind,uid,sha256}`?
    (b) **hash NOT in the session-synced moderation denylist** (§5, an in-memory set subscribed once per
    session — NOT a per-sighting query; checked *before* any fetch — Temper flaw 5 + r2 Maxwell); (c)
-   `BlobStore.get(uid, hash)`; (d) `bytes.length == 98304`; (e) **`sha256(bytes) == hash` else discard
+   `BlobStore.get(uid, hash)`; (d) `bytes.length == 131072`; (e) **`sha256(bytes) == hash` else discard
    (Temper flaw 2 — integrity, not just length)**; (f) `decodeImageFromPixels` (no codec on peer bytes).
    Any step fails ⇒ **drop the edit, render `parts`** (always present, even for `CanvasEdit` — the frozen
    seed) — never a peer-controlled fallback. **A moderator hash landing mid-session must also evict the
@@ -201,7 +225,7 @@ composites any `CompositeAvatar` with zero fetch (claim C1).
 The sheet is **twelve 32×64 cells** (3 frames × 4 directions). Freehand freedom is preserved, but the
 editor must make animation-consistency *easy*, not the player's manual burden:
 
-- **CPU source-of-truth (Temper flaw 3 — the writer path).** The editor owns a `Uint8List(98304)` in
+- **CPU source-of-truth (Temper flaw 3 — the writer path).** The editor owns a `Uint8List(131072)` in
   CPU memory. All painting mutates *that buffer*. Preview is `decodeImageFromPixels` on the buffer —
   **never GPU-composite-then-`toByteData`** (flutter#121758 WebGL readback corruption). The hash is
   computed over this buffer; the same bytes are uploaded. Codec-free out, codec-free in.
@@ -218,8 +242,8 @@ editor must make animation-consistency *easy*, not the player's manual burden:
     offers **keep / clear** (peers just render what the author broadcasts).
   - *Full canvas* (promote): the moment the player uses **erase** or picks "make it fully mine", the
     editor promotes to a full-sheet edit (one confirm: "this locks your parts"). Save writes the whole
-    384×64 buffer ⇒ `CanvasEdit{uid,hash}`; parts kept only as re-edit seed.
-- **Editor invariant (beside F7):** canvas is exactly 384×64; empty buffer ⇒ no `edit` (pure preset).
+    512×64 buffer ⇒ `CanvasEdit{uid,hash}`; parts kept only as re-edit seed.
+- **Editor invariant (beside F7):** canvas is exactly 512×64; empty buffer ⇒ no `edit` (pure preset).
 
 ---
 
@@ -248,10 +272,10 @@ Storage write path; broadcast of arbitrary imagery.
 
 | Threat | Mitigation (in the design) |
 |---|---|
-| Codec CVE / decompression bomb, in OR out | Raw RGBA only, **both writer and reader**; `length==98304`; `decodeImageFromPixels`; **no `toByteData` on the author path** (flaw 3). |
+| Codec CVE / decompression bomb, in OR out | Raw RGBA only, **both writer and reader**; `length==131072`; `decodeImageFromPixels`; **no `toByteData` on the author path** (flaw 3). |
 | Same-size malicious blob swap | **`sha256(bytes)==hash` recompute before render** (flaw 2) — content-addressing as integrity, not a folder name. |
 | Unfetchable overlay | Wire carries `{uid,hash}` locator (flaw 4); read rule = any authed room peer (flaw 7). |
-| Storage abuse / oversized | Rule: `auth.uid==uid` + `size==98304` + content-type; content-addressing dedups. |
+| Storage abuse / oversized | Rule: `auth.uid==uid` + `size==131072` + content-type; content-addressing dedups. |
 | Quota exhaustion | Time-based LRU GC (~90d since last profile-ref OR access), **never the current-profile blob** (flaw 9, OV4). |
 | Preset-update spam → GPU thrash | Per-peer avatar-update throttle + bounded LRU composite cache (flaw 11). **Throttle is trailing-edge / flush-on-save (Tesla r2)** — a committed avatar must not die inside the debounce window as if it were noise. |
 | Mixed-version visual fork | `assetPackVersion` on wire; identity slots don't silently default (flaw 8). |
@@ -266,7 +290,7 @@ Storage write path; broadcast of arbitrary imagery.
 - **C1** — bundled parts ⇒ zero-fetch preset composite. Commit: parts bundled, closed, versioned with binary.
 - **C2** — raw-RGBA **both directions** + length + `sha256` recompute + `decodeImageFromPixels` removes the
   codec surface end-to-end. Probe: is the *author's* CPU-buffer path truly free of any GPU readback on
-  every target? Is `decodeImageFromPixels(98304)` itself safe on web/macOS/iOS/Android?
+  every target? Is `decodeImageFromPixels(131072)` itself safe on web/macOS/iOS/Android?
 - **C3** — `assetPackVersion` + moderation-denylist-before-fetch + LRU GC + per-peer throttle is enough
   anti-abuse/anti-fork. Probe: denylist propagation latency; a hash re-uploaded under a new uid.
 - **C4 — RESOLVED (Temper r2 + Nick):** the sealed `PixelEdit` union answers "presets AND pixels" with
@@ -321,7 +345,7 @@ Storage write path; broadcast of arbitrary imagery.
 ## 10. Fold — author self-strike (v1, historical)
 
 F1 mandatory body · F2 refcounted caches · F3 default-on-first-arrival · F4 base-first→now parts-first ·
-F5 legacy migration · F6 moderation named→now designed-in · F7 384×64 asset invariant. (Full table in
+F5 legacy migration · F6 moderation named→now designed-in · F7 512×64 asset invariant. (Full table in
 git history of this file; kept short after the recast.)
 
 ## 11. Temper round-1 fold log (see TEMPER.md for the full strike)

@@ -11,7 +11,7 @@ store abstracted into the engine**; authoring is a **private menu** (not an in-w
 ## Step 0 — Art-viability spike (GATE, do first, ~half day)
 Before committing the enum surface, prove modular parts read at 32px wide.
 - Author ONE real modular character at the render contract: `body + hair + outfit + accessory`, each a
-  384×64 / 3-frame / 4-strip PNG, composited.
+  512×64 / 3-frame / 4-strip PNG, composited.
 - Eyeball legibility at game scale. **If parts are muddy/misaligned at 32px → shrink scope (fewer slots
   / recolor-leaning) before building the type surface.** This is the C5/flaw-13 kill-or-confirm.
 - Decide **OV2 (art source + license)**: LPC-derived (dual CC-BY-SA/GPL — attribution attaches to art,
@@ -24,7 +24,7 @@ Before committing the enum surface, prove modular parts read at 32px wide.
    edit?}` (value-equality over `parts` + `edit?.hash` + edit runtime-type), sealed `PixelEdit` →
    `OverlayEdit`/`CanvasEdit` (defined now; only `parts` exercised until step 3).
 3. **Compositor** (`lib/avatar/avatar_composer.dart`): Flame `ImageComposition.composeSync()` over parts
-   in `zPos` order → one 384×64 `ui.Image`; **refcounted LRU cache** keyed by `AvatarSpec`; feed to the
+   in `zPos` order → one 512×64 `ui.Image`; **refcounted LRU cache** keyed by `AvatarSpec`; feed to the
    existing `_buildAnimations()`. Assert `width==384 && height==64` on every part-asset load (F7).
 4. **Gate**: replace `AvatarUpdate.tryParse` (`livekit_service.dart:1197`) with total `AvatarSpec.parse`:
    parts path + `assetPackVersion` (same-major required; unknown `body`/major-miss ⇒ `defaultAvatar`;
@@ -45,14 +45,14 @@ Before committing the enum surface, prove modular parts read at 32px wide.
 ## Step 3 — Pixel edit tier (TRUST BOUNDARY → code cage-match on the diff)
 1. **Engine blob port** (`packages/realm/`): `abstract interface class BlobStore { put(uid,hash,bytes);
    get(uid,hash) }`. **Tech World `FirebaseBlobStore`** adapter. Storage rules: *write* = `auth.uid==uid`
-   + `size==98304` + content-type; *read* = get-by-**exact-path** for any authed user (no prefix list).
-2. **Editor** (`lib/avatar/editor/`): CPU `Uint8List(98304)` source-of-truth; preview via
+   + `size==131072` + content-type; *read* = get-by-**exact-path** for any authed user (no prefix list).
+2. **Editor** (`lib/avatar/editor/`): CPU `Uint8List(131072)` source-of-truth; preview via
    `decodeImageFromPixels`; **never `toByteData`** (flutter#121758). **Decal start**: paint one facing →
    engine stamps 12 cells (+ L/R mirror). **Decorate mode** → `OverlayEdit` (delta bytes, parts NOT baked
    in, `basePartsHash` recorded). **Erase / "make it mine"** promotes → `CanvasEdit` (full sheet, one
    confirm "locks your parts"). SHA-256 the buffer; `put` to blob store.
 3. **Wire + profile** carry `edit:{kind,uid,hash,basePartsHash?}`. **Receive verify** (§3.4): denylist →
-   `get` → `length==98304` → `sha256(bytes)==hash` → `decodeImageFromPixels`; fail ⇒ render `parts`.
+   `get` → `length==131072` → `sha256(bytes)==hash` → `decodeImageFromPixels`; fail ⇒ render `parts`.
    Render branch: `OverlayEdit` = srcOver on live parts; `CanvasEdit` = raster direct.
 4. **Moderation** (`moderated_avatar_hashes` Firestore collection): session-synced in-memory denylist,
    checked before fetch; a moderator hash **evicts the composite LRU** (not just the fetch gate); report UI.
@@ -67,7 +67,7 @@ Before committing the enum surface, prove modular parts read at 32px wide.
 ## Dependencies & residual watch-items
 - Order: **0 → 1 → 2 → 3.** Art (Step 0/OV2) gates real preset content, not the Step-1 scaffolding.
 - **Verify in build, not on paper:** the `OverlayEdit`→`CanvasEdit` promotion path (C4 residual); that a
-  satisfying static mark lands in a short sitting (C5 playtest); `decodeImageFromPixels(98304)` safe on
+  satisfying static mark lands in a short sitting (C5 playtest); `decodeImageFromPixels(131072)` safe on
   web/macOS/iOS/Android (C2 residual).
 - Open (non-blocking): OV6 color variants (deferred).
 
