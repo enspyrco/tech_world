@@ -466,14 +466,45 @@ class LiveKitService {
         _log.warning('Listener cleanup failed', cleanupError);
       }
       _listener = null;
-      try {
-        await _room?.disconnect();
-      } catch (cleanupError) {
-        _log.warning('Room cleanup failed', cleanupError);
-      }
+      // Full teardown, not just disconnect — a half-built Room still owns an
+      // engine with its own reconnect loop (see [_disposeRoom]).
+      await _disposeRoom(_room);
       _room = null;
       _connectionState = _ConnectionState.disconnected;
       return ConnectionResult.roomFailed;
+    }
+  }
+
+  /// Tear a [Room] down completely: disconnect, then **dispose**.
+  ///
+  /// `disconnect()` alone is NOT enough. [Room] is a `DisposableChangeNotifier`
+  /// and its engine owns an auto-reconnect loop (`Engine.attemptReconnect`) plus
+  /// the signal websocket. Dropping the reference after only disconnecting
+  /// leaves that engine alive, and it will keep reconnecting its own socket in
+  /// the background while the app builds a *second* Room on the next connect —
+  /// two live engines racing. The orphan's socket is disposed but never has its
+  /// stream subscription cancelled (see `LiveKitWebSocketIO`), so every frame
+  /// the server still delivers logs
+  /// `LiveKitWebSocketIO#<id> already disposed, ignoring received data`.
+  /// That warning storm is the observable symptom of this leak.
+  ///
+  /// The SDK's own example disposes the room (`await widget.room.dispose()`).
+  ///
+  /// Never throws: teardown runs on error paths where a throw would mask the
+  /// original failure.
+  static Future<void> _disposeRoom(Room? room, {bool disconnect = true}) async {
+    if (room == null) return;
+    if (disconnect) {
+      try {
+        await room.disconnect();
+      } catch (e) {
+        _log.warning('Room disconnect during teardown failed', e);
+      }
+    }
+    try {
+      await room.dispose();
+    } catch (e) {
+      _log.warning('Room dispose during teardown failed', e);
     }
   }
 
@@ -489,7 +520,7 @@ class LiveKitService {
     _log.info('Disconnecting from LiveKit...');
     stopPositionHeartbeat();
 
-    await _room!.disconnect();
+    await _disposeRoom(_room);
     await _listener?.dispose();
     _listener = null;
     _room = null;
@@ -1114,7 +1145,25 @@ class LiveKitService {
           _log.warning('Listener cleanup failed', e);
         }
         _listener = null;
+
+        // DISPOSE the orphan, don't just drop it. Previously this nulled
+        // `_room` and walked away: the Room survived with a live engine that
+        // kept running its own reconnect loop, while RoomSession's backoff
+        // built a SECOND Room — two engines racing, and the orphan's disposed
+        // socket logging a warning per received frame.
+        //
+        // Deferred with `Future(...)` rather than called inline: we are inside
+        // the Room's OWN event dispatch here, and `Room.dispose()` tears down
+        // the event emitter we are currently being dispatched from. Hopping to
+        // the next microtask gets us out of that callback first.
+        //
+        // Already disconnected by definition (this IS RoomDisconnectedEvent),
+        // so skip the redundant disconnect and go straight to dispose.
+        final orphan = _room;
         _room = null;
+        if (orphan != null) {
+          Future(() => _disposeRoom(orphan, disconnect: false));
+        }
         // Notify consumers so they can show a banner / attempt reconnect.
         _connectionLostController.add(event.reason?.name);
         dispatch([LiveKitDisconnected(reason: event.reason?.name)]);
