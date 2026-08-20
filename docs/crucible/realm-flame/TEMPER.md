@@ -53,6 +53,14 @@ be blurred — "the premise was wrong" is not a licence to discard findings that
 
 ### T1 — `ProximityService` is dark, and the user's preference is dead *(Maxwell + Tesla + Kelvin, independently)*
 
+> **DISCHARGED 2026-08-21.** Resolved by deletion, not by wiring: `BubbleManager.proximityRadius`
+> is now the single owner and every gate derives from it. `lib/proximity/proximity_service.dart`
+> is gone. The recast inherits *"proximity is one owner with three derived thresholds"* as a
+> settled fact, not an open constraint — the paragraphs below are kept as the record of how it was
+> found. The engine-side question T1 raised is still live in a different form: whether a
+> `PresenceField` primitive belongs in `realm_core`, now with a working implementation to
+> generalise from rather than a dead one.
+
 `lib/proximity/proximity_service.dart` is, feature for feature, the `PresenceField` the design
 proposed to build: viewer-relative, Chebyshev (`:112`), threshold-gated, emitting enter/exit edges
 (`:65-92`), pure Dart. Constructed per-room from a **user preference**

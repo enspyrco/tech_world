@@ -9,7 +9,6 @@ import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/config/realm_token_config.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/realm_token_source.dart';
-import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/presence_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/services/dreamfinder_client.dart';
@@ -41,7 +40,6 @@ class RoomSession {
     required this.liveKitService,
     required this.chatService,
     required this.chatMessageRepository,
-    required this.proximityService,
     required this.timerService,
     required this.room,
     required this.userId,
@@ -67,7 +65,6 @@ class RoomSession {
   final LiveKitService liveKitService;
   final ChatService chatService;
   final ChatMessageRepository chatMessageRepository;
-  final ProximityService proximityService;
 
   /// Controller for the shared room countdown timer (publish/subscribe +
   /// countdown + alarm). Registered in the [Locator] for the UI to drive.
@@ -148,7 +145,6 @@ class RoomSession {
     required void Function() onStateChanged,
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
-    int? proximityRadius,
     @visibleForTesting ChatMessageRepository? chatMessageRepository,
     @visibleForTesting LiveKitService? liveKitService,
     @visibleForTesting FirebaseFirestore? firestore,
@@ -190,22 +186,10 @@ class RoomSession {
         apiKey: const String.fromEnvironment('DREAMFINDER_API_KEY'),
       ),
     );
-    // Proximity radius is a *static* config for this session: the user's
-    // saved preference is read at room entry (in `main.dart`) and frozen
-    // here so mid-session toggle changes never retroactively re-evaluate
-    // existing in-range pairs (a deliberate state-lifecycle sidestep). A
-    // null value falls back to the ProximityService default — useful for
-    // tests that want the historic 3-square behaviour without depending on
-    // SharedPreferences.
-    final proximity = proximityRadius == null
-        ? ProximityService()
-        : ProximityService(proximityThreshold: proximityRadius);
-
     final timer = TimerService(liveKitService: liveKit);
 
     Locator.add<LiveKitService>(liveKit);
     Locator.add<ChatService>(chat);
-    Locator.add<ProximityService>(proximity);
     Locator.add<TimerService>(timer);
 
     final fs = firestore ?? FirebaseFirestore.instance;
@@ -214,7 +198,6 @@ class RoomSession {
       liveKitService: liveKit,
       chatService: chat,
       chatMessageRepository: chatRepo,
-      proximityService: proximity,
       timerService: timer,
       room: room,
       userId: userId,
@@ -434,7 +417,7 @@ class RoomSession {
   /// Leave the room — dispose services in dependency order.
   ///
   /// Disposal order: cancel reconnection listener, then consumers before
-  /// producers (ChatService → ProximityService → LiveKitService).
+  /// producers (ChatService → TimerService → LiveKitService).
   Future<void> leave() async {
     _disposed = true;
 
@@ -459,7 +442,6 @@ class RoomSession {
     _isReconnecting = false;
 
     chatService.dispose();
-    proximityService.dispose();
     timerService.dispose();
     await liveKitService.dispose();
     // Close the token-path resources (HTTP client + lazily-built Firebase auth
@@ -472,7 +454,6 @@ class RoomSession {
 
     Locator.remove<LiveKitService>();
     Locator.remove<ChatService>();
-    Locator.remove<ProximityService>();
     Locator.remove<TimerService>();
   }
 }

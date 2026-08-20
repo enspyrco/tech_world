@@ -496,11 +496,6 @@ class _MyAppState extends State<MyApp> {
       wires.start(Wire.server);
       final wireB = () async {
         try {
-          // Read the proximity-radius preference *before* RoomSession.create
-          // so it's frozen into the ProximityService for this session. Live
-          // toggle changes take effect on next room entry — see the slider
-          // subtitle in EditProfileDialog.
-          final proximityRadius = await UserPreferences.proximityRadius();
           _session = RoomSession.create(
             room: room,
             userId: userId,
@@ -513,7 +508,6 @@ class _MyAppState extends State<MyApp> {
                 return tw.connectToLiveKit(userId, _currentDisplayName);
               },
             onRoomDeleted: _onRoomDeleted,
-            proximityRadius: proximityRadius,
           );
           final result = await _session!.connect();
           if (result == ConnectionResult.connected) {
@@ -527,6 +521,11 @@ class _MyAppState extends State<MyApp> {
             techWorld
                 .setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
             techWorld.setReduceMotion(await UserPreferences.reduceMotion());
+            // Frozen for the session: a mid-session slider change takes effect
+            // on next room entry, so no in-range pair is re-evaluated
+            // retroactively. Matches the slider subtitle in EditProfileDialog.
+            techWorld
+                .setProximityRadius(await UserPreferences.proximityRadius());
             // A mention arriving while chat is already open auto-acks (the user
             // has already "seen" it). `_chatCollapsed == false` means visible.
             techWorld.isLocalChatOpen = () => !_chatCollapsed.value;
@@ -619,7 +618,7 @@ class _MyAppState extends State<MyApp> {
   ///
   /// Disposal order: TechWorld subscriptions first (cancels stream listeners
   /// while the underlying services are still alive), then RoomSession handles
-  /// consumer-before-producer disposal (ChatService → ProximityService →
+  /// consumer-before-producer disposal (ChatService → TimerService →
   /// LiveKitService).
   Future<void> _leaveRoom() async {
     if (_currentRoom == null) return;
@@ -763,9 +762,6 @@ class _MyAppState extends State<MyApp> {
 
       // Now connect LiveKit for the new room.
       if (_session == null) {
-        // Read proximity-radius pref before RoomSession.create — see the
-        // comment at the other call site above.
-        final proximityRadius = await UserPreferences.proximityRadius();
         _session = RoomSession.create(
           room: room,
           userId: userId,
@@ -778,7 +774,6 @@ class _MyAppState extends State<MyApp> {
                 return tw.connectToLiveKit(userId, _currentDisplayName);
               },
           onRoomDeleted: _onRoomDeleted,
-          proximityRadius: proximityRadius,
         );
         final result = await _session!.connect();
         if (result == ConnectionResult.connected) {
@@ -787,6 +782,7 @@ class _MyAppState extends State<MyApp> {
           // Web-safe-mode floor is sealed in the setters (see the seam above).
           tw.setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
           tw.setReduceMotion(await UserPreferences.reduceMotion());
+          tw.setProximityRadius(await UserPreferences.proximityRadius());
           await tw.connectToLiveKit(userId, _currentDisplayName);
           await _session!.enableMedia();
           await _session!.chatService.loadHistory(room.id);

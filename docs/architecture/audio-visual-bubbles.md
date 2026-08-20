@@ -25,7 +25,6 @@ This document maps every component involved.
 │                                                                              │
 │  RoomSession.create()                                                        │
 │    ├── LiveKitService    (WebRTC room, streams, data channels)               │
-│    ├── ProximityService  (event dispatch only — NOT used for bubbles)        │
 │    └── ChatService                                                           │
 │                                                                              │
 │  RoomSession.connect()                                                       │
@@ -84,8 +83,9 @@ This document maps every component involved.
 │       └──────────────────────────────────────────────┘                       │
 │       no bubbles, no audio                                                   │
 │                                                                              │
-│  NOTE: This is separate from ProximityService (threshold=3, events only).    │
-│  BubbleManager does its own inline Chebyshev check each frame.              │
+│  NOTE: BubbleManager is the single proximity owner — one inline Chebyshev   │
+│  check per frame drives bubbles, audio, the DF signal and the enter/exit    │
+│  events. All thresholds derive from the user's "Proximity range" pref.      │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -291,13 +291,13 @@ This document maps every component involved.
 | `lib/livekit/dreamfinder_avatar_bridge_web.dart` | Dreamfinder iframe + audio/mood forwarding |
 | `lib/proximity/proximity_service.dart` | Event-only proximity (separate from bubble system) |
 | `lib/flame/shared/speaker_role.dart` | Speech transcript attribution enum |
-| `lib/preferences/user_preferences.dart` | hideVideoBubbles / reduceMotion prefs |
+| `lib/preferences/user_preferences.dart` | hideVideoBubbles / reduceMotion / proximityRadius prefs |
 
 ## Key Constraints
 
 1. **`adaptiveStream: false`** — Flame renders to canvas, not `VideoTrackRenderer` widget. Without this the SFU stops forwarding video.
 2. **Never `createImageFromImageBitmap`** — Skia bug #14637 renders black in CanvasKit WASM.
 3. **Hidden elements at `top: -9999px`**, not `display:none` — mobile browsers won't decode hidden video elements.
-4. **Two separate proximity systems** — `ProximityService` (threshold=3, events only) vs `BubbleManager` (visual=5, audio=2, owns bubbles). They don't talk to each other.
+4. **One proximity owner** — `BubbleManager.proximityRadius` (the user's "Proximity range" preference, default 5) is the single source of the visual gate, the derived audio enable/disable pair, the Dreamfinder range signal, and `PlayerEnteredProximity`/`PlayerLeftProximity`. There used to be a second system, `ProximityService`, which held the preference but had no production caller — it was deleted rather than wired up, since it modelled one boolean threshold where the gate stack needs three.
 5. **GLSL limits** — no array initializers or dynamic loop bounds (CanvasKit rejects them).
 6. **`hiddenForMerge`** — merged bubbles keep capturing but skip render; the merged component samples their `currentFrame` directly.

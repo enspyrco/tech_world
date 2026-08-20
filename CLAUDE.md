@@ -91,7 +91,7 @@ In Tech World, **the world listens — not the player**. Casting is triggered by
 
 ### Service Locator
 
-Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthService`, `TechWorld`, `TechWorldGame`. Dynamic (sign-in/out): `LiveKitService`, `ChatService`, `ProximityService`.
+Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthService`, `TechWorld`, `TechWorldGame`. Dynamic (sign-in/out): `LiveKitService`, `ChatService`, `TimerService`.
 
 ### Key Classes
 
@@ -148,7 +148,9 @@ Web DF: Three.js iframe → CanvasCapture → canvas → decodeImageFromPixels �
 
 ### Proximity Detection
 
-`ProximityService`: Chebyshev distance, 3 grid squares threshold, stream-based enter/exit events.
+`BubbleManager` is the single proximity owner: one Chebyshev pass per frame in `update()` drives the visual gate, the audio enable/disable pair, the Dreamfinder range signal, and the `PlayerEnteredProximity`/`PlayerLeftProximity` events. Every threshold derives from `proximityRadius` — the user's "Proximity range" preference, applied via `TechWorld.setProximityRadius` at room entry alongside `setHideVideoBubbles` / `setReduceMotion`. Radius `0` disables proximity entirely (no bubbles, no proximity audio), including for a co-located player.
+
+There was a second implementation, `ProximityService`, holding the same preference with no production caller — deleted rather than wired up, because it modelled one boolean threshold where the gate stack needs three (visual, audio-enable, audio-disable, the latter two with hysteresis).
 
 ## Testing
 

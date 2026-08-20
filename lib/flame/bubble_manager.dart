@@ -50,6 +50,7 @@ class BubbleManager {
     required Map<String, BotCharacterComponent> bots,
     this.hideVideoBubbles = false,
     this.reduceMotion = false,
+    this.proximityRadius = defaultProximityRadius,
     DiagnosticsService? diagnostics,
   })  : _localPlayer = localPlayer,
         _addComponent = addComponent,
@@ -85,6 +86,28 @@ class BubbleManager {
   /// shared metaball field/merged-video components on next update.
   bool reduceMotion;
 
+  /// Chebyshev radius, in grid squares, inside which another participant is
+  /// "nearby": their bubble forms, their audio subscribes, and Dreamfinder is
+  /// told the local player is in range. `0` disables proximity entirely — no
+  /// bubble forms for anyone, including a participant standing on the local
+  /// player's own square.
+  ///
+  /// This is the user's "Proximity range" preference
+  /// ([UserPreferences.proximityRadius]) and the single source of all three
+  /// proximity gates: the visual threshold is this value, and the audio
+  /// enable/disable pair derives from it (see [_audioEnableThreshold]).
+  ///
+  /// Mutable so the owning game world can apply the saved preference before
+  /// each room entry — the same seam as [hideVideoBubbles] and [reduceMotion].
+  /// Frozen for the session: a mid-session change never retroactively
+  /// re-evaluates pairs already in range.
+  int proximityRadius;
+
+  /// Radius applied when the caller supplies none. Matches
+  /// [UserPreferences.defaultProximityRadius]; a runtime test pins the two
+  /// together so the constructor default can't drift from the preference's.
+  static const int defaultProximityRadius = 5;
+
   // ── Construction-time stable references ──────────────────────────────────
 
   final PlayerComponent _localPlayer;
@@ -117,6 +140,10 @@ class BubbleManager {
   /// Last reported local-player proximity to Dreamfinder, so the df-proximity
   /// signal is published only on enter/exit transitions, not every frame.
   bool _wasNearDreamfinder = false;
+  /// Participants inside [proximityRadius] as of the previous frame, so
+  /// enter/exit events fire on transitions only. Excludes the local player's
+  /// own bubble slot. See [_reconcileProximityMembership].
+  final Set<String> _nearbyParticipants = {};
 
   // ── Rendering components ─────────────────────────────────────────────────
 
@@ -152,15 +179,20 @@ class BubbleManager {
   // ── Constants ─────────────────────────────────────────────────────────────
 
   static const _localPlayerBubbleKey = '_local_player_';
-  static const int _visualThreshold = 5; // grid squares — bubbles visible
   // Audio gate with hysteresis so standing at the boundary doesn't flap the
   // SFU forward on/off. Audio enables when a participant is within
   // [_audioEnableThreshold] and only cuts once they drift past
-  // [_audioDisableThreshold]. The enable distance sits just inside the visual
-  // range (5) so you can hear almost anyone whose bubble you can see — closing
-  // the old see-but-can't-hear dead zone (audio was ≤2 while bubbles were ≤5).
-  static const int _audioEnableThreshold = 4; // grid squares — audio turns on
-  static const int _audioDisableThreshold = 5; // grid squares — audio cuts off
+  // [_audioDisableThreshold]. The enable distance sits one square inside the
+  // visual range so you can hear almost anyone whose bubble you can see —
+  // closing the old see-but-can't-hear dead zone (audio was ≤2 while bubbles
+  // were ≤5). Both derive from [proximityRadius], so the user's preference
+  // moves the whole gate stack together and the one-square hysteresis band is
+  // preserved at every setting.
+  //
+  // At radius 0 the enable threshold is -1, which no distance satisfies —
+  // proximity-disabled means silent, with no special case needed.
+  int get _audioEnableThreshold => proximityRadius - 1;
+  int get _audioDisableThreshold => proximityRadius;
   static const int _audioFullVolumeDistance = 1; // ≤ this = full volume; fades out to _audioDisableThreshold
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
@@ -174,6 +206,17 @@ class BubbleManager {
   // ═══════════════════════════════════════════════════════════════════════════
   // Public API
   // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Whether [distance] grid squares counts as nearby at the current
+  /// [proximityRadius].
+  ///
+  /// The `> 0` term is the whole reason this is a method and not an inline
+  /// `distance <= proximityRadius`: radius 0 means proximity is off, and a
+  /// bare comparison would still match a participant standing on the local
+  /// player's own square. One owner, so the three call sites (remote players,
+  /// Dreamfinder, bots) cannot drift apart on it.
+  bool _isWithinRadius(int distance) =>
+      proximityRadius > 0 && distance <= proximityRadius;
 
   /// Chebyshev distance (max of x/y difference) — the metric for proximity.
   static int chebyshevDistance(Point<int> a, Point<int> b) =>
@@ -221,7 +264,7 @@ class BubbleManager {
 
     // Check each other player for proximity.
     final nearbyPlayerIds = <String>{};
-    int closestDistance = _visualThreshold + 1;
+    int closestDistance = proximityRadius + 1;
 
     for (final entry in _remotePlayers.entries) {
       final playerId = entry.key;
@@ -229,7 +272,7 @@ class BubbleManager {
 
       final distance =
           chebyshevDistance(playerGrid, playerComponent.miniGridPosition);
-      final isVisible = distance <= _visualThreshold;
+      final isVisible = _isWithinRadius(distance);
 
       if (isVisible) {
         nearbyPlayerIds.add(playerId);
@@ -254,7 +297,7 @@ class BubbleManager {
       final dfGrid = dreamfinderComponent!.miniGridPosition;
       final dfDistance = chebyshevDistance(playerGrid, dfGrid);
 
-      if (dfDistance <= _visualThreshold) {
+      if (_isWithinRadius(dfDistance)) {
         nearbyPlayerIds.add(dreamfinderIdentity);
         if (dfDistance < closestDistance) closestDistance = dfDistance;
 
@@ -290,7 +333,7 @@ class BubbleManager {
       final botDistance =
           chebyshevDistance(playerGrid, botComp.miniGridPosition);
 
-      if (botDistance <= _visualThreshold) {
+      if (_isWithinRadius(botDistance)) {
         nearbyPlayerIds.add(botId);
         if (botDistance < closestDistance) closestDistance = botDistance;
 
@@ -301,6 +344,10 @@ class BubbleManager {
         }
       }
     }
+
+    // Emit enter/exit before the local-player sentinel joins the set below —
+    // `_localPlayerBubbleKey` is a bubble slot, not a participant.
+    _reconcileProximityMembership(nearbyPlayerIds);
 
     // Show local player's bubble if near anyone.
     if (nearbyPlayerIds.isNotEmpty) {
@@ -335,6 +382,27 @@ class BubbleManager {
     }
 
     _updateBubblePositions(dt);
+  }
+
+  /// Emit [PlayerEnteredProximity] / [PlayerLeftProximity] for the frame's
+  /// proximity set.
+  ///
+  /// Keyed off set membership rather than bubble creation on purpose: a bubble
+  /// is replaced for reasons that have nothing to do with proximity (upgrading
+  /// to video, camera on/off, a Dreamfinder respawn), and hanging the events
+  /// off `_replaceBubble` would report a peer as re-entering every time their
+  /// camera came on. Participants who vanish from the world maps entirely
+  /// (disconnects) fall out of [nearby] and so emit an exit here too.
+  void _reconcileProximityMembership(Set<String> nearby) {
+    for (final id in nearby.difference(_nearbyParticipants)) {
+      dispatch([PlayerEnteredProximity(playerId: id)]);
+    }
+    for (final id in _nearbyParticipants.difference(nearby)) {
+      dispatch([PlayerLeftProximity(playerId: id)]);
+    }
+    _nearbyParticipants
+      ..clear()
+      ..addAll(nearby);
   }
 
   /// Refresh (upgrade to video or re-create) the bubble for a remote player.
@@ -521,6 +589,10 @@ class BubbleManager {
     _mergedBubble = null;
     _audioEnabledParticipants.clear();
     _audioVolumes.clear();
+    // Everyone who was in range has now left, as far as any consumer of the
+    // event stream is concerned. Same reasoning as the DF exit below: a
+    // teardown that drops membership silently leaves the last enter unmatched.
+    _reconcileProximityMembership(const {});
     // Emit a final exit so Dreamfinder doesn't hold a stale near:true after we
     // tear down while the player was in range (cage match PR #481 — Carnot).
     // Best-effort; the bot also self-heals on our ParticipantDisconnected.
@@ -677,22 +749,23 @@ class BubbleManager {
     }
   }
 
-  /// Visual opacity for a bubble at [distance] Chebyshev grid squares.
+  /// Visual opacity for a bubble at [distance] Chebyshev grid squares: full
+  /// within [_audioFullVolumeDistance], then a linear fade to nothing at
+  /// [proximityRadius].
   ///
-  /// Moved here from ProximityService — opacity is presentation, not
-  /// proximity logic.
-  ///
-  /// - Distance 0–1: 1.0 (fully visible)
-  /// - Distance 2: 0.8
-  /// - Distance 3: 0.5
-  /// - Distance 4: 0.2
-  /// - Distance 5+: 0.0 (removed by caller)
-  static double _opacityForDistance(int distance) {
-    if (distance <= 1) return 1.0;
-    if (distance == 2) return 0.8;
-    if (distance == 3) return 0.5;
-    if (distance == 4) return 0.2;
-    return 0.0;
+  /// Opacity is presentation, not proximity logic — hence living here rather
+  /// than in a proximity source. It used to be a ladder hand-tabulated for a
+  /// radius of 5 (0.8 / 0.5 / 0.2); scaling it to the user's radius means the
+  /// fade spans whatever range they chose instead of going fully transparent
+  /// two squares early at radius 6, or never fading at all at radius 2. At the
+  /// default radius the curve is within 0.05 of the old ladder at every
+  /// square, and it is now the same shape as [_volumeForDistance].
+  double _opacityForDistance(int distance) {
+    if (proximityRadius <= 0) return 0.0;
+    if (distance <= _audioFullVolumeDistance) return 1.0;
+    final span = proximityRadius - _audioFullVolumeDistance;
+    if (span <= 0) return 1.0;
+    return ((proximityRadius - distance) / span).clamp(0.0, 1.0);
   }
 
   void _updateParticipantAudio(String playerId, int distance) {
@@ -759,6 +832,11 @@ class BubbleManager {
   double _volumeForDistance(int distance) {
     if (distance <= _audioFullVolumeDistance) return 1.0;
     final span = _audioDisableThreshold - _audioFullVolumeDistance;
+    // Radius ≤ 1 collapses the ramp to nothing. Only reachable if a caller
+    // mutates the radius mid-session; the early return above already covers
+    // every distance the gate can have enabled at that radius, so this guards
+    // the division rather than the behaviour.
+    if (span <= 0) return 1.0;
     return ((_audioDisableThreshold - distance) / span).clamp(0.0, 1.0);
   }
 

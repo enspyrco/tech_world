@@ -8,10 +8,10 @@ import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
-import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/presence_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_session.dart';
+import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
 class _FakeLiveKit extends Mock implements LiveKitService {}
@@ -113,25 +113,21 @@ void main() {
   tearDown(() {
     Locator.remove<LiveKitService>();
     Locator.remove<ChatService>();
-    Locator.remove<ProximityService>();
   });
 
   group('RoomSession.create', () {
-    test('registers LiveKitService, ChatService, ProximityService in Locator',
-        () {
+    test('registers LiveKitService, ChatService, TimerService in Locator', () {
       final session = _createSession();
 
       expect(Locator.maybeLocate<LiveKitService>(), isNotNull);
       expect(Locator.maybeLocate<ChatService>(), isNotNull);
-      expect(Locator.maybeLocate<ProximityService>(), isNotNull);
+      expect(Locator.maybeLocate<TimerService>(), isNotNull);
       expect(
           session.liveKitService, same(Locator.maybeLocate<LiveKitService>()));
       expect(session.chatService, same(Locator.maybeLocate<ChatService>()));
-      expect(session.proximityService,
-          same(Locator.maybeLocate<ProximityService>()));
+      expect(session.timerService, same(Locator.maybeLocate<TimerService>()));
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
 
     test('sets room, userId, displayName', () {
@@ -142,7 +138,6 @@ void main() {
       expect(session.displayName, 'User 1');
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
 
     test('creates LiveKitService with correct roomName', () {
@@ -151,68 +146,8 @@ void main() {
       expect(session.liveKitService.roomName, 'test-room');
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
 
-    test('omitting proximityRadius uses the ProximityService default', () {
-      final session = _createSession();
-
-      expect(session.proximityService.proximityThreshold,
-          equals(ProximityService().proximityThreshold));
-
-      session.chatService.dispose();
-      session.proximityService.dispose();
-    });
-
-    test('proximityRadius is piped through to ProximityService', () {
-      final session = RoomSession.create(
-        room: _testRoom,
-        userId: 'user-1',
-        displayName: 'User 1',
-        avatarId: 'npc11',
-        onStateChanged: () {},
-        onReconnectWorld: () async {},
-        onRoomDeleted: () {},
-        proximityRadius: 6,
-        chatMessageRepository:
-            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
-        firestore: FakeFirebaseFirestore(),
-      );
-
-      expect(session.proximityService.proximityThreshold, equals(6));
-
-      session.chatService.dispose();
-      session.proximityService.dispose();
-    });
-
-    test('proximityRadius: 0 produces a disabled ProximityService', () {
-      final session = RoomSession.create(
-        room: _testRoom,
-        userId: 'user-1',
-        displayName: 'User 1',
-        avatarId: 'npc11',
-        onStateChanged: () {},
-        onReconnectWorld: () async {},
-        onRoomDeleted: () {},
-        proximityRadius: 0,
-        chatMessageRepository:
-            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
-        firestore: FakeFirebaseFirestore(),
-      );
-
-      expect(session.proximityService.proximityThreshold, equals(0));
-
-      // Smoke-check the disabled semantic: even co-located players don't
-      // become nearby.
-      session.proximityService.checkProximity(
-        localPlayerPosition: const Point(5, 5),
-        otherPlayerPositions: {'other': const Point(5, 5)},
-      );
-      expect(session.proximityService.nearbyPlayers, isEmpty);
-
-      session.chatService.dispose();
-      session.proximityService.dispose();
-    });
   });
 
   group('failureMessageFor', () {
@@ -254,7 +189,6 @@ void main() {
       expect(oracle1, same(oracle2));
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
   });
 
@@ -264,13 +198,13 @@ void main() {
 
       expect(Locator.maybeLocate<LiveKitService>(), isNotNull);
       expect(Locator.maybeLocate<ChatService>(), isNotNull);
-      expect(Locator.maybeLocate<ProximityService>(), isNotNull);
+      expect(Locator.maybeLocate<TimerService>(), isNotNull);
 
       await session.leave();
 
       expect(Locator.maybeLocate<LiveKitService>(), isNull);
       expect(Locator.maybeLocate<ChatService>(), isNull);
-      expect(Locator.maybeLocate<ProximityService>(), isNull);
+      expect(Locator.maybeLocate<TimerService>(), isNull);
     });
   });
 
@@ -282,7 +216,6 @@ void main() {
       expect(session.connectionMessage.value, isNull);
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
   });
 

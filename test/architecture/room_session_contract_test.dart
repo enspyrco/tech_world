@@ -6,9 +6,9 @@ import 'package:tech_world/flame/maps/game_map.dart';
 import 'dart:math';
 
 import 'package:tech_world/livekit/livekit_service.dart';
-import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_session.dart';
+import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
 /// Architecture Contract: RoomSession
@@ -47,7 +47,6 @@ void main() {
   tearDown(() {
     Locator.remove<LiveKitService>();
     Locator.remove<ChatService>();
-    Locator.remove<ProximityService>();
   });
 
   // ── Public interface ─────────────────────────────────────────────────────
@@ -57,21 +56,12 @@ void main() {
       final s = createSession();
       expect(s.liveKitService, isA<LiveKitService>());
       s.chatService.dispose();
-      s.proximityService.dispose();
     });
 
     test('exposes chatService', () {
       final s = createSession();
       expect(s.chatService, isA<ChatService>());
       s.chatService.dispose();
-      s.proximityService.dispose();
-    });
-
-    test('exposes proximityService', () {
-      final s = createSession();
-      expect(s.proximityService, isA<ProximityService>());
-      s.chatService.dispose();
-      s.proximityService.dispose();
     });
 
     test('exposes room, userId, displayName', () {
@@ -80,21 +70,18 @@ void main() {
       expect(s.userId, 'user-1');
       expect(s.displayName, 'Test User');
       s.chatService.dispose();
-      s.proximityService.dispose();
     });
 
     test('exposes connectionFailed ValueNotifier<bool>', () {
       final s = createSession();
       expect(s.connectionFailed.value, isFalse);
       s.chatService.dispose();
-      s.proximityService.dispose();
     });
 
     test('exposes connectionMessage ValueNotifier<String?>', () {
       final s = createSession();
       expect(s.connectionMessage.value, isNull);
       s.chatService.dispose();
-      s.proximityService.dispose();
     });
 
     test('failureMessageFor is a static method returning String', () {
@@ -108,13 +95,12 @@ void main() {
   // ── Locator registration contract ────────────────────────────────────────
 
   group('Locator registration', () {
-    test('create registers LiveKitService, ChatService, ProximityService', () {
+    test('create registers LiveKitService, ChatService, TimerService', () {
       final s = createSession();
       expect(Locator.maybeLocate<LiveKitService>(), same(s.liveKitService));
       expect(Locator.maybeLocate<ChatService>(), same(s.chatService));
-      expect(Locator.maybeLocate<ProximityService>(), same(s.proximityService));
+      expect(Locator.maybeLocate<TimerService>(), same(s.timerService));
       s.chatService.dispose();
-      s.proximityService.dispose();
     });
 
     test('leave removes all three services from Locator', () async {
@@ -122,7 +108,7 @@ void main() {
       await s.leave();
       expect(Locator.maybeLocate<LiveKitService>(), isNull);
       expect(Locator.maybeLocate<ChatService>(), isNull);
-      expect(Locator.maybeLocate<ProximityService>(), isNull);
+      expect(Locator.maybeLocate<TimerService>(), isNull);
     });
   });
 
@@ -137,7 +123,6 @@ void main() {
       final s = createSession();
       expect(s.oracleService, same(s.oracleService));
       s.chatService.dispose();
-      s.proximityService.dispose();
     });
   });
 }

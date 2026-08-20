@@ -429,6 +429,17 @@ class TechWorld extends World with TapCallbacks {
     _bubbleManager.reduceMotion = value || _forceWebSafeMode;
   }
 
+  /// Apply the user's "Proximity range" preference — the Chebyshev radius in
+  /// grid squares inside which another participant's bubble forms and their
+  /// audio subscribes. `0` disables proximity entirely.
+  ///
+  /// Call before [connectToLiveKit] on room entry, alongside the two setters
+  /// above. Unlike them there is no web-safe-mode floor: a smaller radius is
+  /// strictly less work for the client, so the preference always wins.
+  void setProximityRadius(int value) {
+    _bubbleManager.proximityRadius = value;
+  }
+
   /// Set the local player's avatar. Also broadcasts to other participants.
   void setLocalAvatar(Avatar avatar) {
     _localAvatar = avatar;
