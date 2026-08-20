@@ -8,7 +8,16 @@ store abstracted into the engine**; authoring is a **private menu** (not an in-w
 
 ---
 
-## Step 0 — Art-viability spike (GATE, do first, ~half day)
+## Step 0 — Art-viability spike (GATE) — ✅ **PASSED 2026-08-20** (see `step0/FINDINGS.md`)
+
+Parts read clearly at true display scale. Measured against the SHIPPING sprites (NPC11/12/13)
+rather than generated placeholders, so a negative result couldn't be blamed on bad programmer-art.
+All four proposed slots — body / hair / outfit / accessory — are demonstrably legible at 32×64;
+NPC13 already carries a cane, so the accessory slot is native to the house style. **The gate is
+cleared: Step 1 may commit the enum surface.** OV2 (art source + licence) remains open and still
+blocks real preset *content*, not the Step-1 scaffolding.
+
+<details><summary>Original step-0 brief</summary>
 Before committing the enum surface, prove modular parts read at 32px wide.
 - Author ONE real modular character at the render contract: `body + hair + outfit + accessory`, each a
   512×64 / 3-frame / 4-strip PNG, composited.
@@ -16,6 +25,8 @@ Before committing the enum surface, prove modular parts read at 32px wide.
   / recolor-leaning) before building the type surface.** This is the C5/flaw-13 kill-or-confirm.
 - Decide **OV2 (art source + license)**: LPC-derived (dual CC-BY-SA/GPL — attribution attaches to art,
   decide before grant build) vs Robin-authored to our grid. Robin is already in the sprite pipeline.
+
+</details>
 
 ## Step 1 — Typed spec + preset compositing (no network attack surface) — *independently shippable*
 1. **Slot enums** (`lib/avatar/parts/`): `BodyId` (no `none`), `HairId`/`OutfitId`/`AccessoryId` (with
@@ -25,7 +36,7 @@ Before committing the enum surface, prove modular parts read at 32px wide.
    `OverlayEdit`/`CanvasEdit` (defined now; only `parts` exercised until step 3).
 3. **Compositor** (`lib/avatar/avatar_composer.dart`): Flame `ImageComposition.composeSync()` over parts
    in `zPos` order → one 512×64 `ui.Image`; **refcounted LRU cache** keyed by `AvatarSpec`; feed to the
-   existing `_buildAnimations()`. Assert `width==384 && height==64` on every part-asset load (F7).
+   existing `_buildAnimations()`. Assert `width==512 && height==64` on every part-asset load (F7).
 4. **Gate**: replace `AvatarUpdate.tryParse` (`livekit_service.dart:1197`) with total `AvatarSpec.parse`:
    parts path + `assetPackVersion` (same-major required; unknown `body`/major-miss ⇒ `defaultAvatar`;
    optional slots degrade to `none`) + **legacy `avatarId`→`CompositeAvatar` migration (F5)**.
