@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tech_world/avatar/parts/avatar_part.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/livekit/data_topic.dart';
@@ -75,8 +76,7 @@ void main() {
       final update = AvatarUpdate.tryParse(json);
       expect(update, isNotNull);
       expect(update!.playerId, equals('user-123'));
-      expect(update.avatarId, equals('npc11'));
-      expect(update.spriteAsset, equals('NPC11.png'));
+      expect(update.spec.parts.body, equals(BodyId.npc11));
     });
 
     test('AvatarUpdate.tryParse returns null for missing playerId', () {
@@ -87,12 +87,16 @@ void main() {
       expect(AvatarUpdate.tryParse(json), isNull);
     });
 
-    test('AvatarUpdate.tryParse returns null for missing spriteAsset', () {
-      final json = {
+    test('AvatarUpdate.tryParse no longer needs spriteAsset at all', () {
+      // The wire used to carry a sprite filename and reject a payload without
+      // one. It carries closed-enum ids now, so `avatarId` alone is a complete
+      // (legacy) appearance and parses to the migrated composite.
+      final update = AvatarUpdate.tryParse({
         'playerId': 'user-123',
         'avatarId': 'npc11',
-      };
-      expect(AvatarUpdate.tryParse(json), isNull);
+      });
+      expect(update, isNotNull);
+      expect(update!.spec.parts.body, BodyId.npc11);
     });
 
     test('AvatarUpdate.tryParse returns null for non-map data', () {

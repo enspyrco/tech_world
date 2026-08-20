@@ -83,14 +83,35 @@ class PlayerComponent extends SpriteAnimationGroupComponent<PlayerAnimState>
   /// parts, so dropping the reference is what eventually frees it.
   AvatarSpec? _heldSpec;
 
-  /// The spec for [_spriteAsset], or null if this sheet isn't a composable
-  /// character.
+  /// Explicitly-set appearance, when this component is a player.
   ///
-  /// Bots are the reason this is a lookup rather than an assumption:
-  /// `claude_bot.png` is 104x88 and `dreamfinder_bot_sheet.png` is 512x192,
-  /// so routing every sheet through the composer would trip its 512x64
-  /// contract on components that were never characters. Human avatars resolve;
-  /// everything else falls through to the legacy path untouched.
+  /// Takes precedence over [_spriteAsset]. Null means "no spec was set" — a
+  /// bot, or a player still identified by sprite filename — and the asset
+  /// lookup below decides what to do.
+  AvatarSpec? _avatarSpec;
+
+  /// The character this component renders, or null if it isn't a composable
+  /// character at all.
+  ///
+  /// Set this rather than [spriteAsset] for players. Bots are why the fallback
+  /// exists: `claude_bot.png` is 104x88 and `dreamfinder_bot_sheet.png` is
+  /// 512x192, so routing every sheet through the composer would trip its
+  /// 512x64 contract on components that were never characters.
+  AvatarSpec? get avatarSpec => _avatarSpec ?? _specForCurrentAsset;
+
+  set avatarSpec(AvatarSpec? value) {
+    if (value == avatarSpec) return;
+    _avatarSpec = value;
+    if (value != null) {
+      // Keep the legacy field consistent for any reader still asking, so the
+      // two can't describe different characters during the migration.
+      _spriteAsset = value.parts.body.asset;
+    }
+    if (isMounted) _buildAnimations();
+  }
+
+  /// Bridge from the legacy string API: is this sheet a composable character?
+  /// Retired with [spriteAsset] once every caller passes a spec.
   AvatarSpec? get _specForCurrentAsset {
     final body = BodyId.forAsset(_spriteAsset);
     return body == null ? null : AvatarSpec.preset(CompositeAvatar(body: body));
@@ -129,7 +150,7 @@ class PlayerComponent extends SpriteAnimationGroupComponent<PlayerAnimState>
   /// sheets they are no longer wearing.
   ui.Image _acquireSheet() {
     _releaseSheet();
-    final spec = _specForCurrentAsset;
+    final spec = avatarSpec;
     if (spec == null) return game.images.fromCache(_spriteAsset);
     _heldSpec = spec;
     return game.avatarComposer.acquire(spec);

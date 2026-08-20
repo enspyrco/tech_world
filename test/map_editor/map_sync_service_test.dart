@@ -6,7 +6,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart';
-import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
@@ -618,7 +618,7 @@ class FakeLiveKitService implements LiveKitService {
   }) async {}
 
   @override
-  Future<void> publishAvatar(Avatar avatar) async {}
+  Future<void> publishAvatar(AvatarSpec spec) async {}
 
   @override
   Future<void> publishDfProximity({required bool near}) async {}

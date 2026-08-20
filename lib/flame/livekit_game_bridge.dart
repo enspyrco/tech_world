@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 // defensive `parseMentions` / `asStringOrNull` wire helpers) resolves cleanly.
 import 'package:livekit_client/livekit_client.dart' hide ChatMessage;
 import 'package:logging/logging.dart';
-import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
@@ -39,7 +39,7 @@ class LiveKitGameBridge {
     required String userId,
     required BubbleManager bubbleManager,
     required ValueNotifier<Point<int>> playerGridPosition,
-    required Avatar? localAvatar,
+    required AvatarSpec? Function() localAvatarSpec,
     // Position / heartbeat
     required void Function(PlayerPath) onPositionReceived,
     required void Function(PositionHeartbeat) onHeartbeatReceived,
@@ -66,7 +66,7 @@ class LiveKitGameBridge {
         _userId = userId,
         _bubbleManager = bubbleManager,
         _playerGridPosition = playerGridPosition,
-        _localAvatar = localAvatar,
+        _localAvatarSpec = localAvatarSpec,
         _onPositionReceived = onPositionReceived,
         _onHeartbeatReceived = onHeartbeatReceived,
         _onParticipantJoined = onParticipantJoined,
@@ -84,7 +84,10 @@ class LiveKitGameBridge {
   final String _userId;
   final BubbleManager _bubbleManager;
   final ValueNotifier<Point<int>> _playerGridPosition;
-  final Avatar? _localAvatar;
+  /// Read on demand, not captured at construction: the player can change
+  /// avatar after the bridge exists, and a snapshot would republish whoever
+  /// they used to be on the already-connected path below.
+  final AvatarSpec? Function() _localAvatarSpec;
 
   // Callbacks
   final void Function(PlayerPath) _onPositionReceived;
@@ -285,8 +288,9 @@ class LiveKitGameBridge {
     if (_liveKitService.isConnected) {
       _log.fine('LiveKit already connected');
       _bubbleManager.refreshLocalPlayerBubble();
-      if (_localAvatar != null) {
-        _liveKitService.publishAvatar(_localAvatar);
+      final spec = _localAvatarSpec();
+      if (spec != null) {
+        _liveKitService.publishAvatar(spec);
       }
     } else {
       _log.fine('Waiting for LiveKit connection...');

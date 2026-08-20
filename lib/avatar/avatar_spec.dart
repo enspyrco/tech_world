@@ -1,5 +1,23 @@
 import 'package:tech_world/avatar/parts/avatar_part.dart';
 
+/// Version of the bundled part-asset pack.
+///
+/// Travels on every parts payload so two clients can tell whether they will
+/// render a character identically. Bump the MAJOR (the whole number here)
+/// whenever an existing part's art changes meaning or a slot's semantics
+/// change — anything where the same ids would draw a materially different
+/// character. Adding new ids is additive and does not need a bump: an older
+/// client degrades the unknown optional slot to `none` and still renders the
+/// person recognisably.
+const int kAssetPackVersion = 1;
+
+/// Whether a peer's asset pack renders identically to ours.
+///
+/// Major-only today because the version is a bare int. When a minor component
+/// is introduced this is the single place that changes — callers ask the
+/// question, they don't compare numbers.
+bool isCompatibleAssetPack(int version) => version == kAssetPackVersion;
+
 /// A character built from one part per slot.
 ///
 /// Value-equality is load-bearing, not a convenience: this is the cache key in
@@ -40,6 +58,71 @@ class CompositeAvatar {
         .toList()
       ..sort((a, b) => a.zPos.compareTo(b.zPos));
     return List.unmodifiable(parts);
+  }
+
+  /// Wire form: enum wire names plus the asset-pack version. Never pixels.
+  ///
+  /// Identical to the Firestore form — one codec, so a spec read back from a
+  /// profile and a spec received from a peer cannot diverge.
+  Map<String, dynamic> toWire() => {
+        'body': body.wireName,
+        'hair': hair.wireName,
+        'outfit': outfit.wireName,
+        'accessory': accessory.wireName,
+        'v': kAssetPackVersion,
+      };
+
+  /// Parse a `parts` map, falling back to [CompositeAvatar.fallback] when the
+  /// character's *identity* can't be trusted.
+  ///
+  /// Two things are deliberately asymmetric here, per DESIGN.md 3.4 step 1:
+  ///
+  /// - An unknown **body**, or an asset-pack major that doesn't match ours,
+  ///   discards the whole spec. Silently defaulting an identity slot would
+  ///   show a peer wearing a body they never chose, which reads as *this is
+  ///   who they are* rather than as a failure.
+  /// - An unknown **hair / outfit / accessory** degrades to `none`. Those are
+  ///   additive, so dropping one shows less of a character rather than a
+  ///   different one, and a client one asset-pack minor behind still renders
+  ///   everyone recognisably.
+  ///
+  /// A `parts` map with no `v` is treated as a version miss rather than as
+  /// "assume current": this is the first version to publish parts at all, so
+  /// anything omitting it is either a legacy payload (handled by
+  /// [fromLegacyAvatarId]) or malformed.
+  static CompositeAvatar parseParts(Object? raw) {
+    if (raw is! Map) return fallback;
+    if (raw['v'] is! int || !isCompatibleAssetPack(raw['v'] as int)) {
+      return fallback;
+    }
+    final body = raw['body'] is String
+        ? BodyId.parse(raw['body'] as String)
+        : null;
+    if (body == null) return fallback;
+
+    return CompositeAvatar(
+      body: body,
+      hair: (raw['hair'] is String ? HairId.parse(raw['hair'] as String) : null) ??
+          HairId.none,
+      outfit:
+          (raw['outfit'] is String ? OutfitId.parse(raw['outfit'] as String) : null) ??
+              OutfitId.none,
+      accessory: (raw['accessory'] is String
+              ? AccessoryId.parse(raw['accessory'] as String)
+              : null) ??
+          AccessoryId.none,
+    );
+  }
+
+  /// Migrate a pre-parts profile, which stored a bare `avatarId` string
+  /// (`npc11` / `npc12` / `npc13`).
+  ///
+  /// Live users must not reset to the default on upgrade (F5), and the old ids
+  /// are exactly today's [BodyId] wire names, so the migration is a lookup
+  /// rather than a table.
+  static CompositeAvatar fromLegacyAvatarId(String? avatarId) {
+    final body = avatarId == null ? null : BodyId.parse(avatarId);
+    return body == null ? fallback : CompositeAvatar(body: body);
   }
 
   CompositeAvatar copyWith({
@@ -154,6 +237,40 @@ class AvatarSpec {
 
   final CompositeAvatar parts;
   final PixelEdit? edit;
+
+  /// Wire and Firestore form. `edit` is omitted entirely when absent rather
+  /// than sent as null, so a payload's shape says what it carries.
+  Map<String, dynamic> toWire() => {'parts': parts.toWire()};
+
+  /// **Total.** Always yields something renderable — never null, never a
+  /// throw.
+  ///
+  /// This replaces the old sprite-asset whitelist as the gate on peer input,
+  /// and totality is the security property, not a convenience: this runs
+  /// inside a stream's `map`, where a throw would tear down avatar reception
+  /// for the rest of the session, and any "couldn't parse" answer other than
+  /// a valid spec eventually becomes a peer-controlled branch. Every failure
+  /// converges on [CompositeAvatar.fallback] — a bundled asset, never anything
+  /// the sender chose.
+  ///
+  /// Accepts both shapes:
+  /// - current: `{parts: {body, hair, outfit, accessory, v}}`
+  /// - legacy: `{avatarId: 'npc11'}`, still present in Firestore profiles (F5)
+  ///
+  /// `edit` is not read yet — the pixel tier is step 3, and its verify path
+  /// (denylist, blob fetch, length, sha256, decode) has to land as one piece
+  /// or not at all.
+  static AvatarSpec parse(Map<String, dynamic>? json) {
+    if (json == null) return fallback;
+    if (json.containsKey('parts')) {
+      return AvatarSpec(parts: CompositeAvatar.parseParts(json['parts']));
+    }
+    return AvatarSpec(
+      parts: CompositeAvatar.fromLegacyAvatarId(
+        json['avatarId'] is String ? json['avatarId'] as String : null,
+      ),
+    );
+  }
 
   @override
   bool operator ==(Object other) =>

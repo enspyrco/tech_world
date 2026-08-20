@@ -10,6 +10,7 @@ import 'package:logging/logging.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/device/web_safe_mode.dart';
@@ -63,7 +64,6 @@ import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
-import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/progress/progress_service.dart';
@@ -388,8 +388,11 @@ class TechWorld extends World with TapCallbacks {
   LiveKitGameBridge? _liveKitBridge;
 
   // Avatar tracking — stores updates for players not yet created
-  final Map<String, String> _pendingAvatars = {};
-  Avatar? _localAvatar;
+  final Map<String, AvatarSpec> _pendingAvatars = {};
+  /// The local player's appearance, read on demand by the LiveKit bridge.
+  /// Single source of truth — the old `Avatar?` twin was removed rather than
+  /// kept in sync.
+  AvatarSpec? _localAvatarSpec;
 
   /// Forward bot status to the bubble manager so BotBubbleComponents can
   /// listen without depending on a global notifier. Called from [main.dart]
@@ -442,9 +445,14 @@ class TechWorld extends World with TapCallbacks {
 
   /// Set the local player's avatar. Also broadcasts to other participants.
   void setLocalAvatar(Avatar avatar) {
-    _localAvatar = avatar;
-    _userPlayerComponent.spriteAsset = avatar.spriteAsset;
-    _liveKitService?.publishAvatar(avatar);
+    // The picker still deals in the legacy `Avatar` preset; the wire and the
+    // renderer deal in specs. Converting here keeps the seam in one place
+    // until step 2 replaces the picker with per-slot selection.
+    final spec = AvatarSpec.preset(
+        CompositeAvatar.fromLegacyAvatarId(avatar.id));
+    _localAvatarSpec = spec;
+    _userPlayerComponent.avatarSpec = spec;
+    _liveKitService?.publishAvatar(spec);
   }
 
   // Position tracking for proximity detection
@@ -708,7 +716,7 @@ class TechWorld extends World with TapCallbacks {
       _liveKitService?.publishMapInfo(currentMap.value);
     } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
       // Apply pending avatar if one arrived before the component was created
-      final pendingSpriteAsset = _pendingAvatars.remove(participant.identity);
+      final pendingSpec = _pendingAvatars.remove(participant.identity);
 
       final playerComponent = PlayerComponent(
         position: Vector2.zero(),
@@ -716,8 +724,7 @@ class TechWorld extends World with TapCallbacks {
         displayName: participant.name.isNotEmpty
             ? participant.name
             : participant.identity,
-        spriteAsset: pendingSpriteAsset ?? defaultAvatar.spriteAsset,
-      );
+      )..avatarSpec = pendingSpec ?? AvatarSpec.fallback;
       _otherPlayerComponentsMap[participant.identity] = playerComponent;
       add(playerComponent);
       // Attach a mention beacon if this player was named before they spawned.
@@ -839,10 +846,10 @@ class TechWorld extends World with TapCallbacks {
   void _handleAvatarUpdate(AvatarUpdate update) {
     final playerComponent = _otherPlayerComponentsMap[update.playerId];
     if (playerComponent != null) {
-      playerComponent.spriteAsset = update.spriteAsset;
+      playerComponent.avatarSpec = update.spec;
     } else {
       // Player component doesn't exist yet — store for later
-      _pendingAvatars[update.playerId] = update.spriteAsset;
+      _pendingAvatars[update.playerId] = update.spec;
     }
   }
 
@@ -958,7 +965,7 @@ class TechWorld extends World with TapCallbacks {
       userId: userId,
       bubbleManager: _bubbleManager,
       playerGridPosition: playerGridPosition,
-      localAvatar: _localAvatar,
+      localAvatarSpec: () => _localAvatarSpec,
       onPositionReceived: _handlePositionReceived,
       onHeartbeatReceived: _handleHeartbeatReceived,
       onParticipantJoined: _handleParticipantJoined,

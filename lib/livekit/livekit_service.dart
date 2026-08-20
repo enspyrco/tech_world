@@ -7,8 +7,7 @@ import 'package:flame/components.dart' hide Timer;
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
-import 'package:tech_world/avatar/avatar.dart';
-import 'package:tech_world/avatar/predefined_avatars.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
@@ -293,13 +292,11 @@ class LiveKitService {
   /// Broadcast the local player's avatar to the room.
   ///
   /// Uses reliable delivery so late-joiners' catch-up works correctly.
-  Future<void> publishAvatar(Avatar avatar) async {
-    final message = {
-      'playerId': userId,
-      'avatarId': avatar.id,
-      'spriteAsset': avatar.spriteAsset,
-    };
-    await publishJson(message, topic: LiveKitTopic.avatar.wire);
+  Future<void> publishAvatar(AvatarSpec spec) async {
+    await publishJson(
+      {'playerId': userId, ...spec.toWire()},
+      topic: LiveKitTopic.avatar.wire,
+    );
   }
 
   /// Broadcast a one-shot emote from the local player.
@@ -1316,35 +1313,31 @@ class DataChannelMessage {
 
 /// A parsed avatar update from the `avatar` data channel topic.
 class AvatarUpdate {
-  const AvatarUpdate({
-    required this.playerId,
-    required this.avatarId,
-    required this.spriteAsset,
-  });
+  const AvatarUpdate({required this.playerId, required this.spec});
 
   final String playerId;
-  final String avatarId;
-  final String spriteAsset;
 
-  /// Try to parse an [AvatarUpdate] from a JSON map. Returns null if required
-  /// fields are missing or have wrong types.
+  /// What to render. Always valid — see [AvatarSpec.parse].
+  final AvatarSpec spec;
+
+  /// Try to parse an [AvatarUpdate]. Returns null **only** when the message
+  /// can't be attributed to a player.
   ///
-  /// Uses Dart 3 map patterns so a wrong-typed value returns null rather
-  /// than throwing — a thrown error inside the stream's `.map` callback
-  /// would tear down avatar reception for the rest of the session.
+  /// The split matters: [AvatarSpec.parse] is total, because a malformed
+  /// appearance should render as the default rather than kill the stream. But
+  /// an update with no usable `playerId` isn't a bad avatar — it's a message
+  /// about nobody, and applying it would mean picking a victim. So attribution
+  /// failure drops the whole message, and everything else falls back to a
+  /// bundled asset.
+  ///
+  /// This replaced a `spriteAsset` whitelist. The whitelist was doing real
+  /// work — it stopped path traversal and cache-miss crashes reaching the
+  /// renderer — and closed enums do the same job structurally: a peer can only
+  /// name ids that exist in our own enums, and an unknown one degrades or
+  /// falls back. No filename ever crosses the wire now.
   static AvatarUpdate? tryParse(Map<String, dynamic>? json) {
-    if (json case {'playerId': String playerId, 'spriteAsset': String spriteAsset}) {
-      // Whitelist sprite asset against the known-avatar set — prevents
-      // path-traversal, empty strings, and cache-miss crashes from
-      // forwarding through to the renderer. Set is lifted to a top-level
-      // `final` (`predefinedAvatarSpriteAssets`) so it's built once.
-      if (!predefinedAvatarSpriteAssets.contains(spriteAsset)) return null;
-      final avatarId = switch (json['avatarId']) { String s => s, _ => '' };
-      return AvatarUpdate(
-        playerId: playerId,
-        avatarId: avatarId,
-        spriteAsset: spriteAsset,
-      );
+    if (json case {'playerId': String playerId} when playerId.isNotEmpty) {
+      return AvatarUpdate(playerId: playerId, spec: AvatarSpec.parse(json));
     }
     return null;
   }

@@ -14,7 +14,7 @@ import 'package:livekit_client/livekit_client.dart'
         Room,
         ScreenShareCaptureOptions,
         VideoTrack;
-import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
@@ -2352,7 +2352,7 @@ class FakeLiveKitService implements LiveKitService {
   }) async {}
 
   @override
-  Future<void> publishAvatar(Avatar avatar) async {}
+  Future<void> publishAvatar(AvatarSpec spec) async {}
 
   @override
   Future<void> publishDfProximity({required bool near}) async {}
