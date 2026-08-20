@@ -1,6 +1,8 @@
 import 'package:flame/components.dart';
 import 'package:flame_test/flame_test.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
+import 'package:tech_world/avatar/parts/avatar_part.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_anim_state.dart';
@@ -386,6 +388,99 @@ void main() {
           isTrue,
           reason: 'Position should move right',
         );
+      },
+    );
+  });
+
+  group('composed-sheet lifetime', () {
+    PlayerComponent playerWith(String asset, String id) => PlayerComponent(
+          position: Vector2(0, 0),
+          id: id,
+          displayName: id,
+          spriteAsset: asset,
+        );
+
+    const npc11 = AvatarSpec(parts: CompositeAvatar(body: BodyId.npc11));
+
+    testWithGame<TestGameWithMockImages>(
+      'two players in the same outfit share one composed sheet',
+      TestGameWithMockImages.new,
+      (game) async {
+        await game.world.add(playerWith('NPC11.png', 'a'));
+        await game.world.add(playerWith('NPC11.png', 'b'));
+        await game.ready();
+
+        expect(game.avatarComposer.refCountOf(npc11), 2);
+        expect(game.avatarComposer.cachedCount, 1);
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
+      'one player leaving keeps the sheet alive for the other',
+      TestGameWithMockImages.new,
+      (game) async {
+        final leaving = playerWith('NPC11.png', 'a');
+        await game.world.add(leaving);
+        await game.world.add(playerWith('NPC11.png', 'b'));
+        await game.ready();
+
+        leaving.removeFromParent();
+        await game.ready();
+
+        // The peer who stayed must still be able to draw: refcount 1, and the
+        // entry is still cached rather than disposed.
+        expect(game.avatarComposer.refCountOf(npc11), 1);
+        expect(game.avatarComposer.cachedCount, 1);
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
+      'the last player leaving drops the count to zero',
+      TestGameWithMockImages.new,
+      (game) async {
+        final only = playerWith('NPC11.png', 'a');
+        await game.world.add(only);
+        await game.ready();
+        expect(game.avatarComposer.refCountOf(npc11), 1);
+
+        only.removeFromParent();
+        await game.ready();
+
+        expect(game.avatarComposer.refCountOf(npc11), 0);
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
+      'changing avatar releases the outgoing sheet',
+      TestGameWithMockImages.new,
+      (game) async {
+        final player = playerWith('NPC11.png', 'a');
+        await game.world.add(player);
+        await game.ready();
+
+        player.spriteAsset = 'NPC12.png';
+
+        expect(game.avatarComposer.refCountOf(npc11), 0,
+            reason: 'no longer wearing it');
+        expect(
+          game.avatarComposer.refCountOf(
+              const AvatarSpec(parts: CompositeAvatar(body: BodyId.npc12))),
+          1,
+        );
+      },
+    );
+
+    testWithGame<TestGameWithMockImages>(
+      'a non-character sheet bypasses the composer entirely',
+      TestGameWithMockImages.new,
+      (game) async {
+        // claude_bot.png is 48x48 here and 104x88 in the real bundle — neither
+        // is the 512x64 character contract. It must take the legacy path
+        // rather than trip the composer's assert.
+        await game.world.add(playerWith('claude_bot.png', 'bot'));
+        await game.ready();
+
+        expect(game.avatarComposer.cachedCount, 0);
       },
     );
   });

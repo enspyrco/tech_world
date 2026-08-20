@@ -22,7 +22,7 @@ class _OcclusionTestGame extends TechWorldGame {
   @override
   Future<void> onLoad() async {
     // Player sprite sheet (12 frames of 32×64 across 4 directions).
-    images.add('NPC11.png', await generateImage(384, 256));
+    images.add('NPC11.png', await generateImage(512, 64));
 
     registry = TilesetRegistry(images: images);
     registry.loadFromImage(

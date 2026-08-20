@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart' show KeyEventResult;
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/keyboard_movement.dart';
+import 'package:tech_world/avatar/avatar_composer.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
 import 'package:tech_world/flame/tiles/tileset_registry.dart';
@@ -46,6 +47,16 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
 
   /// Registry for loading and accessing tileset sprite sheets.
   late final TilesetRegistry tilesetRegistry;
+
+  /// Composes character sheets from parts and shares one image between every
+  /// player wearing the same [AvatarSpec].
+  ///
+  /// Lives on the game rather than on the world because it reads the game's
+  /// image cache and must outlive a map change — walking between rooms should
+  /// not re-composite every character. [PlayerComponent] takes and drops
+  /// references around it.
+  late final AvatarComposer avatarComposer =
+      AvatarComposer(loadImage: images.fromCache);
 
   /// Movement keys currently held down. Maintained by [onKeyEvent]; consumed by
   /// [update] each tick to drive continuous-while-held movement.

@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flutter/foundation.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
+import 'package:tech_world/avatar/parts/avatar_part.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_anim_state.dart';
@@ -72,6 +75,27 @@ class PlayerComponent extends SpriteAnimationGroupComponent<PlayerAnimState>
     }
   }
 
+  /// The composed sheet this component currently holds a reference on, or null
+  /// when it is rendering straight from a cached asset.
+  ///
+  /// Paired with [AvatarComposer.release] in [_buildAnimations] and [onRemove]
+  /// — the composer shares one image between every peer wearing the same
+  /// parts, so dropping the reference is what eventually frees it.
+  AvatarSpec? _heldSpec;
+
+  /// The spec for [_spriteAsset], or null if this sheet isn't a composable
+  /// character.
+  ///
+  /// Bots are the reason this is a lookup rather than an assumption:
+  /// `claude_bot.png` is 104x88 and `dreamfinder_bot_sheet.png` is 512x192,
+  /// so routing every sheet through the composer would trip its 512x64
+  /// contract on components that were never characters. Human avatars resolve;
+  /// everything else falls through to the legacy path untouched.
+  AvatarSpec? get _specForCurrentAsset {
+    final body = BodyId.forAsset(_spriteAsset);
+    return body == null ? null : AvatarSpec.preset(CompositeAvatar(body: body));
+  }
+
   /// Duration of a single one-cell [MoveToEffect].
   ///
   /// This animation duration *is* the continuous-keyboard-movement cadence:
@@ -91,9 +115,36 @@ class PlayerComponent extends SpriteAnimationGroupComponent<PlayerAnimState>
     return super.onLoad();
   }
 
+  @override
+  void onRemove() {
+    _releaseSheet();
+    super.onRemove();
+  }
+
+  /// Get the sheet to animate from, taking a composer reference when this
+  /// avatar is composable.
+  ///
+  /// Swapping avatars releases the outgoing reference before taking the new
+  /// one, so a player cycling through the picker never accumulates holds on
+  /// sheets they are no longer wearing.
+  ui.Image _acquireSheet() {
+    _releaseSheet();
+    final spec = _specForCurrentAsset;
+    if (spec == null) return game.images.fromCache(_spriteAsset);
+    _heldSpec = spec;
+    return game.avatarComposer.acquire(spec);
+  }
+
+  void _releaseSheet() {
+    final held = _heldSpec;
+    if (held == null) return;
+    _heldSpec = null;
+    game.avatarComposer.release(held);
+  }
+
   /// Build directional animations from the current [_spriteAsset].
   void _buildAnimations() {
-    final image = game.images.fromCache(_spriteAsset);
+    final image = _acquireSheet();
 
     final sectionWidth = _frameCount * 32.0;
     // The wave strip sits immediately after the four direction strips.
