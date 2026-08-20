@@ -11,6 +11,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:tech_world/avatar/avatar_spec.dart';
+import 'package:tech_world/avatar/avatar_update_throttle.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/device/web_safe_mode.dart';
@@ -389,6 +390,10 @@ class TechWorld extends World with TapCallbacks {
 
   // Avatar tracking — stores updates for players not yet created
   final Map<String, AvatarSpec> _pendingAvatars = {};
+
+  /// Per-peer rate limit on avatar changes.
+  late final AvatarUpdateThrottle _avatarThrottle =
+      AvatarUpdateThrottle(apply: _applyAvatarUpdate);
   /// The local player's appearance, read on demand by the LiveKit bridge.
   /// Single source of truth — the old `Avatar?` twin was removed rather than
   /// kept in sync.
@@ -804,6 +809,10 @@ class TechWorld extends World with TapCallbacks {
   void _handleParticipantLeft(RemoteParticipant participant) {
     _log.info('LiveKit participant left: ${participant.identity}');
 
+    // Drop any in-flight avatar update for them — its timer would otherwise
+    // outlive the participant and fire at a component that is gone.
+    _avatarThrottle.forget(participant.identity);
+
     if (isDreamfinderIdentity(participant.identity) &&
         _dreamfinderComponent != null) {
       remove(_dreamfinderComponent!);
@@ -843,13 +852,21 @@ class TechWorld extends World with TapCallbacks {
   }
 
   /// Handle an avatar update from a remote player.
-  void _handleAvatarUpdate(AvatarUpdate update) {
-    final playerComponent = _otherPlayerComponentsMap[update.playerId];
+  ///
+  /// Rate-limited per peer: an avatar change composites a sheet and rebuilds a
+  /// component's animations, and nothing else bounds how fast a peer can ask
+  /// for that. See [AvatarUpdateThrottle].
+  void _handleAvatarUpdate(AvatarUpdate update) =>
+      _avatarThrottle.submit(update.playerId, update.spec);
+
+  /// Apply a throttled avatar update.
+  void _applyAvatarUpdate(String playerId, AvatarSpec spec) {
+    final playerComponent = _otherPlayerComponentsMap[playerId];
     if (playerComponent != null) {
-      playerComponent.avatarSpec = update.spec;
+      playerComponent.avatarSpec = spec;
     } else {
       // Player component doesn't exist yet — store for later
-      _pendingAvatars[update.playerId] = update.spec;
+      _pendingAvatars[playerId] = spec;
     }
   }
 
@@ -1606,6 +1623,7 @@ class TechWorld extends World with TapCallbacks {
     }
     _speechBubbles.clear();
     _pendingAvatars.clear();
+    _avatarThrottle.clear();
     _liveKitService = null;
     _bubbleManager.clear();
 
