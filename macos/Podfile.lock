@@ -1,50 +1,22 @@
 PODS:
-  - flutter_webrtc (1.4.0):
-    - FlutterMacOS
-    - WebRTC-SDK (= 144.7559.01)
   - FlutterMacOS (1.0.0)
-  - livekit_client (2.7.0):
-    - flutter_webrtc
-    - FlutterMacOS
-    - WebRTC-SDK (= 144.7559.01)
   - sign_in_with_apple (0.0.1):
     - FlutterMacOS
-  - VideoFrameCapture (1.0.0):
-    - flutter_webrtc
-    - WebRTC-SDK
-  - WebRTC-SDK (144.7559.01)
 
 DEPENDENCIES:
-  - flutter_webrtc (from `Flutter/ephemeral/.symlinks/plugins/flutter_webrtc/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
-  - livekit_client (from `Flutter/ephemeral/.symlinks/plugins/livekit_client/macos`)
   - sign_in_with_apple (from `Flutter/ephemeral/.symlinks/plugins/sign_in_with_apple/macos`)
-  - VideoFrameCapture (from `VideoFrameCapture`)
-
-SPEC REPOS:
-  trunk:
-    - WebRTC-SDK
 
 EXTERNAL SOURCES:
-  flutter_webrtc:
-    :path: Flutter/ephemeral/.symlinks/plugins/flutter_webrtc/macos
   FlutterMacOS:
     :path: Flutter/ephemeral
-  livekit_client:
-    :path: Flutter/ephemeral/.symlinks/plugins/livekit_client/macos
   sign_in_with_apple:
     :path: Flutter/ephemeral/.symlinks/plugins/sign_in_with_apple/macos
-  VideoFrameCapture:
-    :path: VideoFrameCapture
 
 SPEC CHECKSUMS:
-  flutter_webrtc: dbacf72a9bd951ccfa5997198f0a6214bb848ede
-  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
-  livekit_client: 1860bf9a11ce01fcce4bc726f9affdb4ad2a61fb
+  FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
   sign_in_with_apple: a9e97e744e8edc36aefc2723111f652102a7a727
-  VideoFrameCapture: 438efc144b293e8dc9264596d623b6df003b27a7
-  WebRTC-SDK: ab9b5319e458c2bfebdc92b3600740da35d5630d
 
-PODFILE CHECKSUM: 9244e670efe48f28678f5e5711e780b6ab4bc9d2
+PODFILE CHECKSUM: a06665d46ebaff8936051c38212b46fffb6539eb
 
 COCOAPODS: 1.16.2

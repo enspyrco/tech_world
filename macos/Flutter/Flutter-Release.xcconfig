@@ -1,2 +1,9 @@
-#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+// Path is relative to THIS file (macos/Flutter/), so the Pods dir is one level
+// up at macos/Pods. Without the "../" this resolved to macos/Flutter/Pods/,
+// which does not exist — and #include? fails SILENTLY, so every CocoaPods
+// setting (header search paths, module maps) was invisible to the Runner
+// target. CocoaPods also refuses to set the base configuration itself here
+// ("your project already has a custom config set"), so this include is the
+// only path by which pod settings reach the build.
+#include? "../Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
 #include "ephemeral/Flutter-Generated.xcconfig"

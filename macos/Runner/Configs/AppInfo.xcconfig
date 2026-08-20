@@ -12,3 +12,13 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.techWorld
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2024 com.example. All rights reserved.
+
+// Headers for the FFI video-frame bridge (macos/VideoFrameCapture/), whose two
+// Objective-C files are compiled directly into this target rather than shipped as
+// a package. They export plain C symbols for dart:ffi — nothing imports them as a
+// library — so wrapping them in CocoaPods or SPM was ceremony around two files.
+//
+// flutter_webrtc moved to Swift Package Manager in 1.6.0, so its headers now come
+// from the SPM plugin package (path is unversioned, so a plugin upgrade won't
+// break it). $(inherited) preserves the CocoaPods paths set at project level.
+HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/VideoFrameCapture" "$(SRCROOT)/Flutter/ephemeral/.symlinks/plugins/flutter_webrtc/macos/flutter_webrtc/Sources/flutter_webrtc/include/flutter_webrtc"
