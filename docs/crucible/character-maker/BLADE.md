@@ -20,7 +20,10 @@ blocks real preset *content*, not the Step-1 scaffolding.
 <details><summary>Original step-0 brief</summary>
 Before committing the enum surface, prove modular parts read at 32px wide.
 - Author ONE real modular character at the render contract: `body + hair + outfit + accessory`, each a
-  512×64 / 3-frame / 4-strip PNG, composited.
+  512×64 PNG, composited. **The sheet is sixteen 32×64 cells** — 12 walk (4 direction strips × 3
+  frames) **plus a 4-cell wave strip**, per `DESIGN.md:25` and
+  `player_component.dart:_buildAnimations`. "3-frame / 4-strip" describes the walk portion only and
+  is 384 wide; a part authored to it costs every character built from it the wave emote.
 - Eyeball legibility at game scale. **If parts are muddy/misaligned at 32px → shrink scope (fewer slots
   / recolor-leaning) before building the type surface.** This is the C5/flaw-13 kill-or-confirm.
 - Decide **OV2 (art source + license)**: LPC-derived (dual CC-BY-SA/GPL — attribution attaches to art,
