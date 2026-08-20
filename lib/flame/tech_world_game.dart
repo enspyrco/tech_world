@@ -8,6 +8,7 @@ import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/keyboard_movement.dart';
 import 'package:tech_world/avatar/avatar_composer.dart';
+import 'package:tech_world/avatar/parts/avatar_part.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
 import 'package:tech_world/flame/tiles/tileset_registry.dart';
@@ -141,9 +142,11 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
   @override
   Future<void> onLoad() async {
     await images.loadAll([
-      'NPC11.png',
-      'NPC12.png',
-      'NPC13.png',
+      // Character parts (includes the three legacy NPC sheets, which are
+      // BodyId values). Derived from the enums rather than listed here, so a
+      // part added to a slot cannot be forgotten at preload and then throw for
+      // the one player who picks it.
+      ...allPartAssets,
       'claude_bot.png',
       'dreamfinder_bot_sheet.png',
     ]);

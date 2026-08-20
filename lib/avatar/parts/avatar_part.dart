@@ -36,16 +36,28 @@ abstract final class ZPos {
 /// animate, so the type makes that unrepresentable rather than defending
 /// against it at render time.
 ///
-/// The three values are today's shipping presets, which are *whole* character
-/// sheets rather than isolated bodies. That is a content fact, not a structural
-/// one: the composer treats them exactly as it will treat a real body part, so
-/// when authored parts land (OV2, still open) they join this enum and nothing
-/// downstream changes. Composing a single layer is the degenerate case of the
-/// same operation, which is why the substrate is worth having before the art.
+/// Holds two kinds of value while the migration finishes: three legacy sheets
+/// that are whole dressed characters, and real bare bodies from the part
+/// pipeline. The composer cannot tell them apart — a legacy sheet is just a
+/// spec whose only layer happens to include clothes — which is what makes
+/// keeping both safe rather than a special case.
 enum BodyId implements AvatarPart {
+  // Legacy whole-character sheets. These predate the part pipeline: each is a
+  // fully-dressed character rather than a bare body, kept so existing profiles
+  // (which store `npc11` and friends) keep rendering the person they chose.
+  // Retire them once a parts combination can reproduce each one.
   npc11('npc11', 'NPC11.png'),
   npc12('npc12', 'NPC12.png'),
   npc13('npc13', 'NPC13.png'),
+
+  // Real bodies, extracted by tool/extract_character_parts.py. Bare skin plus
+  // the face that the source art draws into the body layer, so they need an
+  // outfit to be dressed.
+  body01('body_01', 'parts/body/body_01.png'),
+  body03('body_03', 'parts/body/body_03.png'),
+  body05('body_05', 'parts/body/body_05.png'),
+  body07('body_07', 'parts/body/body_07.png'),
+  body09('body_09', 'parts/body/body_09.png'),
   ;
 
   const BodyId(this.wireName, this.asset);
@@ -87,6 +99,14 @@ enum BodyId implements AvatarPart {
 /// Hair, drawn over the outfit so a collar doesn't clip long hair.
 enum HairId implements AvatarPart {
   none('hair_none', null),
+  hair01c01('hair_01_c01', 'parts/hair/hair_01_c01.png'),
+  hair01c04('hair_01_c04', 'parts/hair/hair_01_c04.png'),
+  hair02c02('hair_02_c02', 'parts/hair/hair_02_c02.png'),
+  hair02c06('hair_02_c06', 'parts/hair/hair_02_c06.png'),
+  hair03c01('hair_03_c01', 'parts/hair/hair_03_c01.png'),
+  hair04c03('hair_04_c03', 'parts/hair/hair_04_c03.png'),
+  hair05c05('hair_05_c05', 'parts/hair/hair_05_c05.png'),
+  hair06c02('hair_06_c02', 'parts/hair/hair_06_c02.png'),
   ;
 
   const HairId(this.wireName, this.asset);
@@ -111,6 +131,12 @@ enum HairId implements AvatarPart {
 /// Clothing, drawn over the body and under the hair.
 enum OutfitId implements AvatarPart {
   none('outfit_none', null),
+  outfit01c01('outfit_01_c01', 'parts/outfit/outfit_01_c01.png'),
+  outfit02c01('outfit_02_c01', 'parts/outfit/outfit_02_c01.png'),
+  outfit03c02('outfit_03_c02', 'parts/outfit/outfit_03_c02.png'),
+  outfit05c01('outfit_05_c01', 'parts/outfit/outfit_05_c01.png'),
+  outfit07c03('outfit_07_c03', 'parts/outfit/outfit_07_c03.png'),
+  outfit09c02('outfit_09_c02', 'parts/outfit/outfit_09_c02.png'),
   ;
 
   const OutfitId(this.wireName, this.asset);
@@ -137,6 +163,9 @@ enum OutfitId implements AvatarPart {
 /// `docs/crucible/character-maker/step0/FINDINGS.md`).
 enum AccessoryId implements AvatarPart {
   none('accessory_none', null),
+  backpack('accessory_backpack', 'parts/accessory/accessory_backpack.png'),
+  glasses('accessory_glasses', 'parts/accessory/accessory_glasses.png'),
+  snapback('accessory_snapback', 'parts/accessory/accessory_snapback.png'),
   ;
 
   const AccessoryId(this.wireName, this.asset);
@@ -157,3 +186,17 @@ enum AccessoryId implements AvatarPart {
     return null;
   }
 }
+
+/// Every part asset the game can composite, deduplicated.
+///
+/// Flame's image cache is populated by an explicit `loadAll`, and
+/// [AvatarComposer] reads through `fromCache` — so a part that isn't in this
+/// list throws at the moment a player first wears it, which is exactly the
+/// kind of failure that only shows up for the one person who picked it.
+/// Deriving the list from the enums means adding a part cannot forget it.
+Set<String> get allPartAssets => <AvatarPart>[
+      ...BodyId.values,
+      ...HairId.values,
+      ...OutfitId.values,
+      ...AccessoryId.values,
+    ].map((p) => p.asset).whereType<String>().toSet();

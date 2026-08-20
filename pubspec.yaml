@@ -95,6 +95,12 @@ flutter:
   assets:
     - assets/images/
     - assets/images/tilesets/
+    # Character parts, extracted by tool/extract_character_parts.py. Flutter
+    # asset globs are not recursive, so each slot directory is listed.
+    - assets/images/parts/body/
+    - assets/images/parts/hair/
+    - assets/images/parts/outfit/
+    - assets/images/parts/accessory/
   shaders:
     - shaders/video_bubble.frag
     - shaders/metaball_field.frag
