@@ -24,6 +24,7 @@ import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
+import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -111,6 +112,12 @@ class BubbleManager {
   final Map<String, PositionComponent> _playerBubbles = {};
   final Map<String, Vector2> _bubbleDisplacements = {};
   final Set<String> _audioEnabledParticipants = {};
+
+  /// Participants whose CAMERA video the proximity gate currently has enabled
+  /// (SFU forwarding + local decode ON). Sibling of [_audioEnabledParticipants];
+  /// starts empty because every camera track is disabled on subscribe, so the
+  /// set matches the SFU's actual state. See [_updateParticipantVideo].
+  final Set<String> _videoEnabledParticipants = {};
   /// Last volume pushed to LiveKit per participant, so the per-frame fade only
   /// writes when the value actually changes (distance is an int → rarely).
   final Map<String, double> _audioVolumes = {};
@@ -161,6 +168,25 @@ class BubbleManager {
   // the old see-but-can't-hear dead zone (audio was ≤2 while bubbles were ≤5).
   static const int _audioEnableThreshold = 4; // grid squares — audio turns on
   static const int _audioDisableThreshold = 5; // grid squares — audio cuts off
+
+  // Video decodes across the whole VISIBLE range: enable exactly when a bubble
+  // appears (≤ _visualThreshold), so a visible bubble always has a live (if
+  // blurred) frame — no black band, no avatar↔video swap. Proximity depth-of-
+  // field (see [_updateVideoBlur]) makes far video maximally blurred, so the
+  // enable/disable at the visual edge happens under cover of blur (no pop) and
+  // a boundary flap is invisible. One square of disable-hysteresis past the
+  // edge damps renegotiation churn for a peer parked on the line (the only real
+  // cost of a video toggle); the tiny decode-past-visible window it buys is the
+  // accepted trade for not re-keyframing every time they jitter.
+  static const int _videoEnableThreshold = _visualThreshold; // 5
+  static const int _videoDisableThreshold = _visualThreshold + 1; // 6
+
+  // Proximity depth-of-field: video is fully sharp within [_videoSharpWithin]
+  // squares and ramps to [_videoMaxBlurSigma] px of Gaussian blur out at the
+  // visual edge. "Resolution scales with proximity" — the visual twin of the
+  // audio volume fade.
+  static const double _videoSharpWithin = 1.0; // squares — crisp this close
+  static const double _videoMaxBlurSigma = 10.0; // px blur at the visual edge
   static const int _audioFullVolumeDistance = 1; // ≤ this = full volume; fades out to _audioDisableThreshold
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
@@ -189,6 +215,12 @@ class BubbleManager {
   /// Called when LiveKitService becomes available (after connectToLiveKit).
   void setLiveKitService(LiveKitService service) {
     _liveKitService = service;
+    // Register the camera-desire seam so the TrackSubscribedEvent handler can
+    // reconcile a fresh/re-subscribed camera to what this gate currently wants
+    // (the single reconcile point — see reconcileRemoteVideoOnSubscribe). The
+    // gate latches DESIRE in _videoEnabledParticipants; subscribe applies it.
+    service.cameraDesiredForIdentity =
+        (identity) => _videoEnabledParticipants.contains(identity);
   }
 
   /// Called when ChatService becomes available (after room join).
@@ -243,9 +275,12 @@ class BubbleManager {
 
         _setBubbleOpacity(_playerBubbles[playerId]!, distance);
         _updateParticipantAudio(playerId, distance);
+        _updateParticipantVideo(playerId, distance);
+        _updateVideoBlur(playerId, playerComponent);
       } else {
-        // Beyond visual range — ensure audio is disabled.
+        // Beyond visual range — ensure audio AND camera video are disabled.
         _updateParticipantAudio(playerId, distance);
+        _updateParticipantVideo(playerId, distance);
       }
     }
 
@@ -501,6 +536,7 @@ class BubbleManager {
     // audio bookkeeping here to avoid leaking map entries until teardown.
     _audioEnabledParticipants.remove(playerId);
     _audioVolumes.remove(playerId);
+    _videoEnabledParticipants.remove(playerId);
     _replaceBubble(playerId, null, 'remove-bubble-api');
   }
 
@@ -521,6 +557,11 @@ class BubbleManager {
     _mergedBubble = null;
     _audioEnabledParticipants.clear();
     _audioVolumes.clear();
+    // Like the audio set above, we drop bookkeeping without an active
+    // per-participant disable: clear() runs only in the room-teardown sequence
+    // (paired with disconnect + dispose), and the SFU stops forwarding every
+    // track on disconnect — so there is no still-forwarding camera to turn off.
+    _videoEnabledParticipants.clear();
     // Emit a final exit so Dreamfinder doesn't hold a stale near:true after we
     // tear down while the player was in range (cage match PR #481 — Carnot).
     // Best-effort; the bot also self-heals on our ParticipantDisconnected.
@@ -528,6 +569,9 @@ class BubbleManager {
       _liveKitService?.publishDfProximity(near: false);
     }
     _wasNearDreamfinder = false;
+    // Drop the camera-desire seam so a torn-down gate's closure can't answer
+    // a late subscribe on a stale _videoEnabledParticipants set.
+    _liveKitService?.cameraDesiredForIdentity = null;
     _liveKitService = null;
     _dreamfinderAvatarBridge?.dispose();
     _dreamfinderAvatarBridge = null;
@@ -751,6 +795,76 @@ class BubbleManager {
         }
       }
     }
+  }
+
+  /// Proximity gate for a remote participant's CAMERA video — the sole enabler
+  /// of camera decode (every camera track is disabled on subscribe). Mirrors
+  /// [_updateParticipantAudio]'s hard enable/disable boundary, minus the volume
+  /// fade (video has no per-square ramp). Called every frame for each remote
+  /// player, near and far.
+  void _updateParticipantVideo(String playerId, int distance) {
+    // No LiveKit service yet (pre-connect / post-teardown) → don't latch a gate
+    // change we can't send, or it sticks once the service comes up.
+    final service = _liveKitService;
+    if (service == null) return;
+
+    // Avatar-only clients (mobile web / hidden-video safe mode) never PAINT
+    // remote video, so they must never DECODE it: the gate stays permanently
+    // disabled. This is what makes proximity-gating also close the safe-mode
+    // decode gap — no old-device-specific code needed. `hideVideoBubbles` is a
+    // live toggle, so flipping it to true while a camera is enabled leaves a
+    // ~1-frame (≤16ms) decode window until this gate disables on the next
+    // update — bounded, rare (a manual safe-mode flip), and identical to how
+    // the audio gate reacts to any state change on the following frame.
+    final avatarOnly = hideVideoBubbles || _isMobileWeb;
+
+    final hasVideo = _videoEnabledParticipants.contains(playerId);
+
+    // Wider hysteresis than audio (see [_videoEnableThreshold]): enable only
+    // when solidly in range, disable once past the visual threshold — or
+    // immediately if the client is (or becomes) avatar-only.
+    final shouldEnable =
+        !hasVideo && !avatarOnly && distance <= _videoEnableThreshold;
+    final shouldDisable =
+        hasVideo && (avatarOnly || distance > _videoDisableThreshold);
+
+    if (shouldEnable) {
+      _videoEnabledParticipants.add(playerId);
+      service.setParticipantVideoEnabled(playerId, true);
+      if (avDiagnosticsEnabled) {
+        dispatch([AvVideoGateChanged(
+          participant: playerId,
+          enabled: true,
+          distance: distance,
+        )]);
+      }
+    } else if (shouldDisable) {
+      _videoEnabledParticipants.remove(playerId);
+      service.setParticipantVideoEnabled(playerId, false);
+      if (avDiagnosticsEnabled) {
+        dispatch([AvVideoGateChanged(
+          participant: playerId,
+          enabled: false,
+          distance: distance,
+        )]);
+      }
+    }
+  }
+
+  /// Proximity depth-of-field: set the video bubble's Gaussian-blur sigma from
+  /// the local player's CONTINUOUS (sub-grid, pixel-derived) distance, so the
+  /// focus pull is buttery as you walk rather than stepping per grid square.
+  /// No-op for avatar bubbles (camera-less peers) and any non-video bubble.
+  void _updateVideoBlur(String playerId, PlayerComponent playerComponent) {
+    final bubble = _playerBubbles[playerId];
+    if (bubble is! VideoBubbleComponent) return;
+    final squares =
+        (_localPlayer.position - playerComponent.position).length /
+            gridSquareSize;
+    final t = ((squares - _videoSharpWithin) /
+            (_visualThreshold - _videoSharpWithin))
+        .clamp(0.0, 1.0);
+    bubble.blurSigma = _videoMaxBlurSigma * t;
   }
 
   /// Volume curve for the distance fade: full within [_audioFullVolumeDistance],
