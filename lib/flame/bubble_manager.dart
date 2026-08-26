@@ -1,4 +1,3 @@
-import 'dart:collection';
 import 'dart:math';
 import 'dart:ui' as ui;
 
@@ -16,9 +15,8 @@ import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/av_snapshot_reporter.dart';
-import 'package:tech_world/flame/components/bubble_field_component.dart';
+import 'package:tech_world/flame/bubble_merge_renderer.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
-import 'package:tech_world/flame/components/merged_video_bubble_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
@@ -68,6 +66,11 @@ class BubbleManager {
       dreamfinderIdentity: () => dreamfinderIdentity,
       liveKitService: () => _liveKitService,
       localBubbleKey: _localPlayerBubbleKey,
+    );
+    _mergeRenderer = BubbleMergeRenderer(
+      bubbles: _playerBubbles,
+      addComponent: addComponent,
+      reduceMotion: () => reduceMotion,
     );
   }
 
@@ -158,21 +161,17 @@ class BubbleManager {
   /// own bubble slot. See [_reconcileProximityMembership].
   final Set<String> _nearbyParticipants = {};
 
-  // ── Rendering components ─────────────────────────────────────────────────
+  // ── Shared merge/glow layer ──────────────────────────────────────────────
 
-  BubbleFieldComponent? _bubbleField;
-  MergedVideoBubbleComponent? _mergedBubble;
-
-  // ── Merge group cache ───────────────────────────────────────────────────
-
-  bool _mergeGroupDirty = true;
-  List<String> _cachedMergeGroup = [];
+  /// The metaball field and merged-video surface that sit between bubbles,
+  /// plus their shaders and the merge-group search. See [BubbleMergeRenderer].
+  late final BubbleMergeRenderer _mergeRenderer;
 
   // ── Shader programs ───────────────────────────────────────────────────────
 
+  /// Per-bubble video shader. Stays here because it is an input to bubble
+  /// *creation*, not to the shared merge layer.
   ui.FragmentProgram? _shaderProgram;
-  ui.FragmentProgram? _metaballShaderProgram;
-  ui.FragmentProgram? _mergedVideoShaderProgram;
 
   // ── AV diagnostics ─────────────────────────────────────────────────────────
 
@@ -209,7 +208,6 @@ class BubbleManager {
   static const int _audioFullVolumeDistance = 1; // ≤ this = full volume; fades out to _audioDisableThreshold
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
-  static const double _mergeThreshold = 96.0; // 1.5× bubble diameter
   static const double _bubbleDiameter = 64.0;
   static const double _maxTetherDistance = 24.0;
   static const double _repulsionDamping = 0.85;
@@ -238,8 +236,7 @@ class BubbleManager {
   /// Load all three shader programs in parallel.
   Future<void> loadShaders() => Future.wait([
         _loadVideoBubbleShader(),
-        _loadMetaballShader(),
-        _loadMergedVideoShader(),
+        _mergeRenderer.loadShaders(),
       ]);
 
   /// Called when LiveKitService becomes available (after connectToLiveKit).
@@ -589,10 +586,7 @@ class BubbleManager {
       _replaceBubble(id, null, 'bubble-manager-cleared');
     }
     _bubbleDisplacements.clear();
-    _bubbleField?.removeFromParent();
-    _bubbleField = null;
-    _mergedBubble?.removeFromParent();
-    _mergedBubble = null;
+    _mergeRenderer.clearSurfaces();
     _audioEnabledParticipants.clear();
     _audioVolumes.clear();
     // Everyone who was in range has now left, as far as any consumer of the
@@ -616,8 +610,7 @@ class BubbleManager {
   void dispose() {
     clear();
     _shaderProgram = null;
-    _metaballShaderProgram = null;
-    _mergedVideoShaderProgram = null;
+    _mergeRenderer.dispose();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -630,24 +623,6 @@ class BubbleManager {
           await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
     } catch (e) {
       _log.warning('Video bubble shader failed to load', e);
-    }
-  }
-
-  Future<void> _loadMetaballShader() async {
-    try {
-      _metaballShaderProgram =
-          await ui.FragmentProgram.fromAsset('shaders/metaball_field.frag');
-    } catch (e) {
-      _log.warning('Metaball shader failed to load', e);
-    }
-  }
-
-  Future<void> _loadMergedVideoShader() async {
-    try {
-      _mergedVideoShaderProgram = await ui.FragmentProgram.fromAsset(
-          'shaders/merged_video_bubble.frag');
-    } catch (e) {
-      _log.warning('Merged video shader failed to load', e);
     }
   }
 
@@ -914,7 +889,7 @@ class BubbleManager {
   void _updateBubblePositions(double dt) {
     // Bubble positions change every frame (they track their owning character),
     // so the merge group must be rechecked.
-    _mergeGroupDirty = true;
+    _mergeRenderer.invalidate();
 
     // 1. Set base positions from owning characters.
     for (final entry in _playerBubbles.entries) {
@@ -956,8 +931,7 @@ class BubbleManager {
       }
     }
 
-    _updateBubbleField(centres, lowestPriority);
-    _updateMergedVideo(lowestPriority);
+    _mergeRenderer.update(centres, lowestPriority);
   }
 
   void _applyBubbleRepulsion(double dt) {
@@ -1001,126 +975,6 @@ class BubbleManager {
       _bubbleDisplacements[key] = disp;
       entry.value.position += disp;
     }
-  }
-
-  void _updateBubbleField(List<Vector2> centres, int lowestPriority) {
-    if (centres.length < 2 || _metaballShaderProgram == null) {
-      _bubbleField?.removeFromParent();
-      _bubbleField = null;
-      return;
-    }
-
-    if (_bubbleField == null) {
-      _bubbleField = BubbleFieldComponent(
-        shaderProgram: _metaballShaderProgram!,
-        glowColor: const Color(0xFF00FF88),
-        bubbleRadius: 32,
-        reduceMotion: reduceMotion,
-      );
-      _addComponent(_bubbleField!);
-    }
-
-    // Live-propagate so toggling reduce-motion does not require dropping the
-    // field component (which would happen only when the merge group shrinks).
-    _bubbleField!.reduceMotion = reduceMotion;
-    _bubbleField!.priority = lowestPriority - 1;
-    _bubbleField!.updateBubblePositions(centres);
-  }
-
-  void _updateMergedVideo(int lowestPriority) {
-    if (_mergedVideoShaderProgram == null) return;
-
-    final videoBubbles = <String, VideoBubbleComponent>{};
-    for (final entry in _playerBubbles.entries) {
-      if (entry.value is VideoBubbleComponent) {
-        videoBubbles[entry.key] = entry.value as VideoBubbleComponent;
-      }
-    }
-
-    if (_mergeGroupDirty) {
-      _cachedMergeGroup = _findMergeGroup(videoBubbles);
-      _mergeGroupDirty = false;
-    }
-    final mergeGroup = _cachedMergeGroup;
-
-    if (mergeGroup.length >= 2) {
-      if (_mergedBubble == null) {
-        _mergedBubble = MergedVideoBubbleComponent(
-          shaderProgram: _mergedVideoShaderProgram!,
-          glowColor: const Color(0xFF00FF88),
-          bubbleRadius: 32,
-          reduceMotion: reduceMotion,
-        );
-        _addComponent(_mergedBubble!);
-      }
-      // Live-propagate so a toggle takes effect without re-creating the merge.
-      _mergedBubble!.reduceMotion = reduceMotion;
-
-      final sources = <VideoBubbleComponent>[];
-      final positions = <Vector2>[];
-      for (final key in mergeGroup) {
-        final bubble = videoBubbles[key]!;
-        bubble.hiddenForMerge = true;
-        sources.add(bubble);
-        positions.add(bubble.center);
-      }
-
-      _mergedBubble!.priority = lowestPriority;
-      _mergedBubble!.updateSources(sources);
-      _mergedBubble!.updatePositions(positions);
-
-      for (final entry in videoBubbles.entries) {
-        if (!mergeGroup.contains(entry.key)) {
-          entry.value.hiddenForMerge = false;
-        }
-      }
-    } else {
-      for (final bubble in videoBubbles.values) {
-        bubble.hiddenForMerge = false;
-      }
-      _mergedBubble?.removeFromParent();
-      _mergedBubble = null;
-    }
-  }
-
-  List<String> _findMergeGroup(Map<String, VideoBubbleComponent> bubbles) {
-    if (bubbles.length < 2) return [];
-
-    final keys = bubbles.keys.toList();
-    final visited = <String>{};
-    List<String> largestGroup = [];
-
-    for (final startKey in keys) {
-      if (visited.contains(startKey)) continue;
-
-      final group = <String>[startKey];
-      final queue = Queue<String>()..add(startKey);
-      visited.add(startKey);
-
-      while (queue.isNotEmpty) {
-        final current = queue.removeFirst();
-        final currentCenter = bubbles[current]!.center;
-
-        for (final candidateKey in keys) {
-          if (visited.contains(candidateKey)) continue;
-          final candidateCenter = bubbles[candidateKey]!.center;
-          final dist = currentCenter.distanceTo(candidateCenter);
-          if (dist < _mergeThreshold) {
-            visited.add(candidateKey);
-            group.add(candidateKey);
-            queue.add(candidateKey);
-          }
-        }
-      }
-
-      if (group.length > largestGroup.length) {
-        largestGroup = group;
-      }
-    }
-
-    return largestGroup.length >= 2
-        ? largestGroup.take(maxMergedBubbles).toList()
-        : [];
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1176,7 +1030,7 @@ class BubbleManager {
       _playerBubbles.remove(id);
     }
 
-    _mergeGroupDirty = true;
+    _mergeRenderer.invalidate();
 
     if (old != null || newBubble != null) {
       _log.fine('bubble[$id] ${old == null ? "+" : (newBubble == null ? "-" : "~")} $reason');
