@@ -1,9 +1,6 @@
 import 'dart:math';
-import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
-import 'package:flutter/material.dart' show Color, Colors;
-import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 
 import 'package:flutter/foundation.dart'
@@ -11,10 +8,10 @@ import 'package:flutter/foundation.dart'
 
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/device/web_safe_mode.dart';
-import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/av_snapshot_reporter.dart';
+import 'package:tech_world/flame/bubble_factory.dart';
 import 'package:tech_world/flame/bubble_merge_renderer.dart';
 import 'package:tech_world/flame/bubble_physics.dart';
 import 'package:tech_world/flame/dreamfinder_avatar_host.dart';
@@ -70,6 +67,14 @@ class BubbleManager {
       // Share the single computed value rather than probing the platform
       // twice; it cannot change mid-session.
       isMobileWebOverride: _isMobileWeb,
+    );
+    _factory = BubbleFactory(
+      hideVideoBubbles: () => hideVideoBubbles,
+      reduceMotion: () => reduceMotion,
+      liveKitService: () => _liveKitService,
+      dreamfinderCapture: () => _dfAvatar.canvasCapture,
+      botStatus: () => _botStatus,
+      isMobileWeb: _isMobileWeb,
     );
     _dfProximity = DreamfinderProximitySignal(
       // Deliberately the audio gate's pair, so "DF thinks you're in range" and
@@ -196,9 +201,8 @@ class BubbleManager {
 
   // ── Shader programs ───────────────────────────────────────────────────────
 
-  /// Per-bubble video shader. Stays here because it is an input to bubble
-  /// *creation*, not to the shared merge layer.
-  ui.FragmentProgram? _shaderProgram;
+  /// Builds bubbles; owns the per-bubble video shader. See [BubbleFactory].
+  late final BubbleFactory _factory;
 
   // ── AV diagnostics ─────────────────────────────────────────────────────────
 
@@ -254,7 +258,7 @@ class BubbleManager {
 
   /// Load all three shader programs in parallel.
   Future<void> loadShaders() => Future.wait([
-        _loadVideoBubbleShader(),
+        _factory.loadShader(),
         _mergeRenderer.loadShaders(),
       ]);
 
@@ -301,7 +305,7 @@ class BubbleManager {
         if (distance < closestDistance) closestDistance = distance;
 
         if (!_playerBubbles.containsKey(playerId)) {
-          final bubble = _createBubbleForPlayer(playerId, playerComponent);
+          final bubble = _factory.forRemotePlayer(playerId, playerComponent);
           bubble.position = playerComponent.position + _bubbleOffset;
           _replaceBubble(playerId, bubble, 'remote-player-entered-proximity');
         }
@@ -327,12 +331,12 @@ class BubbleManager {
           final dfParticipant =
               _liveKitService?.getParticipant(dreamfinderIdentity);
           PositionComponent bubble;
-          if (dfParticipant != null && !hideVideoBubbles && !_isMobileWeb) {
-            bubble = _createDreamfinderVideoBubble(dfParticipant);
+          if (dfParticipant != null && _factory.canEmbodyDreamfinder) {
+            bubble = _factory.forDreamfinder(dfParticipant);
           } else {
             // Mobile web (or hidden video) → the 2D sprite + a status bubble,
             // not the black embodied WebGL bubble.
-            bubble = BotBubbleComponent(botStatus: _botStatus);
+            bubble = _factory.forBot();
           }
           bubble.position =
               dreamfinderComponent!.position + _bubbleOffset;
@@ -360,7 +364,7 @@ class BubbleManager {
         if (botDistance < closestDistance) closestDistance = botDistance;
 
         if (!_playerBubbles.containsKey(botId)) {
-          final bubble = BotBubbleComponent(botStatus: _botStatus);
+          final bubble = _factory.forBot();
           bubble.position = botComp.position + _bubbleOffset;
           _replaceBubble(botId, bubble, 'bot-entered-proximity');
         }
@@ -374,7 +378,7 @@ class BubbleManager {
     // Show local player's bubble if near anyone.
     if (nearbyPlayerIds.isNotEmpty) {
       if (!_playerBubbles.containsKey(_localPlayerBubbleKey)) {
-        final localBubble = _createLocalPlayerBubble();
+        final localBubble = _factory.forLocalPlayer(_localPlayer);
         localBubble.position = _localPlayer.position + _bubbleOffset;
         _replaceBubble(
             _localPlayerBubbleKey, localBubble, 'local-player-bubble-shown');
@@ -439,7 +443,7 @@ class BubbleManager {
       // When video bubbles are hidden, or on mobile web (where the embodied
       // WebGL bubble renders black), never upgrade the DF bubble to a video
       // bubble — the existing BotBubbleComponent stays in place.
-      if (hideVideoBubbles || _isMobileWeb) return;
+      if (!_factory.canEmbodyDreamfinder) return;
 
       final hasCanvasCapture = existingBubble is VideoBubbleComponent &&
           existingBubble.externalVideoCapture != null;
@@ -447,7 +451,7 @@ class BubbleManager {
           (!hasCanvasCapture && _dfAvatar.isReady);
 
       if (needsUpgrade) {
-        final videoBubble = _createDreamfinderVideoBubble(dfParticipant);
+        final videoBubble = _factory.forDreamfinder(dfParticipant);
         videoBubble.position =
             dreamfinderComponent!.position + _bubbleOffset;
         _replaceBubble(
@@ -464,7 +468,7 @@ class BubbleManager {
     final playerComponent = _remotePlayers[playerId];
     if (playerComponent == null) return;
 
-    final newBubble = _createBubbleForPlayer(playerId, playerComponent);
+    final newBubble = _factory.forRemotePlayer(playerId, playerComponent);
     newBubble.position = playerComponent.position + _bubbleOffset;
     _replaceBubble(playerId, newBubble, 'player-bubble-refreshed');
   }
@@ -478,7 +482,7 @@ class BubbleManager {
 
     _log.fine('Refreshing local player bubble after camera enabled');
 
-    final newBubble = _createLocalPlayerBubble();
+    final newBubble = _factory.forLocalPlayer(_localPlayer);
     newBubble.position = _localPlayer.position + _bubbleOffset;
     _replaceBubble(_localPlayerBubbleKey, newBubble,
         'local-player-bubble-refreshed');
@@ -499,7 +503,7 @@ class BubbleManager {
 
     _log.fine('Downgrading local player bubble after camera disabled');
     final position = existing.position.clone();
-    final newBubble = _createLocalPlayerBubble();
+    final newBubble = _factory.forLocalPlayer(_localPlayer);
     newBubble.position = position;
     _replaceBubble(_localPlayerBubbleKey, newBubble,
         'local-video-downgraded-to-static');
@@ -515,20 +519,15 @@ class BubbleManager {
     final position = existingBubble.position.clone();
 
     if (isDreamfinderIdentity(playerId)) {
-      final botBubble = BotBubbleComponent(
-        botStatus: _botStatus,
-        bubbleSize: 64,
-      );
+      final botBubble = _factory.forBot(bubbleSize: 64);
       botBubble.position = position;
       _replaceBubble(
           playerId, botBubble, 'dreamfinder-video-downgraded-to-bot');
     } else {
       final playerComponent = _remotePlayers[playerId];
       if (playerComponent != null) {
-        final newBubble = PlayerBubbleComponent(
-          displayName: playerComponent.displayName,
-          playerId: playerId,
-        );
+        final newBubble =
+            _factory.staticFor(playerId, playerComponent.displayName);
         newBubble.position = position;
         _replaceBubble(
             playerId, newBubble, 'player-video-downgraded-to-static');
@@ -603,7 +602,7 @@ class BubbleManager {
   /// Final teardown. Call from TechWorld.dispose().
   void dispose() {
     clear();
-    _shaderProgram = null;
+    _factory.disposeShader();
     _mergeRenderer.dispose();
   }
 
@@ -611,90 +610,9 @@ class BubbleManager {
   // Private — shader loading
   // ═══════════════════════════════════════════════════════════════════════════
 
-  Future<void> _loadVideoBubbleShader() async {
-    try {
-      _shaderProgram =
-          await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
-    } catch (e) {
-      _log.warning('Video bubble shader failed to load', e);
-    }
-  }
-
   // ═══════════════════════════════════════════════════════════════════════════
   // Private — bubble creation
   // ═══════════════════════════════════════════════════════════════════════════
-
-  PositionComponent _createBubbleForPlayer(
-      String playerId, PlayerComponent playerComponent) {
-    final participant = _liveKitService?.getParticipant(playerId);
-    if (!hideVideoBubbles &&
-        participant != null &&
-        AvSnapshotReporter.hasVideoTrack(participant)) {
-      final videoBubble = VideoBubbleComponent(
-        participant: participant,
-        displayName: playerComponent.displayName,
-        bubbleSize: 64,
-        targetFps: 15,
-        reduceMotion: reduceMotion,
-      );
-
-      if (_shaderProgram != null) {
-        videoBubble.setShader(_shaderProgram!.fragmentShader());
-      }
-
-      return videoBubble;
-    }
-
-    return PlayerBubbleComponent(
-      displayName: playerComponent.displayName,
-      playerId: playerId,
-    );
-  }
-
-  PositionComponent _createLocalPlayerBubble() {
-    final localParticipant = _liveKitService?.localParticipant;
-
-    if (!hideVideoBubbles &&
-        localParticipant != null &&
-        AvSnapshotReporter.hasVideoTrack(localParticipant)) {
-      _log.fine('Creating local VideoBubbleComponent');
-      final videoBubble = VideoBubbleComponent(
-        participant: localParticipant,
-        displayName: _localPlayer.displayName,
-        bubbleSize: 64,
-        targetFps: 15,
-        reduceMotion: reduceMotion,
-      );
-
-      if (_shaderProgram != null) {
-        videoBubble.setShader(_shaderProgram!.fragmentShader());
-      }
-
-      videoBubble.glowColor = Colors.cyan;
-
-      return videoBubble;
-    }
-
-    return PlayerBubbleComponent(
-      displayName: _localPlayer.displayName,
-      playerId: _localPlayer.id,
-    );
-  }
-
-  VideoBubbleComponent _createDreamfinderVideoBubble(
-      Participant participant) {
-    final videoBubble = VideoBubbleComponent(
-      participant: participant,
-      displayName: dreamfinderBot.displayName,
-      bubbleSize: 64,
-      targetFps: 10,
-      externalVideoCapture: _dfAvatar.canvasCapture,
-      reduceMotion: reduceMotion,
-    );
-    videoBubble.glowColor = const Color(0xFFDAA520); // gold
-    videoBubble.glowIntensity = 0.7;
-    return videoBubble;
-  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Private — proximity and audio
