@@ -18,6 +18,7 @@ import 'package:tech_world/flame/av_snapshot_reporter.dart';
 import 'package:tech_world/flame/bubble_merge_renderer.dart';
 import 'package:tech_world/flame/bubble_physics.dart';
 import 'package:tech_world/flame/dreamfinder_avatar_host.dart';
+import 'package:tech_world/flame/dreamfinder_proximity_signal.dart';
 import 'package:tech_world/flame/proximity_audio_gate.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
@@ -69,6 +70,13 @@ class BubbleManager {
       // Share the single computed value rather than probing the platform
       // twice; it cannot change mid-session.
       isMobileWebOverride: _isMobileWeb,
+    );
+    _dfProximity = DreamfinderProximitySignal(
+      // Deliberately the audio gate's pair, so "DF thinks you're in range" and
+      // "you can hear DF" cannot drift apart.
+      enableThreshold: () => _audioGate.enableThreshold,
+      disableThreshold: () => _audioGate.disableThreshold,
+      liveKitService: () => _liveKitService,
     );
     _avReporter = AvSnapshotReporter(
       diagnostics: diagnostics ?? Locator.maybeLocate<DiagnosticsService>(),
@@ -172,9 +180,9 @@ class BubbleManager {
   /// hysteresis pair and the per-participant volume cache — see
   /// [ProximityAudioGate].
   late final ProximityAudioGate _audioGate;
-  /// Last reported local-player proximity to Dreamfinder, so the df-proximity
-  /// signal is published only on enter/exit transitions, not every frame.
-  bool _wasNearDreamfinder = false;
+  /// Outbound `df-proximity` enter/exit signal to the bot. See
+  /// [DreamfinderProximitySignal].
+  late final DreamfinderProximitySignal _dfProximity;
   /// Participants inside [proximityRadius] as of the previous frame, so
   /// enter/exit events fire on transitions only. Excludes the local player's
   /// own bubble slot. See [_reconcileProximityMembership].
@@ -378,7 +386,7 @@ class BubbleManager {
 
     // Notify Dreamfinder when the local player enters/exits its range so the
     // bot can gate whose speech it hears. null distance == DF not present.
-    _updateDreamfinderProximity(
+    _dfProximity.update(
       dreamfinderComponent == null
           ? null
           : chebyshevDistance(playerGrid, dreamfinderComponent!.miniGridPosition),
@@ -586,10 +594,7 @@ class BubbleManager {
     // Emit a final exit so Dreamfinder doesn't hold a stale near:true after we
     // tear down while the player was in range (cage match PR #481 — Carnot).
     // Best-effort; the bot also self-heals on our ParticipantDisconnected.
-    if (_wasNearDreamfinder) {
-      _liveKitService?.publishDfProximity(near: false);
-    }
-    _wasNearDreamfinder = false;
+    _dfProximity.reset();
     _liveKitService = null;
     _dfAvatar.stop();
     dreamfinderIdentity = dreamfinderBot.identity;
@@ -723,35 +728,13 @@ class BubbleManager {
     return ((proximityRadius - distance) / span).clamp(0.0, 1.0);
   }
 
-  /// Emit the `df-proximity` enter/exit signal to Dreamfinder. [dfDistance] is
-  /// null when DF isn't present (forces an exit).
-  ///
-  /// Hardened per the PR #481 cage match (Kelvin + Carnot):
-  /// - **Hysteresis** — enter within [ProximityAudioGate.enableThreshold]; once near, stay
-  ///   near until past [ProximityAudioGate.disableThreshold]. Stops a peer hovering at the
-  ///   boundary from spamming the reliable channel.
-  /// - **Null-service safety** — if the service isn't ready we do NOT latch
-  ///   [_wasNearDreamfinder]; the transition simply re-fires next frame once it
-  ///   is. Latching-without-sending was the "signal lost forever" bug.
-  void _updateDreamfinderProximity(int? dfDistance) {
-    final near = dfDistance != null &&
-        (_wasNearDreamfinder
-            ? dfDistance <= _audioGate.disableThreshold
-            : dfDistance <= _audioGate.enableThreshold);
-    if (near == _wasNearDreamfinder) return;
-    final service = _liveKitService;
-    if (service == null) return; // can't emit — don't latch; retry next frame
-    _wasNearDreamfinder = near;
-    service.publishDfProximity(near: near);
-  }
-
   /// Test seam for the DF proximity emission logic — exercising it through the
   /// real update loop would require a fully-constructed [DreamfinderComponent]
   /// (sprite + path harness). Pass the Chebyshev distance to DF, or null for
   /// "DF absent".
   @visibleForTesting
   void debugUpdateDreamfinderProximity(int? dfDistance) =>
-      _updateDreamfinderProximity(dfDistance);
+      _dfProximity.update(dfDistance);
 
   /// Proximity-gate Dreamfinder's audio symmetric with its video bubble: you
   /// hear DF only when within audio range, via the same [_updateParticipantAudio]
