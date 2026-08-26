@@ -120,7 +120,23 @@
     <li><s>Once decided: add <code>LICENSE</code> and set <code>pubspec.yaml</code> accordingly.</s> <strong>Done</strong> &mdash; <code>LICENSE</code> (AGPL v3) committed. <code>pubspec.yaml</code> left without a <code>license:</code> field on purpose: the app is <code>publish_to: "none"</code>, so the field is non-standard and meaningless here. A per-package licence is set when a framework package is extracted.</li>
   </ul>
 
-  <h2>5. Open questions</h2>
+  <h2>5. Third-party art assets <span class="pill warn">Needs Nick</span></h2>
+  <p>The repository carries <strong>third-party pixel art</strong> in <code>assets/</code> &mdash; three separately-licensed LimeZu packs. Two things were wrong here until 2026-08-26, and one of them was the more serious:</p>
+  <ul>
+    <li><strong>No carve-out.</strong> <code>LICENSE</code> (AGPL v3) applied to the repository unqualified, which reads as purporting to license LimeZu's art under the AGPL &mdash; something Enspyr has no right to do. Fixed: <a href="../ATTRIBUTION.md"><code>ATTRIBUTION.md</code></a> now states the carve-out explicitly and the README points at it.</li>
+    <li><strong>No credits.</strong> Two of the three packs say <em>credits required</em>. <code>ATTRIBUTION.md</code> supplies them for the repo. <strong>In-app credits are still missing</strong> &mdash; a shipped game crediting its artist only in a repo file is a thin reading of "credits required".</li>
+  </ul>
+
+  <h3>The open-source clause &mdash; and why it only half-settles the question</h3>
+  <p>The signed <strong>Modern Exteriors</strong> licence (PDF, dated 2022-01-25) grants a permission the other two licences do not spell out:</p>
+  <blockquote>YOU CAN: &hellip; Use the asset in open source projects (ex GitHub)</blockquote>
+  <p>That is LimeZu, in writing, resolving the "is a public GitHub repo <em>use</em> or <em>distribution</em>?" question in favour of <em>use</em> &mdash; for Exteriors. The <strong>Modern Interiors</strong> and <strong>Modern Office</strong> licences carry the identical CAN/CAN'T boilerplate <em>without</em> that line. Same author, same product family, same clause pair, and the character parts and office tilesets sit in the same public repo the Exteriors tiles do.</p>
+  <p>Reading across is the natural inference and probably the correct one. It is still an inference. <strong>The remaining question for LimeZu is now narrow enough to answer in one word</strong> &mdash; see the draft note held for Nick to send.</p>
+
+  <h3>Unverified provenance</h3>
+  <p><code>NPC11/12/13.png</code> (in the repo since <code>21ca6704</code>, 2024-07-01) match no pack on disk, and their four-frame wave row has no counterpart in Modern Interiors' walk strip. <code>single_room.png</code> is likewise untraced. Logged in <code>ATTRIBUTION.md</code> rather than assumed clean.</p>
+
+  <h2>6. Open questions</h2>
   <ul>
     <li><strong>Read the PGA before finalising.</strong> It is the binding instrument and may contain IP/distribution clauses not in the public guidelines. (Only relevant if/when the grant is awarded.)</li>
     <li><s><strong>Game licence: AGPL vs all-rights-reserved?</strong></s> <strong>Decided 2026-06-26: AGPL v3</strong> &mdash; visible source + the dual-licensing lever (sole owner). <code>LICENSE</code> committed at the repo root.</li>

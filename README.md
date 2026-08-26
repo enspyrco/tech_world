@@ -297,3 +297,5 @@ Application materials for the Screen Australia Games Production Fund are in [`do
 Tech World (the game) is licensed under the **GNU Affero General Public License v3.0** — see [`LICENSE`](LICENSE). The AGPL's network clause keeps hosted modifications open; because Enspyr Pty Ltd is the sole copyright holder, a separate commercial licence is available for anyone who needs to avoid copyleft.
 
 Reusable framework components (the Flutter/Flame/LiveKit multiplayer plumbing) are intended to be offered under the **Apache License 2.0** as they are extracted into separate packages. See [`docs/licensing.html`](docs/licensing.html) for the full rationale, the split-licence position, and the Screen Australia grant IP findings.
+
+**The art assets in `assets/` are not covered by the AGPL.** They are third-party works (LimeZu pixel art) used under their own licences and are not Enspyr's to sublicense — see [`ATTRIBUTION.md`](ATTRIBUTION.md) for the per-asset breakdown, the verbatim licence terms, and the required credits. Forking this repo does not carry an art licence with it.
