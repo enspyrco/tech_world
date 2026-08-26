@@ -17,6 +17,7 @@ import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/av_snapshot_reporter.dart';
 import 'package:tech_world/flame/bubble_merge_renderer.dart';
 import 'package:tech_world/flame/bubble_physics.dart';
+import 'package:tech_world/flame/proximity_audio_gate.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
@@ -56,13 +57,19 @@ class BubbleManager {
         _addComponent = addComponent,
         _remotePlayers = remotePlayers,
         _bots = bots {
+    _audioGate = ProximityAudioGate(
+      proximityRadius: () => proximityRadius,
+      liveKitService: () => _liveKitService,
+      diagnosticsEnabled: () => avDiagnosticsEnabled,
+      dreamfinderIdentity: () => dreamfinderIdentity,
+    );
     _avReporter = AvSnapshotReporter(
       diagnostics: diagnostics ?? Locator.maybeLocate<DiagnosticsService>(),
       localPlayer: localPlayer,
       remotePlayers: remotePlayers,
       bots: bots,
       bubbles: _playerBubbles,
-      audioEnabledParticipants: _audioEnabledParticipants,
+      audioEnabled: _audioGate.isEnabled,
       dreamfinder: () => dreamfinderComponent,
       dreamfinderIdentity: () => dreamfinderIdentity,
       liveKitService: () => _liveKitService,
@@ -112,7 +119,7 @@ class BubbleManager {
   /// This is the user's "Proximity range" preference
   /// ([UserPreferences.proximityRadius]) and the single source of all three
   /// proximity gates: the visual threshold is this value, and the audio
-  /// enable/disable pair derives from it (see [_audioEnableThreshold]).
+  /// enable/disable pair derives from it (see [ProximityAudioGate.enableThreshold]).
   ///
   /// Mutable so the owning game world can apply the saved preference before
   /// each room entry — the same seam as [hideVideoBubbles] and [reduceMotion].
@@ -152,10 +159,10 @@ class BubbleManager {
   /// Soft-body repulsion + tether. See [BubblePhysics]; it owns the
   /// accumulated per-bubble displacement across frames.
   final BubblePhysics _physics = BubblePhysics();
-  final Set<String> _audioEnabledParticipants = {};
-  /// Last volume pushed to LiveKit per participant, so the per-frame fade only
-  /// writes when the value actually changes (distance is an int → rarely).
-  final Map<String, double> _audioVolumes = {};
+  /// Distance-driven audio subscription + volume ramp. Owns the enable/disable
+  /// hysteresis pair and the per-participant volume cache — see
+  /// [ProximityAudioGate].
+  late final ProximityAudioGate _audioGate;
   /// Last reported local-player proximity to Dreamfinder, so the df-proximity
   /// signal is published only on enter/exit transitions, not every frame.
   bool _wasNearDreamfinder = false;
@@ -196,8 +203,8 @@ class BubbleManager {
   static const _localPlayerBubbleKey = '_local_player_';
   // Audio gate with hysteresis so standing at the boundary doesn't flap the
   // SFU forward on/off. Audio enables when a participant is within
-  // [_audioEnableThreshold] and only cuts once they drift past
-  // [_audioDisableThreshold]. The enable distance sits one square inside the
+  // [ProximityAudioGate.enableThreshold] and only cuts once they drift past
+  // [ProximityAudioGate.disableThreshold]. The enable distance sits one square inside the
   // visual range so you can hear almost anyone whose bubble you can see —
   // closing the old see-but-can't-hear dead zone (audio was ≤2 while bubbles
   // were ≤5). Both derive from [proximityRadius], so the user's preference
@@ -206,9 +213,6 @@ class BubbleManager {
   //
   // At radius 0 the enable threshold is -1, which no distance satisfies —
   // proximity-disabled means silent, with no special case needed.
-  int get _audioEnableThreshold => proximityRadius - 1;
-  int get _audioDisableThreshold => proximityRadius;
-  static const int _audioFullVolumeDistance = 1; // ≤ this = full volume; fades out to _audioDisableThreshold
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
 
@@ -286,10 +290,10 @@ class BubbleManager {
         }
 
         _setBubbleOpacity(_playerBubbles[playerId]!, distance);
-        _updateParticipantAudio(playerId, distance);
+        _audioGate.update(playerId, distance);
       } else {
         // Beyond visual range — ensure audio is disabled.
-        _updateParticipantAudio(playerId, distance);
+        _audioGate.update(playerId, distance);
       }
     }
 
@@ -324,7 +328,7 @@ class BubbleManager {
       // Dreamfinder only when close enough for the bubble to work. Runs every
       // frame (near OR far) so the gate is the single per-frame owner of DF
       // audio state. See [_updateDreamfinderAudio].
-      _updateDreamfinderAudio(dfDistance);
+      _audioGate.updateDreamfinder(dfDistance);
     }
 
     // Check proximity to all bot characters.
@@ -568,8 +572,7 @@ class BubbleManager {
     // A peer that vanishes (ungraceful disconnect) while inside audio range
     // never crosses the disable threshold in the proximity loop, so drop their
     // audio bookkeeping here to avoid leaking map entries until teardown.
-    _audioEnabledParticipants.remove(playerId);
-    _audioVolumes.remove(playerId);
+    _audioGate.forget(playerId);
     _replaceBubble(playerId, null, 'remove-bubble-api');
   }
 
@@ -585,8 +588,7 @@ class BubbleManager {
     }
     _physics.clear();
     _mergeRenderer.clearSurfaces();
-    _audioEnabledParticipants.clear();
-    _audioVolumes.clear();
+    _audioGate.clear();
     // Everyone who was in range has now left, as far as any consumer of the
     // event stream is concerned. Same reasoning as the DF exit below: a
     // teardown that drops membership silently leaves the last enter unmatched.
@@ -714,7 +716,7 @@ class BubbleManager {
   }
 
   /// Visual opacity for a bubble at [distance] Chebyshev grid squares: full
-  /// within [_audioFullVolumeDistance], then a linear fade to nothing at
+  /// within [ProximityAudioGate.fullVolumeDistance], then a linear fade to nothing at
   /// [proximityRadius].
   ///
   /// Opacity is presentation, not proximity logic — hence living here rather
@@ -723,93 +725,21 @@ class BubbleManager {
   /// fade spans whatever range they chose instead of going fully transparent
   /// two squares early at radius 6, or never fading at all at radius 2. At the
   /// default radius the curve is within 0.05 of the old ladder at every
-  /// square, and it is now the same shape as [_volumeForDistance].
+  /// square, and it is now the same shape as [ProximityAudioGate.volumeForDistance].
   double _opacityForDistance(int distance) {
     if (proximityRadius <= 0) return 0.0;
-    if (distance <= _audioFullVolumeDistance) return 1.0;
-    final span = proximityRadius - _audioFullVolumeDistance;
+    if (distance <= ProximityAudioGate.fullVolumeDistance) return 1.0;
+    final span = proximityRadius - ProximityAudioGate.fullVolumeDistance;
     if (span <= 0) return 1.0;
     return ((proximityRadius - distance) / span).clamp(0.0, 1.0);
-  }
-
-  void _updateParticipantAudio(String playerId, int distance) {
-    // No LiveKit service yet (pre-connect / post-teardown) → don't mutate the
-    // gate state. Latching a state change we couldn't actually send leaves the
-    // gate stuck once the service comes up (the next frame sees "no change").
-    final service = _liveKitService;
-    if (service == null) return;
-
-    final hasAudio = _audioEnabledParticipants.contains(playerId);
-
-    // Hysteresis: enable when within the (tighter) enable threshold, disable
-    // only once past the (looser) disable threshold. Between the two, hold the
-    // current state so a participant hovering at the boundary doesn't toggle
-    // the SFU forward on and off every frame.
-    final shouldEnable = !hasAudio && distance <= _audioEnableThreshold;
-    final shouldDisable = hasAudio && distance > _audioDisableThreshold;
-
-    if (shouldEnable) {
-      _audioEnabledParticipants.add(playerId);
-      service.setParticipantAudioEnabled(playerId, true);
-      if (avDiagnosticsEnabled) {
-        dispatch([AvAudioGateChanged(
-          participant: playerId,
-          enabled: true,
-          distance: distance,
-        )]);
-      }
-    } else if (shouldDisable) {
-      _audioEnabledParticipants.remove(playerId);
-      _audioVolumes.remove(playerId); // re-set volume on next enable
-      service.setParticipantAudioEnabled(playerId, false);
-      if (avDiagnosticsEnabled) {
-        dispatch([AvAudioGateChanged(
-          participant: playerId,
-          enabled: false,
-          distance: distance,
-        )]);
-      }
-    }
-
-    // Distance fade: while the track is subscribed, ramp playback volume by
-    // distance so voices fade with range instead of cutting. The hard
-    // enable/disable above is the outer subscription boundary (and the
-    // bandwidth saver); this is the per-square ramp inside it. Only push to
-    // LiveKit when the value actually changes — `distance` is an int, so for a
-    // stationary peer this is most frames, and the web path is a DOM write.
-    if (_audioEnabledParticipants.contains(playerId)) {
-      final volume = _volumeForDistance(distance);
-      if (_audioVolumes[playerId] != volume) {
-        // Cache only if the volume actually landed on a track. If the track
-        // hasn't subscribed yet the call no-ops; caching anyway would suppress
-        // the retry and leave the late track stuck at default volume.
-        if (service.setParticipantAudioVolume(playerId, volume)) {
-          _audioVolumes[playerId] = volume;
-        }
-      }
-    }
-  }
-
-  /// Volume curve for the distance fade: full within [_audioFullVolumeDistance],
-  /// then a linear step-down per grid square to silence at
-  /// [_audioDisableThreshold]. Stepwise (distance is an int), not continuous.
-  double _volumeForDistance(int distance) {
-    if (distance <= _audioFullVolumeDistance) return 1.0;
-    final span = _audioDisableThreshold - _audioFullVolumeDistance;
-    // Radius ≤ 1 collapses the ramp to nothing. Only reachable if a caller
-    // mutates the radius mid-session; the early return above already covers
-    // every distance the gate can have enabled at that radius, so this guards
-    // the division rather than the behaviour.
-    if (span <= 0) return 1.0;
-    return ((_audioDisableThreshold - distance) / span).clamp(0.0, 1.0);
   }
 
   /// Emit the `df-proximity` enter/exit signal to Dreamfinder. [dfDistance] is
   /// null when DF isn't present (forces an exit).
   ///
   /// Hardened per the PR #481 cage match (Kelvin + Carnot):
-  /// - **Hysteresis** — enter within [_audioEnableThreshold]; once near, stay
-  ///   near until past [_audioDisableThreshold]. Stops a peer hovering at the
+  /// - **Hysteresis** — enter within [ProximityAudioGate.enableThreshold]; once near, stay
+  ///   near until past [ProximityAudioGate.disableThreshold]. Stops a peer hovering at the
   ///   boundary from spamming the reliable channel.
   /// - **Null-service safety** — if the service isn't ready we do NOT latch
   ///   [_wasNearDreamfinder]; the transition simply re-fires next frame once it
@@ -817,8 +747,8 @@ class BubbleManager {
   void _updateDreamfinderProximity(int? dfDistance) {
     final near = dfDistance != null &&
         (_wasNearDreamfinder
-            ? dfDistance <= _audioDisableThreshold
-            : dfDistance <= _audioEnableThreshold);
+            ? dfDistance <= _audioGate.disableThreshold
+            : dfDistance <= _audioGate.enableThreshold);
     if (near == _wasNearDreamfinder) return;
     final service = _liveKitService;
     if (service == null) return; // can't emit — don't latch; retry next frame
@@ -844,41 +774,12 @@ class BubbleManager {
   /// the gate is the single per-frame writer of DF audio state and
   /// self-reconciles with the manual path (which also disables the track
   /// directly) within one frame.
-  void _updateDreamfinderAudio(int dfDistance) {
-    final service = _liveKitService;
-    final silenced = service?.dreamfinderSilenced.value ?? false;
-    final fedDistance = silenced ? _audioDisableThreshold + 1 : dfDistance;
-
-    // Gate EVERY DF participant in the room, not just the last-bound
-    // [dreamfinderIdentity] slot. Agent respawns / stale sessions mean more
-    // than one `agent-*` identity can exist at once, and any identity outside
-    // the gate is ungoverned audio (half of the 2026-07-18 silence failure).
-    final ids = <String>{
-      dreamfinderIdentity,
-      ...?service?.dreamfinderIdentities(),
-    };
-    for (final id in ids) {
-      _updateParticipantAudio(id, fedDistance);
-      if (silenced && service != null && _audioVolumes[id] != 0.0) {
-        // Local hard-mute while silenced: the fade layer above only writes
-        // volume for gate-ENABLED participants, so after the silence disable
-        // nothing else touches the playback element — if the server-side
-        // disable is ineffective (the other half of the 2026-07-18 failure),
-        // audio keeps playing at its last volume forever. Same
-        // retry-until-landed caching semantics as the fade layer.
-        if (service.setParticipantAudioVolume(id, 0.0)) {
-          _audioVolumes[id] = 0.0;
-        }
-      }
-    }
-  }
-
   /// Test seam for [_updateDreamfinderAudio] — see
   /// [debugUpdateDreamfinderProximity] for why the real loop can't be driven
   /// without a fully-constructed [DreamfinderComponent].
   @visibleForTesting
   void debugUpdateDreamfinderAudio(int dfDistance) =>
-      _updateDreamfinderAudio(dfDistance);
+      _audioGate.updateDreamfinder(dfDistance);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Private — physics and rendering

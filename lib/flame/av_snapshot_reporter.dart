@@ -35,7 +35,7 @@ class AvSnapshotReporter {
     required Map<String, PlayerComponent> remotePlayers,
     required Map<String, BotCharacterComponent> bots,
     required Map<String, PositionComponent> bubbles,
-    required Set<String> audioEnabledParticipants,
+    required bool Function(String) audioEnabled,
     required DreamfinderComponent? Function() dreamfinder,
     required String Function() dreamfinderIdentity,
     required LiveKitService? Function() liveKitService,
@@ -45,7 +45,7 @@ class AvSnapshotReporter {
         _remotePlayers = remotePlayers,
         _bots = bots,
         _bubbles = bubbles,
-        _audioEnabledParticipants = audioEnabledParticipants,
+        _audioEnabled = audioEnabled,
         _dreamfinder = dreamfinder,
         _dreamfinderIdentity = dreamfinderIdentity,
         _liveKitService = liveKitService,
@@ -59,7 +59,7 @@ class AvSnapshotReporter {
   final Map<String, PlayerComponent> _remotePlayers;
   final Map<String, BotCharacterComponent> _bots;
   final Map<String, PositionComponent> _bubbles;
-  final Set<String> _audioEnabledParticipants;
+  final bool Function(String) _audioEnabled;
   final DreamfinderComponent? Function() _dreamfinder;
   final String Function() _dreamfinderIdentity;
   final LiveKitService? Function() _liveKitService;
@@ -173,7 +173,7 @@ class AvSnapshotReporter {
       framesCaptured: framesCaptured,
       framesDropped: framesDropped,
       bubbleType: bubble == null ? null : classifyBubble(bubble),
-      audioEnabled: _audioEnabledParticipants.contains(playerId),
+      audioEnabled: _audioEnabled(playerId),
       distance: distance,
       isLocal: isLocal,
     );

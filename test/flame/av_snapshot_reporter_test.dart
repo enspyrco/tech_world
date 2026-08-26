@@ -42,7 +42,7 @@ void main() {
         remotePlayers: remotePlayers,
         bots: bots,
         bubbles: bubbles,
-        audioEnabledParticipants: audioEnabled,
+        audioEnabled: audioEnabled.contains,
         dreamfinder: () => null,
         dreamfinderIdentity: () => 'bot-dreamfinder',
         liveKitService: () => null,
