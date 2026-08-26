@@ -17,6 +17,7 @@ import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/av_snapshot_reporter.dart';
 import 'package:tech_world/flame/bubble_merge_renderer.dart';
 import 'package:tech_world/flame/bubble_physics.dart';
+import 'package:tech_world/flame/dreamfinder_avatar_host.dart';
 import 'package:tech_world/flame/proximity_audio_gate.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
@@ -25,7 +26,6 @@ import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
-import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
@@ -62,6 +62,13 @@ class BubbleManager {
       liveKitService: () => _liveKitService,
       diagnosticsEnabled: () => avDiagnosticsEnabled,
       dreamfinderIdentity: () => dreamfinderIdentity,
+    );
+    _dfAvatar = DreamfinderAvatarHost(
+      liveKitService: () => _liveKitService,
+      onReady: () => refreshBubbleForPlayer(dreamfinderIdentity),
+      // Share the single computed value rather than probing the platform
+      // twice; it cannot change mid-session.
+      isMobileWebOverride: _isMobileWeb,
     );
     _avReporter = AvSnapshotReporter(
       diagnostics: diagnostics ?? Locator.maybeLocate<DiagnosticsService>(),
@@ -146,7 +153,9 @@ class BubbleManager {
   // ── LiveKit (arrives after construction) ─────────────────────────────────
 
   LiveKitService? _liveKitService;
-  DreamfinderAvatarBridge? _dreamfinderAvatarBridge;
+  /// Lifecycle owner of the 3D avatar iframe. See [DreamfinderAvatarHost];
+  /// every read through it is null-safe on platforms with no bridge.
+  late final DreamfinderAvatarHost _dfAvatar;
 
   // ── Mutable references set by TechWorld ──────────────────────────────────
 
@@ -427,7 +436,7 @@ class BubbleManager {
       final hasCanvasCapture = existingBubble is VideoBubbleComponent &&
           existingBubble.externalVideoCapture != null;
       final needsUpgrade = existingBubble is! VideoBubbleComponent ||
-          (!hasCanvasCapture && _dreamfinderAvatarBridge?.isReady == true);
+          (!hasCanvasCapture && _dfAvatar.isReady);
 
       if (needsUpgrade) {
         final videoBubble = _createDreamfinderVideoBubble(dfParticipant);
@@ -540,31 +549,12 @@ class BubbleManager {
   }
 
   /// Initialize the Dreamfinder 3D avatar bridge (web only).
-  void initDreamfinderBridge() {
-    // Mobile web renders the embodied WebGL avatar black, so DF stays a 2D
-    // sprite there — don't load the iframe bridge at all.
-    if (_isMobileWeb) return;
-    if (_dreamfinderAvatarBridge != null) return;
-    final liveKit = _liveKitService;
-    if (liveKit == null) return;
-
-    _dreamfinderAvatarBridge =
-        DreamfinderAvatarBridge(liveKitService: liveKit);
-    _dreamfinderAvatarBridge!.initialize().then((_) {
-      if (_dreamfinderAvatarBridge?.isReady == true) {
-        _log.info('Dreamfinder avatar bridge ready — refreshing bubble');
-        refreshBubbleForPlayer(dreamfinderIdentity);
-      }
-    }).catchError((Object e) {
-      _log.warning('Dreamfinder avatar bridge failed to initialize: $e');
-    });
-  }
+  void initDreamfinderBridge() => _dfAvatar.start();
 
   /// Clean up Dreamfinder-specific state when the participant leaves.
   void handleDreamfinderLeft() {
     dreamfinderIdentity = dreamfinderBot.identity;
-    _dreamfinderAvatarBridge?.dispose();
-    _dreamfinderAvatarBridge = null;
+    _dfAvatar.stop();
   }
 
   /// Remove a single bubble by player ID.
@@ -601,8 +591,7 @@ class BubbleManager {
     }
     _wasNearDreamfinder = false;
     _liveKitService = null;
-    _dreamfinderAvatarBridge?.dispose();
-    _dreamfinderAvatarBridge = null;
+    _dfAvatar.stop();
     dreamfinderIdentity = dreamfinderBot.identity;
   }
 
@@ -694,7 +683,7 @@ class BubbleManager {
       displayName: dreamfinderBot.displayName,
       bubbleSize: 64,
       targetFps: 10,
-      externalVideoCapture: _dreamfinderAvatarBridge?.canvasCapture,
+      externalVideoCapture: _dfAvatar.canvasCapture,
       reduceMotion: reduceMotion,
     );
     videoBubble.glowColor = const Color(0xFFDAA520); // gold
@@ -802,7 +791,7 @@ class BubbleManager {
         entry.value.priority = dreamfinderComponent!.priority + 1;
         if (entry.value is VideoBubbleComponent) {
           (entry.value as VideoBubbleComponent).loadingProgress =
-              _dreamfinderAvatarBridge?.avatarLoadProgress;
+              _dfAvatar.avatarLoadProgress;
         }
       } else if (_bots.containsKey(entry.key)) {
         final botComp = _bots[entry.key]!;
