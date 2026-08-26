@@ -16,6 +16,7 @@ import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/av_snapshot_reporter.dart';
 import 'package:tech_world/flame/bubble_merge_renderer.dart';
+import 'package:tech_world/flame/bubble_physics.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
@@ -148,7 +149,9 @@ class BubbleManager {
   // ── Bubble state ─────────────────────────────────────────────────────────
 
   final Map<String, PositionComponent> _playerBubbles = {};
-  final Map<String, Vector2> _bubbleDisplacements = {};
+  /// Soft-body repulsion + tether. See [BubblePhysics]; it owns the
+  /// accumulated per-bubble displacement across frames.
+  final BubblePhysics _physics = BubblePhysics();
   final Set<String> _audioEnabledParticipants = {};
   /// Last volume pushed to LiveKit per participant, so the per-frame fade only
   /// writes when the value actually changes (distance is an int → rarely).
@@ -208,11 +211,6 @@ class BubbleManager {
   static const int _audioFullVolumeDistance = 1; // ≤ this = full volume; fades out to _audioDisableThreshold
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
-  static const double _bubbleDiameter = 64.0;
-  static const double _maxTetherDistance = 24.0;
-  static const double _repulsionDamping = 0.85;
-  // Force coefficient: 0.5 (base strength) / 0.016 (60 fps reference dt).
-  static const double _repulsionForceCoefficient = 31.25;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Public API
@@ -585,7 +583,7 @@ class BubbleManager {
     for (final id in ids) {
       _replaceBubble(id, null, 'bubble-manager-cleared');
     }
-    _bubbleDisplacements.clear();
+    _physics.clear();
     _mergeRenderer.clearSurfaces();
     _audioEnabledParticipants.clear();
     _audioVolumes.clear();
@@ -919,7 +917,7 @@ class BubbleManager {
     }
 
     // 2. Apply physics repulsion so bubbles don't overlap.
-    _applyBubbleRepulsion(dt);
+    _physics.apply(_playerBubbles, dt);
 
     // 3. Collect centres for the metaball field.
     final centres = <Vector2>[];
@@ -932,49 +930,6 @@ class BubbleManager {
     }
 
     _mergeRenderer.update(centres, lowestPriority);
-  }
-
-  void _applyBubbleRepulsion(double dt) {
-    final entries = _playerBubbles.entries.toList();
-    if (entries.length < 2) return;
-
-    _bubbleDisplacements
-        .removeWhere((k, _) => !_playerBubbles.containsKey(k));
-
-    final forces = <String, Vector2>{};
-    for (var i = 0; i < entries.length; i++) {
-      for (var j = i + 1; j < entries.length; j++) {
-        final ci = entries[i].value.center;
-        final cj = entries[j].value.center;
-        final delta = ci - cj;
-        final dist = delta.length;
-        if (dist < _bubbleDiameter && dist > 0.01) {
-          final overlap = _bubbleDiameter - dist;
-          final direction = delta.normalized();
-          final clampedDt = min(dt, 0.05);
-          final push = direction * (overlap * _repulsionForceCoefficient * clampedDt);
-          forces[entries[i].key] =
-              (forces[entries[i].key] ?? Vector2.zero()) + push;
-          forces[entries[j].key] =
-              (forces[entries[j].key] ?? Vector2.zero()) - push;
-        }
-      }
-    }
-
-    for (final entry in entries) {
-      final key = entry.key;
-      var disp = _bubbleDisplacements[key] ?? Vector2.zero();
-      // Damp first so accumulated drift decays before new force is applied,
-      // then add this frame's force, then cap — so even a large single-frame
-      // impulse cannot bypass the tether limit.
-      disp = disp * _repulsionDamping;
-      disp += forces[key] ?? Vector2.zero();
-      if (disp.length > _maxTetherDistance) {
-        disp = disp.normalized() * _maxTetherDistance;
-      }
-      _bubbleDisplacements[key] = disp;
-      entry.value.position += disp;
-    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
