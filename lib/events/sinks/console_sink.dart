@@ -60,6 +60,10 @@ void consoleSink(AppEvent event) {
       'PlayerEnteredProximity: $playerId',
     PlayerLeftProximity(:final playerId) =>
       'PlayerLeftProximity: $playerId',
+    BubblesMerged(:final participantIds) =>
+      'BubblesMerged: ${participantIds.join(" + ")}',
+    BubblesUnmerged(:final participantIds) =>
+      'BubblesUnmerged: ${participantIds.join(" + ")}',
     BotJoined(:final identity) => 'BotJoined: $identity',
     BotLeft() => 'BotLeft',
     ScreenShareToggled(:final started) =>

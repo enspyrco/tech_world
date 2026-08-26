@@ -47,7 +47,7 @@ void main() {
   // classes do not expose their subtypes for runtime enumeration, so a
   // true exhaustiveness check at runtime would need code generation.
   //
-  // For the foreseeable scale (35 subtypes, low churn) the
+  // For the foreseeable scale (37 subtypes, low churn) the
   // compile-time gate is the load-bearing property; this test makes the
   // runtime classification of representatives explicit and pins them to
   // the declared switch values.
@@ -58,13 +58,15 @@ void main() {
     // asserts on a known concrete type.
     void check(AppEvent event, PiiPolicy expected) {
       final declared = switch (event) {
-        // PII subtypes (26)
+        // PII subtypes (28)
         SpellCastFailed() => PiiPolicy.pii,
         RoomJoined() => PiiPolicy.pii,
         UserSignedIn() => PiiPolicy.pii,
         ProfileUpdated() => PiiPolicy.pii,
         PlayerEnteredProximity() => PiiPolicy.pii,
         PlayerLeftProximity() => PiiPolicy.pii,
+        BubblesMerged() => PiiPolicy.pii,
+        BubblesUnmerged() => PiiPolicy.pii,
         MapEditorEntered() => PiiPolicy.pii,
         RoomCreated() => PiiPolicy.pii,
         RoomMapSaved() => PiiPolicy.pii,
@@ -140,6 +142,8 @@ void main() {
         UserSignedIn(userId: 'u', displayName: 'Alice'),
         ProfileUpdated(displayName: 'Alice'),
         PlayerEnteredProximity(playerId: 'p'),
+        BubblesMerged(participantIds: const ['p1', 'p2']),
+        BubblesUnmerged(participantIds: const ['p1', 'p2']),
         PlayerLeftProximity(playerId: 'p'),
         MapEditorEntered(mapId: 'm', mapName: 'X'),
         RoomCreated(roomId: 'r', roomName: 'X'),
@@ -246,8 +250,8 @@ void main() {
       // Cardinality cross-check: keeps this list and the switch above
       // honest against the same expected subtype count. Bump together
       // when adding a new subtype.
-      expect(events.length, 45);
-      expect(piiEvents.length, 26);
+      expect(events.length, 47);
+      expect(piiEvents.length, 28);
       expect(nonPiiEvents.length, 19);
 
       for (final event in piiEvents) {
@@ -303,6 +307,18 @@ void main() {
 
     test('GroupMessageSent (references user-typed content) is PII', () {
       expect(GroupMessageSent(messageId: 'm1').piiPolicy, PiiPolicy.pii);
+    });
+
+    test('BubblesMerged (participant identities) is PII', () {
+      expect(
+          BubblesMerged(participantIds: const ['p1', 'p2']).piiPolicy,
+          PiiPolicy.pii);
+    });
+
+    test('BubblesUnmerged (participant identities) is PII', () {
+      expect(
+          BubblesUnmerged(participantIds: const ['p1', 'p2']).piiPolicy,
+          PiiPolicy.pii);
     });
 
     test('PlayerEnteredProximity (player identity) is PII', () {

@@ -157,6 +157,8 @@ void main() {
         MapEdited() => 'map_edit',
         PlayerEnteredProximity() => 'prox_enter',
         PlayerLeftProximity() => 'prox_leave',
+        BubblesMerged() => 'bubbles_merged',
+        BubblesUnmerged() => 'bubbles_unmerged',
         BotJoined() => 'bot_join',
         BotLeft() => 'bot_leave',
         ScreenShareToggled() => 'screen_share',

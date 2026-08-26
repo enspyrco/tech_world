@@ -500,6 +500,65 @@ final class PlayerLeftProximity extends AppEvent {
   PiiPolicy get piiPolicy => PiiPolicy.pii;
 }
 
+/// Two or more video bubbles were drawn as a single merged surface.
+///
+/// Emitted on TRANSITION only — when the merge group forms or its membership
+/// changes — never per frame. The merge pass runs every frame; a per-frame
+/// event would fill the log at frame rate and destroy the very instrument it
+/// exists to provide.
+///
+/// Emitted at the point [MergedVideoBubbleComponent] is actually built, not
+/// where the geometry says a merge is due. That distinction is the whole
+/// value: a shader that failed to load degrades silently to "no merge
+/// effect", so an event fired off geometry alone would report success for a
+/// merge nobody can see.
+final class BubblesMerged extends AppEvent {
+  BubblesMerged({required this.participantIds, DateTime? timestamp})
+      : timestamp = timestamp ?? DateTime.now();
+
+  /// The participants drawn through the shared surface, in merge-group order.
+  final List<String> participantIds;
+
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'bubbles_merged',
+        'participantIds': participantIds,
+        'count': participantIds.length,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identifiers.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// A merged bubble group broke apart; each bubble draws itself again.
+final class BubblesUnmerged extends AppEvent {
+  BubblesUnmerged({required this.participantIds, DateTime? timestamp})
+      : timestamp = timestamp ?? DateTime.now();
+
+  /// The participants that had been merged, so a reader can pair this with
+  /// the [BubblesMerged] it closes without holding frame state.
+  final List<String> participantIds;
+
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'bubbles_unmerged',
+        'participantIds': participantIds,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identifiers.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
 /// A bot joined the room.
 final class BotJoined extends AppEvent {
   BotJoined({required this.identity, DateTime? timestamp})

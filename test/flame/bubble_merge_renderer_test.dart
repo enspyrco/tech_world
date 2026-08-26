@@ -1,5 +1,6 @@
 import 'package:flame/components.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_merge_renderer.dart';
 import 'package:tech_world/flame/components/merged_video_bubble_component.dart';
 
@@ -127,6 +128,74 @@ void main() {
       expect(renderer.clearSurfaces, returnsNormally);
       expect(renderer.dispose, returnsNormally);
       expect(renderer.dispose, returnsNormally, reason: 'idempotent');
+    });
+  });
+
+  group('mergeTransitions — transition-only emission', () {
+    // The merge pass runs EVERY FRAME. An event per frame would be a
+    // self-inflicted denial of service against our own logs — the same
+    // hazard capture_latch_state_machine.dart already calls out. So these
+    // tests assert WHEN events are emitted, not merely how many exist in
+    // total. A count-only assertion is what let a hysteresis pair collapse
+    // unnoticed for two months elsewhere in this file's own subsystem.
+
+    test('no group before, no group after — silent', () {
+      expect(BubbleMergeRenderer.mergeTransitions([], []), isEmpty);
+    });
+
+    test('a group forming emits exactly one BubblesMerged', () {
+      final events = BubbleMergeRenderer.mergeTransitions([], ['a', 'b']);
+      expect(events, hasLength(1));
+      expect(events.single, isA<BubblesMerged>());
+      expect((events.single as BubblesMerged).participantIds, ['a', 'b']);
+    });
+
+    test('an UNCHANGED group across frames emits NOTHING', () {
+      // The load-bearing assertion. If this ever goes green-by-emitting,
+      // the log fills at frame rate and the instrument destroys itself.
+      expect(
+        BubbleMergeRenderer.mergeTransitions(['a', 'b'], ['a', 'b']),
+        isEmpty,
+      );
+    });
+
+    test('member order alone is not a change', () {
+      expect(
+        BubbleMergeRenderer.mergeTransitions(['a', 'b'], ['b', 'a']),
+        isEmpty,
+      );
+    });
+
+    test('a group breaking emits exactly one BubblesUnmerged, naming who '
+        'had been merged', () {
+      final events = BubbleMergeRenderer.mergeTransitions(['a', 'b'], []);
+      expect(events, hasLength(1));
+      expect(events.single, isA<BubblesUnmerged>());
+      expect((events.single as BubblesUnmerged).participantIds, ['a', 'b']);
+    });
+
+    test('a member joining an existing group re-emits the new membership', () {
+      final events =
+          BubbleMergeRenderer.mergeTransitions(['a', 'b'], ['a', 'b', 'c']);
+      expect(events, hasLength(1));
+      expect((events.single as BubblesMerged).participantIds,
+          ['a', 'b', 'c']);
+    });
+
+    test('a member leaving a group that survives re-emits, not unmerges', () {
+      final events =
+          BubbleMergeRenderer.mergeTransitions(['a', 'b', 'c'], ['a', 'b']);
+      expect(events, hasLength(1));
+      expect(events.single, isA<BubblesMerged>(),
+          reason: 'the group still exists, so this is a membership change '
+              'rather than a teardown');
+    });
+
+    test('a wholesale swap of members emits one BubblesMerged', () {
+      final events =
+          BubbleMergeRenderer.mergeTransitions(['a', 'b'], ['c', 'd']);
+      expect(events, hasLength(1));
+      expect((events.single as BubblesMerged).participantIds, ['c', 'd']);
     });
   });
 }

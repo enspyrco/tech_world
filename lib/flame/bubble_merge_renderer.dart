@@ -6,6 +6,8 @@ import 'package:flutter/material.dart' show Color;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:logging/logging.dart';
 
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/components/bubble_field_component.dart';
 import 'package:tech_world/flame/components/merged_video_bubble_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
@@ -55,6 +57,11 @@ class BubbleMergeRenderer {
   /// which does no position work does no search either.
   bool _dirty = true;
   List<String> _cachedMergeGroup = [];
+
+  /// The merge group as of the last event emitted, NOT as of the last frame.
+  /// The merge pass runs every frame; comparing against this is what keeps
+  /// emission on transitions instead of at frame rate.
+  List<String> _lastEmittedGroup = const [];
 
   @visibleForTesting
   BubbleFieldComponent? get bubbleField => _bubbleField;
@@ -142,6 +149,7 @@ class BubbleMergeRenderer {
       }
       _mergedBubble?.removeFromParent();
       _mergedBubble = null;
+      _emitTransition(const []);
       return;
     }
 
@@ -175,6 +183,43 @@ class BubbleMergeRenderer {
         entry.value.hiddenForMerge = false;
       }
     }
+
+    // Emitted here, at the bottom of the build, rather than off the geometry
+    // above: reaching this line means the merged surface exists and has its
+    // sources. A shader that failed to load returns early at the top of this
+    // method, so it can never produce a merge event it did not draw.
+    _emitTransition(mergeGroup);
+  }
+
+  void _emitTransition(List<String> group) {
+    final events = mergeTransitions(_lastEmittedGroup, group);
+    if (events.isEmpty) return;
+    _lastEmittedGroup = List.unmodifiable(group);
+    dispatch(events);
+  }
+
+  /// The events owed for a change from [previous] to [current] merge group.
+  ///
+  /// Pure and static so the emission RULE is exhaustively testable without a
+  /// shader, a canvas, or a running game loop. The call site — which decides
+  /// WHEN to consult it — is proven separately by a live two-client session.
+  ///
+  /// Membership is compared as a SET: the merge search may return the same
+  /// bubbles in a different order between frames, and re-emitting for that
+  /// would be frame-rate noise wearing a transition's clothes.
+  static List<AppEvent> mergeTransitions(
+    List<String> previous,
+    List<String> current,
+  ) {
+    final before = previous.toSet();
+    final after = current.toSet();
+    if (before.length == after.length && before.containsAll(after)) {
+      return const [];
+    }
+    if (after.isEmpty) {
+      return [BubblesUnmerged(participantIds: List.unmodifiable(previous))];
+    }
+    return [BubblesMerged(participantIds: List.unmodifiable(current))];
   }
 
   /// The largest cluster of bubble centres within [mergeThreshold] of each

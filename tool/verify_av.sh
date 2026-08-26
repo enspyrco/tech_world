@@ -4,10 +4,12 @@
 # COVERAGE, stated up front because a verifier that hides its blind spots is
 # worse than none:
 #   Concern 1 (AvSnapshotReporter)  - log-verifiable, macOS file sink.
-#   Concern 2 (merge/render shader) - NOT log-verifiable. bubble_merge_renderer
-#                                     emits nothing but a shader-load warning;
-#                                     there is no merge event in events/types.dart.
-#                                     This script CANNOT clear concern 2. Pixels only.
+#   Concern 2 (merge/render shader) - log-verifiable as of BubblesMerged /
+#                                     BubblesUnmerged. Those are emitted at the
+#                                     BOTTOM of the merged-surface build, after
+#                                     the shader-null early return, so an event
+#                                     means the surface was actually built --
+#                                     not merely that two bubbles were close.
 #   Concern 3 (Dreamfinder onReady) - log-verifiable, CHROME ONLY. On native the
 #                                     bridge is a no-op stub, so a macOS run is
 #                                     silent whether it works or not.
@@ -76,10 +78,25 @@ if grep -aq 'Shader failed to load' "$EVENTS"; then
   echo "VERDICT: FAILED - a shader did not load:"
   grep -a 'Shader failed to load' "$EVENTS" | tail -3
 else
-  echo "no shader-load failures recorded (instrument confirmed live above)"
-  echo "VERDICT: NOT VERIFIABLE HERE - the merge path emits no events."
-  echo "         Confirm by EYE: two avatars overlapped (centre-to-centre < 96.0)"
-  echo "         should draw ONE merged surface, not two separate bubbles."
+  MERGED=$(printf '%s\n' "$SLICE" | grep -ac '"type":"bubbles_merged"' || true)
+  UNMERGED=$(printf '%s\n' "$SLICE" | grep -ac '"type":"bubbles_unmerged"' || true)
+  echo "bubbles_merged: $MERGED    bubbles_unmerged: $UNMERGED"
+  if [ "$MERGED" -gt 0 ]; then
+    printf '%s\n' "$SLICE" | grep -a '"type":"bubbles_merged"' \
+      | jq -r '"  merged \(.count): \(.participantIds|join(\" + \"))  \(.timestamp)"' \
+      2>/dev/null | tail -5
+    echo "VERDICT: VERIFIED - the merged surface was built with real sources."
+    # Frame-rate spam would mean the transition guard regressed.
+    if [ "$MERGED" -gt 50 ]; then
+      echo "WARNING: $MERGED merge events is far above a plausible number of"
+      echo "         real transitions - suspect the transition guard in"
+      echo "         BubbleMergeRenderer.mergeTransitions has regressed."
+    fi
+  else
+    echo "VERDICT: UNVERIFIED - no merge ever formed."
+    echo "         Either the bubbles were never overlapped (< 96.0 centre-to-"
+    echo "         centre), or there were fewer than two video bubbles present."
+  fi
 fi
 
 echo
