@@ -15,6 +15,7 @@ import 'package:tech_world/device/web_safe_mode.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
+import 'package:tech_world/flame/av_snapshot_reporter.dart';
 import 'package:tech_world/flame/components/bubble_field_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/merged_video_bubble_component.dart';
@@ -55,8 +56,20 @@ class BubbleManager {
   })  : _localPlayer = localPlayer,
         _addComponent = addComponent,
         _remotePlayers = remotePlayers,
-        _bots = bots,
-        _diagnostics = diagnostics ?? Locator.maybeLocate<DiagnosticsService>();
+        _bots = bots {
+    _avReporter = AvSnapshotReporter(
+      diagnostics: diagnostics ?? Locator.maybeLocate<DiagnosticsService>(),
+      localPlayer: localPlayer,
+      remotePlayers: remotePlayers,
+      bots: bots,
+      bubbles: _playerBubbles,
+      audioEnabledParticipants: _audioEnabledParticipants,
+      dreamfinder: () => dreamfinderComponent,
+      dreamfinderIdentity: () => dreamfinderIdentity,
+      liveKitService: () => _liveKitService,
+      localBubbleKey: _localPlayerBubbleKey,
+    );
+  }
 
   /// When true, all proximity bubbles render as [PlayerBubbleComponent]
   /// (avatar-only) regardless of whether the underlying participant has a
@@ -163,18 +176,18 @@ class BubbleManager {
 
   // ── AV diagnostics ─────────────────────────────────────────────────────────
 
-  /// Single owner of the AV-diagnostics toggle. Read via [avDiagnosticsEnabled]
-  /// — never via a shadow field. See `feedback_cross_cutting_toggle_needs_single_owner`.
-  final DiagnosticsService? _diagnostics;
+  /// Periodic AV pipeline observer. Owns the diagnostics toggle, the snapshot
+  /// timer, and snapshot construction — see [AvSnapshotReporter]. Read-only
+  /// with respect to the bubble maps it is handed.
+  late final AvSnapshotReporter _avReporter;
 
-  /// Whether AV pipeline diagnostic events should be generated. Computed
-  /// from [_diagnostics.avEnabled.value] so there is no shadow field to
-  /// drift out of sync.
-  bool get avDiagnosticsEnabled =>
-      _diagnostics?.avEnabled.value ?? false;
-
-  double _snapshotTimer = 0;
-  static const double _snapshotIntervalSeconds = 5.0;
+  /// Whether AV pipeline diagnostic events should be generated.
+  ///
+  /// Delegates to the reporter, which reads `DiagnosticsService.avEnabled`
+  /// directly — there is no shadow field anywhere in the chain to drift out
+  /// of sync. Kept on `BubbleManager` because the bubble-lifecycle events in
+  /// [_replaceBubble] and `LiveKitGameBridge` gate on it.
+  bool get avDiagnosticsEnabled => _avReporter.enabled;
 
   // ── Constants ─────────────────────────────────────────────────────────────
 
@@ -241,14 +254,7 @@ class BubbleManager {
 
   /// Main per-frame entry point. Called from TechWorld.update().
   void update(double dt) {
-    // ── Periodic AV snapshot ──────────────────────────────────────────────
-    if (avDiagnosticsEnabled) {
-      _snapshotTimer += dt;
-      if (_snapshotTimer >= _snapshotIntervalSeconds) {
-        _snapshotTimer = 0;
-        _dispatchPipelineSnapshots();
-      }
-    }
+    _avReporter.update(dt);
 
     final playerGrid = _localPlayer.miniGridPosition;
 
@@ -649,27 +655,12 @@ class BubbleManager {
   // Private — bubble creation
   // ═══════════════════════════════════════════════════════════════════════════
 
-  bool _hasVideoTrack(Participant participant) {
-    for (final publication in participant.videoTrackPublications) {
-      if (publication.track != null) {
-        if (participant is LocalParticipant) {
-          return true;
-        } else {
-          if (publication.subscribed) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
   PositionComponent _createBubbleForPlayer(
       String playerId, PlayerComponent playerComponent) {
     final participant = _liveKitService?.getParticipant(playerId);
     if (!hideVideoBubbles &&
         participant != null &&
-        _hasVideoTrack(participant)) {
+        AvSnapshotReporter.hasVideoTrack(participant)) {
       final videoBubble = VideoBubbleComponent(
         participant: participant,
         displayName: playerComponent.displayName,
@@ -696,7 +687,7 @@ class BubbleManager {
 
     if (!hideVideoBubbles &&
         localParticipant != null &&
-        _hasVideoTrack(localParticipant)) {
+        AvSnapshotReporter.hasVideoTrack(localParticipant)) {
       _log.fine('Creating local VideoBubbleComponent');
       final videoBubble = VideoBubbleComponent(
         participant: localParticipant,
@@ -1202,113 +1193,6 @@ class BubbleManager {
   /// pinned with a sentinel `PositionComponent` subclass without
   /// reaching into the private dispatch path.
   @visibleForTesting
-  static AvBubbleType classifyBubble(PositionComponent bubble) => switch (bubble) {
-        VideoBubbleComponent() => AvBubbleType.video,
-        PlayerBubbleComponent() => AvBubbleType.player,
-        BotBubbleComponent() => AvBubbleType.bot,
-        _ => AvBubbleType.unknown,
-      };
-
-  void _dispatchPipelineSnapshots() {
-    final playerGrid = _localPlayer.miniGridPosition;
-    final events = <AppEvent>[];
-
-    for (final entry in _remotePlayers.entries) {
-      final playerId = entry.key;
-      final playerComponent = entry.value;
-      final distance =
-          chebyshevDistance(playerGrid, playerComponent.miniGridPosition);
-      final bubble = _playerBubbles[playerId];
-      final participant = _liveKitService?.getParticipant(playerId);
-
-      events.add(_snapshotForParticipant(
-        playerId: playerId,
-        bubble: bubble,
-        participant: participant,
-        distance: distance,
-        isLocal: false,
-      ));
-    }
-
-    // Dreamfinder snapshot.
-    if (dreamfinderComponent != null) {
-      final dfDistance = chebyshevDistance(
-          playerGrid, dreamfinderComponent!.miniGridPosition);
-      events.add(_snapshotForParticipant(
-        playerId: dreamfinderIdentity,
-        bubble: _playerBubbles[dreamfinderIdentity],
-        participant: _liveKitService?.getParticipant(dreamfinderIdentity),
-        distance: dfDistance,
-        isLocal: false,
-      ));
-    }
-
-    // Bot snapshots.
-    for (final entry in _bots.entries) {
-      final botDistance =
-          chebyshevDistance(playerGrid, entry.value.miniGridPosition);
-      events.add(_snapshotForParticipant(
-        playerId: entry.key,
-        bubble: _playerBubbles[entry.key],
-        participant: _liveKitService?.getParticipant(entry.key),
-        distance: botDistance,
-        isLocal: false,
-      ));
-    }
-
-    // Local player snapshot (publish state). Emit the real LiveKit identity
-    // in `participant` rather than the internal `_localPlayerBubbleKey`
-    // sentinel — the sentinel is a private map key, not a wire identity.
-    // `isLocal: true` already disambiguates for consumers. Falls back to
-    // the sentinel only when localParticipant has not yet attached.
-    final localBubble = _playerBubbles[_localPlayerBubbleKey];
-    final localParticipant = _liveKitService?.localParticipant;
-    events.add(_snapshotForParticipant(
-      playerId: localParticipant?.identity ?? _localPlayerBubbleKey,
-      bubble: localBubble,
-      participant: localParticipant,
-      distance: 0,
-      isLocal: true,
-    ));
-
-    if (events.isNotEmpty) dispatch(events);
-  }
-
-  AvPipelineSnapshot _snapshotForParticipant({
-    required String playerId,
-    required PositionComponent? bubble,
-    required Participant? participant,
-    required int distance,
-    required bool isLocal,
-  }) {
-    final hasVideoTrack =
-        participant != null ? _hasVideoTrack(participant) : false;
-
-    AvCaptureMethod? captureMethod;
-    int captureRetryCount = 0;
-    int framesCaptured = 0;
-    int framesDropped = 0;
-
-    if (bubble is VideoBubbleComponent) {
-      captureMethod = bubble.diagnosticCaptureMethod;
-      captureRetryCount = bubble.diagnosticCaptureRetryCount;
-      framesCaptured = bubble.diagnosticFramesCaptured;
-      framesDropped = bubble.diagnosticFramesDropped;
-    }
-
-    final bubbleType = bubble == null ? null : classifyBubble(bubble);
-
-    return AvPipelineSnapshot(
-      participant: playerId,
-      hasVideoTrack: hasVideoTrack,
-      captureMethod: captureMethod,
-      captureRetryCount: captureRetryCount,
-      framesCaptured: framesCaptured,
-      framesDropped: framesDropped,
-      bubbleType: bubbleType,
-      audioEnabled: _audioEnabledParticipants.contains(playerId),
-      distance: distance,
-      isLocal: isLocal,
-    );
-  }
+  static AvBubbleType classifyBubble(PositionComponent bubble) =>
+      AvSnapshotReporter.classifyBubble(bubble);
 }
