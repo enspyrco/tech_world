@@ -9,6 +9,7 @@ import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
+import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
@@ -373,25 +374,41 @@ void main() {
         manager.setLiveKitService(mockLiveKit);
       });
 
-      test('enters at the enable threshold, exits past the disable threshold',
-          () {
-        // d=4 ≤ enable(4) → enter.
-        manager.debugUpdateDreamfinderProximity(4);
+      // The territory the assertions below are written against: a 7x7 square.
+      // Local player sits at (160,160) => grid cell (10,10) at 16px cells, i.e.
+      // dead centre of this box.
+      const box = TerritoryRect(minX: 7, minY: 7, maxX: 13, maxY: 13);
+
+      test('enters on entering the square, exits on leaving it', () {
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
 
-        // d=5 — inside the hysteresis band (> enable 4, ≤ disable 5). No re-emit.
-        manager.debugUpdateDreamfinderProximity(5);
-        // d=6 > disable(5) → exit.
-        manager.debugUpdateDreamfinderProximity(6);
+        // Still inside — no re-emit.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(13, 13), territory: box);
+        // Out of the square.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(14, 13), territory: box);
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
         // Exactly one enter + one exit across the whole sweep.
         verifyNever(() => mockLiveKit.publishDfProximity(near: any(named: 'near')));
       });
 
-      test('DF absent (null distance) forces an exit', () {
-        manager.debugUpdateDreamfinderProximity(2); // near
+      test('standing just outside the box is never heard', () {
+        // The regression: under the old distance rule this player WAS heard,
+        // because DF wanders inside his square and could be one cell away.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(14, 10), territory: box);
+        verifyNever(() => mockLiveKit.publishDfProximity(near: any(named: 'near')));
+      });
+
+      test('DF absent (null territory) forces an exit', () {
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
-        manager.debugUpdateDreamfinderProximity(null); // DF gone → exit
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: null);
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
       });
 
@@ -407,15 +424,18 @@ void main() {
           remotePlayers: {},
           bots: {},
         );
-        noService.debugUpdateDreamfinderProximity(2); // can't emit, must not latch
-        // Now the service is available; the SAME distance must still fire enter.
+        noService.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
+        // Now the service is available; the SAME cell must still fire enter.
         noService.setLiveKitService(mockLiveKit);
-        noService.debugUpdateDreamfinderProximity(2);
+        noService.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
       });
 
       test('clear() emits a final exit when the player was near DF', () {
-        manager.debugUpdateDreamfinderProximity(1); // near
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box); // inside
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
         manager.clear();
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);

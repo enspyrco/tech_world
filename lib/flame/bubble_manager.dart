@@ -16,6 +16,7 @@ import 'package:tech_world/flame/bubble_merge_renderer.dart';
 import 'package:tech_world/flame/bubble_physics.dart';
 import 'package:tech_world/flame/dreamfinder_avatar_host.dart';
 import 'package:tech_world/flame/dreamfinder_proximity_signal.dart';
+import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/flame/proximity_audio_gate.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
@@ -77,10 +78,6 @@ class BubbleManager {
       isMobileWeb: _isMobileWeb,
     );
     _dfProximity = DreamfinderProximitySignal(
-      // Deliberately the audio gate's pair, so "DF thinks you're in range" and
-      // "you can hear DF" cannot drift apart.
-      enableThreshold: () => _audioGate.enableThreshold,
-      disableThreshold: () => _audioGate.disableThreshold,
       liveKitService: () => _liveKitService,
     );
     _avReporter = AvSnapshotReporter(
@@ -390,10 +387,13 @@ class BubbleManager {
 
     // Notify Dreamfinder when the local player enters/exits its range so the
     // bot can gate whose speech it hears. null distance == DF not present.
+    // Territory containment, NOT distance to the sprite: Dreamfinder wanders
+    // inside his square, so a distance test let him hear players standing
+    // outside the box next to him. Reads the same rect the overlay draws, so
+    // what the player sees is what he hears.
     _dfProximity.update(
-      dreamfinderComponent == null
-          ? null
-          : chebyshevDistance(playerGrid, dreamfinderComponent!.miniGridPosition),
+      playerGrid: playerGrid,
+      territory: dreamfinderComponent?.territory,
     );
 
     // Remove bubbles for players no longer nearby.
@@ -648,11 +648,14 @@ class BubbleManager {
 
   /// Test seam for the DF proximity emission logic — exercising it through the
   /// real update loop would require a fully-constructed [DreamfinderComponent]
-  /// (sprite + path harness). Pass the Chebyshev distance to DF, or null for
-  /// "DF absent".
+  /// (sprite + path harness). Pass the player's grid cell and Dreamfinder's
+  /// resolved territory, or a null territory for "DF absent / no square".
   @visibleForTesting
-  void debugUpdateDreamfinderProximity(int? dfDistance) =>
-      _dfProximity.update(dfDistance);
+  void debugUpdateDreamfinderProximity({
+    required Point<int>? playerGrid,
+    required TerritoryRect? territory,
+  }) =>
+      _dfProximity.update(playerGrid: playerGrid, territory: territory);
 
   /// Proximity-gate Dreamfinder's audio symmetric with its video bubble: you
   /// hear DF only when within audio range, via the same [_updateParticipantAudio]
