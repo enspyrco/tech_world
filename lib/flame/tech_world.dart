@@ -873,6 +873,24 @@ class TechWorld extends World with TapCallbacks {
   // Active speech bubbles keyed by speaker identity.
   final Map<String, SpeechBubbleComponent> _speechBubbles = {};
 
+  /// Listener on [LiveKitService.dreamfinderSilenced]. Held so it can be
+  /// detached on disconnect — a notifier outlives a room, and a stale listener
+  /// clearing bubbles for a torn-down world is a leak with visible symptoms.
+  VoidCallback? _dfSilenceListener;
+
+  /// Wipe every speech bubble the moment Dreamfinder is silenced.
+  ///
+  /// Must fire off the TOGGLE, not off the next transcript: silencing him
+  /// mid-sentence otherwise leaves that sentence hanging for its full lifetime
+  /// — the one line the player pressed the button to stop seeing.
+  void _onDreamfinderSilenceChanged() {
+    if (!(_liveKitService?.dreamfinderSilenced.value ?? false)) return;
+    for (final bubble in _speechBubbles.values) {
+      bubble.removeFromParent();
+    }
+    _speechBubbles.clear();
+  }
+
   /// Handle a speech transcript from the voice pipeline.
   ///
   /// Creates a [SpeechBubbleComponent] with per-letter fade-in below the
@@ -885,6 +903,19 @@ class TechWorld extends World with TapCallbacks {
     final speakerRole = SpeakerRole.tryParse(speakerRaw);
     final text = json['text'] as String?;
     if (speakerRole == null || text == null || text.isEmpty) return;
+
+    // Silencing Dreamfinder silences the WHOLE conversation with him, not just
+    // his audio. Both roles on this channel are that conversation: his replies
+    // and the transcript of what you said to him. Muting only the audio left
+    // his words still writing themselves across the world, which read as the
+    // button not working at all.
+    //
+    // Drop rather than hide: a suppressed line is not a line that arrives
+    // later. Un-silencing resumes from whatever he says next, which is what
+    // "I stopped listening" means everywhere else.
+    // Existing bubbles are cleared by _onDreamfinderSilenceChanged when the
+    // button is pressed; this only has to stop NEW ones arriving.
+    if (_liveKitService?.dreamfinderSilenced.value ?? false) return;
 
     // Determine which component to attach the bubble to.
     PositionComponent? target;
@@ -933,6 +964,8 @@ class TechWorld extends World with TapCallbacks {
     }
 
     _liveKitService = Locator.maybeLocate<LiveKitService>();
+    _dfSilenceListener = _onDreamfinderSilenceChanged;
+    _liveKitService?.dreamfinderSilenced.addListener(_dfSilenceListener!);
     if (_liveKitService == null) {
       _log.info('LiveKitService not available yet');
       return;
@@ -1624,6 +1657,12 @@ class TechWorld extends World with TapCallbacks {
     _speechBubbles.clear();
     _pendingAvatars.clear();
     _avatarThrottle.clear();
+    // Detach BEFORE dropping the reference, or the listener can never be
+    // removed from a notifier that outlives this world.
+    if (_dfSilenceListener != null) {
+      _liveKitService?.dreamfinderSilenced.removeListener(_dfSilenceListener!);
+      _dfSilenceListener = null;
+    }
     _liveKitService = null;
     _bubbleManager.clear();
 
