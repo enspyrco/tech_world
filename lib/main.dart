@@ -1772,7 +1772,7 @@ ButtonStyle toolbarButtonStyle({Color? accent}) => IconButton.styleFrom(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
         side: BorderSide(
-          color: accent?.withValues(alpha: 0.9) ?? Colors.white24,
+          color: accent?.withValues(alpha: 0.9) ?? Colors.white38,
           width: 1,
         ),
       ),
