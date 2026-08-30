@@ -1257,12 +1257,7 @@ class _MyAppState extends State<MyApp> {
                             icon: const Icon(Icons.arrow_back,
                                 color: Colors.white70, size: 20),
                             tooltip: 'Leave room',
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.black54,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
+                            style: toolbarButtonStyle(),
                           ),
                           const SizedBox(width: 8),
                           // Map selector with saved rooms
@@ -1628,13 +1623,8 @@ class _SpellbookButton extends StatelessWidget {
               tooltip: disabled
                   ? 'Spellbook unavailable while casting'
                   : (isOpen ? 'Close spellbook' : 'Open spellbook'),
-              style: IconButton.styleFrom(
-                backgroundColor: isOpen && !disabled
-                    ? arcaneColor.withValues(alpha: 0.2)
-                    : Colors.black54,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              style: toolbarButtonStyle(
+                accent: isOpen && !disabled ? arcaneColor : null,
               ),
             );
           },
@@ -1673,12 +1663,8 @@ class _MapEditorButton extends StatelessWidget {
             size: 20,
           ),
           tooltip: active ? 'Close map editor' : 'Open map editor',
-          style: IconButton.styleFrom(
-            backgroundColor:
-                active ? const Color(0xFF4444FF).withValues(alpha: 0.2) : Colors.black54,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
+          style: toolbarButtonStyle(
+            accent: active ? const Color(0xFF4444FF) : null,
           ),
         );
       },
@@ -1760,17 +1746,40 @@ class _ScreenShareButtonState extends State<_ScreenShareButton> {
         size: 20,
       ),
       tooltip: _sharing ? 'Stop sharing' : 'Share screen',
-      style: IconButton.styleFrom(
-        backgroundColor: _sharing
-            ? Colors.red.shade300.withValues(alpha: 0.2)
-            : Colors.black54,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+      style: toolbarButtonStyle(
+        accent: _sharing ? Colors.red.shade300 : null,
       ),
     );
   }
 }
+
+/// The one definition of how a toolbar button looks.
+///
+/// Toolbar buttons float directly over the game world, so their legibility is
+/// a function of whatever tile happens to be underneath — and that varies from
+/// near-black floor to pale tan brick within a single screen. Seven buttons
+/// each hand-rolled their own colours, and the active state was the accent at
+/// `alpha: 0.2`: a 20%-opacity chip that vanishes into light ground, with an
+/// accent-coloured icon on top of it that vanishes with it.
+///
+/// The fix is to stop letting the background participate. The chip is always a
+/// near-opaque dark scrim, so it supplies its own contrast; state is carried by
+/// the icon colour and a border, both read against the scrim rather than
+/// against the world. A hairline border keeps the chip's edge visible where the
+/// ground is itself dark and the scrim would otherwise dissolve into it.
+ButtonStyle toolbarButtonStyle({Color? accent}) => IconButton.styleFrom(
+      backgroundColor: const Color(0xE6101014),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: accent?.withValues(alpha: 0.9) ?? Colors.white24,
+          width: 1,
+        ),
+      ),
+    );
+
+/// Icon colour for a toolbar button, read against [toolbarButtonStyle]'s scrim.
+Color toolbarIconColor({Color? accent}) => accent ?? Colors.white70;
 
 /// Toolbar button to silence Dreamfinder's audio.
 ///
@@ -1793,18 +1802,13 @@ class _DreamfinderSilenceButton extends StatelessWidget {
         onPressed: () => service.setDreamfinderSilenced(!silenced),
         icon: Icon(
           silenced ? Icons.volume_off : Icons.volume_up,
-          color: silenced ? Colors.amber.shade300 : Colors.white70,
+          color: toolbarIconColor(accent: silenced ? Colors.amber.shade300 : null),
           size: 20,
         ),
         tooltip:
             silenced ? 'Unsilence Dreamfinder' : 'Silence Dreamfinder',
-        style: IconButton.styleFrom(
-          backgroundColor: silenced
-              ? Colors.amber.shade300.withValues(alpha: 0.2)
-              : Colors.black54,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+        style: toolbarButtonStyle(
+          accent: silenced ? Colors.amber.shade300 : null,
         ),
       ),
     );
@@ -1834,17 +1838,12 @@ class _MicMuteButton extends StatelessWidget {
         onPressed: () => service.setMicrophoneEnabled(!enabled),
         icon: Icon(
           enabled ? Icons.mic : Icons.mic_off,
-          color: enabled ? Colors.white70 : Colors.red.shade300,
+          color: toolbarIconColor(accent: enabled ? null : Colors.red.shade300),
           size: 20,
         ),
         tooltip: enabled ? 'Mute microphone' : 'Unmute microphone',
-        style: IconButton.styleFrom(
-          backgroundColor: enabled
-              ? Colors.black54
-              : Colors.red.shade300.withValues(alpha: 0.2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+        style: toolbarButtonStyle(
+          accent: enabled ? null : Colors.red.shade300,
         ),
       ),
     );
@@ -1873,17 +1872,12 @@ class _CameraMuteButton extends StatelessWidget {
         onPressed: () => service.setCameraEnabled(!enabled),
         icon: Icon(
           enabled ? Icons.videocam : Icons.videocam_off,
-          color: enabled ? Colors.white70 : Colors.red.shade300,
+          color: toolbarIconColor(accent: enabled ? null : Colors.red.shade300),
           size: 20,
         ),
         tooltip: enabled ? 'Turn off camera' : 'Turn on camera',
-        style: IconButton.styleFrom(
-          backgroundColor: enabled
-              ? Colors.black54
-              : Colors.red.shade300.withValues(alpha: 0.2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+        style: toolbarButtonStyle(
+          accent: enabled ? null : Colors.red.shade300,
         ),
       ),
     );
