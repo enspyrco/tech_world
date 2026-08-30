@@ -40,8 +40,14 @@ else
 fi
 
 echo "==> Launching Chrome guest client (isolated profile)"
-flutter run -d chrome --web-browser-flag="--user-data-dir=$CHROME_PROFILE" \
+# nohup + disown, NOT a bare `&`. A bare background job dies with its parent
+# when the launcher's process group is torn down -- which is exactly what
+# happened the first time this script ran: it printed a URL that was true when
+# written and dead one second later.
+nohup flutter run -d chrome --web-browser-flag="--user-data-dir=$CHROME_PROFILE" \
   >"$CHROME_LOG" 2>&1 &
+CHROME_PID=$!
+disown "$CHROME_PID" 2>/dev/null || true
 
 echo "==> Waiting for the web app to serve"
 APP_URL=""
@@ -59,6 +65,16 @@ done
 
 if [ -z "$APP_URL" ]; then
   echo "    Web app never served - see $CHROME_LOG" >&2
+  exit 1
+fi
+
+# Re-check AFTER the wait loop. The loop's own probe proves the server came
+# up; it cannot prove the server is still up by the time a human reads the URL.
+# A liveness check that runs before the thing can die is not a liveness check.
+sleep 3
+if ! curl -s --max-time 3 "$APP_URL/" 2>/dev/null | grep -qi "<title>Tech World"; then
+  echo "    Web app came up on $APP_URL and then DIED - see $CHROME_LOG" >&2
+  echo "    (a bare '&' inside a script that exits will do this)" >&2
   exit 1
 fi
 
