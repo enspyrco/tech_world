@@ -24,9 +24,13 @@ void main() {
   // A 7x7 square (radius 3 about (10,10)) — the authored default shape.
   const box = TerritoryRect(minX: 7, minY: 7, maxX: 13, maxY: 13);
 
-  DreamfinderProximitySignal build({bool withService = true}) =>
+  DreamfinderProximitySignal build({
+    bool withService = true,
+    int proximityRadius = 5,
+  }) =>
       DreamfinderProximitySignal(
         liveKitService: () => withService ? service : null,
+        proximityRadius: () => proximityRadius,
       );
 
   setUp(() {
@@ -129,6 +133,7 @@ void main() {
       var present = false;
       final signal = DreamfinderProximitySignal(
         liveKitService: () => present ? service : null,
+        proximityRadius: () => 5,
       );
       signal.update(playerGrid: const Point(10, 10), territory: box);
       verifyNever(() => service.publishDfProximity(near: any(named: 'near')));
@@ -235,6 +240,52 @@ void main() {
       expect(signal.isNear, isFalse,
           reason: 'nothing was ever published as near:true, so a failed '
               'no-op exit must leave the state at false');
+    });
+  });
+
+  group('radius 0 is the kill switch (cage-match #530, Tesla)', () {
+    // Tesla's conjunction: the radius preference OWNS the gate, territory
+    // NARROWS within it. Before this, a player who set "Proximity range" to 0
+    // still had Dreamfinder hearing them while they stood on his square — no
+    // bubble, no audio, and no way to know the bot was listening.
+
+    test('radius 0: standing dead centre is never heard', () {
+      final signal = build(proximityRadius: 0);
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      verifyNever(
+          () => service.publishDfProximity(near: any(named: 'near')));
+      expect(signal.isNear, isFalse);
+    });
+
+    test('radius 0 forces an exit for someone already inside', () {
+      // The preference is applied at room entry, but the gate must be a
+      // function of the CURRENT value, not of how we got here.
+      var radius = 5;
+      final signal = DreamfinderProximitySignal(
+        liveKitService: () => service,
+        proximityRadius: () => radius,
+      );
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      verify(() => service.publishDfProximity(near: true)).called(1);
+
+      radius = 0;
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      verify(() => service.publishDfProximity(near: false)).called(1);
+      expect(signal.isNear, isFalse);
+    });
+
+    test('NULL ARM: a non-zero radius still defers to territory', () {
+      // The radius must not become a DISTANCE test — comparing it to distance
+      // is the coupling PR #529 removed, and would re-open the
+      // heard-from-outside-the-box bug.
+      final signal = build(proximityRadius: 5);
+      // One cell outside the box, well within a radius of 5.
+      signal.update(playerGrid: const Point(14, 10), territory: box);
+      verifyNever(
+          () => service.publishDfProximity(near: any(named: 'near')));
+      // Inside the box: heard.
+      signal.update(playerGrid: const Point(13, 10), territory: box);
+      verify(() => service.publishDfProximity(near: true)).called(1);
     });
   });
 }

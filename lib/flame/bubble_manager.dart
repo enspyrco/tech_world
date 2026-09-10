@@ -79,6 +79,7 @@ class BubbleManager {
     );
     _dfProximity = DreamfinderProximitySignal(
       liveKitService: () => _liveKitService,
+      proximityRadius: () => proximityRadius,
     );
     _avReporter = AvSnapshotReporter(
       diagnostics: diagnostics ?? Locator.maybeLocate<DiagnosticsService>(),

@@ -56,9 +56,15 @@ final _log = Logger('DreamfinderProximitySignal');
 class DreamfinderProximitySignal {
   DreamfinderProximitySignal({
     required LiveKitService? Function() liveKitService,
-  }) : _liveKitService = liveKitService;
+    required int Function() proximityRadius,
+  })  : _liveKitService = liveKitService,
+        _proximityRadius = proximityRadius;
 
   final LiveKitService? Function() _liveKitService;
+
+  /// The user's "Proximity range" preference, read live like every other gate
+  /// in this stack. Only its ZERO-ness is consulted — see [update].
+  final int Function() _proximityRadius;
 
   bool _wasInside = false;
 
@@ -75,7 +81,23 @@ class DreamfinderProximitySignal {
     required Point<int>? playerGrid,
     required TerritoryRect? territory,
   }) {
-    final inside = playerGrid != null &&
+    // CONJUNCTION, NOT SWAP: the radius preference OWNS the kill switch and
+    // territory NARROWS within it.
+    //
+    // Territory replaced distance as the shape of "near" (PR #529) because
+    // Dreamfinder wanders inside his square, so distance-to-sprite let him
+    // hear players standing outside the box. But replacing the metric also
+    // dropped the OWNER: `proximityRadius` is documented as the single source
+    // of all proximity gates, and radius 0 means proximity is off. Without the
+    // `> 0` term, a player who set the preference to zero — plausibly meaning
+    // "leave me alone" — was still heard by the bot while standing on the
+    // square, with no bubble and no audio to tell them so.
+    //
+    // Only the zero-ness is used. Comparing the radius to a DISTANCE here is
+    // exactly the coupling PR #529 removed, and would re-open the
+    // heard-from-outside-the-box bug it fixed.
+    final inside = _proximityRadius() > 0 &&
+        playerGrid != null &&
         territory != null &&
         territory.contains(playerGrid.x, playerGrid.y);
     if (inside == _wasInside) return;
