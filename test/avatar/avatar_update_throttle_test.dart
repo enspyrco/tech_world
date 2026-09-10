@@ -163,4 +163,62 @@ void main() {
       });
     });
   });
+
+  group('a FAILED apply must not latch (cage-match #530, Carnot)', () {
+    // Eighth instance of this branch's confirmed class: local state advanced
+    // beside an unconfirmed effect. The trailing-edge timer cleared `pending`
+    // and advanced `lastApplied` BEFORE calling apply — and a throw inside a
+    // Timer callback is a silent async error. The final spec in a burst was
+    // then lost twice over: nothing applied it, and lastApplied now equalled
+    // it, so a rebroadcast of the same spec deduped away too. Peers rendered a
+    // stale avatar until some DIFFERENT spec arrived.
+
+    test('the trailing update is RETRIED when apply throws', () {
+      fakeAsync((async) {
+        final applied = <AvatarSpec>[];
+        // Fail only the FIRST attempt at spec b — the trailing edge. The
+        // leading edge is already correct: submit() applies before latching,
+        // and a throw there propagates out synchronously with no window
+        // created, so the next submit retries as a fresh leading edge.
+        var failedOnce = false;
+        final throttle = AvatarUpdateThrottle(
+          interval: window,
+          apply: (id, spec) {
+            if (spec == b && !failedOnce) {
+              failedOnce = true;
+              throw StateError('sheet composite failed');
+            }
+            applied.add(spec);
+          },
+        );
+
+        throttle.submit('peer', a); // leading edge applies immediately
+        throttle.submit('peer', b); // queued as pending
+        applied.clear();
+
+        async.elapse(window); // trailing edge fires and THROWS
+        expect(applied, isEmpty);
+
+        async.elapse(window); // next window must retry the same spec
+        expect(applied, equals([b]),
+            reason: 'a spec that never landed must not be recorded as '
+                'applied, or the peer stays stale forever');
+      });
+    });
+
+    test('NULL ARM: a succeeding apply still latches and does not repeat', () {
+      withThrottle((throttle, applied, async) {
+        throttle.submit('peer', a);
+        throttle.submit('peer', b);
+        applied.clear();
+
+        async.elapse(window);
+        expect(applied.map((e) => e.$2), equals([b]));
+
+        async.elapse(window * 3);
+        expect(applied.map((e) => e.$2), equals([b]),
+            reason: 'a landed apply must not be retried');
+      });
+    });
+  });
 }

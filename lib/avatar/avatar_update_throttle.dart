@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar_spec.dart';
+
+final _log = Logger('AvatarUpdateThrottle');
 
 /// Rate-limits how often each peer can change how they look.
 ///
@@ -81,11 +84,27 @@ class AvatarUpdateThrottle {
           _windows.remove(playerId);
           return;
         }
-        window
-          ..pending = null
-          ..lastApplied = pending
-          ..timer = _startTimer(playerId);
-        _apply(playerId, pending);
+        // Schedule the next window FIRST so a retry exists either way.
+        window.timer = _startTimer(playerId);
+        try {
+          _apply(playerId, pending);
+          // Latch ONLY after the apply landed.
+          //
+          // Clearing `pending` and advancing `lastApplied` before the call
+          // recorded the effect as complete whether or not it happened — and a
+          // throw inside a Timer callback is a silent async error. The final
+          // spec in a burst was then lost twice over: nothing applied it, and
+          // `lastApplied` now equalled it, so a rebroadcast of the same spec
+          // deduped away too. Peers rendered a stale avatar until some
+          // DIFFERENT spec arrived.
+          window
+            ..pending = null
+            ..lastApplied = pending;
+        } catch (e) {
+          // Leave `pending` set: the window just scheduled will retry it.
+          _log.warning('avatar apply failed for $playerId — retrying next '
+              'window', e);
+        }
       });
 }
 
