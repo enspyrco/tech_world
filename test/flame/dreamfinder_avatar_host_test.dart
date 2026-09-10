@@ -233,6 +233,36 @@ void main() {
     // silent no-op for the rest of the session — the avatar simply never came
     // back, with one warning in the log to say why.
 
+    test('a bridge that finishes NOT READY also releases the slot', () async {
+      // Confirming round, Carnot: the first version of this fix closed only
+      // the THROWING door. An initialize that RESOLVES while leaving
+      // isReady == false never reaches catchError, so the slot stayed held by
+      // something that would never be ready and every later arrival was a
+      // no-op exactly as before.
+      final first = _FakeBridge(readyWhenDone: false);
+      final second = _FakeBridge();
+      var built = 0;
+      final host = build(
+        onReady: () {},
+        bridgeFactory: (_) {
+          built++;
+          return built == 1 ? first : second;
+        },
+      );
+
+      host.start();
+      first.completeInitialize(); // resolves, but never becomes ready
+      await pumpEventQueue();
+
+      expect(first.disposeCount, 1,
+          reason: 'the bridge owns an iframe — dropping it without disposing '
+              'leaks it, and stop() disposes for the same reason');
+
+      host.start();
+      expect(built, 2,
+          reason: 'a bridge that will never be ready must not hold the slot');
+    });
+
     test('a later start() builds a NEW bridge after a failure', () async {
       final first = _FakeBridge();
       final second = _FakeBridge();

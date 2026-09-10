@@ -81,6 +81,22 @@ class DreamfinderAvatarHost {
       if (_bridge?.isReady == true) {
         _log.info('Dreamfinder avatar bridge ready — refreshing bubble');
         _onReady();
+      } else if (identical(_bridge, bridge)) {
+        // Completed WITHOUT becoming ready — a timeout folded into a non-ready
+        // state, an iframe that loaded but failed to capture, or any
+        // implementation that reports failure through state rather than an
+        // exception. `catchError` never fires for that, so an earlier version
+        // of this fix closed only the throwing door and left this one open:
+        // the slot stayed held by something that would never be ready, and
+        // `start()`'s `_bridge != null` guard made every later Dreamfinder
+        // arrival a no-op exactly as before.
+        //
+        // Disposed as well as cleared, matching [stop] — the bridge owns an
+        // iframe, and dropping the reference without disposing leaks it.
+        _log.warning('Dreamfinder avatar bridge initialized but never became '
+            'ready — releasing the slot');
+        bridge.dispose();
+        _bridge = null;
       }
     }).catchError((Object e) {
       _log.warning('Dreamfinder avatar bridge failed to initialize: $e');
