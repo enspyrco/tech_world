@@ -73,12 +73,18 @@ void main() {
       expect(signal.isNear, isFalse);
     });
 
-    test('stepping over the edge flips exactly once each way', () {
+    test('stepping over the edge flips exactly once each way', () async {
+      // Pumped between crossings: at most ONE publish is in flight, so a later
+      // desire waits for the outstanding one rather than racing it. In the
+      // game loop these are separate frames; in a test they are separate
+      // microtask turns.
       final signal = build();
       signal.update(playerGrid: const Point(14, 10), territory: box); // out
       signal.update(playerGrid: const Point(13, 10), territory: box); // in
       signal.update(playerGrid: const Point(12, 10), territory: box); // deeper
+      await pumpEventQueue();
       signal.update(playerGrid: const Point(14, 10), territory: box); // out
+      await pumpEventQueue();
       verify(() => service.publishDfProximity(near: true)).called(1);
       verify(() => service.publishDfProximity(near: false)).called(1);
     });
@@ -104,18 +110,23 @@ void main() {
   });
 
   group('absence forces an exit', () {
-    test('a null territory (DF absent) exits a player who was inside', () {
+    test('a null territory (DF absent) exits a player who was inside',
+        () async {
       final signal = build();
       signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
       signal.update(playerGrid: const Point(10, 10), territory: null);
+      await pumpEventQueue();
       expect(signal.isNear, isFalse);
       verify(() => service.publishDfProximity(near: false)).called(1);
     });
 
-    test('a null playerGrid (no local player) exits too', () {
+    test('a null playerGrid (no local player) exits too', () async {
       final signal = build();
       signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
       signal.update(playerGrid: null, territory: box);
+      await pumpEventQueue();
       expect(signal.isNear, isFalse);
       verify(() => service.publishDfProximity(near: false)).called(1);
     });
@@ -144,17 +155,58 @@ void main() {
   });
 
   group('reset', () {
-    test('publishes an unconditional exit for a player who leaves', () {
+    // CONTRACT CHANGE, deliberate. reset() used to publish an exit
+    // UNCONDITIONALLY, including when the bot had never been told anyone was
+    // near. That belt-and-braces existed because the old latch could not be
+    // trusted: it advanced at send time whether or not the send landed, so the
+    // teardown path could not tell a real "near: true" from a phantom one and
+    // had to assume the worst.
+    //
+    // With confirmed state, that doubt is gone. reset() is now just
+    // `_desired = false` down the same reconcile path as everything else, so
+    // it sends an exit exactly when the bot believes otherwise and stays quiet
+    // when it does not. Removing the coupling removed the reason for the
+    // redundant message, rather than keeping the message as a guard.
+
+    test('publishes an exit for a player who was near', () async {
       final signal = build();
       signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
       signal.reset();
+      await pumpEventQueue();
       expect(signal.isNear, isFalse);
       verify(() => service.publishDfProximity(near: false)).called(1);
     });
 
-    test('exits even when never near — the bot may hold stale state', () {
+    test('is SILENT when the bot already believes the player is not near',
+        () async {
+      // A bot that was told nothing does not think anyone is near it, and a
+      // fresh agent-* dispatch starts the same way — so there is nothing to
+      // correct and nothing worth a message.
       build().reset();
-      verify(() => service.publishDfProximity(near: false)).called(1);
+      await pumpEventQueue();
+      verifyNever(
+          () => service.publishDfProximity(near: any(named: 'near')));
+    });
+
+    test('a player who leaves and re-enters is re-announced to a NEW agent',
+        () async {
+      // The case that made the old unconditional exit feel necessary, and the
+      // one this design has to get right: Dreamfinder leaves, a fresh agent-*
+      // arrives, and the player never moved.
+      final signal = build();
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
+
+      signal.reset(); // DF left; the room survives
+      await pumpEventQueue();
+      expect(signal.isNear, isFalse);
+
+      // New agent, same square, same standing player.
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
+      expect(signal.isNear, isTrue);
+      verify(() => service.publishDfProximity(near: true)).called(2);
     });
   });
 
@@ -257,7 +309,7 @@ void main() {
       expect(signal.isNear, isFalse);
     });
 
-    test('radius 0 forces an exit for someone already inside', () {
+    test('radius 0 forces an exit for someone already inside', () async {
       // The preference is applied at room entry, but the gate must be a
       // function of the CURRENT value, not of how we got here.
       var radius = 5;
@@ -266,10 +318,12 @@ void main() {
         proximityRadius: () => radius,
       );
       signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
       verify(() => service.publishDfProximity(near: true)).called(1);
 
       radius = 0;
       signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
       verify(() => service.publishDfProximity(near: false)).called(1);
       expect(signal.isNear, isFalse);
     });

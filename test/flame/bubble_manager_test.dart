@@ -379,9 +379,10 @@ void main() {
       // dead centre of this box.
       const box = TerritoryRect(minX: 7, minY: 7, maxX: 13, maxY: 13);
 
-      test('enters on entering the square, exits on leaving it', () {
+      test('enters on entering the square, exits on leaving it', () async {
         manager.debugUpdateDreamfinderProximity(
             playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
 
         // Still inside — no re-emit.
@@ -390,24 +391,27 @@ void main() {
         // Out of the square.
         manager.debugUpdateDreamfinderProximity(
             playerGrid: const Point(14, 13), territory: box);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
         // Exactly one enter + one exit across the whole sweep.
         verifyNever(() => mockLiveKit.publishDfProximity(near: any(named: 'near')));
       });
 
       test('handleDreamfinderLeft drops the latch so the NEXT agent is told',
-          () {
+          () async {
         // Tesla, cage-match #530 slice 2a. clear() reset the signal on room
         // teardown; the LEAVE path did not — and the room outlives a
         // Dreamfinder leave, so the latch outlived the participant.
         manager.debugUpdateDreamfinderProximity(
             playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
 
         // Dreamfinder leaves. The agents SDK gives each dispatch a fresh
         // `agent-*` identity, so the next one is a NEW participant that was
         // never told anything.
         manager.handleDreamfinderLeft();
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
 
         // New agent, same square, player has not moved. Without the reset,
@@ -415,6 +419,7 @@ void main() {
         // never told the player is standing right there.
         manager.debugUpdateDreamfinderProximity(
             playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
       });
 
@@ -426,12 +431,14 @@ void main() {
         verifyNever(() => mockLiveKit.publishDfProximity(near: any(named: 'near')));
       });
 
-      test('DF absent (null territory) forces an exit', () {
+      test('DF absent (null territory) forces an exit', () async {
         manager.debugUpdateDreamfinderProximity(
             playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
         manager.debugUpdateDreamfinderProximity(
             playerGrid: const Point(10, 10), territory: null);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
       });
 
@@ -456,11 +463,13 @@ void main() {
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
       });
 
-      test('clear() emits a final exit when the player was near DF', () {
+      test('clear() emits a final exit when the player was near DF', () async {
         manager.debugUpdateDreamfinderProximity(
-            playerGrid: const Point(10, 10), territory: box); // inside
+            playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue(); // inside
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
         manager.clear();
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
       });
     });

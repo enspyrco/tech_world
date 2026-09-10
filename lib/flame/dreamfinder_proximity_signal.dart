@@ -63,20 +63,39 @@ class DreamfinderProximitySignal {
   final LiveKitService? Function() _liveKitService;
 
   /// The user's "Proximity range" preference, read live like every other gate
-  /// in this stack. Only its ZERO-ness is consulted — see [update].
+  /// in this stack. Only its ZERO-ness is consulted — see [_recompute].
   final int Function() _proximityRadius;
 
-  bool _wasInside = false;
+  /// What the bot SHOULD believe. A pure function of the world, recomputed
+  /// every frame, carrying no history.
+  bool _desired = false;
 
-  /// Whether the last successfully-published state was "inside the territory".
-  bool get isNear => _wasInside;
+  /// What the bot currently believes.
+  ///
+  /// Starts `false` because that is ACCURATE, not merely convenient: a bot
+  /// that has been told nothing does not think anyone is near it. Modelling
+  /// the initial state as "unknown" instead would make the first reconcile
+  /// publish an unsolicited `near: false` for every player on every room
+  /// entry — chatter that says nothing the bot did not already assume.
+  bool _confirmed = false;
 
-  /// Recompute and publish on transition.
+  /// The value of the publish currently outstanding, or null if none.
+  ///
+  /// At most ONE publish is ever in flight. That single fact is what makes
+  /// out-of-order delivery unrepresentable rather than compensated-for.
+  bool? _inFlight;
+
+  /// Whether the bot currently believes the player is inside the territory.
+  ///
+  /// Reports what was CONFIRMED, never what was merely attempted.
+  bool get isNear => _confirmed;
+
+  /// Recompute the desired state from the world and reconcile toward it.
   ///
   /// [territory] is null when Dreamfinder is absent or the map authors no
   /// square, and [playerGrid] is null when there is no local player — either
-  /// forces an exit, so the bot never keeps hearing a player it can no longer
-  /// locate.
+  /// makes the desired state `false` on its own, with no teardown path needing
+  /// to remember to say so.
   void update({
     required Point<int>? playerGrid,
     required TerritoryRect? territory,
@@ -88,65 +107,73 @@ class DreamfinderProximitySignal {
     // Dreamfinder wanders inside his square, so distance-to-sprite let him
     // hear players standing outside the box. But replacing the metric also
     // dropped the OWNER: `proximityRadius` is documented as the single source
-    // of all proximity gates, and radius 0 means proximity is off. Without the
-    // `> 0` term, a player who set the preference to zero — plausibly meaning
-    // "leave me alone" — was still heard by the bot while standing on the
-    // square, with no bubble and no audio to tell them so.
+    // of all proximity gates, and radius 0 means proximity is off.
     //
     // Only the zero-ness is used. Comparing the radius to a DISTANCE here is
     // exactly the coupling PR #529 removed, and would re-open the
     // heard-from-outside-the-box bug it fixed.
-    final inside = _proximityRadius() > 0 &&
+    _desired = _proximityRadius() > 0 &&
         playerGrid != null &&
         territory != null &&
         territory.contains(playerGrid.x, playerGrid.y);
-    if (inside == _wasInside) return;
-
-    final service = _liveKitService();
-    if (service == null) return; // can't emit — don't latch; retry next frame
-
-    _wasInside = inside;
-    // The latch above is PROVISIONAL until the publish actually lands.
-    //
-    // `publishDfProximity` is async; calling it unawaited from this
-    // per-frame method meant a rejected publish left the transition
-    // consumed locally and never retried — the exact "signal lost forever"
-    // bug the invariant above names, escaping through the one door the
-    // `service == null` guard does not cover.
-    //
-    // Un-latch on failure so the next frame re-fires the transition. Guard
-    // the revert on the latch still holding OUR value: a newer transition
-    // may have latched the opposite since, and clobbering it would resurrect
-    // the stale state we are trying to avoid.
-    service.publishDfProximity(near: inside).catchError((Object e) {
-      if (_wasInside == inside) _wasInside = !inside;
-      _log.warning('df-proximity publish failed (near: $inside) — un-latched, '
-          'will retry next frame', e);
-    });
+    _pump();
   }
 
-  /// Teardown exit: tell Dreamfinder the player is gone.
+  /// Teardown exit: the player is leaving, so the bot must stop hearing them.
   ///
-  /// Unconditional, unlike [update] — a player leaving the room must not leave
-  /// the bot holding a stale `near: true`.
+  /// Just a desired-state change down the same path as everything else: there
+  /// is no separate teardown mechanism that a leave path could forget to call,
+  /// and none to keep in sync with [update].
   void reset() {
-    // Capture the state we are leaving BEFORE clearing it.
-    //
-    // Restoring a blind `true` on failure was wrong: when the last published
-    // state was already `false`, this exit is a no-op, and a failed no-op
-    // would have invented a `near: true` that was never published — making
-    // `isNear` lie and letting a later update emit a spurious exit. Only the
-    // value that was actually there can be restored.
-    final previous = _wasInside;
-    _wasInside = false;
-    // Same provisional-latch rule as [update]: if the teardown exit never
-    // reaches the bot, do not let the cleared local state claim it did.
-    _liveKitService()?.publishDfProximity(near: false).catchError((Object e) {
-      if (!_wasInside) _wasInside = previous;
-      if (previous) {
-        _log.warning('df-proximity teardown exit failed — bot may hold a '
-            'stale near:true', e);
-      }
+    _desired = false;
+    _pump();
+  }
+
+  /// Reconcile: if the bot's confirmed belief differs from what we want it to
+  /// believe, and nothing is already in flight, send the difference.
+  ///
+  /// Three properties hold BY CONSTRUCTION here, and each replaces a guard:
+  ///
+  ///  * Nothing is latched optimistically, so no handler ever has to decide
+  ///    whether the state it wants to revert is still its own.
+  ///  * At most one publish is outstanding, so two sends can never settle out
+  ///    of order. A newer desire waits, then wins.
+  ///  * Failure needs no compensation: [_confirmed] simply does not advance,
+  ///    and the next frame reconciles toward the CURRENT desire rather than
+  ///    replaying a stale one. An absent service behaves identically.
+  void _pump() {
+    if (_inFlight != null) return;
+    if (_confirmed == _desired) return;
+
+    final service = _liveKitService();
+    if (service == null) return;
+
+    final sending = _desired;
+    _inFlight = sending;
+    service.publishDfProximity(near: sending).then((_) {
+      // Safe to record unconditionally: this was the only publish in flight,
+      // so it is necessarily the last thing the bot heard.
+      _confirmed = sending;
+      _inFlight = null;
+      // Latest-wins: if the world moved while this was in flight, send the
+      // difference now rather than waiting for another frame. Terminates
+      // because each success advances `_confirmed`, so the recursion stops as
+      // soon as it equals `_desired`.
+      _pump();
+    }).catchError((Object e) {
+      // Release the slot but do NOT re-pump.
+      //
+      // Retrying here would spin: a persistently failing publish never
+      // advances `_confirmed`, so an immediate re-pump sends again, fails
+      // again, and loops with no air gap — a tight retry storm rather than a
+      // recovery. (Found by this class's own tests hanging.) The next
+      // `update()` call retries instead, which is frame-paced and bounded by
+      // the game loop rather than by the failure rate.
+      _inFlight = null;
+      _log.warning(
+          'df-proximity publish failed (near: $sending) — not confirmed, '
+          'will retry on the next frame',
+          e);
     });
   }
 }
