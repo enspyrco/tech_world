@@ -395,6 +395,29 @@ void main() {
         verifyNever(() => mockLiveKit.publishDfProximity(near: any(named: 'near')));
       });
 
+      test('handleDreamfinderLeft drops the latch so the NEXT agent is told',
+          () {
+        // Tesla, cage-match #530 slice 2a. clear() reset the signal on room
+        // teardown; the LEAVE path did not — and the room outlives a
+        // Dreamfinder leave, so the latch outlived the participant.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
+        verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
+
+        // Dreamfinder leaves. The agents SDK gives each dispatch a fresh
+        // `agent-*` identity, so the next one is a NEW participant that was
+        // never told anything.
+        manager.handleDreamfinderLeft();
+        verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
+
+        // New agent, same square, player has not moved. Without the reset,
+        // inside == _wasInside and update() returns early — the new agent is
+        // never told the player is standing right there.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
+        verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
+      });
+
       test('standing just outside the box is never heard', () {
         // The regression: under the old distance rule this player WAS heard,
         // because DF wanders inside his square and could be one cell away.

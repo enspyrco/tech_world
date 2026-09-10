@@ -561,6 +561,17 @@ class BubbleManager {
   /// Clean up Dreamfinder-specific state when the participant leaves.
   void handleDreamfinderLeft() {
     dreamfinderIdentity = dreamfinderBot.identity;
+    // Drop the proximity latch with the body. [clear] already does this on room
+    // teardown; the leave path did not, and the room OUTLIVES a Dreamfinder
+    // leave, so the latch outlived the participant it described.
+    //
+    // The consequence is not a stale flag, it is a lost signal. The agents SDK
+    // gives each dispatch a fresh `agent-*` identity, so the next Dreamfinder
+    // is a NEW participant that was never told anything — while the signal
+    // still reads `near: true` from the departed one. A player standing inside
+    // the territory then makes `inside == _wasInside`, [DreamfinderProximitySignal.update]
+    // returns early, and the new agent is never told the player is there.
+    _dfProximity.reset();
     _dfAvatar.stop();
   }
 
