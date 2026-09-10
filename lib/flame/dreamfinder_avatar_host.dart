@@ -84,6 +84,15 @@ class DreamfinderAvatarHost {
       }
     }).catchError((Object e) {
       _log.warning('Dreamfinder avatar bridge failed to initialize: $e');
+      // Release the slot. `start()` early-returns on `_bridge != null`, so a
+      // bridge left occupying it after a FAILED initialize made every later
+      // Dreamfinder arrival a silent no-op for the rest of the session — a
+      // latch held by something that was never ready to send.
+      //
+      // Guarded on identity, not just non-null: a `stop()` or a newer `start()`
+      // may already have replaced the field, and clearing that one would undo
+      // a live bridge on behalf of a dead one.
+      if (identical(_bridge, bridge)) _bridge = null;
     });
   }
 

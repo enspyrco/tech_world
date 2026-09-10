@@ -25,6 +25,11 @@ class _FakeBridge implements DreamfinderAvatarBridge {
     if (!_gate.isCompleted) _gate.complete();
   }
 
+  /// Fail the in-flight initialize, so the host's error path can be driven.
+  void failInitialize(Object error) {
+    if (!_gate.isCompleted) _gate.completeError(error);
+  }
+
   @override
   Future<void> initialize() => _gate.future;
 
@@ -218,6 +223,55 @@ void main() {
 
       host.stop();
       expect(host.avatarLoadProgress, isNull);
+    });
+  });
+
+  group('a FAILED initialize must not latch the slot (cage-match #530, Tesla)',
+      () {
+    // start() early-returns on `_bridge != null`. A bridge left occupying the
+    // slot after a failed initialize made every later Dreamfinder arrival a
+    // silent no-op for the rest of the session — the avatar simply never came
+    // back, with one warning in the log to say why.
+
+    test('a later start() builds a NEW bridge after a failure', () async {
+      final first = _FakeBridge();
+      final second = _FakeBridge();
+      var built = 0;
+      final host = build(
+        onReady: () {},
+        bridgeFactory: (_) {
+          built++;
+          return built == 1 ? first : second;
+        },
+      );
+
+      host.start();
+      expect(built, 1);
+      first.failInitialize(StateError('iframe blocked'));
+      await pumpEventQueue();
+
+      // The next Dreamfinder arrives.
+      host.start();
+      expect(built, 2,
+          reason: 'a failed bridge must release the slot, or the avatar never '
+              'returns for the rest of the session');
+    });
+
+    test('NULL ARM: a SUCCEEDING initialize still holds the slot', () {
+      final bridge = _FakeBridge();
+      var built = 0;
+      final host = build(
+        onReady: () {},
+        bridgeFactory: (_) {
+          built++;
+          return bridge;
+        },
+      );
+      host.start();
+      bridge.completeInitialize();
+      host.start();
+      expect(built, 1,
+          reason: 'a healthy bridge must not be rebuilt on every start()');
     });
   });
 }
