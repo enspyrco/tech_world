@@ -152,13 +152,32 @@ class PlayerComponent extends SpriteAnimationGroupComponent<PlayerAnimState>
     _releaseSheet();
     final spec = avatarSpec;
     if (spec == null) return game.images.fromCache(_spriteAsset);
+    // Latch AFTER the refcount actually moves.
+    //
+    // Assigning `_heldSpec` first meant a throwing `acquire` left this
+    // component claiming a hold it never took, so the next `_releaseSheet`
+    // would release a spec it never acquired.
+    //
+    // Scope that honestly: AvatarComposer.release is defensive — an uncached
+    // spec logs and no-ops, and so does a refCount already at zero. A throwing
+    // acquire fails inside `_compose` for a spec with no entry yet, so today
+    // the phantom release lands on the no-op path and costs one warning line.
+    // This is therefore bookkeeping hygiene, not a live corruption fix. It is
+    // still worth doing: the no-op is a property of the COMPOSER, and this
+    // component should not be relying on its collaborator's forgiveness to
+    // stay balanced.
+    final image = game.avatarComposer.acquire(spec);
     _heldSpec = spec;
-    return game.avatarComposer.acquire(spec);
+    return image;
   }
 
   void _releaseSheet() {
     final held = _heldSpec;
     if (held == null) return;
+    // Cleared BEFORE the release, deliberately, and this order is the opposite
+    // of [_acquireSheet]'s on purpose: if `release` throws we leak one hold,
+    // whereas retrying a release we already made would decrement twice. Between
+    // a leak and a double-decrement, the leak is the recoverable one.
     _heldSpec = null;
     game.avatarComposer.release(held);
   }
