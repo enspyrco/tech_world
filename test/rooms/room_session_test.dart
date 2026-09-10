@@ -648,11 +648,11 @@ void main() {
     });
     tearDown(() => unregisterSink(sink));
 
-    test('camera fails, mic succeeds: still reports the mic as PUBLISHING',
-        () async {
+    test('camera fails, mic succeeds: the live mic is ROLLED BACK', () async {
       when(() => liveKit.setCameraEnabled(true))
           .thenAnswer((_) async => throw StateError('no camera device'));
       when(() => liveKit.setMicrophoneEnabled(true)).thenAnswer((_) async {});
+      when(() => liveKit.setMicrophoneEnabled(false)).thenAnswer((_) async {});
 
       final session = _createSession(liveKitService: liveKit);
 
@@ -660,14 +660,33 @@ void main() {
         session.enableMedia(),
         throwsA(isA<StateError>().having((e) => e.message, 'message',
             allOf(contains('camera=FAILED'),
-                contains('microphone=ON AND PUBLISHING')))),
-        reason: 'the error must NAME the live mic, or the caller logs a '
-            'generic setup-failure over a hot microphone',
+                contains('rolled back microphone')))),
       );
 
-      // The mic really was turned on, so the record must say so.
-      expect(captured.whereType<MediaEnabled>(), hasLength(1),
-          reason: 'a partial-on room is exactly the state worth recording');
+      // THE POINT: media the user has been told is off must not be on.
+      verify(() => liveKit.setMicrophoneEnabled(false)).called(1);
+      expect(captured.whereType<MediaEnabled>(), isEmpty,
+          reason: 'nothing is intentionally live, so recording "media '
+              'enabled" would put a false statement in the log');
+    });
+
+    test('rollback failure is NAMED, not swallowed', () async {
+      when(() => liveKit.setCameraEnabled(true))
+          .thenAnswer((_) async => throw StateError('no camera'));
+      when(() => liveKit.setMicrophoneEnabled(true)).thenAnswer((_) async {});
+      when(() => liveKit.setMicrophoneEnabled(false))
+          .thenAnswer((_) async => throw StateError('rollback died'));
+
+      final session = _createSession(liveKitService: liveKit);
+
+      await expectLater(
+        session.enableMedia(),
+        throwsA(isA<StateError>().having((e) => e.message, 'message',
+            allOf(contains('ROLLBACK FAILED for microphone'),
+                contains('may still be publishing')))),
+        reason: 'a hot mic this layer could not switch off is exactly the '
+            'state that must not be reported as a plain setup failure',
+      );
     });
 
     test('both succeed: dispatches once and does not throw', () async {

@@ -215,5 +215,26 @@ void main() {
           reason: 'if the exit never reached the bot, the cleared local state '
               'must not claim it did — the bot still holds near:true');
     });
+
+    test('a failed NO-OP exit must not invent a near:true that never was',
+        () async {
+      // Round-2 finding: restoring a blind `true` on reset failure was wrong.
+      // When the last published state was already outside, this exit is a
+      // no-op — and a failed no-op would mint a `near: true` that was never
+      // published, making isNear lie and letting a later update emit a
+      // spurious exit.
+      when(() => service.publishDfProximity(near: any(named: 'near')))
+          .thenAnswer((_) async => throw StateError('never connected'));
+
+      final signal = build();
+      expect(signal.isNear, isFalse);
+
+      signal.reset();
+      await pumpEventQueue();
+
+      expect(signal.isNear, isFalse,
+          reason: 'nothing was ever published as near:true, so a failed '
+              'no-op exit must leave the state at false');
+    });
   });
 }

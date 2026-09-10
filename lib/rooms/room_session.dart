@@ -317,19 +317,46 @@ class RoomSession {
     final cameraOn = outcomes[0];
     final micOn = outcomes[1];
 
-    // Dispatch on ANY live track: the log's job is to record what is actually
-    // being published, not only the all-or-nothing case. A partial-on room is
-    // exactly the state worth having in the record.
-    if (cameraOn || micOn) dispatch([MediaEnabled()]);
-
-    if (!cameraOn || !micOn) {
-      // Name which track is live IN THE ERROR, so the caller's warning log
-      // carries the honest state instead of a generic setup-failed line.
-      throw StateError(
-        'enableMedia partial: camera=${cameraOn ? 'on' : 'FAILED'}, '
-        'microphone=${micOn ? 'ON AND PUBLISHING' : 'failed'}',
-      );
+    if (cameraOn && micOn) {
+      dispatch([MediaEnabled()]);
+      return;
     }
+
+    // PARTIAL FAILURE — FAIL CLOSED: roll the surviving track back off.
+    //
+    // An earlier revision of this fix only made the ERROR MESSAGE honest and
+    // left the successful track publishing. That fixed the reporting half and
+    // left the behaviour half in place: with join-unmuted, a camera failure
+    // plus a microphone success meant the caller logged "Camera/mic setup
+    // failed" (main.dart Wire C) while a live mic broadcast to the room. The
+    // user is told setup failed; the correct meaning of that sentence is that
+    // nothing is publishing.
+    //
+    // Media the user has been told is off must not be on. Rollback is
+    // best-effort — if it also fails there is nothing further this layer can
+    // do — so its outcome is named in the error rather than swallowed.
+    final rolledBack = <String>[];
+    final rollbackFailed = <String>[];
+    if (cameraOn) {
+      (await _settle(liveKitService.setCameraEnabled(false)))
+          ? rolledBack.add('camera')
+          : rollbackFailed.add('camera');
+    }
+    if (micOn) {
+      (await _settle(liveKitService.setMicrophoneEnabled(false)))
+          ? rolledBack.add('microphone')
+          : rollbackFailed.add('microphone');
+    }
+
+    // No MediaEnabled dispatch on this path: nothing is (intentionally) live,
+    // so recording "media enabled" would put a false statement in the log.
+    throw StateError(
+      'enableMedia failed: camera=${cameraOn ? 'ok' : 'FAILED'}, '
+      'microphone=${micOn ? 'ok' : 'FAILED'}'
+      '${rolledBack.isEmpty ? '' : '; rolled back ${rolledBack.join(" + ")}'}'
+      '${rollbackFailed.isEmpty ? '' : '; ROLLBACK FAILED for '
+          '${rollbackFailed.join(" + ")} — may still be publishing'}',
+    );
   }
 
   /// Run [op] and report whether it landed, never rethrowing.

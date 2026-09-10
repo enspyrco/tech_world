@@ -108,15 +108,23 @@ class DreamfinderProximitySignal {
   /// Unconditional, unlike [update] — a player leaving the room must not leave
   /// the bot holding a stale `near: true`.
   void reset() {
+    // Capture the state we are leaving BEFORE clearing it.
+    //
+    // Restoring a blind `true` on failure was wrong: when the last published
+    // state was already `false`, this exit is a no-op, and a failed no-op
+    // would have invented a `near: true` that was never published — making
+    // `isNear` lie and letting a later update emit a spurious exit. Only the
+    // value that was actually there can be restored.
+    final previous = _wasInside;
     _wasInside = false;
     // Same provisional-latch rule as [update]: if the teardown exit never
     // reaches the bot, do not let the cleared local state claim it did.
-    // Re-latching `true` leaves the object in the state a surviving
-    // [update] call would publish an exit from.
     _liveKitService()?.publishDfProximity(near: false).catchError((Object e) {
-      if (!_wasInside) _wasInside = true;
-      _log.warning('df-proximity teardown exit failed — bot may hold a stale '
-          'near:true', e);
+      if (!_wasInside) _wasInside = previous;
+      if (previous) {
+        _log.warning('df-proximity teardown exit failed — bot may hold a '
+            'stale near:true', e);
+      }
     });
   }
 }
