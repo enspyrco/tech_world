@@ -152,4 +152,68 @@ void main() {
       verify(() => service.publishDfProximity(near: false)).called(1);
     });
   });
+
+  group('publish failure must not latch (cage-match #530, findings 1+2)', () {
+    // RED-PROVING INTENT: against the pre-fix code every test in this group
+    // fails. `update` latched `_wasInside` and then called the async publish
+    // unawaited, so a rejected publish consumed the transition locally and it
+    // never re-fired — the "signal lost forever" bug the file's own invariant
+    // names, escaping through the one door the `service == null` guard did
+    // not cover.
+
+    test('a failed publish leaves the transition un-latched so it retries',
+        () async {
+      when(() => service.publishDfProximity(near: any(named: 'near')))
+          .thenAnswer((_) async => throw StateError('data channel gone'));
+
+      final signal = build();
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
+
+      // The publish was attempted...
+      verify(() => service.publishDfProximity(near: true)).called(1);
+      // ...but it failed, so the signal must NOT believe the bot knows.
+      expect(signal.isNear, isFalse,
+          reason: 'a rejected publish must un-latch, or the enter is lost '
+              'forever and Dreamfinder never hears this player');
+
+      // Next frame, still inside: the transition must fire AGAIN.
+      when(() => service.publishDfProximity(near: any(named: 'near')))
+          .thenAnswer((_) async {});
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
+
+      verify(() => service.publishDfProximity(near: true)).called(1);
+      expect(signal.isNear, isTrue);
+    });
+
+    test('a successful publish still latches exactly once', () async {
+      // NULL ARM: the failure path must not make the healthy path chatty.
+      final signal = build();
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
+      signal.update(playerGrid: const Point(11, 11), territory: box);
+      await pumpEventQueue();
+
+      verify(() => service.publishDfProximity(near: true)).called(1);
+      expect(signal.isNear, isTrue);
+    });
+
+    test('a failed teardown exit re-latches so a later update can resend',
+        () async {
+      final signal = build();
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
+      expect(signal.isNear, isTrue);
+
+      when(() => service.publishDfProximity(near: any(named: 'near')))
+          .thenAnswer((_) async => throw StateError('leaving'));
+      signal.reset();
+      await pumpEventQueue();
+
+      expect(signal.isNear, isTrue,
+          reason: 'if the exit never reached the bot, the cleared local state '
+              'must not claim it did — the bot still holds near:true');
+    });
+  });
 }

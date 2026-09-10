@@ -299,12 +299,45 @@ class RoomSession {
   /// (`_MicMuteButton`, main.dart), rather than by every remote player every
   /// time they enter.
   Future<void> enableMedia() async {
-    await Future.wait([
-      liveKitService.setCameraEnabled(true),
-      liveKitService.setMicrophoneEnabled(true),
+    // Settle BOTH tracks independently rather than `Future.wait`ing on the
+    // raw futures.
+    //
+    // `Future.wait` rejects on the FIRST error without cancelling its
+    // sibling. Under the old join-muted default that was near-cosmetic: a
+    // camera failure propagated while the microphone had never been asked to
+    // turn on. Join-unmuted changes the failure mode into a privacy one — the
+    // mic can publish successfully, the camera can fail, and the throw then
+    // skips the `MediaEnabled` dispatch and surfaces to the caller as
+    // "Camera/mic setup failed" (main.dart Wire C) while the user is live on
+    // mic and has been told the opposite.
+    final outcomes = await Future.wait([
+      _settle(liveKitService.setCameraEnabled(true)),
+      _settle(liveKitService.setMicrophoneEnabled(true)),
     ]);
-    dispatch([MediaEnabled()]);
+    final cameraOn = outcomes[0];
+    final micOn = outcomes[1];
+
+    // Dispatch on ANY live track: the log's job is to record what is actually
+    // being published, not only the all-or-nothing case. A partial-on room is
+    // exactly the state worth having in the record.
+    if (cameraOn || micOn) dispatch([MediaEnabled()]);
+
+    if (!cameraOn || !micOn) {
+      // Name which track is live IN THE ERROR, so the caller's warning log
+      // carries the honest state instead of a generic setup-failed line.
+      throw StateError(
+        'enableMedia partial: camera=${cameraOn ? 'on' : 'FAILED'}, '
+        'microphone=${micOn ? 'ON AND PUBLISHING' : 'failed'}',
+      );
+    }
   }
+
+  /// Run [op] and report whether it landed, never rethrowing.
+  ///
+  /// Exists so one track's failure cannot mask the other's success — see
+  /// [enableMedia].
+  static Future<bool> _settle(Future<void> op) =>
+      op.then((_) => true, onError: (Object _, StackTrace __) => false);
 
   // ---------------------------------------------------------------------------
   // Reconnection

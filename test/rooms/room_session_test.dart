@@ -3,14 +3,18 @@ import 'dart:math';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:livekit_client/livekit_client.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/rooms/presence_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_session.dart';
+import 'package:tech_world/timer/room_timer_message.dart';
 import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
@@ -94,8 +98,10 @@ RoomSession _createSession({
   void Function()? onStateChanged,
   Future<void> Function()? onReconnectWorld,
   void Function()? onRoomDeleted,
+  LiveKitService? liveKitService,
 }) {
   return RoomSession.create(
+    liveKitService: liveKitService,
     room: room,
     userId: userId,
     displayName: displayName,
@@ -604,6 +610,89 @@ void main() {
 
       await session.leave();
       await lostCtrl.close();
+    });
+  });
+
+  group('enableMedia partial-on (cage-match #530, finding 3)', () {
+    // RED-PROVING INTENT: against the pre-fix `Future.wait([camera, mic])`,
+    // the first arm fails. Future.wait rejects on the FIRST error without
+    // cancelling its sibling, so a camera failure propagated while the mic
+    // published successfully — the throw skipped the MediaEnabled dispatch and
+    // reached main.dart's Wire C as "Camera/mic setup failed" while the user
+    // was live on mic and had been told the opposite. Benign under the old
+    // join-muted default; a live-audio problem under join-unmuted.
+
+    late _FakeLiveKit liveKit;
+    late List<AppEvent> captured;
+    late void Function(AppEvent) sink;
+
+    setUp(() {
+      liveKit = _FakeLiveKit();
+      // RoomSession.create builds a ChatService that subscribes immediately,
+      // so the streams it touches must exist before construction.
+      when(() => liveKit.dataReceived)
+          .thenAnswer((_) => const Stream<DataChannelMessage>.empty());
+      when(() => liveKit.connectionLost)
+          .thenAnswer((_) => const Stream<String?>.empty());
+      when(() => liveKit.participantJoined)
+          .thenAnswer((_) => const Stream<RemoteParticipant>.empty());
+      when(() => liveKit.participantLeft)
+          .thenAnswer((_) => const Stream<RemoteParticipant>.empty());
+      when(() => liveKit.remoteParticipants)
+          .thenReturn(const <String, RemoteParticipant>{});
+      when(() => liveKit.roomTimerReceived)
+          .thenAnswer((_) => const Stream<RoomTimerMessage>.empty());
+      captured = [];
+      sink = captured.add;
+      registerSink(sink);
+    });
+    tearDown(() => unregisterSink(sink));
+
+    test('camera fails, mic succeeds: still reports the mic as PUBLISHING',
+        () async {
+      when(() => liveKit.setCameraEnabled(true))
+          .thenAnswer((_) async => throw StateError('no camera device'));
+      when(() => liveKit.setMicrophoneEnabled(true)).thenAnswer((_) async {});
+
+      final session = _createSession(liveKitService: liveKit);
+
+      await expectLater(
+        session.enableMedia(),
+        throwsA(isA<StateError>().having((e) => e.message, 'message',
+            allOf(contains('camera=FAILED'),
+                contains('microphone=ON AND PUBLISHING')))),
+        reason: 'the error must NAME the live mic, or the caller logs a '
+            'generic setup-failure over a hot microphone',
+      );
+
+      // The mic really was turned on, so the record must say so.
+      expect(captured.whereType<MediaEnabled>(), hasLength(1),
+          reason: 'a partial-on room is exactly the state worth recording');
+    });
+
+    test('both succeed: dispatches once and does not throw', () async {
+      // NULL ARM — the failure path must not break the healthy path.
+      when(() => liveKit.setCameraEnabled(true)).thenAnswer((_) async {});
+      when(() => liveKit.setMicrophoneEnabled(true)).thenAnswer((_) async {});
+
+      final session = _createSession(liveKitService: liveKit);
+      await session.enableMedia();
+
+      expect(captured.whereType<MediaEnabled>(), hasLength(1));
+    });
+
+    test('both fail: throws and dispatches nothing', () async {
+      // ZERO ARM — proves the instrument can read zero, so hasLength(1) above
+      // is a real signal and not something this suite always reports.
+      when(() => liveKit.setCameraEnabled(true))
+          .thenAnswer((_) async => throw StateError('no camera'));
+      when(() => liveKit.setMicrophoneEnabled(true))
+          .thenAnswer((_) async => throw StateError('no mic'));
+
+      final session = _createSession(liveKitService: liveKit);
+
+      await expectLater(session.enableMedia(), throwsA(isA<StateError>()));
+      expect(captured.whereType<MediaEnabled>(), isEmpty);
     });
   });
 }

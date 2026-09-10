@@ -1,7 +1,10 @@
 import 'dart:math';
 
+import 'package:logging/logging.dart';
 import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+
+final _log = Logger('DreamfinderProximitySignal');
 
 /// Publishes the `df-proximity` enter/exit signal so Dreamfinder knows whose
 /// speech he is allowed to hear.
@@ -81,7 +84,23 @@ class DreamfinderProximitySignal {
     if (service == null) return; // can't emit — don't latch; retry next frame
 
     _wasInside = inside;
-    service.publishDfProximity(near: inside);
+    // The latch above is PROVISIONAL until the publish actually lands.
+    //
+    // `publishDfProximity` is async; calling it unawaited from this
+    // per-frame method meant a rejected publish left the transition
+    // consumed locally and never retried — the exact "signal lost forever"
+    // bug the invariant above names, escaping through the one door the
+    // `service == null` guard does not cover.
+    //
+    // Un-latch on failure so the next frame re-fires the transition. Guard
+    // the revert on the latch still holding OUR value: a newer transition
+    // may have latched the opposite since, and clobbering it would resurrect
+    // the stale state we are trying to avoid.
+    service.publishDfProximity(near: inside).catchError((Object e) {
+      if (_wasInside == inside) _wasInside = !inside;
+      _log.warning('df-proximity publish failed (near: $inside) — un-latched, '
+          'will retry next frame', e);
+    });
   }
 
   /// Teardown exit: tell Dreamfinder the player is gone.
@@ -90,6 +109,14 @@ class DreamfinderProximitySignal {
   /// the bot holding a stale `near: true`.
   void reset() {
     _wasInside = false;
-    _liveKitService()?.publishDfProximity(near: false);
+    // Same provisional-latch rule as [update]: if the teardown exit never
+    // reaches the bot, do not let the cleared local state claim it did.
+    // Re-latching `true` leaves the object in the state a surviving
+    // [update] call would publish an exit from.
+    _liveKitService()?.publishDfProximity(near: false).catchError((Object e) {
+      if (!_wasInside) _wasInside = true;
+      _log.warning('df-proximity teardown exit failed — bot may hold a stale '
+          'near:true', e);
+    });
   }
 }
