@@ -228,7 +228,7 @@ void main() {
 
       test('enables audio within threshold', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
 
         // Place player 2 squares away (at audio threshold)
@@ -247,7 +247,7 @@ void main() {
 
       test('does not enable audio beyond the enable threshold', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
 
         // Place player 6 squares away — beyond the enable threshold (4).
@@ -265,7 +265,7 @@ void main() {
 
       test('hysteresis: stays enabled between thresholds, cuts past disable', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
 
         final remote = PlayerComponent(
@@ -296,7 +296,7 @@ void main() {
 
       test('fades volume by distance while subscribed', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
@@ -321,7 +321,7 @@ void main() {
 
       test('does not cache volume until a track is actually addressed', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
         // Track not subscribed yet → setParticipantAudioVolume returns false.
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
@@ -475,7 +475,7 @@ void main() {
         silenced = ValueNotifier<bool>(false);
         when(() => mockLiveKit.dreamfinderSilenced).thenReturn(silenced);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
@@ -787,7 +787,7 @@ void main() {
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         localPlayer = PlayerComponent(
           position: Vector2(160, 160),
           id: 'local-user',
@@ -927,7 +927,7 @@ void main() {
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         localPlayer = PlayerComponent(
           position: Vector2(160, 160),
           id: 'local-user',
@@ -1178,7 +1178,7 @@ void main() {
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.localParticipant).thenReturn(null);
 
         localPlayer = PlayerComponent(

@@ -69,6 +69,22 @@ class BubbleMergeRenderer {
   @visibleForTesting
   MergedVideoBubbleComponent? get mergedBubble => _mergedBubble;
 
+  /// The merge group the last emitted transition described.
+  ///
+  /// Exposed because the invariant that matters is a RELATIONSHIP between this
+  /// and the surface's lifetime — the memory must not outlive the surface it
+  /// describes — and an invariant with no test seam is one nobody can pin.
+  @visibleForTesting
+  List<String> get lastEmittedGroup => _lastEmittedGroup;
+
+  /// Drive a transition emission without a shader, a canvas, or a game loop.
+  ///
+  /// The lifetime invariant needs the memory to be NON-EMPTY before teardown to
+  /// mean anything — a test that clears a freshly-constructed renderer asserts
+  /// a state that was already true and passes against the bug.
+  @visibleForTesting
+  void debugEmitTransition(List<String> group) => _emitTransition(group);
+
   /// Mark the cached merge group stale. Called whenever bubble membership or
   /// position changes.
   void invalidate() => _dirty = true;
@@ -284,6 +300,14 @@ class BubbleMergeRenderer {
     _mergedBubble = null;
     _cachedMergeGroup = [];
     _dirty = true;
+    // Drop the emitted-transition memory with the surface it describes.
+    //
+    // Leaving it set meant a NEW room that happened to merge the same
+    // participants compared equal to the torn-down room's group, so
+    // mergeTransitions returned nothing and no BubblesMerged was emitted for a
+    // surface that really was built. The instrument would go silent exactly
+    // where it is supposed to speak.
+    _lastEmittedGroup = const [];
   }
 
   /// Final teardown: surfaces *and* shader programs.

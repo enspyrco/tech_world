@@ -93,15 +93,24 @@ class ProximityAudioGate {
     // Hysteresis: enable when within the (tighter) enable threshold, disable
     // only once past the (looser) disable threshold. Between the two, hold the
     // current state.
+    // Latch ONLY on a confirmed effect — the invariant this class states above,
+    // now enforced by the signature rather than by remembering to. A peer whose
+    // track has not subscribed yet is absent from `remoteParticipants`, so the
+    // call lands on nothing; latching anyway made every later frame see
+    // `hasAudio == true`, skip the enable, and leave that peer muted for the
+    // rest of the session. The volume path three lines below has always worked
+    // this way; the hard gate did not.
     if (!hasAudio && distance <= enableThreshold) {
-      _enabled.add(participantId);
-      service.setParticipantAudioEnabled(participantId, true);
-      _emit(participantId, enabled: true, distance: distance);
+      if (service.setParticipantAudioEnabled(participantId, true)) {
+        _enabled.add(participantId);
+        _emit(participantId, enabled: true, distance: distance);
+      }
     } else if (hasAudio && distance > disableThreshold) {
-      _enabled.remove(participantId);
-      _volumes.remove(participantId); // re-set volume on next enable
-      service.setParticipantAudioEnabled(participantId, false);
-      _emit(participantId, enabled: false, distance: distance);
+      if (service.setParticipantAudioEnabled(participantId, false)) {
+        _enabled.remove(participantId);
+        _volumes.remove(participantId); // re-set volume on next enable
+        _emit(participantId, enabled: false, distance: distance);
+      }
     }
 
     if (!_enabled.contains(participantId)) return;

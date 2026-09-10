@@ -694,7 +694,7 @@ class FakeLiveKitService implements LiveKitService {
       {ScreenShareCaptureOptions? options}) async {}
 
   @override
-  void setParticipantAudioEnabled(String identity, bool enabled) {}
+  bool setParticipantAudioEnabled(String identity, bool enabled) => true;
 
   @override
   bool setParticipantAudioVolume(String identity, double volume) => true;

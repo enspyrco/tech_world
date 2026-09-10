@@ -35,7 +35,7 @@ void main() {
     when(() => service.dreamfinderSilenced).thenReturn(silenced);
     when(() => service.dreamfinderIdentities()).thenReturn(<String>{});
     when(() => service.setParticipantAudioEnabled(any(), any()))
-        .thenReturn(null);
+        .thenReturn(true);
     when(() => service.setParticipantAudioVolume(any(), any()))
         .thenReturn(true);
   });
@@ -211,6 +211,57 @@ void main() {
 
       expect(gate.isEnabled('a'), isFalse);
       expect(gate.isEnabled('b'), isFalse);
+    });
+  });
+
+  group('the gate latches only on a CONFIRMED effect (cage-match #530, Carnot)',
+      () {
+    // A peer whose audio track has not subscribed yet is absent from
+    // remoteParticipants, so setParticipantAudioEnabled lands on nothing. It
+    // used to return void, so the gate latched anyway — and every later frame
+    // then saw hasAudio == true, skipped the enable, and left that peer muted
+    // for the rest of the session while diagnostics reported it enabled.
+
+    test('an enable that does not land is NOT latched, and retries', () {
+      final gate = build(radius: 5);
+      when(() => service.setParticipantAudioEnabled(any(), any()))
+          .thenReturn(false); // participant not subscribed yet
+
+      gate.update('peer', 1);
+      expect(gate.isEnabled('peer'), isFalse,
+          reason: 'nothing was enabled, so the gate must not claim it was');
+
+      // The track subscribes; the next frame must try AGAIN.
+      when(() => service.setParticipantAudioEnabled(any(), any()))
+          .thenReturn(true);
+      gate.update('peer', 1);
+      expect(gate.isEnabled('peer'), isTrue);
+    });
+
+    test('a disable that does not land is NOT latched, and retries', () {
+      final gate = build(radius: 5);
+      gate.update('peer', 1);
+      expect(gate.isEnabled('peer'), isTrue);
+
+      when(() => service.setParticipantAudioEnabled(any(), any()))
+          .thenReturn(false);
+      gate.update('peer', 9); // past disable threshold
+      expect(gate.isEnabled('peer'), isTrue,
+          reason: 'the peer is still audible — the gate must not report a '
+              'cut it could not make');
+
+      when(() => service.setParticipantAudioEnabled(any(), any()))
+          .thenReturn(true);
+      gate.update('peer', 9);
+      expect(gate.isEnabled('peer'), isFalse);
+    });
+
+    test('NULL ARM: a landing enable latches exactly once', () {
+      final gate = build(radius: 5);
+      gate.update('peer', 1);
+      gate.update('peer', 1);
+      expect(gate.isEnabled('peer'), isTrue);
+      verify(() => service.setParticipantAudioEnabled('peer', true)).called(1);
     });
   });
 }

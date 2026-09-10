@@ -52,7 +52,7 @@ void main() {
     when(() => liveKit.getParticipant(any())).thenReturn(null);
     when(() => liveKit.dreamfinderIdentities()).thenReturn(const <String>[]);
     when(() => liveKit.setParticipantAudioEnabled(any(), any()))
-        .thenReturn(null);
+        .thenReturn(true);
     when(() => liveKit.setParticipantAudioVolume(any(), any()))
         .thenReturn(true);
     when(() => liveKit.publishDfProximity(near: any(named: 'near')))

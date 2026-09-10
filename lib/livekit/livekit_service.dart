@@ -598,17 +598,34 @@ class LiveKitService {
   /// Uses [RemoteTrackPublication.enable]/[RemoteTrackPublication.disable] to
   /// tell the server we want/don't want this participant's audio track.
   /// Used for proximity-based audio: mute players who are too far away.
-  void setParticipantAudioEnabled(String identity, bool enabled) {
+  /// Enable or disable a remote participant's audio, reporting whether the
+  /// change actually landed on at least one track.
+  ///
+  /// Returns BOOL rather than void, matching [setParticipantAudioVolume], so a
+  /// caller cannot latch a gate state that was never applied. The failure this
+  /// closes is silent: a participant that has not appeared in
+  /// `remoteParticipants` yet (late subscription) made this return early, while
+  /// [ProximityAudioGate] recorded the peer as enabled — after which every
+  /// later frame saw `hasAudio == true`, skipped the enable, and left the peer
+  /// muted forever with diagnostics insisting otherwise.
+  ///
+  /// A participant with zero audio publications also reports false: there was
+  /// no track to act on, so a later frame should try again rather than trust a
+  /// gate that never gated anything.
+  bool setParticipantAudioEnabled(String identity, bool enabled) {
     final participant = _room?.remoteParticipants[identity];
-    if (participant == null) return;
+    if (participant == null) return false;
 
+    var applied = false;
     for (final publication in participant.audioTrackPublications) {
       if (enabled) {
         publication.enable();
       } else {
         publication.disable();
       }
+      applied = true;
     }
+    return applied;
   }
 
   /// Set the playback volume (0.0–1.0) for a remote participant's audio.

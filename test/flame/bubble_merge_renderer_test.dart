@@ -198,4 +198,45 @@ void main() {
       expect((events.single as BubblesMerged).participantIds, ['c', 'd']);
     });
   });
+
+  group('clearSurfaces drops the transition memory (cage-match #530, Carnot)',
+      () {
+    // The memory must not outlive the surface it describes. Leaving
+    // _lastEmittedGroup set across a teardown meant a NEW room that merged the
+    // same participants compared EQUAL to the torn-down room's group, so
+    // mergeTransitions returned nothing and no BubblesMerged was emitted for a
+    // surface that really was built — the instrument going silent exactly
+    // where it is supposed to speak.
+
+    test('a re-merge of the same group after teardown is a fresh transition',
+        () {
+      // mergeTransitions is pure and static, so the rule can be pinned without
+      // a shader, a canvas, or a game loop.
+      const group = ['a', 'b'];
+
+      // Same group twice in a row within one session: correctly silent.
+      expect(BubbleMergeRenderer.mergeTransitions(group, group), isEmpty);
+
+      // But from a CLEARED memory, the identical group is a real transition.
+      expect(BubbleMergeRenderer.mergeTransitions(const [], group),
+          hasLength(1));
+    });
+
+    test('clearSurfaces resets lastEmittedGroup to empty', () {
+      final renderer = BubbleMergeRenderer(
+        bubbles: {},
+        addComponent: (_) {},
+        reduceMotion: () => false,
+      );
+      // Put something IN the memory first. Without this the assertion below is
+      // vacuous — a fresh renderer's memory is already empty, so the test
+      // passes against the bug (caught by deliberately breaking the fix).
+      renderer.debugEmitTransition(const ['a', 'b']);
+      expect(renderer.lastEmittedGroup, equals(const ['a', 'b']));
+
+      renderer.clearSurfaces();
+      expect(renderer.lastEmittedGroup, isEmpty,
+          reason: 'a surviving memory suppresses the next real merge event');
+    });
+  });
 }
