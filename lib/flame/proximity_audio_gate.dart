@@ -60,6 +60,18 @@ class ProximityAudioGate {
   /// means silent, with no special case needed.
   int get enableThreshold => _proximityRadius() - 1;
 
+  /// Whether the user has turned proximity off entirely.
+  ///
+  /// The radius-0 proof used to be one-sided: enableThreshold becomes -1, which
+  /// no distance satisfies, so nobody can be STRUCK. But the disable arm is
+  /// `distance > disableThreshold`, and at radius 0 that threshold is 0 — so a
+  /// co-located peer at distance 0 is not greater than 0 and could never be
+  /// released. Only "the preference is applied before room entry" kept that
+  /// unreachable, and this field is read live every frame, so that was a
+  /// property of the caller rather than of the gate. Now the gate closes both
+  /// ways on its own.
+  bool get _proximityOff => _proximityRadius() <= 0;
+
   /// Audio cuts only once past this distance. The one-square gap to
   /// [enableThreshold] is the hysteresis band.
   int get disableThreshold => _proximityRadius();
@@ -105,7 +117,7 @@ class ProximityAudioGate {
         _enabled.add(participantId);
         _emit(participantId, enabled: true, distance: distance);
       }
-    } else if (hasAudio && distance > disableThreshold) {
+    } else if (hasAudio && (distance > disableThreshold || _proximityOff)) {
       if (service.setParticipantAudioEnabled(participantId, false)) {
         _enabled.remove(participantId);
         _volumes.remove(participantId); // re-set volume on next enable

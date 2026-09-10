@@ -264,4 +264,43 @@ void main() {
       verify(() => service.setParticipantAudioEnabled('peer', true)).called(1);
     });
   });
+
+  group('radius 0 closes BOTH ways (cage-match #530, Tesla)', () {
+    // The old radius-0 proof was one-sided. enableThreshold becomes -1, which
+    // no distance satisfies, so nobody can be STRUCK — but the disable arm is
+    // `distance > disableThreshold`, and at radius 0 that threshold is 0, so a
+    // co-located peer at distance 0 is not greater than 0 and could never be
+    // RELEASED. Only "the preference is applied before room entry" kept that
+    // unreachable, while the field is read live every frame. That was a
+    // property of the caller, not of the gate.
+
+    test('an enabled co-located peer IS released when radius drops to 0', () {
+      var radius = 5;
+      final gate = ProximityAudioGate(
+        proximityRadius: () => radius,
+        liveKitService: () => service,
+        diagnosticsEnabled: () => false,
+        dreamfinderIdentity: () => 'bot-dreamfinder',
+      );
+
+      gate.update('peer', 0); // co-located, well inside enable
+      expect(gate.isEnabled('peer'), isTrue);
+
+      radius = 0; // "proximity off"
+      gate.update('peer', 0);
+      expect(gate.isEnabled('peer'), isFalse,
+          reason: 'proximity off must mean silent, from BOTH directions');
+      verify(() => service.setParticipantAudioEnabled('peer', false))
+          .called(1);
+    });
+
+    test('NULL ARM: a non-zero radius still uses the hysteresis band', () {
+      // The fix must not turn the disable arm into a bare radius test.
+      final gate = build(radius: 5);
+      gate.update('peer', 4);
+      expect(gate.isEnabled('peer'), isTrue);
+      gate.update('peer', 5); // in the band — must HOLD, not drop
+      expect(gate.isEnabled('peer'), isTrue);
+    });
+  });
 }
