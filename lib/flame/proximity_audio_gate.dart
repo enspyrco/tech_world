@@ -105,8 +105,15 @@ class ProximityAudioGate {
     // Hysteresis: enable when within the (tighter) enable threshold, disable
     // only once past the (looser) disable threshold. Between the two, hold the
     // current state.
-    // Latch ONLY on a confirmed effect — the invariant this class states above,
-    // now enforced by the signature rather than by remembering to. A peer whose
+    // Latch only when there was something to act on — enforced by the
+    // signature rather than by remembering to.
+    //
+    // Scope it honestly: the bool is an ADDRESSABILITY check (participant
+    // present, at least one audio publication), not a delivery receipt.
+    // `publication.enable()` returns void, so no layer here can confirm the
+    // SFU acted. That still closes the door this fix was for — an unsubscribed
+    // peer no longer latches — but it is not the full "confirmed effect" the
+    // class docstring above promises. A peer whose
     // track has not subscribed yet is absent from `remoteParticipants`, so the
     // call lands on nothing; latching anyway made every later frame see
     // `hasAudio == true`, skip the enable, and leave that peer muted for the

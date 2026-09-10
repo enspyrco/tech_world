@@ -598,8 +598,18 @@ class LiveKitService {
   /// Uses [RemoteTrackPublication.enable]/[RemoteTrackPublication.disable] to
   /// tell the server we want/don't want this participant's audio track.
   /// Used for proximity-based audio: mute players who are too far away.
-  /// Enable or disable a remote participant's audio, reporting whether the
-  /// change actually landed on at least one track.
+  /// Enable or disable a remote participant's audio, reporting whether there
+  /// was anything to act ON.
+  ///
+  /// READ THE RETURN VALUE'S SCOPE CAREFULLY. True means: the participant was
+  /// present in `remoteParticipants` AND had at least one audio publication we
+  /// iterated. It does NOT mean the SFU acted — `publication.enable()` returns
+  /// void and reports nothing, so no confirmation is available at this layer.
+  ///
+  /// An earlier version of this docstring claimed the change "actually landed
+  /// on at least one track", which is more than the code can know. That is the
+  /// same prose-outruns-mechanism failure this method was changed to fix, so
+  /// it is corrected here rather than quietly.
   ///
   /// Returns BOOL rather than void, matching [setParticipantAudioVolume], so a
   /// caller cannot latch a gate state that was never applied. The failure this
@@ -612,6 +622,11 @@ class LiveKitService {
   /// A participant with zero audio publications also reports false: there was
   /// no track to act on, so a later frame should try again rather than trust a
   /// gate that never gated anything.
+  ///
+  /// So the bool is an ADDRESSABILITY check, not a delivery receipt. That is
+  /// still strictly better than void — it distinguishes "nobody to talk to"
+  /// from "we said something" and closes the unsubscribed-peer latch — but a
+  /// caller must not read it as proof the peer's audio state changed.
   bool setParticipantAudioEnabled(String identity, bool enabled) {
     final participant = _room?.remoteParticipants[identity];
     if (participant == null) return false;
