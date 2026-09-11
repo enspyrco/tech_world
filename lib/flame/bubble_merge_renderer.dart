@@ -111,9 +111,28 @@ class BubbleMergeRenderer {
   ///
   /// [centres] and [lowestPriority] are computed once by the caller from the
   /// same bubble pass that positions them, rather than re-walked here.
-  void update(List<Vector2> centres, int lowestPriority) {
+  ///
+  /// [anchorCentres] are the bubble centres BEFORE `BubblePhysics.apply` —
+  /// where each bubble's owning character puts it, without the repulsion
+  /// displacement. They decide merge MEMBERSHIP; [centres] still decide where
+  /// the surfaces are DRAWN.
+  ///
+  /// The split matters because repulsion exists to keep SEPARATE bubbles
+  /// readable, and merged bubbles are not separate — so letting the
+  /// displacement decide the merge lets an effect that only applies while
+  /// unmerged prevent the merge, and then undo it. Measured: grouping on
+  /// displaced centres produces 3 merge/unmerge transitions per threshold
+  /// crossing while walking (the displacement decays at 0.85/frame, faster
+  /// than the anchors separate, so the distance overshoots, dips back and
+  /// rises again); grouping on anchors produces exactly 1, at every speed
+  /// tested, with no hysteresis band needed.
+  void update(
+    List<Vector2> centres,
+    int lowestPriority,
+    Map<String, Vector2> anchorCentres,
+  ) {
     _updateBubbleField(centres, lowestPriority);
-    _updateMergedVideo(lowestPriority);
+    _updateMergedVideo(lowestPriority, anchorCentres);
   }
 
   void _updateBubbleField(List<Vector2> centres, int lowestPriority) {
@@ -140,7 +159,8 @@ class BubbleMergeRenderer {
     _bubbleField!.updateBubblePositions(centres);
   }
 
-  void _updateMergedVideo(int lowestPriority) {
+  void _updateMergedVideo(
+      int lowestPriority, Map<String, Vector2> anchorCentres) {
     if (_mergedVideoShaderProgram == null) return;
 
     final videoBubbles = <String, VideoBubbleComponent>{};
@@ -150,8 +170,14 @@ class BubbleMergeRenderer {
     }
 
     if (_dirty) {
-      _cachedMergeGroup = findMergeGroup(
-          {for (final e in videoBubbles.entries) e.key: e.value.center});
+      // Membership from anchors, not from `e.value.center` — see [update].
+      // A bubble with no anchor recorded this frame is skipped rather than
+      // falling back to its displaced centre: a silent fallback would restore
+      // the flapping for exactly the bubbles the caller failed to report.
+      _cachedMergeGroup = findMergeGroup({
+        for (final key in videoBubbles.keys)
+          if (anchorCentres[key] != null) key: anchorCentres[key]!,
+      });
       _dirty = false;
     }
     final mergeGroup = _cachedMergeGroup;

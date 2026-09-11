@@ -112,7 +112,7 @@ void main() {
         reduceMotion: () => false,
       );
 
-      renderer.update([Vector2.zero(), Vector2(10, 0)], 0);
+      renderer.update([Vector2.zero(), Vector2(10, 0)], 0, const {});
 
       expect(added, isEmpty);
       expect(renderer.bubbleField, isNull);

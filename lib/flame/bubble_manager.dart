@@ -722,6 +722,15 @@ class BubbleManager {
       }
     }
 
+    // 1b. Snapshot the anchor centres BEFORE repulsion displaces them. These
+    // decide merge membership; the displaced centres below decide rendering.
+    // Taken here rather than derived later because the displacement is
+    // accumulated inside BubblePhysics and cannot be subtracted back out.
+    final anchorCentres = <String, Vector2>{
+      for (final entry in _playerBubbles.entries)
+        entry.key: entry.value.center.clone(),
+    };
+
     // 2. Apply physics repulsion so bubbles don't overlap.
     _physics.apply(_playerBubbles, dt);
 
@@ -735,7 +744,7 @@ class BubbleManager {
       }
     }
 
-    _mergeRenderer.update(centres, lowestPriority);
+    _mergeRenderer.update(centres, lowestPriority, anchorCentres);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
