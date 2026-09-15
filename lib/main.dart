@@ -656,6 +656,18 @@ class _MyAppState extends State<MyApp> {
 
     final userId = _currentUserId;
     try {
+      // MUST come before the join. The avatar gate sits ABOVE the room check in
+      // the widget tree, so a signed-in user with no saved avatar gets
+      // AvatarSelectionScreen no matter what `_currentRoom` holds — GameWidget
+      // is never built, TechWorld.onLoad never runs, and `_pathComponent` stays
+      // null, which makes movePlayerToCell refuse every move forever. A fresh
+      // guest account has no saved avatar by definition, so autopiloting a guest
+      // without this walks a route into a world that was never constructed.
+      if (_selectedAvatar == null) {
+        _log.info('Autopilot: no avatar chosen, taking the default');
+        await _onAvatarSelected(defaultAvatar);
+      }
+
       final rooms = [
         ...await roomService.listPublicRooms(),
         if (userId != null) ...await roomService.listMyRooms(userId),
