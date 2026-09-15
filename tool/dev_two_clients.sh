@@ -35,8 +35,31 @@ CHROME_LOG="$RUN_DIR/chrome.log"
 MACOS_APP="build/macos/Build/Products/Debug/tech_world.app"
 MACOS_PROC="tech_world.app/Contents/MacOS/tech_world"
 
+# ── Autopilot ────────────────────────────────────────────────────────────────
+# Both clients drive themselves: guest sign-in, room entry, and (for the web
+# guest) a walking route. The macOS client holds position, because the merge
+# cases need one participant stationary while the other crosses the threshold,
+# and because events.log -- the evidence -- is written by the native file sink.
+#
+# Set NO_AUTOPILOT=1 to drive by hand instead.
+# Not `${AUTOPILOT_ROOM:-Wizard's Tower}`: bash re-parses the default operand of
+# `:-` as a word even inside double quotes, so the apostrophe opens a quote that
+# swallows the next 180 lines and reports the error somewhere else entirely.
+AUTOPILOT_ROOM="${AUTOPILOT_ROOM:-}"
+[ -n "$AUTOPILOT_ROOM" ] || AUTOPILOT_ROOM="Wizard's Tower"
+AUTOPILOT_ROUTE="${AUTOPILOT_ROUTE:-20,20>26,20}"
+AUTOPILOT_DWELL="${AUTOPILOT_DWELL:-2500}"
+MACOS_DEFINES=()
+GUEST_AUTOPILOT=()
+if [ "${NO_AUTOPILOT:-0}" != "1" ]; then
+  MACOS_DEFINES=(--dart-define=AUTOPILOT="room=$AUTOPILOT_ROOM")
+  GUEST_AUTOPILOT=(--dart-define=AUTOPILOT="room=$AUTOPILOT_ROOM;route=$AUTOPILOT_ROUTE;dwell=$AUTOPILOT_DWELL")
+  echo "==> Autopilot: room \"$AUTOPILOT_ROOM\", guest walks $AUTOPILOT_ROUTE every ${AUTOPILOT_DWELL}ms"
+  echo "    (macOS holds position; NO_AUTOPILOT=1 to drive by hand)"
+fi
+
 echo "==> Building + launching macOS client"
-flutter build macos --debug >"$RUN_DIR/macos-build.log" 2>&1
+flutter build macos --debug "${MACOS_DEFINES[@]}" >"$RUN_DIR/macos-build.log" 2>&1
 open "$MACOS_APP"
 
 # `open` exits 0 for a launch it merely dispatched, so confirm the process.
@@ -99,20 +122,20 @@ if [ "${NO_LOCAL_TOKEN_SERVER:-0}" != "1" ]; then
   # by the real SFU at livekit.imagineering.cc. Everything else a local run needs
   # is ephemeral. Without these the exchange still succeeds and the room join
   # fails one hop later -- a confusing place to land, so say so up front.
+  # dotenv output rather than parsing yaml inline: the extraction is two greps
+  # instead of a nested interpreter, and nothing about the secret values has to
+  # survive a round trip through shell quoting.
+  LK_ENV=""
   if [ -f "$SECRETS" ] && command -v sops >/dev/null 2>&1; then
-    LK_ENV=$(sops -d "$SECRETS" 2>/dev/null | python3 -c '
-import sys, yaml, shlex
-d = yaml.safe_load(sys.stdin) or {}
-for k in ("LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):
-    if d.get(k):
-        print(f"export {k}={shlex.quote(str(d[k]))}")
-' 2>/dev/null) || LK_ENV=""
-  else
-    LK_ENV=""
+    LK_ENV=$(sops -d --output-type dotenv "$SECRETS" 2>/dev/null \
+      | grep -E '^LIVEKIT_API_(KEY|SECRET)=' || true)
   fi
 
   if [ -n "$LK_ENV" ]; then
+    # set -a makes each assignment an export without rewriting the lines.
+    set -a
     eval "$LK_ENV"
+    set +a
     echo "    LiveKit credentials: real (from $SECRETS)"
   else
     echo "    LiveKit credentials: DEV PLACEHOLDERS -- /exchange will work and" >&2
@@ -175,6 +198,7 @@ fi
 
 nohup flutter run -d chrome --web-browser-flag="--user-data-dir=$CHROME_PROFILE" \
   "${CHROME_MEDIA_FLAGS[@]}" "${CHROME_TLS_FLAGS[@]}" "${REALM_DEFINE[@]}" \
+  "${GUEST_AUTOPILOT[@]}" \
   >"$CHROME_LOG" 2>&1 &
 CHROME_PID=$!
 disown "$CHROME_PID" 2>/dev/null || true
@@ -214,13 +238,11 @@ cat <<MSG
     Web app: $APP_URL  (copied to clipboard)
     Chrome log: $CHROME_LOG
 
-Next, by hand:
-  1. Chrome  -> "continue as guest" (camera + mic auto-granted, synthetic)
-  2. macOS   -> create/enter a room; note its name
-  3. Chrome  -> join that same room from the list
-  4. macOS   -> make sure YOUR camera is on: the merge needs two video
-                bubbles, and one of them is your own local-player bubble
-  5. Walk the avatars into OVERLAP (merge threshold is 96.0 centre-to-centre)
+Both clients drive themselves from here (NO_AUTOPILOT=1 to opt out):
+  macOS  -> guest sign-in, enters "$AUTOPILOT_ROOM", holds position, camera on
+  Chrome -> guest sign-in, same room, walks $AUTOPILOT_ROUTE on a ${AUTOPILOT_DWELL}ms cycle
+
+Give them ~30s to sign in, join and start publishing before reading the log.
 
 Take a watermark BEFORE you start playing:
   wc -l < ~/Documents/tech_world_logs/events.log

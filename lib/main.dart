@@ -62,6 +62,7 @@ import 'package:tech_world/widgets/edit_profile_dialog.dart'
     show EditProfileDialog, EditProfileResult;
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
+import 'package:tech_world/dev/autopilot.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/logger_bridge_init.dart';
 import 'package:tech_world/events/sinks/console_sink.dart';
@@ -224,6 +225,15 @@ class _MyAppState extends State<MyApp> {
   /// Prevents double-tap on a room card from launching two concurrent joins.
   bool _isJoining = false;
 
+  /// Walks the local player when this build was launched with `--dart-define=
+  /// AUTOPILOT=...`. Null in every ordinary build; see [Autopilot].
+  AutopilotWalker? _autopilotWalker;
+
+  /// One shot per sign-in. Without it a failed auto-join retries on every
+  /// auth-state rebuild, which reads in the log as the room being unreachable
+  /// rather than as the room name being wrong.
+  bool _autopilotJoinAttempted = false;
+
   /// Deferred leave: set by [_leaveRoom] when called while [_isJoining] is
   /// true.  [_joinRoom]'s finally block checks this and calls [_leaveRoom]
   /// so that dispose happens after in-flight wire operations complete.
@@ -375,6 +385,17 @@ class _MyAppState extends State<MyApp> {
       _log.info('User signed out - cleaned up');
       dispatch([UserSignedOut()]);
       setState(() {});
+      _autopilotJoinAttempted = false;
+      _autopilotWalker?.stop();
+      _autopilotWalker = null;
+      // Guest sign-in is the only method a script can complete: the others need
+      // a human at an OAuth consent screen.
+      if (Autopilot.enabled) {
+        _log.info('Autopilot: signing in as guest');
+        unawaited(locate<AuthService>().signInAnonymously().catchError((Object e) {
+          _log.severe('Autopilot: guest sign-in failed', e);
+        }));
+      }
     } else {
       // User signed in — set up profile & services, show lobby.
       _log.info('User signed in: ${user.id} (${user.displayName})');
@@ -441,6 +462,11 @@ class _MyAppState extends State<MyApp> {
         displayName: user.displayName,
       )]);
       setState(() {}); // Show lobby (or avatar picker first).
+
+      if (Autopilot.enabled && !_autopilotJoinAttempted) {
+        _autopilotJoinAttempted = true;
+        unawaited(_autopilotJoin());
+      }
     }
   }
 
@@ -611,6 +637,61 @@ class _MyAppState extends State<MyApp> {
         _pendingLeave = false;
         await _leaveRoom();
       }
+    }
+  }
+
+  /// Find the autopiloted room by name, enter it, and start walking.
+  ///
+  /// Searches the user's own rooms as well as the public ones: a fixture room
+  /// made for a verification run belongs to whoever made it, and requiring it
+  /// to be public to be autopilotable would be an arbitrary limit.
+  ///
+  /// Every failure here is logged at SEVERE with the names that WERE found.
+  /// A silent no-op would be indistinguishable from an autopilot that never
+  /// armed, and the operator is not watching this window — that is the point.
+  Future<void> _autopilotJoin() async {
+    final plan = Autopilot.plan;
+    final roomService = _roomService;
+    if (plan == null || roomService == null) return;
+
+    final userId = _currentUserId;
+    try {
+      final rooms = [
+        ...await roomService.listPublicRooms(),
+        if (userId != null) ...await roomService.listMyRooms(userId),
+      ];
+      RoomData? match;
+      for (final room in rooms) {
+        if (plan.matchesRoom(room.name)) {
+          match = room;
+          break;
+        }
+      }
+      if (match == null) {
+        _log.severe('Autopilot: no room named "${plan.roomName}". '
+            'Found: ${rooms.map((r) => r.name).toSet().toList()}');
+        return;
+      }
+
+      _log.info('Autopilot: joining "${match.name}"');
+      await _joinRoom(match);
+
+      // Started after the join rather than beside it: a move request issued
+      // before TechWorld has a path component is dropped on the floor by
+      // movePlayerToCell, so an early first step would simply be lost.
+      if (_currentRoom == null) {
+        _log.severe('Autopilot: join did not stick, not walking');
+        return;
+      }
+      final techWorld = locate<TechWorld>();
+      _autopilotWalker = AutopilotWalker(
+        plan: plan,
+        moveTo: techWorld.movePlayerToCell,
+      )..start();
+      _log.info('Autopilot: walking ${plan.route.length} waypoints '
+          'every ${plan.dwell.inMilliseconds}ms');
+    } catch (e, st) {
+      _log.severe('Autopilot: join failed', e, st);
     }
   }
 
