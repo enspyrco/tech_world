@@ -410,13 +410,26 @@ void main() {
         // Dreamfinder leaves. The agents SDK gives each dispatch a fresh
         // `agent-*` identity, so the next one is a NEW participant that was
         // never told anything.
+        //
+        // NO EXIT PUBLISH IS ASSERTED HERE ANY MORE, and that is the fix rather
+        // than a relaxation. This path used to route through `reset()`, which
+        // cleared the desired state and relied on publishing `near: false` to
+        // the DEPARTED agent to clear the confirmed one. A message to a
+        // participant that has left buys nothing — and making the local model
+        // depend on it landing is what reopened the lost signal: when that
+        // publish FAILED, the confirmed belief stayed `true`, the still-inside
+        // player recomputed the desired state to `true`, the reconciler saw them
+        // equal, and the new agent was told nothing. (Tesla, PR #530 delta
+        // cage-match.) `recipientChanged()` drops the belief locally instead,
+        // which is accurate — a fresh agent has been told nothing — and cannot
+        // fail. The assertion that matters is the one below.
         manager.handleDreamfinderLeft();
         await pumpEventQueue();
-        verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
 
-        // New agent, same square, player has not moved. Without the reset,
-        // inside == _wasInside and update() returns early — the new agent is
-        // never told the player is standing right there.
+        // New agent, same square, player has not moved. THIS is what the
+        // leave path exists to guarantee: without it the desired state matches
+        // the departed agent's confirmation and the reconciler sends nothing,
+        // so the new agent never learns the player is standing right there.
         manager.debugUpdateDreamfinderProximity(
             playerGrid: const Point(10, 10), territory: box);
         await pumpEventQueue();

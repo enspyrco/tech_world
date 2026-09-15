@@ -79,6 +79,15 @@ class DreamfinderProximitySignal {
   /// entry — chatter that says nothing the bot did not already assume.
   bool _confirmed = false;
 
+  /// Bumped whenever the RECIPIENT changes ([reset]). A publish that settles
+  /// after a bump is a reply from a participant who no longer exists, so it
+  /// must not be allowed to write [_confirmed].
+  ///
+  /// Without this, the in-flight publish's own success callback restores the
+  /// stale belief a moment after [reset] cleared it — the fix undone by the
+  /// thing it was fixing.
+  int _generation = 0;
+
   /// The value of the publish currently outstanding, or null if none.
   ///
   /// At most ONE publish is ever in flight. That single fact is what makes
@@ -129,6 +138,38 @@ class DreamfinderProximitySignal {
     _pump();
   }
 
+  /// The BODY this signal was talking to is gone, and anything that replaces it
+  /// is a different participant.
+  ///
+  /// Distinct from [reset], and the distinction is the whole point. [reset] means
+  /// "the player is no longer near" — the recipient is still listening, so a
+  /// failed exit publish must NOT clear [_confirmed]: the bot really does still
+  /// hold `near: true`, and pretending otherwise is the lie that suite pins.
+  ///
+  /// THIS means "there is no recipient". The agents SDK mints a fresh `agent-*`
+  /// identity on every dispatch, so whatever arrives next has been told nothing
+  /// — and "told nothing" IS `false`. Clearing [_confirmed] locally is therefore
+  /// ACCURATE rather than convenient, and crucially it does not depend on a
+  /// publish to the departed agent succeeding.
+  ///
+  /// That dependency was the hole. Routing a Dreamfinder LEAVE through [reset]
+  /// meant a failed exit publish left `_confirmed` true; a player standing
+  /// inside the square recomputed `_desired` to true; [_pump] saw them equal and
+  /// sent nothing; and the new Dreamfinder was never told the player was there
+  /// — the exact lost signal the leave path was added to prevent, surviving in
+  /// its own failure branch. (Tesla, PR #530 delta cage-match.)
+  ///
+  /// [_inFlight] is deliberately NOT cleared: the outstanding publish still owns
+  /// the single in-flight slot until it settles. The generation counter
+  /// neutralises its result; freeing the slot early would allow two publishes to
+  /// be outstanding at once.
+  void recipientChanged() {
+    _generation++;
+    _desired = false;
+    _confirmed = false;
+  }
+
+
   /// Reconcile: if the bot's confirmed belief differs from what we want it to
   /// believe, and nothing is already in flight, send the difference.
   ///
@@ -149,12 +190,19 @@ class DreamfinderProximitySignal {
     if (service == null) return;
 
     final sending = _desired;
+    final generation = _generation;
     _inFlight = sending;
     service.publishDfProximity(near: sending).then((_) {
-      // Safe to record unconditionally: this was the only publish in flight,
-      // so it is necessarily the last thing the bot heard.
-      _confirmed = sending;
       _inFlight = null;
+      // Record ONLY if the recipient is still the one we sent to. Across a
+      // [reset] this publish was heard by a participant who has since left, and
+      // what a departed agent was told is not evidence about what the new one
+      // believes. Recording it anyway is how the lost-signal bug came back.
+      if (generation == _generation) {
+        // Safe to record unconditionally within a generation: this was the only
+        // publish in flight, so it is necessarily the last thing the bot heard.
+        _confirmed = sending;
+      }
       // Latest-wins: if the world moved while this was in flight, send the
       // difference now rather than waiting for another frame. Terminates
       // because each success advances `_confirmed`, so the recursion stops as

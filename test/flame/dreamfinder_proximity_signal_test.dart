@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,8 @@ import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
 class MockLiveKitService extends Mock implements LiveKitService {}
+
+Future<void> pumpEventQueue() => Future<void>.delayed(Duration.zero);
 
 void main() {
   // Rewritten 2026-08-30. The previous suite pinned a distance-with-hysteresis
@@ -340,6 +343,73 @@ void main() {
       // Inside the box: heard.
       signal.update(playerGrid: const Point(13, 10), territory: box);
       verify(() => service.publishDfProximity(near: true)).called(1);
+    });
+  });
+
+  group('recipientChanged() across a Dreamfinder swap (Tesla, PR #530 delta cage-match)', () {
+    // The agents SDK mints a fresh `agent-*` identity on every dispatch, so the
+    // Dreamfinder that arrives after a leave was told NOTHING. reset() exists to
+    // stop the signal carrying the departed body's belief into the new one.
+    //
+    // The hole was in reset()'s own failure branch: it cleared only `_desired`
+    // and relied on a publish to the DEPARTED agent to clear `_confirmed`. When
+    // that publish failed, `_confirmed` stayed true, a player standing inside the
+    // square made `_desired` true again, and _pump saw them equal and sent
+    // nothing. The new agent never learned the player was there — the exact lost
+    // signal reset() was added to prevent.
+
+    test('a still-inside player is re-announced to the NEW agent even when the '
+        'exit publish FAILED', () async {
+      final signal = build();
+
+      // 1. Player inside the square; the bot is told.
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
+      expect(signal.isNear, isTrue, reason: 'precondition: bot told near');
+
+      // 2. Dreamfinder leaves — and the exit publish FAILS. This is the arm the
+      //    old code could not survive.
+      when(() => service.publishDfProximity(near: any(named: 'near')))
+          .thenAnswer((_) async => throw StateError('network gone'));
+      signal.recipientChanged();
+      await pumpEventQueue();
+
+      // 3. A new agent arrives, publishes work again, player never moved.
+      when(() => service.publishDfProximity(near: any(named: 'near')))
+          .thenAnswer((_) async {});
+      clearInteractions(service);
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
+
+      // THE NEGATIVE THAT MATTERS: the new agent must be TOLD. On the old code
+      // `_confirmed` was still true, `_desired` recomputed to true, and _pump
+      // returned having sent nothing — this verify found zero calls.
+      verify(() => service.publishDfProximity(near: true)).called(1);
+      expect(signal.isNear, isTrue);
+    });
+
+    test('an in-flight publish that settles AFTER reset does not restore the '
+        'departed agent\'s belief', () async {
+      final completer = Completer<void>();
+      when(() => service.publishDfProximity(near: any(named: 'near')))
+          .thenAnswer((_) => completer.future);
+
+      final signal = build();
+      signal.update(playerGrid: const Point(10, 10), territory: box);
+      await pumpEventQueue();
+      expect(signal.isNear, isFalse, reason: 'publish still outstanding');
+
+      // Recipient changes while the publish is in flight.
+      signal.recipientChanged();
+      // ...and only THEN does the old publish succeed.
+      completer.complete();
+      await pumpEventQueue();
+
+      // Its success is about a participant who has left. Recording it would
+      // re-arm the stale belief a moment after reset cleared it.
+      expect(signal.isNear, isFalse,
+          reason: 'a reply from a departed recipient is not evidence about the '
+              'new one');
     });
   });
 }

@@ -559,7 +559,8 @@ class _MyAppState extends State<MyApp> {
             // nowhere the player can read. Mirror it into the chat panel, which
             // is screen-fixed. Local echo only — never published, never
             // persisted (claude-tasks#4309).
-            techWorld.mirrorOffscreenDreamfinderSpeech = (text, speakerName) {
+            techWorld.mirrorOffscreenDreamfinderSpeech =
+                ({required text, required speakerName}) {
               _session?.chatService.addLocalLine(
                 text: text,
                 senderName: speakerName,

@@ -570,9 +570,15 @@ class BubbleManager {
     // gives each dispatch a fresh `agent-*` identity, so the next Dreamfinder
     // is a NEW participant that was never told anything — while the signal
     // still reads `near: true` from the departed one. A player standing inside
-    // the territory then makes `inside == _wasInside`, [DreamfinderProximitySignal.update]
-    // returns early, and the new agent is never told the player is there.
-    _dfProximity.reset();
+    // the territory then makes the desired state match that stale confirmation,
+    // the reconciler sends nothing, and the new agent is never told.
+    //
+    // `recipientChanged`, not `reset`: reset means "the player left" and leaves
+    // the confirmed belief intact when its exit publish fails, because a bot
+    // that is still listening really does still hold `near: true`. Here there is
+    // no recipient at all, so the belief must be dropped without depending on a
+    // publish to the departed body landing.
+    _dfProximity.recipientChanged();
     _dfAvatar.stop();
   }
 

@@ -233,6 +233,53 @@ void main() {
     // silent no-op for the rest of the session — the avatar simply never came
     // back, with one warning in the log to say why.
 
+    test('a THROWING initialize disposes the bridge, not just the slot',
+        () async {
+      // Tesla, PR #530 delta cage-match: the not-ready branch disposed and
+      // wrote a comment saying why ("dropping the reference without disposing
+      // leaks it") while catchError, one door over, cleared the slot and left
+      // the iframe running. Same coil, other tap.
+      final bridge = _FakeBridge();
+      final host = build(onReady: () {}, bridgeFactory: (_) => bridge);
+
+      host.start();
+      bridge.failInitialize(StateError('iframe refused'));
+      await pumpEventQueue();
+
+      expect(bridge.disposeCount, 1,
+          reason: 'a failed initialize can still have constructed the iframe');
+    });
+
+    test('an onReady callback that throws must NOT release a live bridge',
+        () async {
+      // _onReady runs inside the initialize `then`, so a throw in the CALLER'S
+      // callback propagated to catchError and released the slot for a bridge
+      // that had become ready — the next arrival would build a second iframe
+      // beside a live one nobody would ever stop().
+      final bridge = _FakeBridge();
+      var built = 0;
+      final host = build(
+        onReady: () => throw StateError('consumer blew up'),
+        bridgeFactory: (_) {
+          built++;
+          return bridge;
+        },
+      );
+
+      host.start();
+      bridge.completeInitialize();
+      await pumpEventQueue();
+
+      expect(bridge.disposeCount, 0,
+          reason: 'the bridge became ready; the consumer failing is not '
+              'evidence about the bridge');
+
+      host.start();
+      expect(built, 1,
+          reason: 'the slot must still be held by the live bridge, so a second '
+              'start() builds nothing');
+    });
+
     test('a bridge that finishes NOT READY also releases the slot', () async {
       // Confirming round, Carnot: the first version of this fix closed only
       // the THROWING door. An initialize that RESOLVES while leaving

@@ -80,7 +80,18 @@ class DreamfinderAvatarHost {
       // teardown would resurrect a bubble for a Dreamfinder that has left.
       if (_bridge?.isReady == true) {
         _log.info('Dreamfinder avatar bridge ready — refreshing bubble');
-        _onReady();
+        // Isolated from the initialize future on purpose. `_onReady` is a
+        // CALLER'S callback, and letting it throw into this chain routes it to
+        // `catchError` below, which then releases the slot for a bridge that
+        // DID become ready — the next Dreamfinder builds a second iframe
+        // beside a live one nobody will ever stop(). A consumer's failure is
+        // not evidence about the bridge. (Tesla, PR #530 delta cage-match.)
+        try {
+          _onReady();
+        } catch (e, st) {
+          _log.warning('Dreamfinder avatar onReady callback threw — bridge '
+              'stays live', e, st);
+        }
       } else if (identical(_bridge, bridge)) {
         // Completed WITHOUT becoming ready — a timeout folded into a non-ready
         // state, an iframe that loaded but failed to capture, or any
@@ -108,7 +119,16 @@ class DreamfinderAvatarHost {
       // Guarded on identity, not just non-null: a `stop()` or a newer `start()`
       // may already have replaced the field, and clearing that one would undo
       // a live bridge on behalf of a dead one.
-      if (identical(_bridge, bridge)) _bridge = null;
+      //
+      // DISPOSED as well as cleared, matching [stop] and the non-ready branch
+      // above. A failed initialize can still have constructed the iframe, and
+      // this branch used to drop the reference without disposing — the exact
+      // leak the branch above writes a comment against, surviving one door
+      // over. (Tesla, PR #530 delta cage-match.)
+      if (identical(_bridge, bridge)) {
+        bridge.dispose();
+        _bridge = null;
+      }
     });
   }
 

@@ -132,7 +132,7 @@ class TechWorld extends World with TapCallbacks {
   /// A callback rather than a `ChatService` reference, matching
   /// [isLocalChatOpen]: where the mirrored line LANDS is a UI decision, and the
   /// game world should not be the thing that knows there is a chat panel.
-  void Function(String text, String speakerName)?
+  void Function({required String text, required String speakerName})?
       mirrorOffscreenDreamfinderSpeech;
   DreamfinderComponent? _dreamfinderComponent;
   DreamfinderTerritoryComponent? _dreamfinderTerritoryComponent;
@@ -920,11 +920,22 @@ class TechWorld extends World with TapCallbacks {
   /// to ask and also no bubble being drawn, so "I cannot tell" is answered as
   /// off-camera. The cost of being wrong that way is a duplicated line in the
   /// chat panel; the cost of the other way is a reply the player never sees.
-  bool _isOnCamera(PositionComponent component) {
+  /// Where a speech bubble hangs relative to its owner's anchor. Shared by the
+  /// placement and the visibility test so the two cannot drift — when they did,
+  /// the test answered for the character and the reader was looking for the
+  /// bubble.
+  static final Vector2 _speechBubbleOffset = Vector2(16, 36);
+
+  /// Takes the WORLD POINT that must be readable, not the component it belongs
+  /// to. A speech bubble is drawn at an offset BELOW its owner's anchor, so a
+  /// character can sit inside the viewport while the bubble hanging off it is
+  /// past the bottom edge — testing the owner would report "visible" for a
+  /// reply nobody can read, in a band exactly as wide as the offset.
+  bool _isPointOnCamera(Vector2 worldPoint) {
     final game = findGame() as TechWorldGame?;
     final view = game?.camera.visibleWorldRect;
     if (view == null) return false;
-    return view.contains(ui.Offset(component.position.x, component.position.y));
+    return view.contains(ui.Offset(worldPoint.x, worldPoint.y));
   }
 
   /// Handle a speech transcript from the voice pipeline.
@@ -982,7 +993,8 @@ class TechWorld extends World with TapCallbacks {
     );
 
     // Position below the character sprite.
-    bubble.position = target!.position + Vector2(16, 36);
+    final bubblePosition = target!.position + _speechBubbleOffset;
+    bubble.position = bubblePosition;
     bubble.priority = target.priority + 1;
     _speechBubbles[speakerRole.wire] = bubble;
     add(bubble);
@@ -996,9 +1008,12 @@ class TechWorld extends World with TapCallbacks {
     //
     // The player's OWN transcript needs no mirror — it renders over the local
     // player, which the camera follows by construction.
-    if (speakerRole == SpeakerRole.dreamfinder && !_isOnCamera(target)) {
+    if (speakerRole == SpeakerRole.dreamfinder &&
+        !_isPointOnCamera(bubblePosition)) {
       mirrorOffscreenDreamfinderSpeech?.call(
-          text, _dreamfinderComponent!.displayName);
+        text: text,
+        speakerName: _dreamfinderComponent!.displayName,
+      );
     }
   }
 
