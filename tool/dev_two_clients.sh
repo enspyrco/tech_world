@@ -326,24 +326,26 @@ for line in sys.stdin:
         continue
     t = d.get("type")
     c[t] += 1
-    # A peer that is neither a bot nor an agent is the other CLIENT.
-    if t == "remote_player_moved":
-        pid = d.get("playerId", "")
-        if not pid.startswith(("bot-", "agent-")):
-            humans.add(pid)
+    # A participant that is neither a bot nor an agent is the other CLIENT.
+    # PRESENCE, not movement: the guest holds station by design, so counting
+    # its moves reported a failure on runs that merged twice.
+    pid = d.get("playerId") or d.get("participant") or ""
+    if pid and not pid.startswith(("bot-", "agent-", "_local")):
+        humans.add(pid)
 print(c.get("player_moved", 0), c.get("bubbles_merged", 0), len(humans), c.get("av_bubble_created", 0))
 ' 2>/dev/null) || SUMMARY="0 0 0 0"
 
   set -- $SUMMARY
   LOCAL_MOVES="${1:-0}"; MERGES="${2:-0}"; PEERS="${3:-0}"; BUBBLES="${4:-0}"
 
-  echo "    macOS moves: $LOCAL_MOVES    peer clients seen moving: $PEERS"
+  echo "    macOS moves: $LOCAL_MOVES    peer clients present: $PEERS"
   echo "    bubbles created: $BUBBLES    merges: $MERGES"
 
   [ "$LOCAL_MOVES" -gt 0 ] || echo "    !! macOS never moved - autopilot did not arm, or the join failed" >&2
   [ "$PEERS" -gt 0 ] || {
-    echo "    !! no peer client moved. Two known causes, both silent:" >&2
-    echo "       - the guest never armed, or its join failed (grep Autopilot in the chrome log)" >&2
+    echo "    !! no peer client reached the room. Causes, all silent:" >&2
+    echo "       - the guest never armed, or its join failed (grep -i autopilot in the chrome log)" >&2
+    echo "       - the world refused its moves (look for 'refused a move' there too)" >&2
     echo "       - a backgrounded Chrome tab throttles its walk timer" >&2
   }
   if [ "$MERGES" -eq 0 ]; then
