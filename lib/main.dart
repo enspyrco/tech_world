@@ -555,6 +555,16 @@ class _MyAppState extends State<MyApp> {
             // A mention arriving while chat is already open auto-acks (the user
             // has already "seen" it). `_chatCollapsed == false` means visible.
             techWorld.isLocalChatOpen = () => !_chatCollapsed.value;
+            // Dreamfinder's reply is drawn over his sprite; off camera that is
+            // nowhere the player can read. Mirror it into the chat panel, which
+            // is screen-fixed. Local echo only — never published, never
+            // persisted (claude-tasks#4309).
+            techWorld.mirrorOffscreenDreamfinderSpeech = (text, speakerName) {
+              _session?.chatService.addLocalLine(
+                text: text,
+                senderName: speakerName,
+              );
+            };
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
             // Wire C: camera + mic (depends on server connection).

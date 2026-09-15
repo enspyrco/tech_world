@@ -125,6 +125,15 @@ class TechWorld extends World with TapCallbacks {
   /// (main.dart) so a mention arriving while chat is already open auto-acks.
   /// Defaults to closed.
   bool Function() isLocalChatOpen = () => false;
+
+  /// Mirror a Dreamfinder line into a screen-fixed surface when his sprite is
+  /// not on camera. Set by `main.dart` on room entry; a no-op otherwise.
+  ///
+  /// A callback rather than a `ChatService` reference, matching
+  /// [isLocalChatOpen]: where the mirrored line LANDS is a UI decision, and the
+  /// game world should not be the thing that knows there is a chat panel.
+  void Function(String text, String speakerName)?
+      mirrorOffscreenDreamfinderSpeech;
   DreamfinderComponent? _dreamfinderComponent;
   DreamfinderTerritoryComponent? _dreamfinderTerritoryComponent;
   late final BubbleManager _bubbleManager;
@@ -905,6 +914,19 @@ class TechWorld extends World with TapCallbacks {
     _speechBubbles.clear();
   }
 
+  /// Whether [component] is inside the camera's current view.
+  ///
+  /// Fails toward VISIBLE-ELSEWHERE: with no game attached there is no camera
+  /// to ask and also no bubble being drawn, so "I cannot tell" is answered as
+  /// off-camera. The cost of being wrong that way is a duplicated line in the
+  /// chat panel; the cost of the other way is a reply the player never sees.
+  bool _isOnCamera(PositionComponent component) {
+    final game = findGame() as TechWorldGame?;
+    final view = game?.camera.visibleWorldRect;
+    if (view == null) return false;
+    return view.contains(ui.Offset(component.position.x, component.position.y));
+  }
+
   /// Handle a speech transcript from the voice pipeline.
   ///
   /// Creates a [SpeechBubbleComponent] with per-letter fade-in below the
@@ -964,6 +986,20 @@ class TechWorld extends World with TapCallbacks {
     bubble.priority = target.priority + 1;
     _speechBubbles[speakerRole.wire] = bubble;
     add(bubble);
+
+    // The bubble above is drawn over Dreamfinder's sprite. When the camera is
+    // not looking at him it is drawn where nobody can read it — so the reply
+    // happened and left no trace the player could notice. That is the whole of
+    // claude-tasks#4309: at `proximityRadius` 0 his video bubble and his
+    // proximity audio are both gated off, and if he is also off-screen there is
+    // no surface at all showing the player was heard.
+    //
+    // The player's OWN transcript needs no mirror — it renders over the local
+    // player, which the camera follows by construction.
+    if (speakerRole == SpeakerRole.dreamfinder && !_isOnCamera(target)) {
+      mirrorOffscreenDreamfinderSpeech?.call(
+          text, _dreamfinderComponent!.displayName);
+    }
   }
 
   /// Connect to LiveKit room.

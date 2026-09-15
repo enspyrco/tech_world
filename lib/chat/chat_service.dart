@@ -856,6 +856,34 @@ class ChatService {
   }
 
   /// Mark a conversation as read, resetting its unread count.
+  /// Append a line to the local group transcript WITHOUT publishing or
+  /// persisting it. Nobody else sees it and it does not survive a reload.
+  ///
+  /// Exists for one job: mirroring something the player would otherwise have no
+  /// way to notice. A Dreamfinder reply renders over his sprite, so when the
+  /// camera is not looking at him it is drawn where nobody can read it — and at
+  /// `proximityRadius` 0 his bubble and his audio are both gated off, leaving
+  /// the chat panel as the only screen-fixed surface left (claude-tasks#4309).
+  ///
+  /// Deliberately not routed through the send path: this is a local echo of
+  /// something that already happened, not a message. Publishing it would show
+  /// every other player a line they have no context for, and persisting it
+  /// would put a client-side rendering decision into shared history.
+  void addLocalLine({
+    required String text,
+    required String senderName,
+    bool isBot = true,
+  }) {
+    if (text.isEmpty) return;
+    _messages.add(ChatMessage(
+      text: text,
+      senderName: senderName,
+      isBot: isBot,
+    ));
+    _sortByTimestamp(_messages);
+    _messagesController.add(List.from(_messages));
+  }
+
   void markConversationRead(String conversationId) {
     final conv = _conversations[conversationId];
     if (conv == null) return;
