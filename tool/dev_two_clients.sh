@@ -56,27 +56,35 @@ echo "==> Launching Chrome guest client (isolated profile)"
 # when the launcher's process group is torn down -- which is exactly what
 # happened the first time this script ran: it printed a URL that was true when
 # written and dead one second later.
-# ── CORS/TLS dev proxy for the token path ────────────────────────────────────
-# realm-token-server rejects every browser Origin with 403 "origin not allowed"
-# (measured 2026-09-11 across 10 origins, prod domains included) and sends no
-# Access-Control-* headers. Without a proxy the web client cannot obtain a
-# LiveKit token AT ALL, which is why verify_av.sh's Concern 3 -- documented as
-# Chrome-ONLY -- had never once been satisfiable.
+# ── Local realm-token-server + TLS in front of it ────────────────────────────
+# The production mint at realm-token.imagineering.cc REFUSES browser origins by
+# design, not by omission: src/cors.js rejects CORS_ALLOW_LOCALHOST=true at boot
+# when NODE_ENV=production, and the Dockerfile sets it. The opt-in is "fine on a
+# laptop, a hole on a public mint" in the server's own words. So the dev loop
+# runs its OWN copy of the real server rather than routing around the deployed
+# one by stripping the Origin header.
 #
-# The proxy also has to serve HTTPS: FirebaseAuthProvider throws ArgumentError
-# unless exchangeEndpoint is https (firebase_auth_provider.dart:47), and
-# ArgumentError is an Error, so it escapes RealmTokenSource's Exception handlers
-# and surfaces as "Token source threw unexpectedly".
-#
-# Set NO_CORS_PROXY=1 to skip it (web client will not be able to join a room).
-PROXY_PORT="${CORS_PROXY_PORT:-8787}"
+# scripts/dev.sh in that repo generates an ephemeral ES256 keypair per run and
+# defaults CORS_ALLOW_LOCALHOST=true, so any Flutter dev port is accepted.
+# Set NO_LOCAL_TOKEN_SERVER=1 to skip (the web client then cannot join a room).
+TLS_PORT="${TLS_TERMINATOR_PORT:-8787}"
+RTS_PORT="${RTS_PORT:-8790}"
+RTS_DIR="${REALM_TOKEN_SERVER_DIR:-$HOME/git/orgs/enspyrco/realm-token-server}"
+SECRETS="${REALM_SECRETS_FILE:-$HOME/git/orgs/enspyrco/infra/realm-token-server/secrets.yaml}"
 CHROME_TLS_FLAGS=()
 REALM_DEFINE=()
-if [ "${NO_CORS_PROXY:-0}" != "1" ]; then
+
+if [ "${NO_LOCAL_TOKEN_SERVER:-0}" != "1" ]; then
+  if [ ! -x "$RTS_DIR/scripts/dev.sh" ]; then
+    echo "    realm-token-server not found at $RTS_DIR" >&2
+    echo "    clone enspyrco/realm-token-server, or set REALM_TOKEN_SERVER_DIR" >&2
+    exit 1
+  fi
+
   CERT="$RUN_DIR/proxy-cert.pem"
   KEY="$RUN_DIR/proxy-key.pem"
   if [ ! -f "$CERT" ] || [ ! -f "$KEY" ]; then
-    echo "==> Generating self-signed cert for the dev proxy"
+    echo "==> Generating self-signed cert for the TLS terminator"
     openssl req -x509 -newkey rsa:2048 -nodes -keyout "$KEY" -out "$CERT" \
       -days 30 -subj "/CN=localhost" \
       -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" >/dev/null 2>&1
@@ -87,21 +95,69 @@ if [ "${NO_CORS_PROXY:-0}" != "1" ]; then
     | openssl pkey -pubin -outform der \
     | openssl dgst -sha256 -binary | openssl enc -base64)
 
-  if lsof -iTCP:"$PROXY_PORT" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
-    echo "    CORS proxy already listening on $PROXY_PORT"
+  # The REAL LiveKit key/secret, because the token this server mints is verified
+  # by the real SFU at livekit.imagineering.cc. Everything else a local run needs
+  # is ephemeral. Without these the exchange still succeeds and the room join
+  # fails one hop later -- a confusing place to land, so say so up front.
+  if [ -f "$SECRETS" ] && command -v sops >/dev/null 2>&1; then
+    LK_ENV=$(sops -d "$SECRETS" 2>/dev/null | python3 -c '
+import sys, yaml, shlex
+d = yaml.safe_load(sys.stdin) or {}
+for k in ("LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):
+    if d.get(k):
+        print(f"export {k}={shlex.quote(str(d[k]))}")
+' 2>/dev/null) || LK_ENV=""
   else
-    echo "==> Starting CORS/TLS dev proxy on $PROXY_PORT"
-    nohup node "$ROOT/tool/cors_dev_proxy.js" "$PROXY_PORT" \
-      >"$RUN_DIR/cors-proxy.log" 2>&1 &
+    LK_ENV=""
+  fi
+
+  if [ -n "$LK_ENV" ]; then
+    eval "$LK_ENV"
+    echo "    LiveKit credentials: real (from $SECRETS)"
+  else
+    echo "    LiveKit credentials: DEV PLACEHOLDERS -- /exchange will work and" >&2
+    echo "    the room join will be rejected by the SFU. Install sops and keep" >&2
+    echo "    $SECRETS readable to fix." >&2
+  fi
+
+  if lsof -iTCP:"$RTS_PORT" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
+    echo "    realm-token-server already listening on $RTS_PORT"
+  else
+    echo "==> Starting local realm-token-server on $RTS_PORT"
+    (cd "$RTS_DIR" && PORT="$RTS_PORT" nohup ./scripts/dev.sh \
+      >"$RUN_DIR/realm-token-server.log" 2>&1 &)
+  fi
+
+  # Wait for the mint itself, not for the terminator in front of it: a 502 from
+  # the terminator and a mint that has not finished booting look identical to
+  # the Flutter client, and only one of them is worth waiting out.
+  for _ in $(seq 1 30); do
+    curl -s --max-time 1 "http://127.0.0.1:$RTS_PORT/healthz" 2>/dev/null \
+      | grep -q '"ok":true' && break
+    sleep 1
+  done
+  if ! curl -s --max-time 2 "http://127.0.0.1:$RTS_PORT/healthz" 2>/dev/null \
+       | grep -q '"ok":true'; then
+    echo "    realm-token-server never became healthy - see $RUN_DIR/realm-token-server.log" >&2
+    exit 1
+  fi
+
+  if lsof -iTCP:"$TLS_PORT" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
+    echo "    TLS terminator already listening on $TLS_PORT"
+  else
+    echo "==> Starting TLS terminator on $TLS_PORT"
+    REALM_UPSTREAM="http://127.0.0.1:$RTS_PORT" PROXY_CERT_DIR="$RUN_DIR" \
+      nohup node "$ROOT/tool/dev_tls_terminator.js" "$TLS_PORT" \
+      >"$RUN_DIR/tls-terminator.log" 2>&1 &
     disown $! 2>/dev/null || true
   fi
 
   CHROME_TLS_FLAGS=(
     --web-browser-flag="--ignore-certificate-errors-spki-list=$SPKI"
   )
-  REALM_DEFINE=(--dart-define=REALM_TOKEN_BASE="https://localhost:$PROXY_PORT")
+  REALM_DEFINE=(--dart-define=REALM_TOKEN_BASE="https://localhost:$TLS_PORT")
 else
-  echo "    CORS proxy DISABLED - the web client cannot join a room"
+  echo "    Local token server DISABLED - the web client cannot join a room"
 fi
 
 CHROME_MEDIA_FLAGS=()
@@ -170,5 +226,6 @@ Take a watermark BEFORE you start playing:
   wc -l < ~/Documents/tech_world_logs/events.log
 
 Read the results with:  tool/verify_av.sh <watermark>
-Proxy log (token hops):  $RUN_DIR/cors-proxy.log
+Token server log:        $RUN_DIR/realm-token-server.log
+  TLS terminator log:      $RUN_DIR/tls-terminator.log
 MSG
