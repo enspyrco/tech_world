@@ -1,5 +1,27 @@
 # HEAT — Runtime local sprite compositing for the player-authored character-maker
 
+> **CORRECTION (2026-09-15) — every `384×64` below should read `512×64`.**
+>
+> This document was written against a sheet width of 384px. The real part assets
+> are **512×64**: sixteen 32×64 cells, twelve walk frames (4 direction strips ×
+> 3) plus a four-frame wave/emote strip the renderer does not consume. Measured
+> off the PNGs themselves; `DESIGN.md`, `BLADE.md` and `CRUCIBLE.md` were
+> corrected, this file was not.
+>
+> **The one that matters is the security gate.** Q6 below states the
+> dimension-lock as `byteLength == 384*64*4 == 98304`. The correct figure is
+> `512*64*4 == 131072`, which is what `lib/avatar/avatar_spec.dart` actually
+> enforces. Implementing the gate from this document would reject every
+> legitimate raster — fail-closed, so not a hole, but the feature would not
+> work and the "fixed output size" reasoning would be attached to the wrong
+> size.
+>
+> The *arguments* below survive the correction unchanged: the cost estimates
+> scale by a third, and nothing about feasibility, the WASM constraints, or the
+> structural-validation argument depends on the specific width. Left in place
+> rather than rewritten, so the record of what was believed stays readable.
+
+
 Research movement of the /crucible forge. One load-bearing question: **is cheap local
 runtime compositing of layered PNGs into one `ui.Image` feasible on WASM/web + native, so
 that only enum-ids cross the wire?** If it isn't, the whole `AvatarSpec` design collapses.

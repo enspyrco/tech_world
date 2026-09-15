@@ -8,7 +8,15 @@ Extract the reusable Flutter/Flame/LiveKit multiplayer framework's **event-sink 
 
 - **Engine machinery** (~270 lines, pure infrastructure, zero game content): `AppEvent` base contract, `PiiPolicy`, `dispatch`, sink registration (`registerSink`/`registerRemoteSink`/async variants), `logger_bridge`.
 - **Engine-flavored events** (~400 lines): the infrastructure-category events the sinks route on — `AvPipelineSnapshot`, `LiveKitConnected/Disconnected`, `AppLogRecord`, `PlayerMoved`, proximity, room-lifecycle.
-- **First proving consumer:** `ProximityService` (120 lines, one file, zero game concepts, imports only `events/dispatch` + `events/types`).
+- **First proving consumer:** ~~`ProximityService` (120 lines, one file, zero game concepts, imports only `events/dispatch` + `events/types`).~~
+  **GONE (noted 2026-09-15).** `ProximityService` was deleted rather than wired
+  up: it was a dark capability — constructed, registered and tested, with all 39
+  `checkProximity` call sites in `test/` and none in `lib/` — and it modelled one
+  boolean threshold where the real gate stack needs three (visual, audio-enable,
+  audio-disable, the last two with hysteresis). `BubbleManager` is the single
+  proximity owner now. **This extraction therefore has no chosen proving
+  consumer, and picking one is open work** — the argument above rests on a
+  component that no longer exists, not merely on a stale line count.
 
 **Stays in tech_world (game content, ~1000 lines):** `WordLearned`, `SpellCastFailed`, `DoorUnlocked`, `TerminalOpened`, `MapEdited`, `BotSpoke`, challenge events, plus the exhaustive `sealed`-switch PII marker test.
 

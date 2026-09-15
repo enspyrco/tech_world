@@ -86,7 +86,8 @@ investment." The explanation is that **it is the ports layer**. The mass was alw
 to live in adapters: `realm_firebase` is 568 lines, and `realm_flame` would be
 **~7,150 lines currently misfiled up in `lib/flame/`**.
 
-Measured split of `lib/flame` (14,626 LOC / 74 files) — **by filename and size only, NOT
+Measured split of `lib/flame` (14,626 LOC / 74 files, **as at 2026-09-06; 15,785 LOC /
+81 files as at 2026-09-15**) — **by filename and size only, NOT
 by reading the code; see the falsifier**:
 
 | Plausibly generic substrate | Tech World vocabulary |
@@ -203,7 +204,7 @@ coupling honestly, including if it kills the candidate.**
   `worlds/tech_world/lib/`. `worlds/` does not exist; step 6 is unstarted. Per the
   scout-memory rule, a prior design's **prescribed shape binds** — this candidate must
   reconcile with it, not quietly replace it.
-- **Do not make existing debt worse:** `lib/flame/tech_world.dart` is 1,637 lines and has
+- **Do not make existing debt worse:** `lib/flame/tech_world.dart` is 1,637 lines (1,712 as at 2026-09-15) and has
   regrown *past* its pre-refactor size (1613 → 1317 after PR #438 → 1637 now).
   `lib/main.dart` is 2,101 lines with zero dedicated tests.
 - **`docs/crucible/realm-engine/`** holds `CRUCIBLE.md` + `RESEARCH.md` +
