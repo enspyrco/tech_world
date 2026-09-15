@@ -47,15 +47,20 @@ MACOS_PROC="tech_world.app/Contents/MacOS/tech_world"
 # swallows the next 180 lines and reports the error somewhere else entirely.
 AUTOPILOT_ROOM="${AUTOPILOT_ROOM:-}"
 [ -n "$AUTOPILOT_ROOM" ] || AUTOPILOT_ROOM="The Wizard's Tower"
-# The guest paces ACROSS the macOS client's station, so the pair crosses the
-# 96px merge threshold in both directions on every cycle. Two connected clients
-# that never come near each other prove connectivity and nothing else: the first
-# autopiloted run left them 17 cells apart for its whole life.
-AUTOPILOT_ROUTE="${AUTOPILOT_ROUTE:-21,20>27,20}"
-# Two adjacent cells rather than one: a single-waypoint route is not a walk and
-# does not start, so this is how the macOS client takes up a KNOWN position
-# instead of wherever the map happened to spawn it.
-AUTOPILOT_MACOS_ROUTE="${AUTOPILOT_MACOS_ROUTE:-24,20>24,21}"
+# THE NATIVE CLIENT PACES; THE WEB GUEST HOLDS STATION. Measured 2026-09-15:
+# the macOS client produced 41 moves across a run during which its window was
+# behind a terminal the whole time, while the Chrome guest -- connected,
+# publishing, visible to macOS -- produced zero. Chrome throttles
+# `Timer.periodic` in backgrounded tabs to roughly once a minute and sometimes
+# freezes it outright (the same behaviour filed against the foyer heartbeat,
+# claude-tasks#4266), and the walk is a Timer.periodic.
+#
+# So the role that needs a reliable clock goes to the platform that has one. The
+# guest still gets a route, because AutopilotWalker.start() takes its FIRST step
+# immediately rather than waiting out a dwell -- so the guest reaches its station
+# even if the timer never fires again, which is exactly what a station wants.
+AUTOPILOT_ROUTE="${AUTOPILOT_ROUTE:-24,20>24,21}"
+AUTOPILOT_MACOS_ROUTE="${AUTOPILOT_MACOS_ROUTE:-21,20>27,20}"
 AUTOPILOT_DWELL="${AUTOPILOT_DWELL:-2500}"
 MACOS_DEFINES=()
 GUEST_AUTOPILOT=()
@@ -63,7 +68,7 @@ if [ "${NO_AUTOPILOT:-0}" != "1" ]; then
   MACOS_DEFINES=(--dart-define=AUTOPILOT="room=$AUTOPILOT_ROOM;route=$AUTOPILOT_MACOS_ROUTE;dwell=$AUTOPILOT_DWELL")
   GUEST_AUTOPILOT=(--dart-define=AUTOPILOT="room=$AUTOPILOT_ROOM;route=$AUTOPILOT_ROUTE;dwell=$AUTOPILOT_DWELL")
   echo "==> Autopilot: room \"$AUTOPILOT_ROOM\" every ${AUTOPILOT_DWELL}ms"
-  echo "    macOS station $AUTOPILOT_MACOS_ROUTE, guest paces $AUTOPILOT_ROUTE across it"
+  echo "    macOS paces $AUTOPILOT_MACOS_ROUTE across the guest's station $AUTOPILOT_ROUTE"
   echo "    (NO_AUTOPILOT=1 to drive by hand)"
 fi
 
@@ -282,8 +287,8 @@ cat <<MSG
     Chrome log: $CHROME_LOG
 
 Both clients drive themselves from here (NO_AUTOPILOT=1 to opt out):
-  macOS  -> guest sign-in, enters "$AUTOPILOT_ROOM", takes station at $AUTOPILOT_MACOS_ROUTE, camera on
-  Chrome -> guest sign-in, same room, paces $AUTOPILOT_ROUTE across that station
+  macOS  -> guest sign-in, enters "$AUTOPILOT_ROOM", camera on, paces $AUTOPILOT_MACOS_ROUTE
+  Chrome -> guest sign-in, same room, holds station at $AUTOPILOT_ROUTE
 
 Give them ~30s to sign in, join and start publishing before reading the log.
 
@@ -291,3 +296,55 @@ Read the results with:  tool/verify_av.sh $WATERMARK
 Token server log:        $RUN_DIR/realm-token-server.log
   TLS terminator log:      $RUN_DIR/tls-terminator.log
 MSG
+
+# ── Did it actually do anything? ─────────────────────────────────────────────
+# Without this the script's last word is a URL and a watermark, which is the
+# same output whether both clients drove themselves or neither did. Measured
+# twice today: a run where the guest was connected, publishing and visible and
+# yet never moved, and a run where it never armed at all -- both of which ended
+# with this script reporting success and a log full of nothing.
+#
+# Set NO_AUTOPILOT_CHECK=1 to skip the wait.
+if [ "${NO_AUTOPILOT:-0}" != "1" ] && [ "${NO_AUTOPILOT_CHECK:-0}" != "1" ]; then
+  SETTLE="${AUTOPILOT_CHECK_SECONDS:-75}"
+  echo "==> Watching for ${SETTLE}s to see whether both clients drove themselves"
+  sleep "$SETTLE"
+
+  EVENTS="$HOME/Documents/tech_world_logs/events.log"
+  SUMMARY=$(tail -n +$((WATERMARK + 1)) "$EVENTS" 2>/dev/null | python3 -c '
+import sys, json
+from collections import Counter
+c = Counter()
+humans = set()
+for line in sys.stdin:
+    line = line.strip()
+    if not line.startswith("{"):
+        continue
+    try:
+        d = json.loads(line)
+    except ValueError:
+        continue
+    t = d.get("type")
+    c[t] += 1
+    # A peer that is neither a bot nor an agent is the other CLIENT.
+    if t == "remote_player_moved":
+        pid = d.get("playerId", "")
+        if not pid.startswith(("bot-", "agent-")):
+            humans.add(pid)
+print(c.get("player_moved", 0), c.get("bubbles_merged", 0), len(humans), c.get("av_bubble_created", 0))
+' 2>/dev/null) || SUMMARY="0 0 0 0"
+
+  set -- $SUMMARY
+  LOCAL_MOVES="${1:-0}"; MERGES="${2:-0}"; PEERS="${3:-0}"; BUBBLES="${4:-0}"
+
+  echo "    macOS moves: $LOCAL_MOVES    peer clients seen moving: $PEERS"
+  echo "    bubbles created: $BUBBLES    merges: $MERGES"
+
+  [ "$LOCAL_MOVES" -gt 0 ] || echo "    !! macOS never moved - autopilot did not arm, or the join failed" >&2
+  [ "$PEERS" -gt 0 ] || echo "    !! no peer client moved - a backgrounded Chrome tab throttles its walk timer" >&2
+  if [ "$MERGES" -eq 0 ]; then
+    echo "    !! no merge - the clients never came within 96px. Check the routes cross," >&2
+    echo "       and that BOTH windows are visible (an occluded window stops ticking)." >&2
+  fi
+fi
+
