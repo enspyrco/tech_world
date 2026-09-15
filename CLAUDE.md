@@ -93,6 +93,15 @@ generator looks like from the inside: each one reads as an isolated bug.
 more than one; every branch of a switch that touches the same field; every build mode and
 every platform. Then either guard all of them or write down why a sibling does not need it.
 
+**Siblings are not always branches.** When a method takes down more than one piece of
+state, each one needs the same restoration discipline — that pair is a sibling set too, and
+no branch-shaped search will find it. `_loadMapInternal` sets `_isLoadingMap = true` and
+`gameReady.value = false` together, restores the first in `finally` and the second as the
+last statement of the `try`, so any throw leaves `gameReady` false forever
+(claude-tasks#4463). Restoring both in `finally` would have been the wrong fix: after a
+failed load the world really is not ready, so the state was honest and the SILENCE was the
+bug. Ask what each variable means on the failing path before deciding where it belongs.
+
 Two structural preferences fall out, both already load-bearing here:
 
 - **Allowlist over denylist.** `if (!kDebugMode) refuse` cannot silently acquire a hole when the toolchain grows a mode; `if (kReleaseMode) refuse` did.
