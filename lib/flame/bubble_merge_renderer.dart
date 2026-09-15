@@ -373,13 +373,25 @@ class BubbleMergeRenderer {
     _mergedBubble = null;
     _cachedMergeGroup = [];
     _dirty = true;
-    // Drop the emitted-transition memory with the surface it describes.
+
+    // SPEAK the unmerge before forgetting it, then forget it unconditionally.
+    // Order matters and the two steps are not the same step.
     //
+    // Emitting first: tearing down a live merge IS an unmerge, and a listener
+    // balancing `BubblesMerged` against `BubblesUnmerged` would otherwise see
+    // the open and never the close. This renderer exists because merge was
+    // invisible; leaving its teardown silent rebuilds the same blindness at
+    // the other end.
+    //
+    // Clearing after: `_emitTransition` only advances the memory on frames
+    // that actually emit, so a teardown with nothing merged returns early
+    // without touching it. The clear must therefore still run on its own.
     // Leaving it set meant a NEW room that happened to merge the same
     // participants compared equal to the torn-down room's group, so
     // mergeTransitions returned nothing and no BubblesMerged was emitted for a
     // surface that really was built. The instrument would go silent exactly
     // where it is supposed to speak.
+    _emitTransition(const []);
     _lastEmittedGroup = const [];
   }
 

@@ -1,5 +1,6 @@
 import 'package:flame/components.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_merge_renderer.dart';
 import 'package:tech_world/flame/components/merged_video_bubble_component.dart';
@@ -237,6 +238,55 @@ void main() {
       renderer.clearSurfaces();
       expect(renderer.lastEmittedGroup, isEmpty,
           reason: 'a surviving memory suppresses the next real merge event');
+    });
+
+    test('clearSurfaces SPEAKS the unmerge before forgetting it', () {
+      // The sibling half of the finding above, and the order is the content:
+      // dropping the memory is correct, doing it silently is not. A room
+      // teardown that tears down a live merge IS an unmerge, so a listener
+      // balancing BubblesMerged against BubblesUnmerged saw the open and never
+      // the close. (Tesla, claude-tasks#4453.)
+      final captured = <AppEvent>[];
+      void sink(AppEvent e) => captured.add(e);
+      registerSink(sink);
+      addTearDown(() => unregisterSink(sink));
+
+      final renderer = BubbleMergeRenderer(
+        bubbles: {},
+        addComponent: (_) {},
+        reduceMotion: () => false,
+      );
+      renderer.debugEmitTransition(const ['a', 'b']);
+      captured.clear();
+
+      renderer.clearSurfaces();
+
+      expect(captured, hasLength(1),
+          reason: 'teardown of a live merge owes exactly one unmerge');
+      expect(captured.single, isA<BubblesUnmerged>());
+      // BOTH halves, because the fix is an ordering and either alone is the bug:
+      // emitting without clearing re-opens the same-group-next-room silence,
+      // clearing without emitting is the silence this test was added for.
+      expect(renderer.lastEmittedGroup, isEmpty);
+    });
+
+    test('tearing down with nothing merged says nothing', () {
+      // The negative arm. `_emitTransition` returns early when no events are
+      // owed, so the unconditional clear beneath it is what keeps the memory
+      // empty — and an unmerge for a merge that never happened would be a
+      // false statement in the very log this renderer exists to make truthful.
+      final captured = <AppEvent>[];
+      void sink(AppEvent e) => captured.add(e);
+      registerSink(sink);
+      addTearDown(() => unregisterSink(sink));
+
+      BubbleMergeRenderer(
+        bubbles: {},
+        addComponent: (_) {},
+        reduceMotion: () => false,
+      ).clearSurfaces();
+
+      expect(captured, isEmpty);
     });
   });
 }

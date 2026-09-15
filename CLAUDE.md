@@ -75,6 +75,34 @@ When two typed-id namespaces share the same persistence boundary (here: `Progres
 
 When reading legacy Dart-2-shaped code: don't refactor for its own sake, but if you're already changing the file, modernize.
 
+### Guard every sibling path, or none
+
+A guard, a dispose, a bound, a closing event — applied to the path the author was
+thinking about, with the structurally-equivalent sibling left open. Four instances were
+found one-per-review-round on PR #530 before anyone named the shape, which is what a
+generator looks like from the inside: each one reads as an isolated bug.
+
+- `DreamfinderAvatarHost` — disposed the bridge on the not-ready path, not on the throwing one.
+- Same file — identity-guarded two arms off one `initialize()` future, left the third reading the field.
+- `AvatarUpdateThrottle` — retry bounded in the sibling reconciler (which refuses the pattern BY NAME) and unbounded here.
+- `BubbleMergeRenderer.clearSurfaces` — dropped the merge memory without speaking the unmerge, while `BubbleManager.clear()` two lines up was already draining bubbles and proximity membership specifically so teardown would not go silent.
+- `Autopilot` — refused `kReleaseMode`, leaving `--profile` open.
+
+**Before writing a guard, enumerate the siblings.** Every arm off one future
+(`then`/`catchError`, and each early return between them); every exit from a method with
+more than one; every branch of a switch that touches the same field; every build mode and
+every platform. Then either guard all of them or write down why a sibling does not need it.
+
+Two structural preferences fall out, both already load-bearing here:
+
+- **Allowlist over denylist.** `if (!kDebugMode) refuse` cannot silently acquire a hole when the toolchain grows a mode; `if (kReleaseMode) refuse` did.
+- **Teardown speaks its closing events.** An instrument built because something was invisible must not go silent on the way out. If a path emits on open, the matching close is owed on every exit, teardown included.
+
+When a reviewer names this shape, the fix is the corpus sweep, not the instance
+(claude-tasks#4451). The sweep's mechanical signatures: paired future arms, resource
+acquire/release balance per file, async gaps that write state on return, and mode or
+platform guards. Counts rank what to read; they are never the finding.
+
 ### The world is the listener
 
 In Tech World, **the world listens — not the player**. Casting is triggered by *being in a place that is listening to you*, not by tapping a button to enter "casting mode."

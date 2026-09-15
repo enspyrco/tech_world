@@ -4,6 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/dev/autopilot.dart';
 
 void main() {
+  group('the build-mode gate (claude-tasks#4452)', () {
+    // `kDebugMode` is a compile-time constant and `flutter test` only ever runs
+    // in debug, so no test can observe the real guard refusing — the mode it
+    // would need to run in is the mode that cannot host the test. The RULE is
+    // split out from its binding for exactly that reason, and this is the only
+    // level at which the profile case is checkable at all.
+
+    test('debug is the only mode that may arm', () {
+      expect(Autopilot.allowedIn(debug: true), isTrue);
+      expect(Autopilot.allowedIn(debug: false), isFalse,
+          reason: 'profile is not release, and a profile binary carrying '
+              'AUTOPILOT would sign in anonymously and walk the player around');
+    });
+  });
+
   group('AutopilotPlan.parse', () {
     test('a full spec round-trips into typed fields', () {
       final plan = AutopilotPlan.parse('room=Wizards Tower;route=20,20>24,20;dwell=1500');

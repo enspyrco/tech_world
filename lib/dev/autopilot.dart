@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart' show kReleaseMode, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kReleaseMode, visibleForTesting;
 import 'package:logging/logging.dart';
 
 final _log = Logger('Autopilot');
@@ -19,7 +20,7 @@ final _log = Logger('Autopilot');
 /// eyes: the log is still the evidence.
 ///
 /// Inert unless `--dart-define=AUTOPILOT=...` is passed, and refused outright in
-/// release builds — a shipped binary that can sign itself in anonymously and
+/// any build but debug — a shipped binary that can sign itself in anonymously and
 /// walk around is a capability nobody asked for.
 final class Autopilot {
   Autopilot._();
@@ -34,10 +35,10 @@ final class Autopilot {
     if (_resolved) return _plan;
     _resolved = true;
     if (_spec.isEmpty) return _plan = null;
-    if (kReleaseMode) {
+    if (!allowedIn(debug: kDebugMode)) {
       // Fail closed and say so. Silently ignoring it would leave an operator
-      // watching a release build for behaviour that can never arrive.
-      _log.severe('AUTOPILOT is set but refused: release build');
+      // watching a build for behaviour that can never arrive.
+      _log.severe('AUTOPILOT is set but refused: $_modeRefusal');
       return _plan = null;
     }
     final parsed = AutopilotPlan.parse(_spec);
@@ -48,6 +49,27 @@ final class Autopilot {
     }
     return _plan = parsed;
   }
+
+  /// Whether autopilot may arm in a build with this [debug] flag.
+  ///
+  /// An ALLOWLIST, not a denylist, and that is the whole content of the rule.
+  /// Refusing `kReleaseMode` alone left `--profile` open — and profile is the
+  /// build handed to a performance tester, i.e. the mode most likely to be
+  /// running on a machine that is not the author's. A denylist acquires a new
+  /// hole every time the toolchain grows a mode; naming the single mode that IS
+  /// allowed cannot.
+  ///
+  /// Split from its binding so the RULE is testable. `kDebugMode` is a
+  /// compile-time constant and `flutter test` only ever runs debug, so a test
+  /// can never observe this guard refusing — the mode it would need to be
+  /// running in is the mode that cannot host the test. Passing the flag in is
+  /// the only way the profile case is checkable at all. Same reason
+  /// `BubbleMergeRenderer.mergeTransitions` is pure and static.
+  @visibleForTesting
+  static bool allowedIn({required bool debug}) => debug;
+
+  static String get _modeRefusal =>
+      'debug builds only (this build is ${kReleaseMode ? 'release' : 'profile'})';
 
   static bool get enabled => plan != null;
 

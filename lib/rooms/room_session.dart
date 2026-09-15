@@ -311,8 +311,8 @@ class RoomSession {
     // "Camera/mic setup failed" (main.dart Wire C) while the user is live on
     // mic and has been told the opposite.
     final outcomes = await Future.wait([
-      _settle(liveKitService.setCameraEnabled(true)),
-      _settle(liveKitService.setMicrophoneEnabled(true)),
+      _settle('camera on', liveKitService.setCameraEnabled(true)),
+      _settle('microphone on', liveKitService.setMicrophoneEnabled(true)),
     ]);
     final cameraOn = outcomes[0];
     final micOn = outcomes[1];
@@ -338,12 +338,12 @@ class RoomSession {
     final rolledBack = <String>[];
     final rollbackFailed = <String>[];
     if (cameraOn) {
-      (await _settle(liveKitService.setCameraEnabled(false)))
+      (await _settle('camera rollback', liveKitService.setCameraEnabled(false)))
           ? rolledBack.add('camera')
           : rollbackFailed.add('camera');
     }
     if (micOn) {
-      (await _settle(liveKitService.setMicrophoneEnabled(false)))
+      (await _settle('microphone rollback', liveKitService.setMicrophoneEnabled(false)))
           ? rolledBack.add('microphone')
           : rollbackFailed.add('microphone');
     }
@@ -363,8 +363,20 @@ class RoomSession {
   ///
   /// Exists so one track's failure cannot mask the other's success — see
   /// [enableMedia].
-  static Future<bool> _settle(Future<void> op) =>
-      op.then((_) => true, onError: (Object _, StackTrace __) => false);
+  ///
+  /// [what] names the leg so the CAUSE survives the collapse to a boolean. The
+  /// `StateError` this feeds says WHICH leg failed and cannot say why: a
+  /// permission denial, a device already in use and a disposed-room error are
+  /// one `false` by the time it is thrown. Join-unmuted has never yet failed in
+  /// a logged room, so the first real failure is the one that will most need
+  /// the reason, and it only exists here.
+  static Future<bool> _settle(String what, Future<void> op) => op.then(
+        (_) => true,
+        onError: (Object e, StackTrace st) {
+          _log.warning('$what failed', e, st);
+          return false;
+        },
+      );
 
   // ---------------------------------------------------------------------------
   // Reconnection
