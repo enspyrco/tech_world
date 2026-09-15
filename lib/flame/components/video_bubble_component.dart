@@ -111,7 +111,10 @@ class VideoBubbleComponent extends PositionComponent {
   ui.FragmentShader? _shader;
   double _time = 0;
   double _glowIntensity = 0.0;
-  Color _glowColor = Colors.green;
+  /// Glow colour. Public because it carries meaning a reader needs to be able
+  /// to check: local bubbles are cyan, Dreamfinder is gold, peers keep the
+  /// default. It was a write-only setter, so none of that was verifiable.
+  Color glowColor = Colors.green;
   double _speakingLevel = 0.0;
 
   // Breathing animation — sinusoidal scale pulsing
@@ -205,8 +208,11 @@ class VideoBubbleComponent extends PositionComponent {
   /// Set the glow intensity (0.0 - 1.0)
   set glowIntensity(double value) => _glowIntensity = value.clamp(0.0, 1.0);
 
-  /// Set the glow color
-  set glowColor(Color value) => _glowColor = value;
+  /// Current glow intensity. Read-side of the setter above, so a caller that
+  /// tints a bubble on construction can be checked without rendering it.
+  double get glowIntensity => _glowIntensity;
+
+
 
   /// Set the speaking level for pulse effects (0.0 - 1.0)
   set speakingLevel(double value) => _speakingLevel = value.clamp(0.0, 1.0);
@@ -702,9 +708,9 @@ class VideoBubbleComponent extends PositionComponent {
     _shader!.setFloat(1, bubbleSize);
     _shader!.setFloat(2, _time);
     _shader!.setFloat(3, _glowIntensity);
-    _shader!.setFloat(4, _glowColor.r);
-    _shader!.setFloat(5, _glowColor.g);
-    _shader!.setFloat(6, _glowColor.b);
+    _shader!.setFloat(4, glowColor.r);
+    _shader!.setFloat(5, glowColor.g);
+    _shader!.setFloat(6, glowColor.b);
     _shader!.setFloat(7, _speakingLevel);
   }
 
@@ -747,13 +753,13 @@ class VideoBubbleComponent extends PositionComponent {
       final glowPulse = reduceMotion ? 1.0 : 1.0 + 0.15 * sin(_time * 2.5);
       final glowRadius = radius + 8.0 * _glowIntensity * glowPulse;
       final glowPaint = Paint()
-        ..color = _glowColor.withValues(alpha: 0.45 * _glowIntensity * glowPulse)
+        ..color = glowColor.withValues(alpha: 0.45 * _glowIntensity * glowPulse)
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, 12.0 * _glowIntensity);
       canvas.drawCircle(center, glowRadius, glowPaint);
 
       // Inner bright ring at the bubble edge
       final ringPaint = Paint()
-        ..color = _glowColor.withValues(alpha: 0.3 * _glowIntensity)
+        ..color = glowColor.withValues(alpha: 0.3 * _glowIntensity)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.0
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
@@ -855,7 +861,7 @@ class VideoBubbleComponent extends PositionComponent {
     // glowIntensity = 0 this is the only edge affordance; for DF it sits on
     // top of the radial gold halo as a crisp inner ring.
     final borderPaint = Paint()
-      ..color = _currentFrame != null ? _glowColor : Colors.white
+      ..color = _currentFrame != null ? glowColor : Colors.white
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
     // Reuse the path built earlier, or build fresh if we took the no-video branch.

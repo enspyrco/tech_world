@@ -1,10 +1,6 @@
-import 'dart:collection';
 import 'dart:math';
-import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
-import 'package:flutter/material.dart' show Color, Colors;
-import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
 
 import 'package:flutter/foundation.dart'
@@ -12,19 +8,23 @@ import 'package:flutter/foundation.dart'
 
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/device/web_safe_mode.dart';
-import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
-import 'package:tech_world/flame/components/bubble_field_component.dart';
+import 'package:tech_world/flame/av_snapshot_reporter.dart';
+import 'package:tech_world/flame/bubble_factory.dart';
+import 'package:tech_world/flame/bubble_merge_renderer.dart';
+import 'package:tech_world/flame/bubble_physics.dart';
+import 'package:tech_world/flame/dreamfinder_avatar_host.dart';
+import 'package:tech_world/flame/dreamfinder_proximity_signal.dart';
+import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
+import 'package:tech_world/flame/proximity_audio_gate.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
-import 'package:tech_world/flame/components/merged_video_bubble_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
 import 'package:tech_world/flame/components/player_component.dart';
 import 'package:tech_world/flame/components/video_bubble_component.dart';
 import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
-import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
@@ -50,12 +50,55 @@ class BubbleManager {
     required Map<String, BotCharacterComponent> bots,
     this.hideVideoBubbles = false,
     this.reduceMotion = false,
+    this.proximityRadius = defaultProximityRadius,
     DiagnosticsService? diagnostics,
   })  : _localPlayer = localPlayer,
         _addComponent = addComponent,
         _remotePlayers = remotePlayers,
-        _bots = bots,
-        _diagnostics = diagnostics ?? Locator.maybeLocate<DiagnosticsService>();
+        _bots = bots {
+    _audioGate = ProximityAudioGate(
+      proximityRadius: () => proximityRadius,
+      liveKitService: () => _liveKitService,
+      diagnosticsEnabled: () => avDiagnosticsEnabled,
+      dreamfinderIdentity: () => dreamfinderIdentity,
+    );
+    _dfAvatar = DreamfinderAvatarHost(
+      liveKitService: () => _liveKitService,
+      onReady: () => refreshBubbleForPlayer(dreamfinderIdentity),
+      // Share the single computed value rather than probing the platform
+      // twice; it cannot change mid-session.
+      isMobileWebOverride: _isMobileWeb,
+    );
+    _factory = BubbleFactory(
+      hideVideoBubbles: () => hideVideoBubbles,
+      reduceMotion: () => reduceMotion,
+      liveKitService: () => _liveKitService,
+      dreamfinderCapture: () => _dfAvatar.canvasCapture,
+      botStatus: () => _botStatus,
+      isMobileWeb: _isMobileWeb,
+    );
+    _dfProximity = DreamfinderProximitySignal(
+      liveKitService: () => _liveKitService,
+      proximityRadius: () => proximityRadius,
+    );
+    _avReporter = AvSnapshotReporter(
+      diagnostics: diagnostics ?? Locator.maybeLocate<DiagnosticsService>(),
+      localPlayer: localPlayer,
+      remotePlayers: remotePlayers,
+      bots: bots,
+      bubbles: _playerBubbles,
+      audioEnabled: _audioGate.isEnabled,
+      dreamfinder: () => dreamfinderComponent,
+      dreamfinderIdentity: () => dreamfinderIdentity,
+      liveKitService: () => _liveKitService,
+      localBubbleKey: _localPlayerBubbleKey,
+    );
+    _mergeRenderer = BubbleMergeRenderer(
+      bubbles: _playerBubbles,
+      addComponent: addComponent,
+      reduceMotion: () => reduceMotion,
+    );
+  }
 
   /// When true, all proximity bubbles render as [PlayerBubbleComponent]
   /// (avatar-only) regardless of whether the underlying participant has a
@@ -85,6 +128,28 @@ class BubbleManager {
   /// shared metaball field/merged-video components on next update.
   bool reduceMotion;
 
+  /// Chebyshev radius, in grid squares, inside which another participant is
+  /// "nearby": their bubble forms, their audio subscribes, and Dreamfinder is
+  /// told the local player is in range. `0` disables proximity entirely — no
+  /// bubble forms for anyone, including a participant standing on the local
+  /// player's own square.
+  ///
+  /// This is the user's "Proximity range" preference
+  /// ([UserPreferences.proximityRadius]) and the single source of all three
+  /// proximity gates: the visual threshold is this value, and the audio
+  /// enable/disable pair derives from it (see [ProximityAudioGate.enableThreshold]).
+  ///
+  /// Mutable so the owning game world can apply the saved preference before
+  /// each room entry — the same seam as [hideVideoBubbles] and [reduceMotion].
+  /// Frozen for the session: a mid-session change never retroactively
+  /// re-evaluates pairs already in range.
+  int proximityRadius;
+
+  /// Radius applied when the caller supplies none. Matches
+  /// [UserPreferences.defaultProximityRadius]; a runtime test pins the two
+  /// together so the constructor default can't drift from the preference's.
+  static const int defaultProximityRadius = 5;
+
   // ── Construction-time stable references ──────────────────────────────────
 
   final PlayerComponent _localPlayer;
@@ -99,7 +164,9 @@ class BubbleManager {
   // ── LiveKit (arrives after construction) ─────────────────────────────────
 
   LiveKitService? _liveKitService;
-  DreamfinderAvatarBridge? _dreamfinderAvatarBridge;
+  /// Lifecycle owner of the 3D avatar iframe. See [DreamfinderAvatarHost];
+  /// every read through it is null-safe on platforms with no bridge.
+  late final DreamfinderAvatarHost _dfAvatar;
 
   // ── Mutable references set by TechWorld ──────────────────────────────────
 
@@ -109,71 +176,79 @@ class BubbleManager {
   // ── Bubble state ─────────────────────────────────────────────────────────
 
   final Map<String, PositionComponent> _playerBubbles = {};
-  final Map<String, Vector2> _bubbleDisplacements = {};
-  final Set<String> _audioEnabledParticipants = {};
-  /// Last volume pushed to LiveKit per participant, so the per-frame fade only
-  /// writes when the value actually changes (distance is an int → rarely).
-  final Map<String, double> _audioVolumes = {};
-  /// Last reported local-player proximity to Dreamfinder, so the df-proximity
-  /// signal is published only on enter/exit transitions, not every frame.
-  bool _wasNearDreamfinder = false;
+  /// Soft-body repulsion + tether. See [BubblePhysics]; it owns the
+  /// accumulated per-bubble displacement across frames.
+  final BubblePhysics _physics = BubblePhysics();
+  /// Distance-driven audio subscription + volume ramp. Owns the enable/disable
+  /// hysteresis pair and the per-participant volume cache — see
+  /// [ProximityAudioGate].
+  late final ProximityAudioGate _audioGate;
+  /// Outbound `df-proximity` enter/exit signal to the bot. See
+  /// [DreamfinderProximitySignal].
+  late final DreamfinderProximitySignal _dfProximity;
+  /// Participants inside [proximityRadius] as of the previous frame, so
+  /// enter/exit events fire on transitions only. Excludes the local player's
+  /// own bubble slot. See [_reconcileProximityMembership].
+  final Set<String> _nearbyParticipants = {};
 
-  // ── Rendering components ─────────────────────────────────────────────────
+  // ── Shared merge/glow layer ──────────────────────────────────────────────
 
-  BubbleFieldComponent? _bubbleField;
-  MergedVideoBubbleComponent? _mergedBubble;
-
-  // ── Merge group cache ───────────────────────────────────────────────────
-
-  bool _mergeGroupDirty = true;
-  List<String> _cachedMergeGroup = [];
+  /// The metaball field and merged-video surface that sit between bubbles,
+  /// plus their shaders and the merge-group search. See [BubbleMergeRenderer].
+  late final BubbleMergeRenderer _mergeRenderer;
 
   // ── Shader programs ───────────────────────────────────────────────────────
 
-  ui.FragmentProgram? _shaderProgram;
-  ui.FragmentProgram? _metaballShaderProgram;
-  ui.FragmentProgram? _mergedVideoShaderProgram;
+  /// Builds bubbles; owns the per-bubble video shader. See [BubbleFactory].
+  late final BubbleFactory _factory;
 
   // ── AV diagnostics ─────────────────────────────────────────────────────────
 
-  /// Single owner of the AV-diagnostics toggle. Read via [avDiagnosticsEnabled]
-  /// — never via a shadow field. See `feedback_cross_cutting_toggle_needs_single_owner`.
-  final DiagnosticsService? _diagnostics;
+  /// Periodic AV pipeline observer. Owns the diagnostics toggle, the snapshot
+  /// timer, and snapshot construction — see [AvSnapshotReporter]. Read-only
+  /// with respect to the bubble maps it is handed.
+  late final AvSnapshotReporter _avReporter;
 
-  /// Whether AV pipeline diagnostic events should be generated. Computed
-  /// from [_diagnostics.avEnabled.value] so there is no shadow field to
-  /// drift out of sync.
-  bool get avDiagnosticsEnabled =>
-      _diagnostics?.avEnabled.value ?? false;
-
-  double _snapshotTimer = 0;
-  static const double _snapshotIntervalSeconds = 5.0;
+  /// Whether AV pipeline diagnostic events should be generated.
+  ///
+  /// Delegates to the reporter, which reads `DiagnosticsService.avEnabled`
+  /// directly — there is no shadow field anywhere in the chain to drift out
+  /// of sync. Kept on `BubbleManager` because the bubble-lifecycle events in
+  /// [_replaceBubble] and `LiveKitGameBridge` gate on it.
+  bool get avDiagnosticsEnabled => _avReporter.enabled;
 
   // ── Constants ─────────────────────────────────────────────────────────────
 
   static const _localPlayerBubbleKey = '_local_player_';
-  static const int _visualThreshold = 5; // grid squares — bubbles visible
   // Audio gate with hysteresis so standing at the boundary doesn't flap the
   // SFU forward on/off. Audio enables when a participant is within
-  // [_audioEnableThreshold] and only cuts once they drift past
-  // [_audioDisableThreshold]. The enable distance sits just inside the visual
-  // range (5) so you can hear almost anyone whose bubble you can see — closing
-  // the old see-but-can't-hear dead zone (audio was ≤2 while bubbles were ≤5).
-  static const int _audioEnableThreshold = 4; // grid squares — audio turns on
-  static const int _audioDisableThreshold = 5; // grid squares — audio cuts off
-  static const int _audioFullVolumeDistance = 1; // ≤ this = full volume; fades out to _audioDisableThreshold
+  // [ProximityAudioGate.enableThreshold] and only cuts once they drift past
+  // [ProximityAudioGate.disableThreshold]. The enable distance sits one square inside the
+  // visual range so you can hear almost anyone whose bubble you can see —
+  // closing the old see-but-can't-hear dead zone (audio was ≤2 while bubbles
+  // were ≤5). Both derive from [proximityRadius], so the user's preference
+  // moves the whole gate stack together and the one-square hysteresis band is
+  // preserved at every setting.
+  //
+  // At radius 0 the enable threshold is -1, which no distance satisfies —
+  // proximity-disabled means silent, with no special case needed.
   static final _bubbleOffset =
       Vector2(16, -20); // center horizontally, above sprite
-  static const double _mergeThreshold = 96.0; // 1.5× bubble diameter
-  static const double _bubbleDiameter = 64.0;
-  static const double _maxTetherDistance = 24.0;
-  static const double _repulsionDamping = 0.85;
-  // Force coefficient: 0.5 (base strength) / 0.016 (60 fps reference dt).
-  static const double _repulsionForceCoefficient = 31.25;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Public API
   // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Whether [distance] grid squares counts as nearby at the current
+  /// [proximityRadius].
+  ///
+  /// The `> 0` term is the whole reason this is a method and not an inline
+  /// `distance <= proximityRadius`: radius 0 means proximity is off, and a
+  /// bare comparison would still match a participant standing on the local
+  /// player's own square. One owner, so the three call sites (remote players,
+  /// Dreamfinder, bots) cannot drift apart on it.
+  bool _isWithinRadius(int distance) =>
+      proximityRadius > 0 && distance <= proximityRadius;
 
   /// Chebyshev distance (max of x/y difference) — the metric for proximity.
   static int chebyshevDistance(Point<int> a, Point<int> b) =>
@@ -181,9 +256,8 @@ class BubbleManager {
 
   /// Load all three shader programs in parallel.
   Future<void> loadShaders() => Future.wait([
-        _loadVideoBubbleShader(),
-        _loadMetaballShader(),
-        _loadMergedVideoShader(),
+        _factory.loadShader(),
+        _mergeRenderer.loadShaders(),
       ]);
 
   /// Called when LiveKitService becomes available (after connectToLiveKit).
@@ -198,14 +272,7 @@ class BubbleManager {
 
   /// Main per-frame entry point. Called from TechWorld.update().
   void update(double dt) {
-    // ── Periodic AV snapshot ──────────────────────────────────────────────
-    if (avDiagnosticsEnabled) {
-      _snapshotTimer += dt;
-      if (_snapshotTimer >= _snapshotIntervalSeconds) {
-        _snapshotTimer = 0;
-        _dispatchPipelineSnapshots();
-      }
-    }
+    _avReporter.update(dt);
 
     final playerGrid = _localPlayer.miniGridPosition;
 
@@ -221,7 +288,7 @@ class BubbleManager {
 
     // Check each other player for proximity.
     final nearbyPlayerIds = <String>{};
-    int closestDistance = _visualThreshold + 1;
+    int closestDistance = proximityRadius + 1;
 
     for (final entry in _remotePlayers.entries) {
       final playerId = entry.key;
@@ -229,23 +296,23 @@ class BubbleManager {
 
       final distance =
           chebyshevDistance(playerGrid, playerComponent.miniGridPosition);
-      final isVisible = distance <= _visualThreshold;
+      final isVisible = _isWithinRadius(distance);
 
       if (isVisible) {
         nearbyPlayerIds.add(playerId);
         if (distance < closestDistance) closestDistance = distance;
 
         if (!_playerBubbles.containsKey(playerId)) {
-          final bubble = _createBubbleForPlayer(playerId, playerComponent);
+          final bubble = _factory.forRemotePlayer(playerId, playerComponent);
           bubble.position = playerComponent.position + _bubbleOffset;
           _replaceBubble(playerId, bubble, 'remote-player-entered-proximity');
         }
 
         _setBubbleOpacity(_playerBubbles[playerId]!, distance);
-        _updateParticipantAudio(playerId, distance);
+        _audioGate.update(playerId, distance);
       } else {
         // Beyond visual range — ensure audio is disabled.
-        _updateParticipantAudio(playerId, distance);
+        _audioGate.update(playerId, distance);
       }
     }
 
@@ -254,7 +321,7 @@ class BubbleManager {
       final dfGrid = dreamfinderComponent!.miniGridPosition;
       final dfDistance = chebyshevDistance(playerGrid, dfGrid);
 
-      if (dfDistance <= _visualThreshold) {
+      if (_isWithinRadius(dfDistance)) {
         nearbyPlayerIds.add(dreamfinderIdentity);
         if (dfDistance < closestDistance) closestDistance = dfDistance;
 
@@ -262,12 +329,12 @@ class BubbleManager {
           final dfParticipant =
               _liveKitService?.getParticipant(dreamfinderIdentity);
           PositionComponent bubble;
-          if (dfParticipant != null && !hideVideoBubbles && !_isMobileWeb) {
-            bubble = _createDreamfinderVideoBubble(dfParticipant);
+          if (dfParticipant != null && _factory.canEmbodyDreamfinder) {
+            bubble = _factory.forDreamfinder(dfParticipant);
           } else {
             // Mobile web (or hidden video) → the 2D sprite + a status bubble,
             // not the black embodied WebGL bubble.
-            bubble = BotBubbleComponent(botStatus: _botStatus);
+            bubble = _factory.forBot();
           }
           bubble.position =
               dreamfinderComponent!.position + _bubbleOffset;
@@ -280,7 +347,7 @@ class BubbleManager {
       // Dreamfinder only when close enough for the bubble to work. Runs every
       // frame (near OR far) so the gate is the single per-frame owner of DF
       // audio state. See [_updateDreamfinderAudio].
-      _updateDreamfinderAudio(dfDistance);
+      _audioGate.updateDreamfinder(dfDistance);
     }
 
     // Check proximity to all bot characters.
@@ -290,22 +357,26 @@ class BubbleManager {
       final botDistance =
           chebyshevDistance(playerGrid, botComp.miniGridPosition);
 
-      if (botDistance <= _visualThreshold) {
+      if (_isWithinRadius(botDistance)) {
         nearbyPlayerIds.add(botId);
         if (botDistance < closestDistance) closestDistance = botDistance;
 
         if (!_playerBubbles.containsKey(botId)) {
-          final bubble = BotBubbleComponent(botStatus: _botStatus);
+          final bubble = _factory.forBot();
           bubble.position = botComp.position + _bubbleOffset;
           _replaceBubble(botId, bubble, 'bot-entered-proximity');
         }
       }
     }
 
+    // Emit enter/exit before the local-player sentinel joins the set below —
+    // `_localPlayerBubbleKey` is a bubble slot, not a participant.
+    _reconcileProximityMembership(nearbyPlayerIds);
+
     // Show local player's bubble if near anyone.
     if (nearbyPlayerIds.isNotEmpty) {
       if (!_playerBubbles.containsKey(_localPlayerBubbleKey)) {
-        final localBubble = _createLocalPlayerBubble();
+        final localBubble = _factory.forLocalPlayer(_localPlayer);
         localBubble.position = _localPlayer.position + _bubbleOffset;
         _replaceBubble(
             _localPlayerBubbleKey, localBubble, 'local-player-bubble-shown');
@@ -317,10 +388,13 @@ class BubbleManager {
 
     // Notify Dreamfinder when the local player enters/exits its range so the
     // bot can gate whose speech it hears. null distance == DF not present.
-    _updateDreamfinderProximity(
-      dreamfinderComponent == null
-          ? null
-          : chebyshevDistance(playerGrid, dreamfinderComponent!.miniGridPosition),
+    // Territory containment, NOT distance to the sprite: Dreamfinder wanders
+    // inside his square, so a distance test let him hear players standing
+    // outside the box next to him. Reads the same rect the overlay draws, so
+    // what the player sees is what he hears.
+    _dfProximity.update(
+      playerGrid: playerGrid,
+      territory: dreamfinderComponent?.territory,
     );
 
     // Remove bubbles for players no longer nearby.
@@ -337,6 +411,27 @@ class BubbleManager {
     _updateBubblePositions(dt);
   }
 
+  /// Emit [PlayerEnteredProximity] / [PlayerLeftProximity] for the frame's
+  /// proximity set.
+  ///
+  /// Keyed off set membership rather than bubble creation on purpose: a bubble
+  /// is replaced for reasons that have nothing to do with proximity (upgrading
+  /// to video, camera on/off, a Dreamfinder respawn), and hanging the events
+  /// off `_replaceBubble` would report a peer as re-entering every time their
+  /// camera came on. Participants who vanish from the world maps entirely
+  /// (disconnects) fall out of [nearby] and so emit an exit here too.
+  void _reconcileProximityMembership(Set<String> nearby) {
+    for (final id in nearby.difference(_nearbyParticipants)) {
+      dispatch([PlayerEnteredProximity(playerId: id)]);
+    }
+    for (final id in _nearbyParticipants.difference(nearby)) {
+      dispatch([PlayerLeftProximity(playerId: id)]);
+    }
+    _nearbyParticipants
+      ..clear()
+      ..addAll(nearby);
+  }
+
   /// Refresh (upgrade to video or re-create) the bubble for a remote player.
   void refreshBubbleForPlayer(String playerId) {
     // Handle Dreamfinder separately.
@@ -349,15 +444,15 @@ class BubbleManager {
       // When video bubbles are hidden, or on mobile web (where the embodied
       // WebGL bubble renders black), never upgrade the DF bubble to a video
       // bubble — the existing BotBubbleComponent stays in place.
-      if (hideVideoBubbles || _isMobileWeb) return;
+      if (!_factory.canEmbodyDreamfinder) return;
 
       final hasCanvasCapture = existingBubble is VideoBubbleComponent &&
           existingBubble.externalVideoCapture != null;
       final needsUpgrade = existingBubble is! VideoBubbleComponent ||
-          (!hasCanvasCapture && _dreamfinderAvatarBridge?.isReady == true);
+          (!hasCanvasCapture && _dfAvatar.isReady);
 
       if (needsUpgrade) {
-        final videoBubble = _createDreamfinderVideoBubble(dfParticipant);
+        final videoBubble = _factory.forDreamfinder(dfParticipant);
         videoBubble.position =
             dreamfinderComponent!.position + _bubbleOffset;
         _replaceBubble(
@@ -374,7 +469,7 @@ class BubbleManager {
     final playerComponent = _remotePlayers[playerId];
     if (playerComponent == null) return;
 
-    final newBubble = _createBubbleForPlayer(playerId, playerComponent);
+    final newBubble = _factory.forRemotePlayer(playerId, playerComponent);
     newBubble.position = playerComponent.position + _bubbleOffset;
     _replaceBubble(playerId, newBubble, 'player-bubble-refreshed');
   }
@@ -388,7 +483,7 @@ class BubbleManager {
 
     _log.fine('Refreshing local player bubble after camera enabled');
 
-    final newBubble = _createLocalPlayerBubble();
+    final newBubble = _factory.forLocalPlayer(_localPlayer);
     newBubble.position = _localPlayer.position + _bubbleOffset;
     _replaceBubble(_localPlayerBubbleKey, newBubble,
         'local-player-bubble-refreshed');
@@ -409,7 +504,7 @@ class BubbleManager {
 
     _log.fine('Downgrading local player bubble after camera disabled');
     final position = existing.position.clone();
-    final newBubble = _createLocalPlayerBubble();
+    final newBubble = _factory.forLocalPlayer(_localPlayer);
     newBubble.position = position;
     _replaceBubble(_localPlayerBubbleKey, newBubble,
         'local-video-downgraded-to-static');
@@ -425,20 +520,15 @@ class BubbleManager {
     final position = existingBubble.position.clone();
 
     if (isDreamfinderIdentity(playerId)) {
-      final botBubble = BotBubbleComponent(
-        botStatus: _botStatus,
-        bubbleSize: 64,
-      );
+      final botBubble = _factory.forBot(bubbleSize: 64);
       botBubble.position = position;
       _replaceBubble(
           playerId, botBubble, 'dreamfinder-video-downgraded-to-bot');
     } else {
       final playerComponent = _remotePlayers[playerId];
       if (playerComponent != null) {
-        final newBubble = PlayerBubbleComponent(
-          displayName: playerComponent.displayName,
-          playerId: playerId,
-        );
+        final newBubble =
+            _factory.staticFor(playerId, playerComponent.displayName);
         newBubble.position = position;
         _replaceBubble(
             playerId, newBubble, 'player-video-downgraded-to-static');
@@ -467,31 +557,29 @@ class BubbleManager {
   }
 
   /// Initialize the Dreamfinder 3D avatar bridge (web only).
-  void initDreamfinderBridge() {
-    // Mobile web renders the embodied WebGL avatar black, so DF stays a 2D
-    // sprite there — don't load the iframe bridge at all.
-    if (_isMobileWeb) return;
-    if (_dreamfinderAvatarBridge != null) return;
-    final liveKit = _liveKitService;
-    if (liveKit == null) return;
-
-    _dreamfinderAvatarBridge =
-        DreamfinderAvatarBridge(liveKitService: liveKit);
-    _dreamfinderAvatarBridge!.initialize().then((_) {
-      if (_dreamfinderAvatarBridge?.isReady == true) {
-        _log.info('Dreamfinder avatar bridge ready — refreshing bubble');
-        refreshBubbleForPlayer(dreamfinderIdentity);
-      }
-    }).catchError((Object e) {
-      _log.warning('Dreamfinder avatar bridge failed to initialize: $e');
-    });
-  }
+  void initDreamfinderBridge() => _dfAvatar.start();
 
   /// Clean up Dreamfinder-specific state when the participant leaves.
   void handleDreamfinderLeft() {
     dreamfinderIdentity = dreamfinderBot.identity;
-    _dreamfinderAvatarBridge?.dispose();
-    _dreamfinderAvatarBridge = null;
+    // Drop the proximity latch with the body. [clear] already does this on room
+    // teardown; the leave path did not, and the room OUTLIVES a Dreamfinder
+    // leave, so the latch outlived the participant it described.
+    //
+    // The consequence is not a stale flag, it is a lost signal. The agents SDK
+    // gives each dispatch a fresh `agent-*` identity, so the next Dreamfinder
+    // is a NEW participant that was never told anything — while the signal
+    // still reads `near: true` from the departed one. A player standing inside
+    // the territory then makes the desired state match that stale confirmation,
+    // the reconciler sends nothing, and the new agent is never told.
+    //
+    // `recipientChanged`, not `reset`: reset means "the player left" and leaves
+    // the confirmed belief intact when its exit publish fails, because a bot
+    // that is still listening really does still hold `near: true`. Here there is
+    // no recipient at all, so the belief must be dropped without depending on a
+    // publish to the departed body landing.
+    _dfProximity.recipientChanged();
+    _dfAvatar.stop();
   }
 
   /// Remove a single bubble by player ID.
@@ -499,8 +587,7 @@ class BubbleManager {
     // A peer that vanishes (ungraceful disconnect) while inside audio range
     // never crosses the disable threshold in the proximity loop, so drop their
     // audio bookkeeping here to avoid leaking map entries until teardown.
-    _audioEnabledParticipants.remove(playerId);
-    _audioVolumes.remove(playerId);
+    _audioGate.forget(playerId);
     _replaceBubble(playerId, null, 'remove-bubble-api');
   }
 
@@ -514,155 +601,36 @@ class BubbleManager {
     for (final id in ids) {
       _replaceBubble(id, null, 'bubble-manager-cleared');
     }
-    _bubbleDisplacements.clear();
-    _bubbleField?.removeFromParent();
-    _bubbleField = null;
-    _mergedBubble?.removeFromParent();
-    _mergedBubble = null;
-    _audioEnabledParticipants.clear();
-    _audioVolumes.clear();
+    _physics.clear();
+    _mergeRenderer.clearSurfaces();
+    _audioGate.clear();
+    // Everyone who was in range has now left, as far as any consumer of the
+    // event stream is concerned. Same reasoning as the DF exit below: a
+    // teardown that drops membership silently leaves the last enter unmatched.
+    _reconcileProximityMembership(const {});
     // Emit a final exit so Dreamfinder doesn't hold a stale near:true after we
     // tear down while the player was in range (cage match PR #481 — Carnot).
     // Best-effort; the bot also self-heals on our ParticipantDisconnected.
-    if (_wasNearDreamfinder) {
-      _liveKitService?.publishDfProximity(near: false);
-    }
-    _wasNearDreamfinder = false;
+    _dfProximity.reset();
     _liveKitService = null;
-    _dreamfinderAvatarBridge?.dispose();
-    _dreamfinderAvatarBridge = null;
+    _dfAvatar.stop();
     dreamfinderIdentity = dreamfinderBot.identity;
   }
 
   /// Final teardown. Call from TechWorld.dispose().
   void dispose() {
     clear();
-    _shaderProgram = null;
-    _metaballShaderProgram = null;
-    _mergedVideoShaderProgram = null;
+    _factory.disposeShader();
+    _mergeRenderer.dispose();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Private — shader loading
   // ═══════════════════════════════════════════════════════════════════════════
 
-  Future<void> _loadVideoBubbleShader() async {
-    try {
-      _shaderProgram =
-          await ui.FragmentProgram.fromAsset('shaders/video_bubble.frag');
-    } catch (e) {
-      _log.warning('Video bubble shader failed to load', e);
-    }
-  }
-
-  Future<void> _loadMetaballShader() async {
-    try {
-      _metaballShaderProgram =
-          await ui.FragmentProgram.fromAsset('shaders/metaball_field.frag');
-    } catch (e) {
-      _log.warning('Metaball shader failed to load', e);
-    }
-  }
-
-  Future<void> _loadMergedVideoShader() async {
-    try {
-      _mergedVideoShaderProgram = await ui.FragmentProgram.fromAsset(
-          'shaders/merged_video_bubble.frag');
-    } catch (e) {
-      _log.warning('Merged video shader failed to load', e);
-    }
-  }
-
   // ═══════════════════════════════════════════════════════════════════════════
   // Private — bubble creation
   // ═══════════════════════════════════════════════════════════════════════════
-
-  bool _hasVideoTrack(Participant participant) {
-    for (final publication in participant.videoTrackPublications) {
-      if (publication.track != null) {
-        if (participant is LocalParticipant) {
-          return true;
-        } else {
-          if (publication.subscribed) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  PositionComponent _createBubbleForPlayer(
-      String playerId, PlayerComponent playerComponent) {
-    final participant = _liveKitService?.getParticipant(playerId);
-    if (!hideVideoBubbles &&
-        participant != null &&
-        _hasVideoTrack(participant)) {
-      final videoBubble = VideoBubbleComponent(
-        participant: participant,
-        displayName: playerComponent.displayName,
-        bubbleSize: 64,
-        targetFps: 15,
-        reduceMotion: reduceMotion,
-      );
-
-      if (_shaderProgram != null) {
-        videoBubble.setShader(_shaderProgram!.fragmentShader());
-      }
-
-      return videoBubble;
-    }
-
-    return PlayerBubbleComponent(
-      displayName: playerComponent.displayName,
-      playerId: playerId,
-    );
-  }
-
-  PositionComponent _createLocalPlayerBubble() {
-    final localParticipant = _liveKitService?.localParticipant;
-
-    if (!hideVideoBubbles &&
-        localParticipant != null &&
-        _hasVideoTrack(localParticipant)) {
-      _log.fine('Creating local VideoBubbleComponent');
-      final videoBubble = VideoBubbleComponent(
-        participant: localParticipant,
-        displayName: _localPlayer.displayName,
-        bubbleSize: 64,
-        targetFps: 15,
-        reduceMotion: reduceMotion,
-      );
-
-      if (_shaderProgram != null) {
-        videoBubble.setShader(_shaderProgram!.fragmentShader());
-      }
-
-      videoBubble.glowColor = Colors.cyan;
-
-      return videoBubble;
-    }
-
-    return PlayerBubbleComponent(
-      displayName: _localPlayer.displayName,
-      playerId: _localPlayer.id,
-    );
-  }
-
-  VideoBubbleComponent _createDreamfinderVideoBubble(
-      Participant participant) {
-    final videoBubble = VideoBubbleComponent(
-      participant: participant,
-      displayName: dreamfinderBot.displayName,
-      bubbleSize: 64,
-      targetFps: 10,
-      externalVideoCapture: _dreamfinderAvatarBridge?.canvasCapture,
-      reduceMotion: reduceMotion,
-    );
-    videoBubble.glowColor = const Color(0xFFDAA520); // gold
-    videoBubble.glowIntensity = 0.7;
-    return videoBubble;
-  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Private — proximity and audio
@@ -677,120 +645,35 @@ class BubbleManager {
     }
   }
 
-  /// Visual opacity for a bubble at [distance] Chebyshev grid squares.
+  /// Visual opacity for a bubble at [distance] Chebyshev grid squares: full
+  /// within [ProximityAudioGate.fullVolumeDistance], then a linear fade to nothing at
+  /// [proximityRadius].
   ///
-  /// Moved here from ProximityService — opacity is presentation, not
-  /// proximity logic.
-  ///
-  /// - Distance 0–1: 1.0 (fully visible)
-  /// - Distance 2: 0.8
-  /// - Distance 3: 0.5
-  /// - Distance 4: 0.2
-  /// - Distance 5+: 0.0 (removed by caller)
-  static double _opacityForDistance(int distance) {
-    if (distance <= 1) return 1.0;
-    if (distance == 2) return 0.8;
-    if (distance == 3) return 0.5;
-    if (distance == 4) return 0.2;
-    return 0.0;
-  }
-
-  void _updateParticipantAudio(String playerId, int distance) {
-    // No LiveKit service yet (pre-connect / post-teardown) → don't mutate the
-    // gate state. Latching a state change we couldn't actually send leaves the
-    // gate stuck once the service comes up (the next frame sees "no change").
-    final service = _liveKitService;
-    if (service == null) return;
-
-    final hasAudio = _audioEnabledParticipants.contains(playerId);
-
-    // Hysteresis: enable when within the (tighter) enable threshold, disable
-    // only once past the (looser) disable threshold. Between the two, hold the
-    // current state so a participant hovering at the boundary doesn't toggle
-    // the SFU forward on and off every frame.
-    final shouldEnable = !hasAudio && distance <= _audioEnableThreshold;
-    final shouldDisable = hasAudio && distance > _audioDisableThreshold;
-
-    if (shouldEnable) {
-      _audioEnabledParticipants.add(playerId);
-      service.setParticipantAudioEnabled(playerId, true);
-      if (avDiagnosticsEnabled) {
-        dispatch([AvAudioGateChanged(
-          participant: playerId,
-          enabled: true,
-          distance: distance,
-        )]);
-      }
-    } else if (shouldDisable) {
-      _audioEnabledParticipants.remove(playerId);
-      _audioVolumes.remove(playerId); // re-set volume on next enable
-      service.setParticipantAudioEnabled(playerId, false);
-      if (avDiagnosticsEnabled) {
-        dispatch([AvAudioGateChanged(
-          participant: playerId,
-          enabled: false,
-          distance: distance,
-        )]);
-      }
-    }
-
-    // Distance fade: while the track is subscribed, ramp playback volume by
-    // distance so voices fade with range instead of cutting. The hard
-    // enable/disable above is the outer subscription boundary (and the
-    // bandwidth saver); this is the per-square ramp inside it. Only push to
-    // LiveKit when the value actually changes — `distance` is an int, so for a
-    // stationary peer this is most frames, and the web path is a DOM write.
-    if (_audioEnabledParticipants.contains(playerId)) {
-      final volume = _volumeForDistance(distance);
-      if (_audioVolumes[playerId] != volume) {
-        // Cache only if the volume actually landed on a track. If the track
-        // hasn't subscribed yet the call no-ops; caching anyway would suppress
-        // the retry and leave the late track stuck at default volume.
-        if (service.setParticipantAudioVolume(playerId, volume)) {
-          _audioVolumes[playerId] = volume;
-        }
-      }
-    }
-  }
-
-  /// Volume curve for the distance fade: full within [_audioFullVolumeDistance],
-  /// then a linear step-down per grid square to silence at
-  /// [_audioDisableThreshold]. Stepwise (distance is an int), not continuous.
-  double _volumeForDistance(int distance) {
-    if (distance <= _audioFullVolumeDistance) return 1.0;
-    final span = _audioDisableThreshold - _audioFullVolumeDistance;
-    return ((_audioDisableThreshold - distance) / span).clamp(0.0, 1.0);
-  }
-
-  /// Emit the `df-proximity` enter/exit signal to Dreamfinder. [dfDistance] is
-  /// null when DF isn't present (forces an exit).
-  ///
-  /// Hardened per the PR #481 cage match (Kelvin + Carnot):
-  /// - **Hysteresis** — enter within [_audioEnableThreshold]; once near, stay
-  ///   near until past [_audioDisableThreshold]. Stops a peer hovering at the
-  ///   boundary from spamming the reliable channel.
-  /// - **Null-service safety** — if the service isn't ready we do NOT latch
-  ///   [_wasNearDreamfinder]; the transition simply re-fires next frame once it
-  ///   is. Latching-without-sending was the "signal lost forever" bug.
-  void _updateDreamfinderProximity(int? dfDistance) {
-    final near = dfDistance != null &&
-        (_wasNearDreamfinder
-            ? dfDistance <= _audioDisableThreshold
-            : dfDistance <= _audioEnableThreshold);
-    if (near == _wasNearDreamfinder) return;
-    final service = _liveKitService;
-    if (service == null) return; // can't emit — don't latch; retry next frame
-    _wasNearDreamfinder = near;
-    service.publishDfProximity(near: near);
+  /// Opacity is presentation, not proximity logic — hence living here rather
+  /// than in a proximity source. It used to be a ladder hand-tabulated for a
+  /// radius of 5 (0.8 / 0.5 / 0.2); scaling it to the user's radius means the
+  /// fade spans whatever range they chose instead of going fully transparent
+  /// two squares early at radius 6, or never fading at all at radius 2. At the
+  /// default radius the curve is within 0.05 of the old ladder at every
+  /// square, and it is now the same shape as [ProximityAudioGate.volumeForDistance].
+  double _opacityForDistance(int distance) {
+    if (proximityRadius <= 0) return 0.0;
+    if (distance <= ProximityAudioGate.fullVolumeDistance) return 1.0;
+    final span = proximityRadius - ProximityAudioGate.fullVolumeDistance;
+    if (span <= 0) return 1.0;
+    return ((proximityRadius - distance) / span).clamp(0.0, 1.0);
   }
 
   /// Test seam for the DF proximity emission logic — exercising it through the
   /// real update loop would require a fully-constructed [DreamfinderComponent]
-  /// (sprite + path harness). Pass the Chebyshev distance to DF, or null for
-  /// "DF absent".
+  /// (sprite + path harness). Pass the player's grid cell and Dreamfinder's
+  /// resolved territory, or a null territory for "DF absent / no square".
   @visibleForTesting
-  void debugUpdateDreamfinderProximity(int? dfDistance) =>
-      _updateDreamfinderProximity(dfDistance);
+  void debugUpdateDreamfinderProximity({
+    required Point<int>? playerGrid,
+    required TerritoryRect? territory,
+  }) =>
+      _dfProximity.update(playerGrid: playerGrid, territory: territory);
 
   /// Proximity-gate Dreamfinder's audio symmetric with its video bubble: you
   /// hear DF only when within audio range, via the same [_updateParticipantAudio]
@@ -802,41 +685,12 @@ class BubbleManager {
   /// the gate is the single per-frame writer of DF audio state and
   /// self-reconciles with the manual path (which also disables the track
   /// directly) within one frame.
-  void _updateDreamfinderAudio(int dfDistance) {
-    final service = _liveKitService;
-    final silenced = service?.dreamfinderSilenced.value ?? false;
-    final fedDistance = silenced ? _audioDisableThreshold + 1 : dfDistance;
-
-    // Gate EVERY DF participant in the room, not just the last-bound
-    // [dreamfinderIdentity] slot. Agent respawns / stale sessions mean more
-    // than one `agent-*` identity can exist at once, and any identity outside
-    // the gate is ungoverned audio (half of the 2026-07-18 silence failure).
-    final ids = <String>{
-      dreamfinderIdentity,
-      ...?service?.dreamfinderIdentities(),
-    };
-    for (final id in ids) {
-      _updateParticipantAudio(id, fedDistance);
-      if (silenced && service != null && _audioVolumes[id] != 0.0) {
-        // Local hard-mute while silenced: the fade layer above only writes
-        // volume for gate-ENABLED participants, so after the silence disable
-        // nothing else touches the playback element — if the server-side
-        // disable is ineffective (the other half of the 2026-07-18 failure),
-        // audio keeps playing at its last volume forever. Same
-        // retry-until-landed caching semantics as the fade layer.
-        if (service.setParticipantAudioVolume(id, 0.0)) {
-          _audioVolumes[id] = 0.0;
-        }
-      }
-    }
-  }
-
   /// Test seam for [_updateDreamfinderAudio] — see
   /// [debugUpdateDreamfinderProximity] for why the real loop can't be driven
   /// without a fully-constructed [DreamfinderComponent].
   @visibleForTesting
   void debugUpdateDreamfinderAudio(int dfDistance) =>
-      _updateDreamfinderAudio(dfDistance);
+      _audioGate.updateDreamfinder(dfDistance);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // Private — physics and rendering
@@ -845,7 +699,7 @@ class BubbleManager {
   void _updateBubblePositions(double dt) {
     // Bubble positions change every frame (they track their owning character),
     // so the merge group must be rechecked.
-    _mergeGroupDirty = true;
+    _mergeRenderer.invalidate();
 
     // 1. Set base positions from owning characters.
     for (final entry in _playerBubbles.entries) {
@@ -859,7 +713,7 @@ class BubbleManager {
         entry.value.priority = dreamfinderComponent!.priority + 1;
         if (entry.value is VideoBubbleComponent) {
           (entry.value as VideoBubbleComponent).loadingProgress =
-              _dreamfinderAvatarBridge?.avatarLoadProgress;
+              _dfAvatar.avatarLoadProgress;
         }
       } else if (_bots.containsKey(entry.key)) {
         final botComp = _bots[entry.key]!;
@@ -874,8 +728,17 @@ class BubbleManager {
       }
     }
 
+    // 1b. Snapshot the anchor centres BEFORE repulsion displaces them. These
+    // decide merge membership; the displaced centres below decide rendering.
+    // Taken here rather than derived later because the displacement is
+    // accumulated inside BubblePhysics and cannot be subtracted back out.
+    final anchorCentres = <String, Vector2>{
+      for (final entry in _playerBubbles.entries)
+        entry.key: entry.value.center.clone(),
+    };
+
     // 2. Apply physics repulsion so bubbles don't overlap.
-    _applyBubbleRepulsion(dt);
+    _physics.apply(_playerBubbles, dt);
 
     // 3. Collect centres for the metaball field.
     final centres = <Vector2>[];
@@ -887,171 +750,7 @@ class BubbleManager {
       }
     }
 
-    _updateBubbleField(centres, lowestPriority);
-    _updateMergedVideo(lowestPriority);
-  }
-
-  void _applyBubbleRepulsion(double dt) {
-    final entries = _playerBubbles.entries.toList();
-    if (entries.length < 2) return;
-
-    _bubbleDisplacements
-        .removeWhere((k, _) => !_playerBubbles.containsKey(k));
-
-    final forces = <String, Vector2>{};
-    for (var i = 0; i < entries.length; i++) {
-      for (var j = i + 1; j < entries.length; j++) {
-        final ci = entries[i].value.center;
-        final cj = entries[j].value.center;
-        final delta = ci - cj;
-        final dist = delta.length;
-        if (dist < _bubbleDiameter && dist > 0.01) {
-          final overlap = _bubbleDiameter - dist;
-          final direction = delta.normalized();
-          final clampedDt = min(dt, 0.05);
-          final push = direction * (overlap * _repulsionForceCoefficient * clampedDt);
-          forces[entries[i].key] =
-              (forces[entries[i].key] ?? Vector2.zero()) + push;
-          forces[entries[j].key] =
-              (forces[entries[j].key] ?? Vector2.zero()) - push;
-        }
-      }
-    }
-
-    for (final entry in entries) {
-      final key = entry.key;
-      var disp = _bubbleDisplacements[key] ?? Vector2.zero();
-      // Damp first so accumulated drift decays before new force is applied,
-      // then add this frame's force, then cap — so even a large single-frame
-      // impulse cannot bypass the tether limit.
-      disp = disp * _repulsionDamping;
-      disp += forces[key] ?? Vector2.zero();
-      if (disp.length > _maxTetherDistance) {
-        disp = disp.normalized() * _maxTetherDistance;
-      }
-      _bubbleDisplacements[key] = disp;
-      entry.value.position += disp;
-    }
-  }
-
-  void _updateBubbleField(List<Vector2> centres, int lowestPriority) {
-    if (centres.length < 2 || _metaballShaderProgram == null) {
-      _bubbleField?.removeFromParent();
-      _bubbleField = null;
-      return;
-    }
-
-    if (_bubbleField == null) {
-      _bubbleField = BubbleFieldComponent(
-        shaderProgram: _metaballShaderProgram!,
-        glowColor: const Color(0xFF00FF88),
-        bubbleRadius: 32,
-        reduceMotion: reduceMotion,
-      );
-      _addComponent(_bubbleField!);
-    }
-
-    // Live-propagate so toggling reduce-motion does not require dropping the
-    // field component (which would happen only when the merge group shrinks).
-    _bubbleField!.reduceMotion = reduceMotion;
-    _bubbleField!.priority = lowestPriority - 1;
-    _bubbleField!.updateBubblePositions(centres);
-  }
-
-  void _updateMergedVideo(int lowestPriority) {
-    if (_mergedVideoShaderProgram == null) return;
-
-    final videoBubbles = <String, VideoBubbleComponent>{};
-    for (final entry in _playerBubbles.entries) {
-      if (entry.value is VideoBubbleComponent) {
-        videoBubbles[entry.key] = entry.value as VideoBubbleComponent;
-      }
-    }
-
-    if (_mergeGroupDirty) {
-      _cachedMergeGroup = _findMergeGroup(videoBubbles);
-      _mergeGroupDirty = false;
-    }
-    final mergeGroup = _cachedMergeGroup;
-
-    if (mergeGroup.length >= 2) {
-      if (_mergedBubble == null) {
-        _mergedBubble = MergedVideoBubbleComponent(
-          shaderProgram: _mergedVideoShaderProgram!,
-          glowColor: const Color(0xFF00FF88),
-          bubbleRadius: 32,
-          reduceMotion: reduceMotion,
-        );
-        _addComponent(_mergedBubble!);
-      }
-      // Live-propagate so a toggle takes effect without re-creating the merge.
-      _mergedBubble!.reduceMotion = reduceMotion;
-
-      final sources = <VideoBubbleComponent>[];
-      final positions = <Vector2>[];
-      for (final key in mergeGroup) {
-        final bubble = videoBubbles[key]!;
-        bubble.hiddenForMerge = true;
-        sources.add(bubble);
-        positions.add(bubble.center);
-      }
-
-      _mergedBubble!.priority = lowestPriority;
-      _mergedBubble!.updateSources(sources);
-      _mergedBubble!.updatePositions(positions);
-
-      for (final entry in videoBubbles.entries) {
-        if (!mergeGroup.contains(entry.key)) {
-          entry.value.hiddenForMerge = false;
-        }
-      }
-    } else {
-      for (final bubble in videoBubbles.values) {
-        bubble.hiddenForMerge = false;
-      }
-      _mergedBubble?.removeFromParent();
-      _mergedBubble = null;
-    }
-  }
-
-  List<String> _findMergeGroup(Map<String, VideoBubbleComponent> bubbles) {
-    if (bubbles.length < 2) return [];
-
-    final keys = bubbles.keys.toList();
-    final visited = <String>{};
-    List<String> largestGroup = [];
-
-    for (final startKey in keys) {
-      if (visited.contains(startKey)) continue;
-
-      final group = <String>[startKey];
-      final queue = Queue<String>()..add(startKey);
-      visited.add(startKey);
-
-      while (queue.isNotEmpty) {
-        final current = queue.removeFirst();
-        final currentCenter = bubbles[current]!.center;
-
-        for (final candidateKey in keys) {
-          if (visited.contains(candidateKey)) continue;
-          final candidateCenter = bubbles[candidateKey]!.center;
-          final dist = currentCenter.distanceTo(candidateCenter);
-          if (dist < _mergeThreshold) {
-            visited.add(candidateKey);
-            group.add(candidateKey);
-            queue.add(candidateKey);
-          }
-        }
-      }
-
-      if (group.length > largestGroup.length) {
-        largestGroup = group;
-      }
-    }
-
-    return largestGroup.length >= 2
-        ? largestGroup.take(maxMergedBubbles).toList()
-        : [];
+    _mergeRenderer.update(centres, lowestPriority, anchorCentres);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1107,7 +806,7 @@ class BubbleManager {
       _playerBubbles.remove(id);
     }
 
-    _mergeGroupDirty = true;
+    _mergeRenderer.invalidate();
 
     if (old != null || newBubble != null) {
       _log.fine('bubble[$id] ${old == null ? "+" : (newBubble == null ? "-" : "~")} $reason');
@@ -1124,113 +823,6 @@ class BubbleManager {
   /// pinned with a sentinel `PositionComponent` subclass without
   /// reaching into the private dispatch path.
   @visibleForTesting
-  static AvBubbleType classifyBubble(PositionComponent bubble) => switch (bubble) {
-        VideoBubbleComponent() => AvBubbleType.video,
-        PlayerBubbleComponent() => AvBubbleType.player,
-        BotBubbleComponent() => AvBubbleType.bot,
-        _ => AvBubbleType.unknown,
-      };
-
-  void _dispatchPipelineSnapshots() {
-    final playerGrid = _localPlayer.miniGridPosition;
-    final events = <AppEvent>[];
-
-    for (final entry in _remotePlayers.entries) {
-      final playerId = entry.key;
-      final playerComponent = entry.value;
-      final distance =
-          chebyshevDistance(playerGrid, playerComponent.miniGridPosition);
-      final bubble = _playerBubbles[playerId];
-      final participant = _liveKitService?.getParticipant(playerId);
-
-      events.add(_snapshotForParticipant(
-        playerId: playerId,
-        bubble: bubble,
-        participant: participant,
-        distance: distance,
-        isLocal: false,
-      ));
-    }
-
-    // Dreamfinder snapshot.
-    if (dreamfinderComponent != null) {
-      final dfDistance = chebyshevDistance(
-          playerGrid, dreamfinderComponent!.miniGridPosition);
-      events.add(_snapshotForParticipant(
-        playerId: dreamfinderIdentity,
-        bubble: _playerBubbles[dreamfinderIdentity],
-        participant: _liveKitService?.getParticipant(dreamfinderIdentity),
-        distance: dfDistance,
-        isLocal: false,
-      ));
-    }
-
-    // Bot snapshots.
-    for (final entry in _bots.entries) {
-      final botDistance =
-          chebyshevDistance(playerGrid, entry.value.miniGridPosition);
-      events.add(_snapshotForParticipant(
-        playerId: entry.key,
-        bubble: _playerBubbles[entry.key],
-        participant: _liveKitService?.getParticipant(entry.key),
-        distance: botDistance,
-        isLocal: false,
-      ));
-    }
-
-    // Local player snapshot (publish state). Emit the real LiveKit identity
-    // in `participant` rather than the internal `_localPlayerBubbleKey`
-    // sentinel — the sentinel is a private map key, not a wire identity.
-    // `isLocal: true` already disambiguates for consumers. Falls back to
-    // the sentinel only when localParticipant has not yet attached.
-    final localBubble = _playerBubbles[_localPlayerBubbleKey];
-    final localParticipant = _liveKitService?.localParticipant;
-    events.add(_snapshotForParticipant(
-      playerId: localParticipant?.identity ?? _localPlayerBubbleKey,
-      bubble: localBubble,
-      participant: localParticipant,
-      distance: 0,
-      isLocal: true,
-    ));
-
-    if (events.isNotEmpty) dispatch(events);
-  }
-
-  AvPipelineSnapshot _snapshotForParticipant({
-    required String playerId,
-    required PositionComponent? bubble,
-    required Participant? participant,
-    required int distance,
-    required bool isLocal,
-  }) {
-    final hasVideoTrack =
-        participant != null ? _hasVideoTrack(participant) : false;
-
-    AvCaptureMethod? captureMethod;
-    int captureRetryCount = 0;
-    int framesCaptured = 0;
-    int framesDropped = 0;
-
-    if (bubble is VideoBubbleComponent) {
-      captureMethod = bubble.diagnosticCaptureMethod;
-      captureRetryCount = bubble.diagnosticCaptureRetryCount;
-      framesCaptured = bubble.diagnosticFramesCaptured;
-      framesDropped = bubble.diagnosticFramesDropped;
-    }
-
-    final bubbleType = bubble == null ? null : classifyBubble(bubble);
-
-    return AvPipelineSnapshot(
-      participant: playerId,
-      hasVideoTrack: hasVideoTrack,
-      captureMethod: captureMethod,
-      captureRetryCount: captureRetryCount,
-      framesCaptured: framesCaptured,
-      framesDropped: framesDropped,
-      bubbleType: bubbleType,
-      audioEnabled: _audioEnabledParticipants.contains(playerId),
-      distance: distance,
-      isLocal: isLocal,
-    );
-  }
+  static AvBubbleType classifyBubble(PositionComponent bubble) =>
+      AvSnapshotReporter.classifyBubble(bubble);
 }

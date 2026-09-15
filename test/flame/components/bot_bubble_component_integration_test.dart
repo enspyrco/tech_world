@@ -13,9 +13,9 @@ class TestGameWithMockImages extends TechWorldGame {
   @override
   Future<void> onLoad() async {
     // Generate and add mock images instead of loading from assets
-    images.add('NPC11.png', await generateImage(384, 256));
-    images.add('NPC12.png', await generateImage(384, 256));
-    images.add('NPC13.png', await generateImage(384, 256));
+    images.add('NPC11.png', await generateImage(512, 64));
+    images.add('NPC12.png', await generateImage(512, 64));
+    images.add('NPC13.png', await generateImage(512, 64));
     images.add('single_room.png', await generateImage(800, 600));
     images.add('claude_bot.png', await generateImage(48, 48));
 

@@ -24,6 +24,8 @@ void consoleSink(AppEvent event) {
       'DoorUnlocked: ($doorX, $doorY)',
     PlayerMoved(:final destX, :final destY) =>
       'PlayerMoved: → ($destX, $destY)',
+    RemotePlayerMoved(:final playerId, :final destX, :final destY) =>
+      'RemotePlayerMoved: $playerId → ($destX, $destY)',
     TerminalOpened(:final challengeId, :final terminalX, :final terminalY) =>
       'TerminalOpened: ${challengeId.wireName} at ($terminalX, $terminalY)',
     TerminalClosed() => 'TerminalClosed',
@@ -60,6 +62,10 @@ void consoleSink(AppEvent event) {
       'PlayerEnteredProximity: $playerId',
     PlayerLeftProximity(:final playerId) =>
       'PlayerLeftProximity: $playerId',
+    BubblesMerged(:final participantIds) =>
+      'BubblesMerged: ${participantIds.join(" + ")}',
+    BubblesUnmerged(:final participantIds) =>
+      'BubblesUnmerged: ${participantIds.join(" + ")}',
     BotJoined(:final identity) => 'BotJoined: $identity',
     BotLeft() => 'BotLeft',
     ScreenShareToggled(:final started) =>

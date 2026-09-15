@@ -322,11 +322,18 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                   _proximityRadius == null
                       ? 'Loading…'
                       : (_proximityRadius == 0
-                          ? 'Disabled — no video bubbles will form. '
+                          // Naming the audio consequence matters: 0 turns off
+                          // proximity, not just its bubbles, so a player who
+                          // sets it and then hears nobody would read working
+                          // behaviour as a broken mic. To keep voices while
+                          // losing bubbles, use "Hide video bubbles" above.
+                          ? 'Off — no video bubbles, and you won\'t hear '
+                              'nearby players. '
                               'Takes effect on next room entry.'
                           : '${_proximityRadius!} grid '
                               '${_proximityRadius == 1 ? 'square' : 'squares'}. '
-                              '0 disables proximity. '
+                              'Bubbles form and voices fade in within this '
+                              'range; 0 turns proximity off entirely. '
                               'Takes effect on next room entry.'),
                   style: const TextStyle(
                     color: Colors.white54,

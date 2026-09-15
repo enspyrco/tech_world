@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,7 +7,6 @@ import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
-import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/spellbook/cast_effects.dart';
 import 'package:tech_world/spellbook/door_cast_result.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';
@@ -663,129 +661,6 @@ void main() {
       // Events still emitted (they're facts about the cast, even if
       // the underlying services are idempotent).
       expect(captured.length, 2);
-    });
-  });
-
-  // ===========================================================================
-  // Proximity E2E — real ProximityService code path
-  // ===========================================================================
-
-  group('proximity E2E', () {
-    late ProximityService proximity;
-
-    setUp(() {
-      proximity = ProximityService(proximityThreshold: 5);
-    });
-
-    tearDown(() {
-      proximity.dispose();
-    });
-
-    test('player entering range fires PlayerEnteredProximity', () {
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'player_2': const Point(3, 3)},
-      );
-      expect(captured.length, 1);
-      expect(captured[0], isA<PlayerEnteredProximity>()
-          .having((e) => e.playerId, 'playerId', 'player_2'));
-    });
-
-    test('player leaving range fires PlayerLeftProximity', () {
-      // Enter first.
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'player_2': const Point(3, 3)},
-      );
-      captured.clear();
-
-      // Leave.
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'player_2': const Point(20, 20)},
-      );
-      expect(captured.length, 1);
-      expect(captured[0], isA<PlayerLeftProximity>()
-          .having((e) => e.playerId, 'playerId', 'player_2'));
-    });
-
-    test('player far away produces no events', () {
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'player_2': const Point(20, 20)},
-      );
-      expect(captured, isEmpty);
-    });
-
-    test('player disconnecting fires PlayerLeftProximity', () {
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'player_2': const Point(3, 3)},
-      );
-      captured.clear();
-
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {},
-      );
-      expect(captured.length, 1);
-      expect(captured[0], isA<PlayerLeftProximity>());
-    });
-
-    test('multiple players produce independent events', () {
-      proximity.checkProximity(
-        localPlayerPosition: const Point(10, 10),
-        otherPlayerPositions: {
-          'alice': const Point(12, 12),
-          'bob': const Point(8, 8),
-          'charlie': const Point(50, 50),
-        },
-      );
-
-      expect(captured.length, 2);
-      final ids = captured
-          .cast<PlayerEnteredProximity>()
-          .map((e) => e.playerId)
-          .toSet();
-      expect(ids, {'alice', 'bob'});
-    });
-
-    test('staying in range does not re-fire enter event', () {
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'p': const Point(3, 3)},
-      );
-      expect(captured.length, 1);
-
-      captured.clear();
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'p': const Point(3, 3)},
-      );
-      expect(captured, isEmpty);
-    });
-
-    test('enter → leave → re-enter fires three events total', () {
-      // Enter.
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'p': const Point(3, 3)},
-      );
-      // Leave.
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'p': const Point(20, 20)},
-      );
-      // Re-enter.
-      proximity.checkProximity(
-        localPlayerPosition: const Point(0, 0),
-        otherPlayerPositions: {'p': const Point(4, 4)},
-      );
-
-      expect(captured.length, 3);
-      expect(captured[0], isA<PlayerEnteredProximity>());
-      expect(captured[1], isA<PlayerLeftProximity>());
-      expect(captured[2], isA<PlayerEnteredProximity>());
     });
   });
 

@@ -62,6 +62,7 @@ import 'package:tech_world/widgets/edit_profile_dialog.dart'
     show EditProfileDialog, EditProfileResult;
 import 'package:tech_world/widgets/loading_screen.dart';
 import 'firebase_options.dart';
+import 'package:tech_world/dev/autopilot.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/logger_bridge_init.dart';
 import 'package:tech_world/events/sinks/console_sink.dart';
@@ -224,6 +225,15 @@ class _MyAppState extends State<MyApp> {
   /// Prevents double-tap on a room card from launching two concurrent joins.
   bool _isJoining = false;
 
+  /// Walks the local player when this build was launched with `--dart-define=
+  /// AUTOPILOT=...`. Null in every ordinary build; see [Autopilot].
+  AutopilotWalker? _autopilotWalker;
+
+  /// One shot per sign-in. Without it a failed auto-join retries on every
+  /// auth-state rebuild, which reads in the log as the room being unreachable
+  /// rather than as the room name being wrong.
+  bool _autopilotJoinAttempted = false;
+
   /// Deferred leave: set by [_leaveRoom] when called while [_isJoining] is
   /// true.  [_joinRoom]'s finally block checks this and calls [_leaveRoom]
   /// so that dispose happens after in-flight wire operations complete.
@@ -375,6 +385,17 @@ class _MyAppState extends State<MyApp> {
       _log.info('User signed out - cleaned up');
       dispatch([UserSignedOut()]);
       setState(() {});
+      _autopilotJoinAttempted = false;
+      _autopilotWalker?.stop();
+      _autopilotWalker = null;
+      // Guest sign-in is the only method a script can complete: the others need
+      // a human at an OAuth consent screen.
+      if (Autopilot.enabled) {
+        _log.info('Autopilot: signing in as guest');
+        unawaited(locate<AuthService>().signInAnonymously().catchError((Object e) {
+          _log.severe('Autopilot: guest sign-in failed', e);
+        }));
+      }
     } else {
       // User signed in — set up profile & services, show lobby.
       _log.info('User signed in: ${user.id} (${user.displayName})');
@@ -441,6 +462,11 @@ class _MyAppState extends State<MyApp> {
         displayName: user.displayName,
       )]);
       setState(() {}); // Show lobby (or avatar picker first).
+
+      if (Autopilot.enabled && !_autopilotJoinAttempted) {
+        _autopilotJoinAttempted = true;
+        unawaited(_autopilotJoin());
+      }
     }
   }
 
@@ -496,11 +522,6 @@ class _MyAppState extends State<MyApp> {
       wires.start(Wire.server);
       final wireB = () async {
         try {
-          // Read the proximity-radius preference *before* RoomSession.create
-          // so it's frozen into the ProximityService for this session. Live
-          // toggle changes take effect on next room entry — see the slider
-          // subtitle in EditProfileDialog.
-          final proximityRadius = await UserPreferences.proximityRadius();
           _session = RoomSession.create(
             room: room,
             userId: userId,
@@ -513,7 +534,6 @@ class _MyAppState extends State<MyApp> {
                 return tw.connectToLiveKit(userId, _currentDisplayName);
               },
             onRoomDeleted: _onRoomDeleted,
-            proximityRadius: proximityRadius,
           );
           final result = await _session!.connect();
           if (result == ConnectionResult.connected) {
@@ -527,9 +547,25 @@ class _MyAppState extends State<MyApp> {
             techWorld
                 .setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
             techWorld.setReduceMotion(await UserPreferences.reduceMotion());
+            // Frozen for the session: a mid-session slider change takes effect
+            // on next room entry, so no in-range pair is re-evaluated
+            // retroactively. Matches the slider subtitle in EditProfileDialog.
+            techWorld
+                .setProximityRadius(await UserPreferences.proximityRadius());
             // A mention arriving while chat is already open auto-acks (the user
             // has already "seen" it). `_chatCollapsed == false` means visible.
             techWorld.isLocalChatOpen = () => !_chatCollapsed.value;
+            // Dreamfinder's reply is drawn over his sprite; off camera that is
+            // nowhere the player can read. Mirror it into the chat panel, which
+            // is screen-fixed. Local echo only — never published, never
+            // persisted (claude-tasks#4309).
+            techWorld.mirrorOffscreenDreamfinderSpeech =
+                ({required text, required speakerName}) {
+              _session?.chatService.addLocalLine(
+                text: text,
+                senderName: speakerName,
+              );
+            };
             await techWorld.connectToLiveKit(userId, _currentDisplayName);
 
             // Wire C: camera + mic (depends on server connection).
@@ -615,11 +651,80 @@ class _MyAppState extends State<MyApp> {
     }
   }
 
+  /// Find the autopiloted room by name, enter it, and start walking.
+  ///
+  /// Searches the user's own rooms as well as the public ones: a fixture room
+  /// made for a verification run belongs to whoever made it, and requiring it
+  /// to be public to be autopilotable would be an arbitrary limit.
+  ///
+  /// Every failure here is logged at SEVERE with the names that WERE found.
+  /// A silent no-op would be indistinguishable from an autopilot that never
+  /// armed, and the operator is not watching this window — that is the point.
+  Future<void> _autopilotJoin() async {
+    final plan = Autopilot.plan;
+    final roomService = _roomService;
+    if (plan == null || roomService == null) return;
+
+    final userId = _currentUserId;
+    try {
+      // MUST come before the join. The avatar gate sits ABOVE the room check in
+      // the widget tree, so a signed-in user with no saved avatar gets
+      // AvatarSelectionScreen no matter what `_currentRoom` holds — GameWidget
+      // is never built, TechWorld.onLoad never runs, and `_pathComponent` stays
+      // null, which makes movePlayerToCell refuse every move forever. A fresh
+      // guest account has no saved avatar by definition, so autopiloting a guest
+      // without this walks a route into a world that was never constructed.
+      if (_selectedAvatar == null) {
+        _log.info('Autopilot: no avatar chosen, taking the default');
+        await _onAvatarSelected(defaultAvatar);
+      }
+
+      final rooms = [
+        ...await roomService.listPublicRooms(),
+        if (userId != null) ...await roomService.listMyRooms(userId),
+      ];
+      RoomData? match;
+      for (final room in rooms) {
+        if (plan.matchesRoom(room.name)) {
+          match = room;
+          break;
+        }
+      }
+      if (match == null) {
+        _log.severe('Autopilot: no room named "${plan.roomName}". '
+            'Found: ${rooms.map((r) => r.name).toSet().toList()}');
+        return;
+      }
+
+      _log.info('Autopilot: joining "${match.name}"');
+      await _joinRoom(match);
+
+      // `_currentRoom != null` says the JOIN finished, not that the world can
+      // move anyone — the path component arrives later, and a move issued
+      // before it does is discarded in silence. That gap is why the walker
+      // retries a refused waypoint instead of advancing past it; this check
+      // only catches the coarser failure where the join did not stick at all.
+      if (_currentRoom == null) {
+        _log.severe('Autopilot: join did not stick, not walking');
+        return;
+      }
+      final techWorld = locate<TechWorld>();
+      _autopilotWalker = AutopilotWalker(
+        plan: plan,
+        moveTo: techWorld.movePlayerToCell,
+      )..start();
+      _log.info('Autopilot: walking ${plan.route.length} waypoints '
+          'every ${plan.dwell.inMilliseconds}ms');
+    } catch (e, st) {
+      _log.severe('Autopilot: join failed', e, st);
+    }
+  }
+
   /// Leave the current room — disconnect LiveKit and return to lobby.
   ///
   /// Disposal order: TechWorld subscriptions first (cancels stream listeners
   /// while the underlying services are still alive), then RoomSession handles
-  /// consumer-before-producer disposal (ChatService → ProximityService →
+  /// consumer-before-producer disposal (ChatService → TimerService →
   /// LiveKitService).
   Future<void> _leaveRoom() async {
     if (_currentRoom == null) return;
@@ -763,9 +868,6 @@ class _MyAppState extends State<MyApp> {
 
       // Now connect LiveKit for the new room.
       if (_session == null) {
-        // Read proximity-radius pref before RoomSession.create — see the
-        // comment at the other call site above.
-        final proximityRadius = await UserPreferences.proximityRadius();
         _session = RoomSession.create(
           room: room,
           userId: userId,
@@ -778,7 +880,6 @@ class _MyAppState extends State<MyApp> {
                 return tw.connectToLiveKit(userId, _currentDisplayName);
               },
           onRoomDeleted: _onRoomDeleted,
-          proximityRadius: proximityRadius,
         );
         final result = await _session!.connect();
         if (result == ConnectionResult.connected) {
@@ -787,6 +888,7 @@ class _MyAppState extends State<MyApp> {
           // Web-safe-mode floor is sealed in the setters (see the seam above).
           tw.setHideVideoBubbles(await UserPreferences.hideVideoBubbles());
           tw.setReduceMotion(await UserPreferences.reduceMotion());
+          tw.setProximityRadius(await UserPreferences.proximityRadius());
           await tw.connectToLiveKit(userId, _currentDisplayName);
           await _session!.enableMedia();
           await _session!.chatService.loadHistory(room.id);
@@ -1261,12 +1363,7 @@ class _MyAppState extends State<MyApp> {
                             icon: const Icon(Icons.arrow_back,
                                 color: Colors.white70, size: 20),
                             tooltip: 'Leave room',
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.black54,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
+                            style: toolbarButtonStyle(),
                           ),
                           const SizedBox(width: 8),
                           // Map selector with saved rooms
@@ -1632,13 +1729,8 @@ class _SpellbookButton extends StatelessWidget {
               tooltip: disabled
                   ? 'Spellbook unavailable while casting'
                   : (isOpen ? 'Close spellbook' : 'Open spellbook'),
-              style: IconButton.styleFrom(
-                backgroundColor: isOpen && !disabled
-                    ? arcaneColor.withValues(alpha: 0.2)
-                    : Colors.black54,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              style: toolbarButtonStyle(
+                accent: isOpen && !disabled ? arcaneColor : null,
               ),
             );
           },
@@ -1677,12 +1769,8 @@ class _MapEditorButton extends StatelessWidget {
             size: 20,
           ),
           tooltip: active ? 'Close map editor' : 'Open map editor',
-          style: IconButton.styleFrom(
-            backgroundColor:
-                active ? const Color(0xFF4444FF).withValues(alpha: 0.2) : Colors.black54,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
+          style: toolbarButtonStyle(
+            accent: active ? const Color(0xFF4444FF) : null,
           ),
         );
       },
@@ -1764,17 +1852,40 @@ class _ScreenShareButtonState extends State<_ScreenShareButton> {
         size: 20,
       ),
       tooltip: _sharing ? 'Stop sharing' : 'Share screen',
-      style: IconButton.styleFrom(
-        backgroundColor: _sharing
-            ? Colors.red.shade300.withValues(alpha: 0.2)
-            : Colors.black54,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+      style: toolbarButtonStyle(
+        accent: _sharing ? Colors.red.shade300 : null,
       ),
     );
   }
 }
+
+/// The one definition of how a toolbar button looks.
+///
+/// Toolbar buttons float directly over the game world, so their legibility is
+/// a function of whatever tile happens to be underneath — and that varies from
+/// near-black floor to pale tan brick within a single screen. Seven buttons
+/// each hand-rolled their own colours, and the active state was the accent at
+/// `alpha: 0.2`: a 20%-opacity chip that vanishes into light ground, with an
+/// accent-coloured icon on top of it that vanishes with it.
+///
+/// The fix is to stop letting the background participate. The chip is always a
+/// near-opaque dark scrim, so it supplies its own contrast; state is carried by
+/// the icon colour and a border, both read against the scrim rather than
+/// against the world. A hairline border keeps the chip's edge visible where the
+/// ground is itself dark and the scrim would otherwise dissolve into it.
+ButtonStyle toolbarButtonStyle({Color? accent}) => IconButton.styleFrom(
+      backgroundColor: const Color(0xE6101014),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: accent?.withValues(alpha: 0.9) ?? Colors.white38,
+          width: 1,
+        ),
+      ),
+    );
+
+/// Icon colour for a toolbar button, read against [toolbarButtonStyle]'s scrim.
+Color toolbarIconColor({Color? accent}) => accent ?? Colors.white70;
 
 /// Toolbar button to silence Dreamfinder's audio.
 ///
@@ -1797,18 +1908,13 @@ class _DreamfinderSilenceButton extends StatelessWidget {
         onPressed: () => service.setDreamfinderSilenced(!silenced),
         icon: Icon(
           silenced ? Icons.volume_off : Icons.volume_up,
-          color: silenced ? Colors.amber.shade300 : Colors.white70,
+          color: toolbarIconColor(accent: silenced ? Colors.amber.shade300 : null),
           size: 20,
         ),
         tooltip:
             silenced ? 'Unsilence Dreamfinder' : 'Silence Dreamfinder',
-        style: IconButton.styleFrom(
-          backgroundColor: silenced
-              ? Colors.amber.shade300.withValues(alpha: 0.2)
-              : Colors.black54,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+        style: toolbarButtonStyle(
+          accent: silenced ? Colors.amber.shade300 : null,
         ),
       ),
     );
@@ -1838,17 +1944,12 @@ class _MicMuteButton extends StatelessWidget {
         onPressed: () => service.setMicrophoneEnabled(!enabled),
         icon: Icon(
           enabled ? Icons.mic : Icons.mic_off,
-          color: enabled ? Colors.white70 : Colors.red.shade300,
+          color: toolbarIconColor(accent: enabled ? null : Colors.red.shade300),
           size: 20,
         ),
         tooltip: enabled ? 'Mute microphone' : 'Unmute microphone',
-        style: IconButton.styleFrom(
-          backgroundColor: enabled
-              ? Colors.black54
-              : Colors.red.shade300.withValues(alpha: 0.2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+        style: toolbarButtonStyle(
+          accent: enabled ? null : Colors.red.shade300,
         ),
       ),
     );
@@ -1877,17 +1978,12 @@ class _CameraMuteButton extends StatelessWidget {
         onPressed: () => service.setCameraEnabled(!enabled),
         icon: Icon(
           enabled ? Icons.videocam : Icons.videocam_off,
-          color: enabled ? Colors.white70 : Colors.red.shade300,
+          color: toolbarIconColor(accent: enabled ? null : Colors.red.shade300),
           size: 20,
         ),
         tooltip: enabled ? 'Turn off camera' : 'Turn on camera',
-        style: IconButton.styleFrom(
-          backgroundColor: enabled
-              ? Colors.black54
-              : Colors.red.shade300.withValues(alpha: 0.2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+        style: toolbarButtonStyle(
+          accent: enabled ? null : Colors.red.shade300,
         ),
       ),
     );

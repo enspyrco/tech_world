@@ -14,7 +14,7 @@ import 'package:livekit_client/livekit_client.dart'
         Room,
         ScreenShareCaptureOptions,
         VideoTrack;
-import 'package:tech_world/avatar/avatar.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
@@ -44,6 +44,39 @@ void main() {
 
     tearDown(() {
       chatService.dispose();
+    });
+
+    group('addLocalLine (off-camera Dreamfinder mirror, #4309)', () {
+      test('appends to the local transcript', () {
+        chatService.addLocalLine(text: 'over here', senderName: 'Dreamfinder');
+        expect(chatService.currentMessages.length, 1);
+        expect(chatService.currentMessages.single.text, 'over here');
+        expect(chatService.currentMessages.single.senderName, 'Dreamfinder');
+        expect(chatService.currentMessages.single.isBot, isTrue);
+      });
+
+      // THE load-bearing one. This mirrors a line the local player could not
+      // see; publishing it would show every OTHER player a message they have no
+      // context for, triggered by a rendering decision on someone else's screen.
+      test('publishes NOTHING — it is a local echo, not a message', () {
+        chatService.addLocalLine(text: 'over here', senderName: 'Dreamfinder');
+        expect(fakeLiveKit.publishedMessages, isEmpty);
+      });
+
+      test('empty text is ignored rather than appended blank', () {
+        chatService.addLocalLine(text: '', senderName: 'Dreamfinder');
+        expect(chatService.currentMessages, isEmpty);
+      });
+
+      test('reaches listeners of the messages stream', () async {
+        final seen = <int>[];
+        final sub = chatService.messages.listen((m) => seen.add(m.length));
+        chatService.addLocalLine(text: 'a', senderName: 'Dreamfinder');
+        await pumpEventQueue();
+        expect(seen, isNotEmpty);
+        expect(seen.last, 1);
+        await sub.cancel();
+      });
     });
 
     test('initial state has empty messages', () {
@@ -2299,7 +2332,7 @@ class FakeLiveKitService implements LiveKitService {
       {ScreenShareCaptureOptions? options}) async {}
 
   @override
-  void setParticipantAudioEnabled(String identity, bool enabled) {}
+  bool setParticipantAudioEnabled(String identity, bool enabled) => true;
 
   @override
   bool setParticipantAudioVolume(String identity, double volume) => true;
@@ -2352,7 +2385,7 @@ class FakeLiveKitService implements LiveKitService {
   }) async {}
 
   @override
-  Future<void> publishAvatar(Avatar avatar) async {}
+  Future<void> publishAvatar(AvatarSpec spec) async {}
 
   @override
   Future<void> publishDfProximity({required bool near}) async {}

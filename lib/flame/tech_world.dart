@@ -10,6 +10,8 @@ import 'package:logging/logging.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:livekit_client/livekit_client.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
+import 'package:tech_world/avatar/avatar_update_throttle.dart';
 import 'package:tech_world/auth/auth_user.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/device/web_safe_mode.dart';
@@ -31,6 +33,7 @@ import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_component.dart';
 import 'package:tech_world/flame/components/dreamfinder_territory_component.dart';
 import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
+import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/components/map_preview_component.dart';
 import 'package:tech_world/flame/components/speech_bubble_component.dart';
 import 'package:tech_world/flame/components/tile_floor_component.dart';
@@ -62,7 +65,6 @@ import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
-import 'package:tech_world/avatar/predefined_avatars.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/progress/progress_service.dart';
@@ -123,6 +125,15 @@ class TechWorld extends World with TapCallbacks {
   /// (main.dart) so a mention arriving while chat is already open auto-acks.
   /// Defaults to closed.
   bool Function() isLocalChatOpen = () => false;
+
+  /// Mirror a Dreamfinder line into a screen-fixed surface when his sprite is
+  /// not on camera. Set by `main.dart` on room entry; a no-op otherwise.
+  ///
+  /// A callback rather than a `ChatService` reference, matching
+  /// [isLocalChatOpen]: where the mirrored line LANDS is a UI decision, and the
+  /// game world should not be the thing that knows there is a chat panel.
+  void Function({required String text, required String speakerName})?
+      mirrorOffscreenDreamfinderSpeech;
   DreamfinderComponent? _dreamfinderComponent;
   DreamfinderTerritoryComponent? _dreamfinderTerritoryComponent;
   late final BubbleManager _bubbleManager;
@@ -387,8 +398,15 @@ class TechWorld extends World with TapCallbacks {
   LiveKitGameBridge? _liveKitBridge;
 
   // Avatar tracking — stores updates for players not yet created
-  final Map<String, String> _pendingAvatars = {};
-  Avatar? _localAvatar;
+  final Map<String, AvatarSpec> _pendingAvatars = {};
+
+  /// Per-peer rate limit on avatar changes.
+  late final AvatarUpdateThrottle _avatarThrottle =
+      AvatarUpdateThrottle(apply: _applyAvatarUpdate);
+  /// The local player's appearance, read on demand by the LiveKit bridge.
+  /// Single source of truth — the old `Avatar?` twin was removed rather than
+  /// kept in sync.
+  AvatarSpec? _localAvatarSpec;
 
   /// Forward bot status to the bubble manager so BotBubbleComponents can
   /// listen without depending on a global notifier. Called from [main.dart]
@@ -428,16 +446,59 @@ class TechWorld extends World with TapCallbacks {
     _bubbleManager.reduceMotion = value || _forceWebSafeMode;
   }
 
+  /// Apply the user's "Proximity range" preference — the Chebyshev radius in
+  /// grid squares inside which another participant's bubble forms and their
+  /// audio subscribes. `0` disables proximity entirely.
+  ///
+  /// Call before [connectToLiveKit] on room entry, alongside the two setters
+  /// above. Unlike them there is no web-safe-mode floor: a smaller radius is
+  /// strictly less work for the client, so the preference always wins.
+  void setProximityRadius(int value) {
+    _bubbleManager.proximityRadius = value;
+  }
+
   /// Set the local player's avatar. Also broadcasts to other participants.
   void setLocalAvatar(Avatar avatar) {
-    _localAvatar = avatar;
-    _userPlayerComponent.spriteAsset = avatar.spriteAsset;
-    _liveKitService?.publishAvatar(avatar);
+    // The picker still deals in the legacy `Avatar` preset; the wire and the
+    // renderer deal in specs. Converting here keeps the seam in one place
+    // until step 2 replaces the picker with per-slot selection.
+    final spec = AvatarSpec.preset(
+        CompositeAvatar.fromLegacyAvatarId(avatar.id));
+    _localAvatarSpec = spec;
+    _userPlayerComponent.avatarSpec = spec;
+    _liveKitService?.publishAvatar(spec);
   }
 
   // Position tracking for proximity detection
   Point<int> get localPlayerPosition => _userPlayerComponent.miniGridPosition;
   String get localPlayerId => _userPlayerComponent.id;
+
+  /// Play the local player's emote and broadcast it to the room.
+  ///
+  /// Plays locally first so it feels instant and still works offline — LiveKit
+  /// does not loop your own publishData back, so the local play is not a
+  /// duplicate, it is the only way the sender sees their own wave.
+  void emote(EmoteId emote) {
+    switch (emote) {
+      case EmoteId.wave:
+        _userPlayerComponent.wave();
+    }
+    _liveKitService?.publishEmote(emote);
+  }
+
+  /// A remote player emoted. [senderUid] is transport-verified by the bridge.
+  ///
+  /// Silently ignored for an unknown player: a peer can emote before we have
+  /// seen a position/heartbeat for them, and an emote is not worth
+  /// materialising a component that has nowhere to stand yet.
+  void _handleRemoteEmote(String senderUid, EmoteId emote) {
+    final player = _otherPlayerComponentsMap[senderUid];
+    if (player == null) return;
+    switch (emote) {
+      case EmoteId.wave:
+        player.wave();
+    }
+  }
 
   Map<String, Point<int>> get otherPlayerPositions {
     final positions = _otherPlayerComponentsMap.map(
@@ -494,6 +555,20 @@ class TechWorld extends World with TapCallbacks {
   /// human player). Creates a [PlayerComponent] lazily if needed.
   void _handlePositionReceived(PlayerPath path) {
     _log.fine('LiveKit position received for ${path.playerId}');
+
+    // Dispatched here, at the single funnel, rather than in the three branches
+    // below: peers, bots and Dreamfinder all move through this method, and
+    // splitting the emission three ways is how one of them ends up silently
+    // uncovered. See [RemotePlayerMoved] for why a movement log that covers
+    // only the local player is worse than no movement log at all.
+    if (path.largeGridPoints.isNotEmpty) {
+      final dest = path.largeGridPoints.last;
+      dispatch([RemotePlayerMoved(
+        playerId: path.playerId,
+        destX: dest.x.round() ~/ gridSquareSize,
+        destY: dest.y.round() ~/ gridSquareSize,
+      )]);
+    }
 
     if (path.playerId == _bubbleManager.dreamfinderIdentity &&
         _dreamfinderComponent != null) {
@@ -669,7 +744,7 @@ class TechWorld extends World with TapCallbacks {
       _liveKitService?.publishMapInfo(currentMap.value);
     } else if (!_otherPlayerComponentsMap.containsKey(participant.identity)) {
       // Apply pending avatar if one arrived before the component was created
-      final pendingSpriteAsset = _pendingAvatars.remove(participant.identity);
+      final pendingSpec = _pendingAvatars.remove(participant.identity);
 
       final playerComponent = PlayerComponent(
         position: Vector2.zero(),
@@ -677,8 +752,7 @@ class TechWorld extends World with TapCallbacks {
         displayName: participant.name.isNotEmpty
             ? participant.name
             : participant.identity,
-        spriteAsset: pendingSpriteAsset ?? defaultAvatar.spriteAsset,
-      );
+      )..avatarSpec = pendingSpec ?? AvatarSpec.fallback;
       _otherPlayerComponentsMap[participant.identity] = playerComponent;
       add(playerComponent);
       // Attach a mention beacon if this player was named before they spawned.
@@ -758,6 +832,10 @@ class TechWorld extends World with TapCallbacks {
   void _handleParticipantLeft(RemoteParticipant participant) {
     _log.info('LiveKit participant left: ${participant.identity}');
 
+    // Drop any in-flight avatar update for them — its timer would otherwise
+    // outlive the participant and fire at a component that is gone.
+    _avatarThrottle.forget(participant.identity);
+
     if (isDreamfinderIdentity(participant.identity) &&
         _dreamfinderComponent != null) {
       remove(_dreamfinderComponent!);
@@ -797,18 +875,68 @@ class TechWorld extends World with TapCallbacks {
   }
 
   /// Handle an avatar update from a remote player.
-  void _handleAvatarUpdate(AvatarUpdate update) {
-    final playerComponent = _otherPlayerComponentsMap[update.playerId];
+  ///
+  /// Rate-limited per peer: an avatar change composites a sheet and rebuilds a
+  /// component's animations, and nothing else bounds how fast a peer can ask
+  /// for that. See [AvatarUpdateThrottle].
+  void _handleAvatarUpdate(AvatarUpdate update) =>
+      _avatarThrottle.submit(update.playerId, update.spec);
+
+  /// Apply a throttled avatar update.
+  void _applyAvatarUpdate(String playerId, AvatarSpec spec) {
+    final playerComponent = _otherPlayerComponentsMap[playerId];
     if (playerComponent != null) {
-      playerComponent.spriteAsset = update.spriteAsset;
+      playerComponent.avatarSpec = spec;
     } else {
       // Player component doesn't exist yet — store for later
-      _pendingAvatars[update.playerId] = update.spriteAsset;
+      _pendingAvatars[playerId] = spec;
     }
   }
 
   // Active speech bubbles keyed by speaker identity.
   final Map<String, SpeechBubbleComponent> _speechBubbles = {};
+
+  /// Listener on [LiveKitService.dreamfinderSilenced]. Held so it can be
+  /// detached on disconnect — a notifier outlives a room, and a stale listener
+  /// clearing bubbles for a torn-down world is a leak with visible symptoms.
+  VoidCallback? _dfSilenceListener;
+
+  /// Wipe every speech bubble the moment Dreamfinder is silenced.
+  ///
+  /// Must fire off the TOGGLE, not off the next transcript: silencing him
+  /// mid-sentence otherwise leaves that sentence hanging for its full lifetime
+  /// — the one line the player pressed the button to stop seeing.
+  void _onDreamfinderSilenceChanged() {
+    if (!(_liveKitService?.dreamfinderSilenced.value ?? false)) return;
+    for (final bubble in _speechBubbles.values) {
+      bubble.removeFromParent();
+    }
+    _speechBubbles.clear();
+  }
+
+  /// Whether [component] is inside the camera's current view.
+  ///
+  /// Fails toward VISIBLE-ELSEWHERE: with no game attached there is no camera
+  /// to ask and also no bubble being drawn, so "I cannot tell" is answered as
+  /// off-camera. The cost of being wrong that way is a duplicated line in the
+  /// chat panel; the cost of the other way is a reply the player never sees.
+  /// Where a speech bubble hangs relative to its owner's anchor. Shared by the
+  /// placement and the visibility test so the two cannot drift — when they did,
+  /// the test answered for the character and the reader was looking for the
+  /// bubble.
+  static final Vector2 _speechBubbleOffset = Vector2(16, 36);
+
+  /// Takes the WORLD POINT that must be readable, not the component it belongs
+  /// to. A speech bubble is drawn at an offset BELOW its owner's anchor, so a
+  /// character can sit inside the viewport while the bubble hanging off it is
+  /// past the bottom edge — testing the owner would report "visible" for a
+  /// reply nobody can read, in a band exactly as wide as the offset.
+  bool _isPointOnCamera(Vector2 worldPoint) {
+    final game = findGame() as TechWorldGame?;
+    final view = game?.camera.visibleWorldRect;
+    if (view == null) return false;
+    return view.contains(ui.Offset(worldPoint.x, worldPoint.y));
+  }
 
   /// Handle a speech transcript from the voice pipeline.
   ///
@@ -822,6 +950,19 @@ class TechWorld extends World with TapCallbacks {
     final speakerRole = SpeakerRole.tryParse(speakerRaw);
     final text = json['text'] as String?;
     if (speakerRole == null || text == null || text.isEmpty) return;
+
+    // Silencing Dreamfinder silences the WHOLE conversation with him, not just
+    // his audio. Both roles on this channel are that conversation: his replies
+    // and the transcript of what you said to him. Muting only the audio left
+    // his words still writing themselves across the world, which read as the
+    // button not working at all.
+    //
+    // Drop rather than hide: a suppressed line is not a line that arrives
+    // later. Un-silencing resumes from whatever he says next, which is what
+    // "I stopped listening" means everywhere else.
+    // Existing bubbles are cleared by _onDreamfinderSilenceChanged when the
+    // button is pressed; this only has to stop NEW ones arriving.
+    if (_liveKitService?.dreamfinderSilenced.value ?? false) return;
 
     // Determine which component to attach the bubble to.
     PositionComponent? target;
@@ -852,10 +993,28 @@ class TechWorld extends World with TapCallbacks {
     );
 
     // Position below the character sprite.
-    bubble.position = target!.position + Vector2(16, 36);
+    final bubblePosition = target!.position + _speechBubbleOffset;
+    bubble.position = bubblePosition;
     bubble.priority = target.priority + 1;
     _speechBubbles[speakerRole.wire] = bubble;
     add(bubble);
+
+    // The bubble above is drawn over Dreamfinder's sprite. When the camera is
+    // not looking at him it is drawn where nobody can read it — so the reply
+    // happened and left no trace the player could notice. That is the whole of
+    // claude-tasks#4309: at `proximityRadius` 0 his video bubble and his
+    // proximity audio are both gated off, and if he is also off-screen there is
+    // no surface at all showing the player was heard.
+    //
+    // The player's OWN transcript needs no mirror — it renders over the local
+    // player, which the camera follows by construction.
+    if (speakerRole == SpeakerRole.dreamfinder &&
+        !_isPointOnCamera(bubblePosition)) {
+      mirrorOffscreenDreamfinderSpeech?.call(
+        text: text,
+        speakerName: _dreamfinderComponent!.displayName,
+      );
+    }
   }
 
   /// Connect to LiveKit room.
@@ -870,6 +1029,8 @@ class TechWorld extends World with TapCallbacks {
     }
 
     _liveKitService = Locator.maybeLocate<LiveKitService>();
+    _dfSilenceListener = _onDreamfinderSilenceChanged;
+    _liveKitService?.dreamfinderSilenced.addListener(_dfSilenceListener!);
     if (_liveKitService == null) {
       _log.info('LiveKitService not available yet');
       return;
@@ -919,7 +1080,7 @@ class TechWorld extends World with TapCallbacks {
       userId: userId,
       bubbleManager: _bubbleManager,
       playerGridPosition: playerGridPosition,
-      localAvatar: _localAvatar,
+      localAvatarSpec: () => _localAvatarSpec,
       onPositionReceived: _handlePositionReceived,
       onHeartbeatReceived: _handleHeartbeatReceived,
       onParticipantJoined: _handleParticipantJoined,
@@ -933,6 +1094,7 @@ class TechWorld extends World with TapCallbacks {
           messageId: messageId,
         );
       },
+      onRemoteEmote: _handleRemoteEmote,
       onMapInfoRequested: () =>
           _liveKitService?.publishMapInfo(currentMap.value),
       onMapSwitchReceived: (mapId) {
@@ -1405,9 +1567,18 @@ class TechWorld extends World with TapCallbacks {
   /// handler ([onTapDown]) and keyboard movement ([moveInDirection]) both route
   /// through here, so a keyboard step pathfinds, collides, animates, and
   /// broadcasts identically to a tap. There is no separate keyboard wire path.
-  void movePlayerToCell(int miniGridX, int miniGridY) {
+  /// Returns whether the move was ACCEPTED. False means the world cannot move
+  /// anyone yet — no path component — and the request was discarded.
+  ///
+  /// The bool exists because the discard is otherwise perfectly silent: it
+  /// happens before the `PlayerMoved` dispatch, so a dropped move leaves no
+  /// trace in any log, on either side of the wire. An autopiloted client walked
+  /// a full route into that hole and the only symptom, four layers away, was a
+  /// peer that never appeared to move. A caller that cannot see a refusal
+  /// cannot retry one.
+  bool movePlayerToCell(int miniGridX, int miniGridY) {
     final pathComponent = _pathComponent;
-    if (pathComponent == null) return;
+    if (pathComponent == null) return false;
 
     pathComponent.calculatePath(
         start: _userPlayerComponent.miniGridTuple, end: (miniGridX, miniGridY));
@@ -1422,6 +1593,7 @@ class TechWorld extends World with TapCallbacks {
     );
 
     dispatch([PlayerMoved(destX: miniGridX, destY: miniGridY)]);
+    return true;
   }
 
   /// Move the local player one grid cell in [direction], reusing the shared
@@ -1559,6 +1731,13 @@ class TechWorld extends World with TapCallbacks {
     }
     _speechBubbles.clear();
     _pendingAvatars.clear();
+    _avatarThrottle.clear();
+    // Detach BEFORE dropping the reference, or the listener can never be
+    // removed from a notifier that outlives this world.
+    if (_dfSilenceListener != null) {
+      _liveKitService?.dreamfinderSilenced.removeListener(_dfSilenceListener!);
+      _dfSilenceListener = null;
+    }
     _liveKitService = null;
     _bubbleManager.clear();
 

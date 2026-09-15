@@ -47,9 +47,15 @@ abstract final class UserPreferences {
   }
 
   /// Default proximity radius (grid squares, Chebyshev) when the user has
-  /// never touched the slider. Matches the historical hardcoded behaviour
-  /// from before the slider existed.
-  static const int defaultProximityRadius = 3;
+  /// never touched the slider.
+  ///
+  /// This was 3 — `ProximityService`'s own default, chosen when that service
+  /// was believed to govern proximity. It never did: nothing in `lib/` ever
+  /// called it, and `BubbleManager` gated on a hardcoded 5, so 5 is the range
+  /// every player has actually experienced. Wiring the preference up made the
+  /// discrepancy load-bearing, and 5 is the value that keeps the default
+  /// experience unchanged rather than silently shrinking everyone's world.
+  static const int defaultProximityRadius = 5;
 
   /// Maximum value exposed by the "Proximity range" slider.
   static const int maxProximityRadius = 6;

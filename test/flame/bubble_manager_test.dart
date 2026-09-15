@@ -9,6 +9,7 @@ import 'package:tech_world/diagnostics/diagnostics_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
+import 'package:tech_world/flame/shared/dreamfinder_territory.dart';
 import 'package:tech_world/flame/components/bot_bubble_component.dart';
 import 'package:tech_world/flame/components/bot_character_component.dart';
 import 'package:tech_world/flame/components/player_bubble_component.dart';
@@ -227,7 +228,7 @@ void main() {
 
       test('enables audio within threshold', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
 
         // Place player 2 squares away (at audio threshold)
@@ -246,7 +247,7 @@ void main() {
 
       test('does not enable audio beyond the enable threshold', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
 
         // Place player 6 squares away — beyond the enable threshold (4).
@@ -264,7 +265,7 @@ void main() {
 
       test('hysteresis: stays enabled between thresholds, cuts past disable', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
 
         final remote = PlayerComponent(
@@ -295,7 +296,7 @@ void main() {
 
       test('fades volume by distance while subscribed', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
@@ -320,7 +321,7 @@ void main() {
 
       test('does not cache volume until a track is actually addressed', () {
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
         // Track not subscribed yet → setParticipantAudioVolume returns false.
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
@@ -373,25 +374,84 @@ void main() {
         manager.setLiveKitService(mockLiveKit);
       });
 
-      test('enters at the enable threshold, exits past the disable threshold',
-          () {
-        // d=4 ≤ enable(4) → enter.
-        manager.debugUpdateDreamfinderProximity(4);
+      // The territory the assertions below are written against: a 7x7 square.
+      // Local player sits at (160,160) => grid cell (10,10) at 16px cells, i.e.
+      // dead centre of this box.
+      const box = TerritoryRect(minX: 7, minY: 7, maxX: 13, maxY: 13);
+
+      test('enters on entering the square, exits on leaving it', () async {
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
 
-        // d=5 — inside the hysteresis band (> enable 4, ≤ disable 5). No re-emit.
-        manager.debugUpdateDreamfinderProximity(5);
-        // d=6 > disable(5) → exit.
-        manager.debugUpdateDreamfinderProximity(6);
+        // Still inside — no re-emit.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(13, 13), territory: box);
+        // Out of the square.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(14, 13), territory: box);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
         // Exactly one enter + one exit across the whole sweep.
         verifyNever(() => mockLiveKit.publishDfProximity(near: any(named: 'near')));
       });
 
-      test('DF absent (null distance) forces an exit', () {
-        manager.debugUpdateDreamfinderProximity(2); // near
+      test('handleDreamfinderLeft drops the latch so the NEXT agent is told',
+          () async {
+        // Tesla, cage-match #530 slice 2a. clear() reset the signal on room
+        // teardown; the LEAVE path did not — and the room outlives a
+        // Dreamfinder leave, so the latch outlived the participant.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
-        manager.debugUpdateDreamfinderProximity(null); // DF gone → exit
+
+        // Dreamfinder leaves. The agents SDK gives each dispatch a fresh
+        // `agent-*` identity, so the next one is a NEW participant that was
+        // never told anything.
+        //
+        // NO EXIT PUBLISH IS ASSERTED HERE ANY MORE, and that is the fix rather
+        // than a relaxation. This path used to route through `reset()`, which
+        // cleared the desired state and relied on publishing `near: false` to
+        // the DEPARTED agent to clear the confirmed one. A message to a
+        // participant that has left buys nothing — and making the local model
+        // depend on it landing is what reopened the lost signal: when that
+        // publish FAILED, the confirmed belief stayed `true`, the still-inside
+        // player recomputed the desired state to `true`, the reconciler saw them
+        // equal, and the new agent was told nothing. (Tesla, PR #530 delta
+        // cage-match.) `recipientChanged()` drops the belief locally instead,
+        // which is accurate — a fresh agent has been told nothing — and cannot
+        // fail. The assertion that matters is the one below.
+        manager.handleDreamfinderLeft();
+        await pumpEventQueue();
+
+        // New agent, same square, player has not moved. THIS is what the
+        // leave path exists to guarantee: without it the desired state matches
+        // the departed agent's confirmation and the reconciler sends nothing,
+        // so the new agent never learns the player is standing right there.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue();
+        verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
+      });
+
+      test('standing just outside the box is never heard', () {
+        // The regression: under the old distance rule this player WAS heard,
+        // because DF wanders inside his square and could be one cell away.
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(14, 10), territory: box);
+        verifyNever(() => mockLiveKit.publishDfProximity(near: any(named: 'near')));
+      });
+
+      test('DF absent (null territory) forces an exit', () async {
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue();
+        verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: null);
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
       });
 
@@ -407,17 +467,22 @@ void main() {
           remotePlayers: {},
           bots: {},
         );
-        noService.debugUpdateDreamfinderProximity(2); // can't emit, must not latch
-        // Now the service is available; the SAME distance must still fire enter.
+        noService.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
+        // Now the service is available; the SAME cell must still fire enter.
         noService.setLiveKitService(mockLiveKit);
-        noService.debugUpdateDreamfinderProximity(2);
+        noService.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
       });
 
-      test('clear() emits a final exit when the player was near DF', () {
-        manager.debugUpdateDreamfinderProximity(1); // near
+      test('clear() emits a final exit when the player was near DF', () async {
+        manager.debugUpdateDreamfinderProximity(
+            playerGrid: const Point(10, 10), territory: box);
+        await pumpEventQueue(); // inside
         verify(() => mockLiveKit.publishDfProximity(near: true)).called(1);
         manager.clear();
+        await pumpEventQueue();
         verify(() => mockLiveKit.publishDfProximity(near: false)).called(1);
       });
     });
@@ -432,7 +497,7 @@ void main() {
         silenced = ValueNotifier<bool>(false);
         when(() => mockLiveKit.dreamfinderSilenced).thenReturn(silenced);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.getParticipant(any())).thenReturn(null);
@@ -744,7 +809,7 @@ void main() {
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         localPlayer = PlayerComponent(
           position: Vector2(160, 160),
           id: 'local-user',
@@ -884,7 +949,7 @@ void main() {
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         localPlayer = PlayerComponent(
           position: Vector2(160, 160),
           id: 'local-user',
@@ -1135,7 +1200,7 @@ void main() {
         when(() => mockLiveKit.setParticipantAudioVolume(any(), any()))
             .thenReturn(true);
         when(() => mockLiveKit.setParticipantAudioEnabled(any(), any()))
-            .thenReturn(null);
+            .thenReturn(true);
         when(() => mockLiveKit.localParticipant).thenReturn(null);
 
         localPlayer = PlayerComponent(

@@ -44,7 +44,7 @@ When you arrive in this codebase: sweep `lib/` for `String` fields whose values 
 - `CodeChallengeId` (the 23 code-editor challenges — `lib/editor/challenge.dart`).
 - `ChallengeRef` (sealed) with `CodeRef(CodeChallengeId)` and `PromptRef(PromptChallengeId)` variants — `lib/events/types.dart`. Replaces stringly-typed `challengeId` in event payloads; parse from wire via `ChallengeRef.parse(String wire)`.
 - `BotStatus` (`absent` / `idle` / `thinking` — `lib/flame/components/bot_status.dart`). Owned by `ChatService._botStatus`, exposed as `ValueListenable<BotStatus>`.
-- `LiveKitTopic` (26 data-channel topics — `lib/livekit/livekit_topic.dart`).
+- `LiveKitTopic` (every data-channel topic — `lib/livekit/livekit_topic.dart`).
 - `SpeakerRole` (2 speech transcript roles — `lib/flame/shared/speaker_role.dart`).
 
 Examples still pending: `AvatarId`, `MapId`, `TilesetId`, `RoomType`. Don't refactor speculatively — refactor when you're already touching the code for another reason.
@@ -75,6 +75,43 @@ When two typed-id namespaces share the same persistence boundary (here: `Progres
 
 When reading legacy Dart-2-shaped code: don't refactor for its own sake, but if you're already changing the file, modernize.
 
+### Guard every sibling path, or none
+
+A guard, a dispose, a bound, a closing event — applied to the path the author was
+thinking about, with the structurally-equivalent sibling left open. Four instances were
+found one-per-review-round on PR #530 before anyone named the shape, which is what a
+generator looks like from the inside: each one reads as an isolated bug.
+
+- `DreamfinderAvatarHost` — disposed the bridge on the not-ready path, not on the throwing one.
+- Same file — identity-guarded two arms off one `initialize()` future, left the third reading the field.
+- `AvatarUpdateThrottle` — retry bounded in the sibling reconciler (which refuses the pattern BY NAME) and unbounded here.
+- `BubbleMergeRenderer.clearSurfaces` — dropped the merge memory without speaking the unmerge, while `BubbleManager.clear()` two lines up was already draining bubbles and proximity membership specifically so teardown would not go silent.
+- `Autopilot` — refused `kReleaseMode`, leaving `--profile` open.
+
+**Before writing a guard, enumerate the siblings.** Every arm off one future
+(`then`/`catchError`, and each early return between them); every exit from a method with
+more than one; every branch of a switch that touches the same field; every build mode and
+every platform. Then either guard all of them or write down why a sibling does not need it.
+
+**Siblings are not always branches.** When a method takes down more than one piece of
+state, each one needs the same restoration discipline — that pair is a sibling set too, and
+no branch-shaped search will find it. `_loadMapInternal` sets `_isLoadingMap = true` and
+`gameReady.value = false` together, restores the first in `finally` and the second as the
+last statement of the `try`, so any throw leaves `gameReady` false forever
+(claude-tasks#4463). Restoring both in `finally` would have been the wrong fix: after a
+failed load the world really is not ready, so the state was honest and the SILENCE was the
+bug. Ask what each variable means on the failing path before deciding where it belongs.
+
+Two structural preferences fall out, both already load-bearing here:
+
+- **Allowlist over denylist.** `if (!kDebugMode) refuse` cannot silently acquire a hole when the toolchain grows a mode; `if (kReleaseMode) refuse` did.
+- **Teardown speaks its closing events.** An instrument built because something was invisible must not go silent on the way out. If a path emits on open, the matching close is owed on every exit, teardown included.
+
+When a reviewer names this shape, the fix is the corpus sweep, not the instance
+(claude-tasks#4451). The sweep's mechanical signatures: paired future arms, resource
+acquire/release balance per file, async gaps that write state on return, and mode or
+platform guards. Counts rank what to read; they are never the finding.
+
 ### The world is the listener
 
 In Tech World, **the world listens — not the player**. Casting is triggered by *being in a place that is listening to you*, not by tapping a button to enter "casting mode."
@@ -91,12 +128,12 @@ In Tech World, **the world listens — not the player**. Casting is triggered by
 
 ### Service Locator
 
-Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthService`, `TechWorld`, `TechWorldGame`. Dynamic (sign-in/out): `LiveKitService`, `ChatService`, `ProximityService`.
+Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthService`, `TechWorld`, `TechWorldGame`. Dynamic (sign-in/out): `LiveKitService`, `ChatService`, `TimerService`.
 
 ### Key Classes
 
 - **`TechWorldGame`** — extends `FlameGame`, wraps `TechWorld` world component
-- **`TechWorld`** — extends `World`, owns the player + remote-player + bot + map components, delegates LiveKit subscriptions to `LiveKitGameBridge`, door state to `DoorManager`, and bubble lifecycle to `BubbleManager`. Shrunk from 1570 → ~1300 lines after PR #438's extraction sweep
+- **`TechWorld`** — extends `World`, owns the player + remote-player + bot + map components, delegates LiveKit subscriptions to `LiveKitGameBridge`, door state to `DoorManager`, and bubble lifecycle to `BubbleManager`. PR #438's extraction sweep took it 1570 → ~1300 lines; **it is 1726 as at 2026-09-15**, i.e. the sweep's gain is gone and then some
 - **`LiveKitGameBridge`** (`lib/flame/livekit_game_bridge.dart`) — owns the 14 stream subscriptions and `InfraHealthService` lifecycle that previously lived on TechWorld. Constructed when `connectToLiveKit` is called, disposed on `disconnectFromLiveKit`
 - **`DoorManager`** (`lib/flame/door_manager.dart`) — owns `unlockDoor`, `handleRemoteDoorUnlock` (with the three-check sender guard from PR #431), `recomputeNearbyLockedDoor`, `doorsForChallenge`, `nearbyLockedDoor` notifier. TechWorld delegates via accessor methods
 - **`BubbleManager`** — plain Dart class (not a Component) owning all proximity bubble state: creation/removal, physics repulsion, metaball field, merged video, audio enable/disable, shader loading, Dreamfinder avatar bridge. Receives `addComponent` callback to add to the World. Reads `setHideVideoBubbles` and `setReduceMotion` from the user preference layer
@@ -105,7 +142,7 @@ Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthSer
 
 ### Event-Sink System
 
-Domain events (`lib/events/types.dart`) are dispatched via `dispatch()` (`lib/events/dispatch.dart`) and fanned to registered sinks. 34 sealed event types cover auth, room lifecycle, player movement, terminals, casting, chat, map editing, proximity, bot presence, and LiveKit state. The log bridge routes all `_log.*` calls through the same pipeline.
+Domain events (`lib/events/types.dart`) are dispatched via `dispatch()` (`lib/events/dispatch.dart`) and fanned to registered sinks. The sealed `AppEvent` hierarchy covers auth, room lifecycle, player movement (local *and* remote — see `RemotePlayerMoved`), terminals, casting, chat, map editing, proximity, bot presence, and LiveKit state. `test/events/pii_marker_test.dart` pins the subtype count, so the number lives where a change fails a test rather than here, where it silently rots. The log bridge routes all `_log.*` calls through the same pipeline.
 
 Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app documents). The full event catalogue is the sealed class hierarchy in `lib/events/types.dart`.
 
@@ -115,15 +152,15 @@ Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app docum
 
 ### Communication (All via LiveKit)
 
-All 26 data-channel topics are typed via `LiveKitTopic` enum (`lib/livekit/livekit_topic.dart`). Use `LiveKitTopic.<name>.wire` at every publish/subscribe site. Categories: position, avatar, map, doors/terminals, speech, chat/DM/help, bot/oracle, infrastructure, connectivity.
+Every data-channel topic is typed via the `LiveKitTopic` enum (`lib/livekit/livekit_topic.dart`). Use `LiveKitTopic.<name>.wire` at every publish/subscribe site. Categories: position, avatar, map, doors/terminals, speech, chat/DM/help, bot/oracle, infrastructure, connectivity.
 
 **Bot (Clawd)**: Runs on OCI as participant `bot-claude`. Source in `../tech_world_bot/`.
 
 ### UI Layout
 
-Side panel priority: map editor > code editor > chat panel. Toolbar (top-right), left-to-right: leave-room → `MapSelector` → map-editor (owners/editors only) → `_ScreenShareButton` (web/desktop only) → `_DreamfinderSilenceButton` → `_SpellbookButton` → `AuthMenu`. Responsive at 800px breakpoint.
+Side panel priority: map editor > code editor > chat panel. Toolbar (top-right), left-to-right: leave-room → `MapSelector` → map-editor (owners/editors only) → `_ScreenShareButton` (web/desktop only) → `_DreamfinderSilenceButton` → `_SpellbookButton` → `AuthMenu`. Responsive at 800px breakpoint. **Every toolbar button takes its look from `toolbarButtonStyle()` / `toolbarIconColor()` in `main.dart` — do not hand-roll `IconButton.styleFrom` for a new one.** Buttons float over the game world, where the ground varies from near-black floor to pale tan brick within one screen, so the chip is a near-opaque dark scrim that supplies its own contrast and state is carried by icon colour plus a hairline border. The previous per-button `accent.withValues(alpha: 0.2)` active state vanished into light ground.
 
-**Dreamfinder silence**: `_DreamfinderSilenceButton` toggles `LiveKitService.dreamfinderSilenced` (a `ValueNotifier<bool>`). When silenced, `setDreamfinderSilenced(true)` calls `RemoteTrackPublication.disable()` on all current DF participants — server-side disable, so the SFU stops forwarding DF audio to this client (DF keeps speaking in the room; other players still hear). Late-joining DF tracks are caught in the `TrackSubscribedEvent` handler so toggling silence before DF joins still binds correctly. Identity matching uses `isDreamfinderIdentity()` which handles both `bot-dreamfinder` and `agent-*` identities from the LiveKit agents SDK.
+**Dreamfinder silence**: `_DreamfinderSilenceButton` toggles `LiveKitService.dreamfinderSilenced` (a `ValueNotifier<bool>`). When silenced, `setDreamfinderSilenced(true)` calls `RemoteTrackPublication.disable()` on all current DF participants — server-side disable, so the SFU stops forwarding DF audio to this client (DF keeps speaking in the room; other players still hear). Late-joining DF tracks are caught in the `TrackSubscribedEvent` handler so toggling silence before DF joins still binds correctly. Identity matching uses `isDreamfinderIdentity()` which handles both `bot-dreamfinder` and `agent-*` identities from the LiveKit agents SDK. Silencing also suppresses the **speech-bubble text** for both `SpeakerRole.dreamfinder` and `SpeakerRole.user` — silencing him silences the whole conversation with him, not half of it. Existing bubbles are cleared off the toggle itself (`TechWorld._onDreamfinderSilenceChanged`), not off the next transcript, so silencing mid-sentence doesn't leave that sentence hanging.
 
 **User preferences**: `setHideVideoBubbles` (avatar-only mode, no video) and `setReduceMotion` (no breathing scale / glow pulse / voice ripples / metaball animation) read from `lib/preferences/user_preferences.dart` and are applied to `BubbleManager` before each room entry.
 
@@ -148,7 +185,15 @@ Web DF: Three.js iframe → CanvasCapture → canvas → decodeImageFromPixels �
 
 ### Proximity Detection
 
-`ProximityService`: Chebyshev distance, 3 grid squares threshold, stream-based enter/exit events.
+`BubbleManager` is the single proximity owner: one Chebyshev pass per frame in `update()` drives the visual gate, the audio enable/disable pair, the Dreamfinder range signal, and the `PlayerEnteredProximity`/`PlayerLeftProximity` events. Every threshold derives from `proximityRadius` — the user's "Proximity range" preference, applied via `TechWorld.setProximityRadius` at room entry alongside `setHideVideoBubbles` / `setReduceMotion`. Radius `0` disables proximity entirely (no bubbles, no proximity audio), including for a co-located player.
+
+**Dreamfinder's hearing is a CONJUNCTION: `proximityRadius > 0 && territory.contains(playerGrid)`.**
+
+The territory half is why the `df-proximity` signal publishes *containment* rather than distance. He wanders *within* his authored square, so measuring Chebyshev distance to his sprite let him hear players standing outside the box beside him — the rect read here is the same object the overlay draws (`TerritoryRect.contains`), so what you SEE is what he hears. That deliberately breaks the PR #481 coupling which tied his hearing to the audio gate's threshold pair: he hears you only inside the box, while you still hear him by proximity from outside it.
+
+The radius half is the kill switch, and it survived that decoupling. `proximityRadius` governs every other proximity gate, and radius `0` means proximity is off — but swapping the metric to territory initially dropped the owner, so a player who set the preference to zero was still heard while standing on the square, with no bubble and no audio to reveal that anything was listening (found by Tesla, cage-match PR #530). Territory *narrows* who he hears; it does not *replace* the preference. Only the radius's zero-ness is consulted — comparing it to a *distance* here would re-open the heard-from-outside-the-box bug that #529 fixed.
+
+There was a second implementation, `ProximityService`, holding the same preference with no production caller — deleted rather than wired up, because it modelled one boolean threshold where the gate stack needs three (visual, audio-enable, audio-disable, the latter two with hysteresis).
 
 ## Testing
 
@@ -184,7 +229,7 @@ Surfaced from PR cage-matches and session trawls — concrete items with a known
 ### Refactor follow-ups (from PR #438 review)
 
 - **Lift `AvatarUpdate.tryParse` whitelist `Set` to a top-level `final`.** Currently builds the `predefinedAvatars` set on every parse (`livekit_service.dart`). For 3 avatars at low frequency this is fine, but if `predefinedAvatars` grows or this becomes hot-path, lift.
-- **Continue extracting `TechWorld`.** Shrunk from 1570 → ~1300 lines via the bridge + door-manager split, but terminal-interaction, speech-bubble lifecycle, and avatar-tracking still live there. Each is the same shape of extraction as `DoorManager` / `LiveKitGameBridge`.
+- **Continue extracting `TechWorld`.** The bridge + door-manager split took it 1570 → ~1300, and it has since grown to 1726 (2026-09-15) — past where it started. Terminal-interaction, speech-bubble lifecycle, and avatar-tracking still live there. Each is the same shape of extraction as `DoorManager` / `LiveKitGameBridge`.
 - **Add positive-case `predefinedAvatars` whitelist test.** Current coverage exhausts the negative cases (unknown / path-traversal / empty); a "valid sprite asset that's not in `predefinedAvatars`" test would tighten the gate against future avatar additions silently failing.
 
 ### Operations & deploy hygiene (from Robin's Phase 5 audit, 2026-05-15)

@@ -3,15 +3,19 @@ import 'dart:math';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:livekit_client/livekit_client.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
+import 'package:tech_world/events/dispatch.dart';
+import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
-import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/presence_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/rooms/room_session.dart';
+import 'package:tech_world/timer/room_timer_message.dart';
+import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/utils/locator.dart';
 
 class _FakeLiveKit extends Mock implements LiveKitService {}
@@ -94,8 +98,10 @@ RoomSession _createSession({
   void Function()? onStateChanged,
   Future<void> Function()? onReconnectWorld,
   void Function()? onRoomDeleted,
+  LiveKitService? liveKitService,
 }) {
   return RoomSession.create(
+    liveKitService: liveKitService,
     room: room,
     userId: userId,
     displayName: displayName,
@@ -113,25 +119,21 @@ void main() {
   tearDown(() {
     Locator.remove<LiveKitService>();
     Locator.remove<ChatService>();
-    Locator.remove<ProximityService>();
   });
 
   group('RoomSession.create', () {
-    test('registers LiveKitService, ChatService, ProximityService in Locator',
-        () {
+    test('registers LiveKitService, ChatService, TimerService in Locator', () {
       final session = _createSession();
 
       expect(Locator.maybeLocate<LiveKitService>(), isNotNull);
       expect(Locator.maybeLocate<ChatService>(), isNotNull);
-      expect(Locator.maybeLocate<ProximityService>(), isNotNull);
+      expect(Locator.maybeLocate<TimerService>(), isNotNull);
       expect(
           session.liveKitService, same(Locator.maybeLocate<LiveKitService>()));
       expect(session.chatService, same(Locator.maybeLocate<ChatService>()));
-      expect(session.proximityService,
-          same(Locator.maybeLocate<ProximityService>()));
+      expect(session.timerService, same(Locator.maybeLocate<TimerService>()));
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
 
     test('sets room, userId, displayName', () {
@@ -142,7 +144,6 @@ void main() {
       expect(session.displayName, 'User 1');
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
 
     test('creates LiveKitService with correct roomName', () {
@@ -151,68 +152,8 @@ void main() {
       expect(session.liveKitService.roomName, 'test-room');
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
 
-    test('omitting proximityRadius uses the ProximityService default', () {
-      final session = _createSession();
-
-      expect(session.proximityService.proximityThreshold,
-          equals(ProximityService().proximityThreshold));
-
-      session.chatService.dispose();
-      session.proximityService.dispose();
-    });
-
-    test('proximityRadius is piped through to ProximityService', () {
-      final session = RoomSession.create(
-        room: _testRoom,
-        userId: 'user-1',
-        displayName: 'User 1',
-        avatarId: 'npc11',
-        onStateChanged: () {},
-        onReconnectWorld: () async {},
-        onRoomDeleted: () {},
-        proximityRadius: 6,
-        chatMessageRepository:
-            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
-        firestore: FakeFirebaseFirestore(),
-      );
-
-      expect(session.proximityService.proximityThreshold, equals(6));
-
-      session.chatService.dispose();
-      session.proximityService.dispose();
-    });
-
-    test('proximityRadius: 0 produces a disabled ProximityService', () {
-      final session = RoomSession.create(
-        room: _testRoom,
-        userId: 'user-1',
-        displayName: 'User 1',
-        avatarId: 'npc11',
-        onStateChanged: () {},
-        onReconnectWorld: () async {},
-        onRoomDeleted: () {},
-        proximityRadius: 0,
-        chatMessageRepository:
-            ChatMessageRepository(firestore: FakeFirebaseFirestore()),
-        firestore: FakeFirebaseFirestore(),
-      );
-
-      expect(session.proximityService.proximityThreshold, equals(0));
-
-      // Smoke-check the disabled semantic: even co-located players don't
-      // become nearby.
-      session.proximityService.checkProximity(
-        localPlayerPosition: const Point(5, 5),
-        otherPlayerPositions: {'other': const Point(5, 5)},
-      );
-      expect(session.proximityService.nearbyPlayers, isEmpty);
-
-      session.chatService.dispose();
-      session.proximityService.dispose();
-    });
   });
 
   group('failureMessageFor', () {
@@ -254,7 +195,6 @@ void main() {
       expect(oracle1, same(oracle2));
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
   });
 
@@ -264,13 +204,13 @@ void main() {
 
       expect(Locator.maybeLocate<LiveKitService>(), isNotNull);
       expect(Locator.maybeLocate<ChatService>(), isNotNull);
-      expect(Locator.maybeLocate<ProximityService>(), isNotNull);
+      expect(Locator.maybeLocate<TimerService>(), isNotNull);
 
       await session.leave();
 
       expect(Locator.maybeLocate<LiveKitService>(), isNull);
       expect(Locator.maybeLocate<ChatService>(), isNull);
-      expect(Locator.maybeLocate<ProximityService>(), isNull);
+      expect(Locator.maybeLocate<TimerService>(), isNull);
     });
   });
 
@@ -282,7 +222,6 @@ void main() {
       expect(session.connectionMessage.value, isNull);
 
       session.chatService.dispose();
-      session.proximityService.dispose();
     });
   });
 
@@ -671,6 +610,108 @@ void main() {
 
       await session.leave();
       await lostCtrl.close();
+    });
+  });
+
+  group('enableMedia partial-on (cage-match #530, finding 3)', () {
+    // RED-PROVING INTENT: against the pre-fix `Future.wait([camera, mic])`,
+    // the first arm fails. Future.wait rejects on the FIRST error without
+    // cancelling its sibling, so a camera failure propagated while the mic
+    // published successfully — the throw skipped the MediaEnabled dispatch and
+    // reached main.dart's Wire C as "Camera/mic setup failed" while the user
+    // was live on mic and had been told the opposite. Benign under the old
+    // join-muted default; a live-audio problem under join-unmuted.
+
+    late _FakeLiveKit liveKit;
+    late List<AppEvent> captured;
+    late void Function(AppEvent) sink;
+
+    setUp(() {
+      liveKit = _FakeLiveKit();
+      // RoomSession.create builds a ChatService that subscribes immediately,
+      // so the streams it touches must exist before construction.
+      when(() => liveKit.dataReceived)
+          .thenAnswer((_) => const Stream<DataChannelMessage>.empty());
+      when(() => liveKit.connectionLost)
+          .thenAnswer((_) => const Stream<String?>.empty());
+      when(() => liveKit.participantJoined)
+          .thenAnswer((_) => const Stream<RemoteParticipant>.empty());
+      when(() => liveKit.participantLeft)
+          .thenAnswer((_) => const Stream<RemoteParticipant>.empty());
+      when(() => liveKit.remoteParticipants)
+          .thenReturn(const <String, RemoteParticipant>{});
+      when(() => liveKit.roomTimerReceived)
+          .thenAnswer((_) => const Stream<RoomTimerMessage>.empty());
+      captured = [];
+      sink = captured.add;
+      registerSink(sink);
+    });
+    tearDown(() => unregisterSink(sink));
+
+    test('camera fails, mic succeeds: the live mic is ROLLED BACK', () async {
+      when(() => liveKit.setCameraEnabled(true))
+          .thenAnswer((_) async => throw StateError('no camera device'));
+      when(() => liveKit.setMicrophoneEnabled(true)).thenAnswer((_) async {});
+      when(() => liveKit.setMicrophoneEnabled(false)).thenAnswer((_) async {});
+
+      final session = _createSession(liveKitService: liveKit);
+
+      await expectLater(
+        session.enableMedia(),
+        throwsA(isA<StateError>().having((e) => e.message, 'message',
+            allOf(contains('camera=FAILED'),
+                contains('rolled back microphone')))),
+      );
+
+      // THE POINT: media the user has been told is off must not be on.
+      verify(() => liveKit.setMicrophoneEnabled(false)).called(1);
+      expect(captured.whereType<MediaEnabled>(), isEmpty,
+          reason: 'nothing is intentionally live, so recording "media '
+              'enabled" would put a false statement in the log');
+    });
+
+    test('rollback failure is NAMED, not swallowed', () async {
+      when(() => liveKit.setCameraEnabled(true))
+          .thenAnswer((_) async => throw StateError('no camera'));
+      when(() => liveKit.setMicrophoneEnabled(true)).thenAnswer((_) async {});
+      when(() => liveKit.setMicrophoneEnabled(false))
+          .thenAnswer((_) async => throw StateError('rollback died'));
+
+      final session = _createSession(liveKitService: liveKit);
+
+      await expectLater(
+        session.enableMedia(),
+        throwsA(isA<StateError>().having((e) => e.message, 'message',
+            allOf(contains('ROLLBACK FAILED for microphone'),
+                contains('may still be publishing')))),
+        reason: 'a hot mic this layer could not switch off is exactly the '
+            'state that must not be reported as a plain setup failure',
+      );
+    });
+
+    test('both succeed: dispatches once and does not throw', () async {
+      // NULL ARM — the failure path must not break the healthy path.
+      when(() => liveKit.setCameraEnabled(true)).thenAnswer((_) async {});
+      when(() => liveKit.setMicrophoneEnabled(true)).thenAnswer((_) async {});
+
+      final session = _createSession(liveKitService: liveKit);
+      await session.enableMedia();
+
+      expect(captured.whereType<MediaEnabled>(), hasLength(1));
+    });
+
+    test('both fail: throws and dispatches nothing', () async {
+      // ZERO ARM — proves the instrument can read zero, so hasLength(1) above
+      // is a real signal and not something this suite always reports.
+      when(() => liveKit.setCameraEnabled(true))
+          .thenAnswer((_) async => throw StateError('no camera'));
+      when(() => liveKit.setMicrophoneEnabled(true))
+          .thenAnswer((_) async => throw StateError('no mic'));
+
+      final session = _createSession(liveKitService: liveKit);
+
+      await expectLater(session.enableMedia(), throwsA(isA<StateError>()));
+      expect(captured.whereType<MediaEnabled>(), isEmpty);
     });
   });
 }

@@ -5,7 +5,10 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart' show KeyEventResult;
 import 'package:tech_world/flame/shared/direction.dart';
+import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/keyboard_movement.dart';
+import 'package:tech_world/avatar/avatar_composer.dart';
+import 'package:tech_world/avatar/parts/avatar_part.dart';
 import 'package:tech_world/flame/tech_world.dart';
 import 'package:tech_world/flame/tiles/predefined_tilesets.dart';
 import 'package:tech_world/flame/tiles/tileset_registry.dart';
@@ -46,6 +49,16 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
   /// Registry for loading and accessing tileset sprite sheets.
   late final TilesetRegistry tilesetRegistry;
 
+  /// Composes character sheets from parts and shares one image between every
+  /// player wearing the same [AvatarSpec].
+  ///
+  /// Lives on the game rather than on the world because it reads the game's
+  /// image cache and must outlive a map change — walking between rooms should
+  /// not re-composite every character. [PlayerComponent] takes and drops
+  /// references around it.
+  late final AvatarComposer avatarComposer =
+      AvatarComposer(loadImage: images.fromCache);
+
   /// Movement keys currently held down. Maintained by [onKeyEvent]; consumed by
   /// [update] each tick to drive continuous-while-held movement.
   final Set<LogicalKeyboardKey> _keysPressed = {};
@@ -70,6 +83,18 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
     }
 
     final key = event.logicalKey;
+
+    // Emote: fires on key-DOWN only, so OS auto-repeat can't machine-gun the
+    // data channel while the key is held. [PlayerComponent.wave] is itself a
+    // no-op while a wave is in flight, so a mash is bounded on both ends.
+    if (key == LogicalKeyboardKey.keyE) {
+      final techWorld = world;
+      if (event is KeyDownEvent && techWorld is TechWorld) {
+        techWorld.emote(EmoteId.wave);
+      }
+      return KeyEventResult.handled;
+    }
+
     // Only track keys that actually request movement; ignore everything else.
     if (directionForKey(key) == null) return KeyEventResult.ignored;
 
@@ -117,9 +142,11 @@ class TechWorldGame extends FlameGame with KeyboardEvents {
   @override
   Future<void> onLoad() async {
     await images.loadAll([
-      'NPC11.png',
-      'NPC12.png',
-      'NPC13.png',
+      // Character parts (includes the three legacy NPC sheets, which are
+      // BodyId values). Derived from the enums rather than listed here, so a
+      // part added to a slot cannot be forgotten at preload and then throw for
+      // the one player who picks it.
+      ...allPartAssets,
       'claude_bot.png',
       'dreamfinder_bot_sheet.png',
     ]);

@@ -9,7 +9,6 @@ import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/config/realm_token_config.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/realm_token_source.dart';
-import 'package:tech_world/proximity/proximity_service.dart';
 import 'package:tech_world/rooms/presence_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
 import 'package:tech_world/services/dreamfinder_client.dart';
@@ -41,7 +40,6 @@ class RoomSession {
     required this.liveKitService,
     required this.chatService,
     required this.chatMessageRepository,
-    required this.proximityService,
     required this.timerService,
     required this.room,
     required this.userId,
@@ -67,7 +65,6 @@ class RoomSession {
   final LiveKitService liveKitService;
   final ChatService chatService;
   final ChatMessageRepository chatMessageRepository;
-  final ProximityService proximityService;
 
   /// Controller for the shared room countdown timer (publish/subscribe +
   /// countdown + alarm). Registered in the [Locator] for the UI to drive.
@@ -148,7 +145,6 @@ class RoomSession {
     required void Function() onStateChanged,
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
-    int? proximityRadius,
     @visibleForTesting ChatMessageRepository? chatMessageRepository,
     @visibleForTesting LiveKitService? liveKitService,
     @visibleForTesting FirebaseFirestore? firestore,
@@ -190,22 +186,10 @@ class RoomSession {
         apiKey: const String.fromEnvironment('DREAMFINDER_API_KEY'),
       ),
     );
-    // Proximity radius is a *static* config for this session: the user's
-    // saved preference is read at room entry (in `main.dart`) and frozen
-    // here so mid-session toggle changes never retroactively re-evaluate
-    // existing in-range pairs (a deliberate state-lifecycle sidestep). A
-    // null value falls back to the ProximityService default — useful for
-    // tests that want the historic 3-square behaviour without depending on
-    // SharedPreferences.
-    final proximity = proximityRadius == null
-        ? ProximityService()
-        : ProximityService(proximityThreshold: proximityRadius);
-
     final timer = TimerService(liveKitService: liveKit);
 
     Locator.add<LiveKitService>(liveKit);
     Locator.add<ChatService>(chat);
-    Locator.add<ProximityService>(proximity);
     Locator.add<TimerService>(timer);
 
     final fs = firestore ?? FirebaseFirestore.instance;
@@ -214,7 +198,6 @@ class RoomSession {
       liveKitService: liveKit,
       chatService: chat,
       chatMessageRepository: chatRepo,
-      proximityService: proximity,
       timerService: timer,
       room: room,
       userId: userId,
@@ -302,21 +285,98 @@ class RoomSession {
     });
   }
 
-  /// Enable camera on room entry, but join **muted** (microphone off).
+  /// Enable camera AND microphone on room entry.
   ///
-  /// Join-muted is the safe default for a co-located audience — several devices
-  /// with live mics + speakers in one room is an audio-feedback loop. It's also
-  /// standard video-call UX (Zoom/Meet join muted). Capability is preserved, not
-  /// amputated: the mic toggle in the toolbar (`_MicButton`, main.dart) unmutes
-  /// on demand, so remote users can still speak. Video stays on so players see
-  /// each other's bubbles in-world.
+  /// Join-unmuted, reversing the previous Zoom-style join-muted default at
+  /// Nick's request (2026-08-30). The world is meant to be a place you walk
+  /// into and talk in; making speech opt-in each time taxed the thing the room
+  /// is FOR, and proximity already scopes who hears you.
+  ///
+  /// The original rationale is preserved because it names a real hazard, not a
+  /// hypothetical one: several co-located devices with live mics and speakers
+  /// in one room is an audio-feedback loop. That risk is now carried by the
+  /// operator of a co-located demo, who mutes via the toolbar toggle
+  /// (`_MicMuteButton`, main.dart), rather than by every remote player every
+  /// time they enter.
   Future<void> enableMedia() async {
-    await Future.wait([
-      liveKitService.setCameraEnabled(true),
-      liveKitService.setMicrophoneEnabled(false),
+    // Settle BOTH tracks independently rather than `Future.wait`ing on the
+    // raw futures.
+    //
+    // `Future.wait` rejects on the FIRST error without cancelling its
+    // sibling. Under the old join-muted default that was near-cosmetic: a
+    // camera failure propagated while the microphone had never been asked to
+    // turn on. Join-unmuted changes the failure mode into a privacy one — the
+    // mic can publish successfully, the camera can fail, and the throw then
+    // skips the `MediaEnabled` dispatch and surfaces to the caller as
+    // "Camera/mic setup failed" (main.dart Wire C) while the user is live on
+    // mic and has been told the opposite.
+    final outcomes = await Future.wait([
+      _settle('camera on', liveKitService.setCameraEnabled(true)),
+      _settle('microphone on', liveKitService.setMicrophoneEnabled(true)),
     ]);
-    dispatch([MediaEnabled()]);
+    final cameraOn = outcomes[0];
+    final micOn = outcomes[1];
+
+    if (cameraOn && micOn) {
+      dispatch([MediaEnabled()]);
+      return;
+    }
+
+    // PARTIAL FAILURE — FAIL CLOSED: roll the surviving track back off.
+    //
+    // An earlier revision of this fix only made the ERROR MESSAGE honest and
+    // left the successful track publishing. That fixed the reporting half and
+    // left the behaviour half in place: with join-unmuted, a camera failure
+    // plus a microphone success meant the caller logged "Camera/mic setup
+    // failed" (main.dart Wire C) while a live mic broadcast to the room. The
+    // user is told setup failed; the correct meaning of that sentence is that
+    // nothing is publishing.
+    //
+    // Media the user has been told is off must not be on. Rollback is
+    // best-effort — if it also fails there is nothing further this layer can
+    // do — so its outcome is named in the error rather than swallowed.
+    final rolledBack = <String>[];
+    final rollbackFailed = <String>[];
+    if (cameraOn) {
+      (await _settle('camera rollback', liveKitService.setCameraEnabled(false)))
+          ? rolledBack.add('camera')
+          : rollbackFailed.add('camera');
+    }
+    if (micOn) {
+      (await _settle('microphone rollback', liveKitService.setMicrophoneEnabled(false)))
+          ? rolledBack.add('microphone')
+          : rollbackFailed.add('microphone');
+    }
+
+    // No MediaEnabled dispatch on this path: nothing is (intentionally) live,
+    // so recording "media enabled" would put a false statement in the log.
+    throw StateError(
+      'enableMedia failed: camera=${cameraOn ? 'ok' : 'FAILED'}, '
+      'microphone=${micOn ? 'ok' : 'FAILED'}'
+      '${rolledBack.isEmpty ? '' : '; rolled back ${rolledBack.join(" + ")}'}'
+      '${rollbackFailed.isEmpty ? '' : '; ROLLBACK FAILED for '
+          '${rollbackFailed.join(" + ")} — may still be publishing'}',
+    );
   }
+
+  /// Run [op] and report whether it landed, never rethrowing.
+  ///
+  /// Exists so one track's failure cannot mask the other's success — see
+  /// [enableMedia].
+  ///
+  /// [what] names the leg so the CAUSE survives the collapse to a boolean. The
+  /// `StateError` this feeds says WHICH leg failed and cannot say why: a
+  /// permission denial, a device already in use and a disposed-room error are
+  /// one `false` by the time it is thrown. Join-unmuted has never yet failed in
+  /// a logged room, so the first real failure is the one that will most need
+  /// the reason, and it only exists here.
+  static Future<bool> _settle(String what, Future<void> op) => op.then(
+        (_) => true,
+        onError: (Object e, StackTrace st) {
+          _log.warning('$what failed', e, st);
+          return false;
+        },
+      );
 
   // ---------------------------------------------------------------------------
   // Reconnection
@@ -434,7 +494,7 @@ class RoomSession {
   /// Leave the room — dispose services in dependency order.
   ///
   /// Disposal order: cancel reconnection listener, then consumers before
-  /// producers (ChatService → ProximityService → LiveKitService).
+  /// producers (ChatService → TimerService → LiveKitService).
   Future<void> leave() async {
     _disposed = true;
 
@@ -459,7 +519,6 @@ class RoomSession {
     _isReconnecting = false;
 
     chatService.dispose();
-    proximityService.dispose();
     timerService.dispose();
     await liveKitService.dispose();
     // Close the token-path resources (HTTP client + lazily-built Firebase auth
@@ -472,7 +531,6 @@ class RoomSession {
 
     Locator.remove<LiveKitService>();
     Locator.remove<ChatService>();
-    Locator.remove<ProximityService>();
     Locator.remove<TimerService>();
   }
 }

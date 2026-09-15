@@ -245,6 +245,48 @@ final class PlayerMoved extends AppEvent {
   PiiPolicy get piiPolicy => PiiPolicy.none;
 }
 
+/// A remote participant moved — a peer, a bot, or Dreamfinder.
+///
+/// Separate from [PlayerMoved], which covers ONLY the local player: that event
+/// is dispatched from `movePlayerToCell`, the local move-intent path, so a log
+/// containing it is silent about everyone else in the room. Reading that silence
+/// as "nobody moved" cost three days of suspicion aimed at innocent code
+/// (claude-tasks#4302), and the remote motion was only recoverable afterwards by
+/// inferring it from the `distance` field riding along on audio-gate telemetry.
+///
+/// Carries the playerId, so it is [PiiPolicy.pii] — matching every other event
+/// here that names a participant. [PlayerMoved] is `none` precisely because it
+/// names nobody.
+///
+/// Volume is the same order as [PlayerMoved]: remote positions arrive once per
+/// published PATH, not per frame, so this is one event per peer move-intent.
+final class RemotePlayerMoved extends AppEvent {
+  RemotePlayerMoved({
+    required this.playerId,
+    required this.destX,
+    required this.destY,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+
+  final String playerId;
+  final int destX;
+  final int destY;
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'remote_player_moved',
+        'playerId': playerId,
+        'destX': destX,
+        'destY': destY,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
 /// Player opened a code or prompt terminal.
 final class TerminalOpened extends AppEvent {
   TerminalOpened({
@@ -496,6 +538,65 @@ final class PlayerLeftProximity extends AppEvent {
       };
 
   /// PII: player identifier.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// Two or more video bubbles were drawn as a single merged surface.
+///
+/// Emitted on TRANSITION only — when the merge group forms or its membership
+/// changes — never per frame. The merge pass runs every frame; a per-frame
+/// event would fill the log at frame rate and destroy the very instrument it
+/// exists to provide.
+///
+/// Emitted at the point [MergedVideoBubbleComponent] is actually built, not
+/// where the geometry says a merge is due. That distinction is the whole
+/// value: a shader that failed to load degrades silently to "no merge
+/// effect", so an event fired off geometry alone would report success for a
+/// merge nobody can see.
+final class BubblesMerged extends AppEvent {
+  BubblesMerged({required this.participantIds, DateTime? timestamp})
+      : timestamp = timestamp ?? DateTime.now();
+
+  /// The participants drawn through the shared surface, in merge-group order.
+  final List<String> participantIds;
+
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'bubbles_merged',
+        'participantIds': participantIds,
+        'count': participantIds.length,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identifiers.
+  @override
+  PiiPolicy get piiPolicy => PiiPolicy.pii;
+}
+
+/// A merged bubble group broke apart; each bubble draws itself again.
+final class BubblesUnmerged extends AppEvent {
+  BubblesUnmerged({required this.participantIds, DateTime? timestamp})
+      : timestamp = timestamp ?? DateTime.now();
+
+  /// The participants that had been merged, so a reader can pair this with
+  /// the [BubblesMerged] it closes without holding frame state.
+  final List<String> participantIds;
+
+  @override
+  final DateTime timestamp;
+
+  @override
+  Map<String, dynamic> toJson() => {
+        'type': 'bubbles_unmerged',
+        'participantIds': participantIds,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  /// PII: participant identifiers.
   @override
   PiiPolicy get piiPolicy => PiiPolicy.pii;
 }

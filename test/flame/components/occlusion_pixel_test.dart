@@ -63,7 +63,7 @@ class _PixelGame extends TechWorldGame {
 
   @override
   Future<void> onLoad() async {
-    images.add('NPC11.png', await _solid(384, 256, _playerColor));
+    images.add('NPC11.png', await _solid(512, 64, _playerColor));
     registry = TilesetRegistry(images: images);
     registry.loadFromImage(
       const Tileset(

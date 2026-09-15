@@ -7,14 +7,14 @@ import 'package:flame/components.dart' hide Timer;
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:logging/logging.dart';
-import 'package:tech_world/avatar/avatar.dart';
-import 'package:tech_world/avatar/predefined_avatars.dart';
+import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
+import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/agent_hello.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
@@ -292,13 +292,25 @@ class LiveKitService {
   /// Broadcast the local player's avatar to the room.
   ///
   /// Uses reliable delivery so late-joiners' catch-up works correctly.
-  Future<void> publishAvatar(Avatar avatar) async {
-    final message = {
-      'playerId': userId,
-      'avatarId': avatar.id,
-      'spriteAsset': avatar.spriteAsset,
-    };
-    await publishJson(message, topic: LiveKitTopic.avatar.wire);
+  Future<void> publishAvatar(AvatarSpec spec) async {
+    await publishJson(
+      {'playerId': userId, ...spec.toWire()},
+      topic: LiveKitTopic.avatar.wire,
+    );
+  }
+
+  /// Broadcast a one-shot emote from the local player.
+  ///
+  /// No `playerId` in the payload: receivers attribute the emote to the
+  /// transport-verified `senderId`, so a peer can only ever wave its own
+  /// avatar. Unreliable — an emote is a momentary flourish, and dropping one is
+  /// better than replaying it after the moment has passed.
+  Future<void> publishEmote(EmoteId emote) async {
+    await publishJson(
+      {'kind': emote.wireName},
+      topic: LiveKitTopic.emote.wire,
+      reliable: false,
+    );
   }
 
   PlayerPath? _parsePlayerPath(Map<String, dynamic> json) {
@@ -451,14 +463,45 @@ class LiveKitService {
         _log.warning('Listener cleanup failed', cleanupError);
       }
       _listener = null;
-      try {
-        await _room?.disconnect();
-      } catch (cleanupError) {
-        _log.warning('Room cleanup failed', cleanupError);
-      }
+      // Full teardown, not just disconnect — a half-built Room still owns an
+      // engine with its own reconnect loop (see [_disposeRoom]).
+      await _disposeRoom(_room);
       _room = null;
       _connectionState = _ConnectionState.disconnected;
       return ConnectionResult.roomFailed;
+    }
+  }
+
+  /// Tear a [Room] down completely: disconnect, then **dispose**.
+  ///
+  /// `disconnect()` alone is NOT enough. [Room] is a `DisposableChangeNotifier`
+  /// and its engine owns an auto-reconnect loop (`Engine.attemptReconnect`) plus
+  /// the signal websocket. Dropping the reference after only disconnecting
+  /// leaves that engine alive, and it will keep reconnecting its own socket in
+  /// the background while the app builds a *second* Room on the next connect —
+  /// two live engines racing. The orphan's socket is disposed but never has its
+  /// stream subscription cancelled (see `LiveKitWebSocketIO`), so every frame
+  /// the server still delivers logs
+  /// `LiveKitWebSocketIO#<id> already disposed, ignoring received data`.
+  /// That warning storm is the observable symptom of this leak.
+  ///
+  /// The SDK's own example disposes the room (`await widget.room.dispose()`).
+  ///
+  /// Never throws: teardown runs on error paths where a throw would mask the
+  /// original failure.
+  static Future<void> _disposeRoom(Room? room, {bool disconnect = true}) async {
+    if (room == null) return;
+    if (disconnect) {
+      try {
+        await room.disconnect();
+      } catch (e) {
+        _log.warning('Room disconnect during teardown failed', e);
+      }
+    }
+    try {
+      await room.dispose();
+    } catch (e) {
+      _log.warning('Room dispose during teardown failed', e);
     }
   }
 
@@ -474,7 +517,7 @@ class LiveKitService {
     _log.info('Disconnecting from LiveKit...');
     stopPositionHeartbeat();
 
-    await _room!.disconnect();
+    await _disposeRoom(_room);
     await _listener?.dispose();
     _listener = null;
     _room = null;
@@ -555,17 +598,49 @@ class LiveKitService {
   /// Uses [RemoteTrackPublication.enable]/[RemoteTrackPublication.disable] to
   /// tell the server we want/don't want this participant's audio track.
   /// Used for proximity-based audio: mute players who are too far away.
-  void setParticipantAudioEnabled(String identity, bool enabled) {
+  /// Enable or disable a remote participant's audio, reporting whether there
+  /// was anything to act ON.
+  ///
+  /// READ THE RETURN VALUE'S SCOPE CAREFULLY. True means: the participant was
+  /// present in `remoteParticipants` AND had at least one audio publication we
+  /// iterated. It does NOT mean the SFU acted — `publication.enable()` returns
+  /// void and reports nothing, so no confirmation is available at this layer.
+  ///
+  /// An earlier version of this docstring claimed the change "actually landed
+  /// on at least one track", which is more than the code can know. That is the
+  /// same prose-outruns-mechanism failure this method was changed to fix, so
+  /// it is corrected here rather than quietly.
+  ///
+  /// Returns BOOL rather than void, matching [setParticipantAudioVolume], so a
+  /// caller cannot latch a gate state that was never applied. The failure this
+  /// closes is silent: a participant that has not appeared in
+  /// `remoteParticipants` yet (late subscription) made this return early, while
+  /// [ProximityAudioGate] recorded the peer as enabled — after which every
+  /// later frame saw `hasAudio == true`, skipped the enable, and left the peer
+  /// muted forever with diagnostics insisting otherwise.
+  ///
+  /// A participant with zero audio publications also reports false: there was
+  /// no track to act on, so a later frame should try again rather than trust a
+  /// gate that never gated anything.
+  ///
+  /// So the bool is an ADDRESSABILITY check, not a delivery receipt. That is
+  /// still strictly better than void — it distinguishes "nobody to talk to"
+  /// from "we said something" and closes the unsubscribed-peer latch — but a
+  /// caller must not read it as proof the peer's audio state changed.
+  bool setParticipantAudioEnabled(String identity, bool enabled) {
     final participant = _room?.remoteParticipants[identity];
-    if (participant == null) return;
+    if (participant == null) return false;
 
+    var applied = false;
     for (final publication in participant.audioTrackPublications) {
       if (enabled) {
         publication.enable();
       } else {
         publication.disable();
       }
+      applied = true;
     }
+    return applied;
   }
 
   /// Set the playback volume (0.0–1.0) for a remote participant's audio.
@@ -1099,7 +1174,25 @@ class LiveKitService {
           _log.warning('Listener cleanup failed', e);
         }
         _listener = null;
+
+        // DISPOSE the orphan, don't just drop it. Previously this nulled
+        // `_room` and walked away: the Room survived with a live engine that
+        // kept running its own reconnect loop, while RoomSession's backoff
+        // built a SECOND Room — two engines racing, and the orphan's disposed
+        // socket logging a warning per received frame.
+        //
+        // Deferred with `Future(...)` rather than called inline: we are inside
+        // the Room's OWN event dispatch here, and `Room.dispose()` tears down
+        // the event emitter we are currently being dispatched from. Hopping to
+        // the next microtask gets us out of that callback first.
+        //
+        // Already disconnected by definition (this IS RoomDisconnectedEvent),
+        // so skip the redundant disconnect and go straight to dispose.
+        final orphan = _room;
         _room = null;
+        if (orphan != null) {
+          Future(() => _disposeRoom(orphan, disconnect: false));
+        }
         // Notify consumers so they can show a banner / attempt reconnect.
         _connectionLostController.add(event.reason?.name);
         dispatch([LiveKitDisconnected(reason: event.reason?.name)]);
@@ -1252,35 +1345,31 @@ class DataChannelMessage {
 
 /// A parsed avatar update from the `avatar` data channel topic.
 class AvatarUpdate {
-  const AvatarUpdate({
-    required this.playerId,
-    required this.avatarId,
-    required this.spriteAsset,
-  });
+  const AvatarUpdate({required this.playerId, required this.spec});
 
   final String playerId;
-  final String avatarId;
-  final String spriteAsset;
 
-  /// Try to parse an [AvatarUpdate] from a JSON map. Returns null if required
-  /// fields are missing or have wrong types.
+  /// What to render. Always valid — see [AvatarSpec.parse].
+  final AvatarSpec spec;
+
+  /// Try to parse an [AvatarUpdate]. Returns null **only** when the message
+  /// can't be attributed to a player.
   ///
-  /// Uses Dart 3 map patterns so a wrong-typed value returns null rather
-  /// than throwing — a thrown error inside the stream's `.map` callback
-  /// would tear down avatar reception for the rest of the session.
+  /// The split matters: [AvatarSpec.parse] is total, because a malformed
+  /// appearance should render as the default rather than kill the stream. But
+  /// an update with no usable `playerId` isn't a bad avatar — it's a message
+  /// about nobody, and applying it would mean picking a victim. So attribution
+  /// failure drops the whole message, and everything else falls back to a
+  /// bundled asset.
+  ///
+  /// This replaced a `spriteAsset` whitelist. The whitelist was doing real
+  /// work — it stopped path traversal and cache-miss crashes reaching the
+  /// renderer — and closed enums do the same job structurally: a peer can only
+  /// name ids that exist in our own enums, and an unknown one degrades or
+  /// falls back. No filename ever crosses the wire now.
   static AvatarUpdate? tryParse(Map<String, dynamic>? json) {
-    if (json case {'playerId': String playerId, 'spriteAsset': String spriteAsset}) {
-      // Whitelist sprite asset against the known-avatar set — prevents
-      // path-traversal, empty strings, and cache-miss crashes from
-      // forwarding through to the renderer. Set is lifted to a top-level
-      // `final` (`predefinedAvatarSpriteAssets`) so it's built once.
-      if (!predefinedAvatarSpriteAssets.contains(spriteAsset)) return null;
-      final avatarId = switch (json['avatarId']) { String s => s, _ => '' };
-      return AvatarUpdate(
-        playerId: playerId,
-        avatarId: avatarId,
-        spriteAsset: spriteAsset,
-      );
+    if (json case {'playerId': String playerId} when playerId.isNotEmpty) {
+      return AvatarUpdate(playerId: playerId, spec: AvatarSpec.parse(json));
     }
     return null;
   }
