@@ -191,6 +191,7 @@ class BubbleMergeRenderer {
       }
       _mergedBubble?.removeFromParent();
       _mergedBubble = null;
+      _logTransitionCause(videoBubbles, anchorCentres, const []);
       _emitTransition(const []);
       return;
     }
@@ -230,7 +231,53 @@ class BubbleMergeRenderer {
     // above: reaching this line means the merged surface exists and has its
     // sources. A shader that failed to load returns early at the top of this
     // method, so it can never produce a merge event it did not draw.
+    _logTransitionCause(videoBubbles, anchorCentres, mergeGroup);
     _emitTransition(mergeGroup);
+  }
+
+  /// Why a merge transition happened, logged at the moment one is emitted.
+  ///
+  /// Four different causes can end a merge, and three of them leave
+  /// [anchorCentres] and [videoBubbles] with identical key sets — so a probe
+  /// reporting only their difference reads "innocent" for three live causes at
+  /// once. Each field here is the discriminator for one arm: an entry in
+  /// `anchorMissing` convicts the skip-if-no-anchor branch above, a `video`
+  /// list shorter than `was` convicts bubble-lifecycle churn, and a gap at or
+  /// over `threshold` says the separation was real and the timing coincidental.
+  /// All four silent is itself a result, and a different question.
+  ///
+  /// Runs only on frames that actually emit, so it costs nothing at frame rate.
+  void _logTransitionCause(
+    Map<String, VideoBubbleComponent> videoBubbles,
+    Map<String, Vector2> anchorCentres,
+    List<String> group,
+  ) {
+    if (mergeTransitions(_lastEmittedGroup, group).isEmpty) return;
+
+    final was = _lastEmittedGroup;
+    final anchorMissing = [
+      for (final key in videoBubbles.keys)
+        if (anchorCentres[key] == null) key,
+    ];
+
+    // Measured on anchors, because anchors are what membership was decided
+    // from. A `no-anchor` gap means that slot is not in the bubble map at all
+    // this frame — the anchors are rebuilt from it every pass.
+    final gaps = <String>[];
+    for (var i = 0; i < was.length; i++) {
+      for (var j = i + 1; j < was.length; j++) {
+        final a = anchorCentres[was[i]];
+        final b = anchorCentres[was[j]];
+        gaps.add(a == null || b == null
+            ? '${was[i]}|${was[j]}=no-anchor'
+            : '${was[i]}|${was[j]}=${a.distanceTo(b).toStringAsFixed(1)}');
+      }
+    }
+
+    _log.info('merge_transition was=$was now=$group '
+        'slots=${_bubbles.keys.toList()} video=${videoBubbles.keys.toList()} '
+        'anchorMissing=$anchorMissing gaps=$gaps '
+        'threshold=${mergeThreshold.toStringAsFixed(0)}');
   }
 
   void _emitTransition(List<String> group) {
