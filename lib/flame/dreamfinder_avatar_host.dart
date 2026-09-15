@@ -75,10 +75,16 @@ class DreamfinderAvatarHost {
     final bridge = _bridgeFactory(liveKit);
     _bridge = bridge;
     bridge.initialize().then((_) {
-      // Re-check through the field rather than the local: a `stop()` between
-      // the call and this callback nulls the field, and firing onReady after
-      // teardown would resurrect a bubble for a Dreamfinder that has left.
-      if (_bridge?.isReady == true) {
+      // Guarded on IDENTITY, like the two arms below. Reading the field's
+      // readiness alone covered teardown (a `stop()` nulls the field, so a late
+      // onReady cannot resurrect a bubble for a departed Dreamfinder) but not
+      // REPLACEMENT: `stop()` then `start()` leaves two initialize futures in
+      // flight, and when the OLD one settles while the NEW bridge is already
+      // ready, the field reads ready and `_onReady()` fires for a successor
+      // this callback never initialized. Identity covers both — a nulled field
+      // and a replaced one are equally not-this-bridge. Third arm on the same
+      // iframe; the other two were locked first. (Tesla, PR #530 round 2.)
+      if (identical(_bridge, bridge) && bridge.isReady) {
         _log.info('Dreamfinder avatar bridge ready — refreshing bubble');
         // Isolated from the initialize future on purpose. `_onReady` is a
         // CALLER'S callback, and letting it throw into this chain routes it to

@@ -79,7 +79,9 @@ class DreamfinderProximitySignal {
   /// entry — chatter that says nothing the bot did not already assume.
   bool _confirmed = false;
 
-  /// Bumped whenever the RECIPIENT changes ([reset]). A publish that settles
+  /// Bumped whenever the RECIPIENT changes ([recipientChanged], never [reset]
+  /// — a reset means the player moved, not that the body was swapped). A
+  /// publish that settles
   /// after a bump is a reply from a participant who no longer exists, so it
   /// must not be allowed to write [_confirmed].
   ///
@@ -195,7 +197,8 @@ class DreamfinderProximitySignal {
     service.publishDfProximity(near: sending).then((_) {
       _inFlight = null;
       // Record ONLY if the recipient is still the one we sent to. Across a
-      // [reset] this publish was heard by a participant who has since left, and
+      // [recipientChanged] this publish was heard by a participant who has
+      // since left, and
       // what a departed agent was told is not evidence about what the new one
       // believes. Recording it anyway is how the lost-signal bug came back.
       if (generation == _generation) {
@@ -204,9 +207,15 @@ class DreamfinderProximitySignal {
         _confirmed = sending;
       }
       // Latest-wins: if the world moved while this was in flight, send the
-      // difference now rather than waiting for another frame. Terminates
-      // because each success advances `_confirmed`, so the recursion stops as
-      // soon as it equals `_desired`.
+      // difference now rather than waiting for another frame.
+      //
+      // Terminates, but NOT for the reason a pre-generation reading gives. A
+      // success at the CURRENT generation advances `_confirmed`, so that arm
+      // converges as before. A success at a STALE generation deliberately does
+      // not — and the recursion still ends, because the only thing that makes a
+      // generation stale is [recipientChanged], which leaves `_desired` and
+      // `_confirmed` equal. So the re-pump either returns immediately or starts
+      // exactly one publish at the current generation, which does advance.
       _pump();
     }).catchError((Object e) {
       // Release the slot but do NOT re-pump.

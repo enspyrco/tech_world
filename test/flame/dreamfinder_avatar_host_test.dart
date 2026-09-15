@@ -233,6 +233,41 @@ void main() {
     // silent no-op for the rest of the session — the avatar simply never came
     // back, with one warning in the log to say why.
 
+    test('a late success from a REPLACED bridge must not fire onReady for its '
+        'successor', () async {
+      // Tesla, PR #530 round 2. The ready arm read the FIELD's readiness rather
+      // than checking identity, so stop()+start() leaving two initialize
+      // futures in flight meant the OLD one settling while the NEW bridge was
+      // already ready fired _onReady for a successor it never initialized.
+      // The other two arms were identity-guarded; this was the third door.
+      final first = _FakeBridge();
+      final second = _FakeBridge();
+      var built = 0;
+      var readyCount = 0;
+      final host = build(
+        onReady: () => readyCount++,
+        bridgeFactory: (_) {
+          built++;
+          return built == 1 ? first : second;
+        },
+      );
+
+      host.start();      // first is in flight
+      host.stop();       // slot released; first's future still outstanding
+      host.start();      // second takes the slot
+      second.completeInitialize();
+      await pumpEventQueue();
+      expect(readyCount, 1, reason: 'the live bridge legitimately reports ready');
+
+      // Now the ABANDONED first bridge finally resolves.
+      first.completeInitialize();
+      await pumpEventQueue();
+
+      expect(readyCount, 1,
+          reason: 'a future belonging to a replaced bridge must not fire '
+              'onReady for the bridge that replaced it');
+    });
+
     test('a THROWING initialize disposes the bridge, not just the slot',
         () async {
       // Tesla, PR #530 delta cage-match: the not-ready branch disposed and
