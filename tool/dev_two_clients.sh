@@ -46,7 +46,7 @@ MACOS_PROC="tech_world.app/Contents/MacOS/tech_world"
 # `:-` as a word even inside double quotes, so the apostrophe opens a quote that
 # swallows the next 180 lines and reports the error somewhere else entirely.
 AUTOPILOT_ROOM="${AUTOPILOT_ROOM:-}"
-[ -n "$AUTOPILOT_ROOM" ] || AUTOPILOT_ROOM="Wizard's Tower"
+[ -n "$AUTOPILOT_ROOM" ] || AUTOPILOT_ROOM="The Wizard's Tower"
 AUTOPILOT_ROUTE="${AUTOPILOT_ROUTE:-20,20>26,20}"
 AUTOPILOT_DWELL="${AUTOPILOT_DWELL:-2500}"
 MACOS_DEFINES=()
@@ -57,6 +57,12 @@ if [ "${NO_AUTOPILOT:-0}" != "1" ]; then
   echo "==> Autopilot: room \"$AUTOPILOT_ROOM\", guest walks $AUTOPILOT_ROUTE every ${AUTOPILOT_DWELL}ms"
   echo "    (macOS holds position; NO_AUTOPILOT=1 to drive by hand)"
 fi
+
+# Taken here, before a client can join: the old instruction told the reader to
+# take it "before you start playing", which stopped being possible the moment
+# the clients started playing by themselves.
+WATERMARK=$(wc -l < "$HOME/Documents/tech_world_logs/events.log" 2>/dev/null || echo 0)
+WATERMARK=$(echo "$WATERMARK" | tr -d ' ')
 
 echo "==> Building + launching macOS client"
 flutter build macos --debug "${MACOS_DEFINES[@]}" >"$RUN_DIR/macos-build.log" 2>&1
@@ -244,10 +250,7 @@ Both clients drive themselves from here (NO_AUTOPILOT=1 to opt out):
 
 Give them ~30s to sign in, join and start publishing before reading the log.
 
-Take a watermark BEFORE you start playing:
-  wc -l < ~/Documents/tech_world_logs/events.log
-
-Read the results with:  tool/verify_av.sh <watermark>
+Read the results with:  tool/verify_av.sh $WATERMARK
 Token server log:        $RUN_DIR/realm-token-server.log
   TLS terminator log:      $RUN_DIR/tls-terminator.log
 MSG
