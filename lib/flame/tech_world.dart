@@ -547,6 +547,20 @@ class TechWorld extends World with TapCallbacks {
   void _handlePositionReceived(PlayerPath path) {
     _log.fine('LiveKit position received for ${path.playerId}');
 
+    // Dispatched here, at the single funnel, rather than in the three branches
+    // below: peers, bots and Dreamfinder all move through this method, and
+    // splitting the emission three ways is how one of them ends up silently
+    // uncovered. See [RemotePlayerMoved] for why a movement log that covers
+    // only the local player is worse than no movement log at all.
+    if (path.largeGridPoints.isNotEmpty) {
+      final dest = path.largeGridPoints.last;
+      dispatch([RemotePlayerMoved(
+        playerId: path.playerId,
+        destX: dest.x.round() ~/ gridSquareSize,
+        destY: dest.y.round() ~/ gridSquareSize,
+      )]);
+    }
+
     if (path.playerId == _bubbleManager.dreamfinderIdentity &&
         _dreamfinderComponent != null) {
       _dreamfinderComponent!

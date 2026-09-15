@@ -24,6 +24,8 @@ void consoleSink(AppEvent event) {
       'DoorUnlocked: ($doorX, $doorY)',
     PlayerMoved(:final destX, :final destY) =>
       'PlayerMoved: → ($destX, $destY)',
+    RemotePlayerMoved(:final playerId, :final destX, :final destY) =>
+      'RemotePlayerMoved: $playerId → ($destX, $destY)',
     TerminalOpened(:final challengeId, :final terminalX, :final terminalY) =>
       'TerminalOpened: ${challengeId.wireName} at ($terminalX, $terminalY)',
     TerminalClosed() => 'TerminalClosed',

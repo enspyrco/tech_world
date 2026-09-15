@@ -140,6 +140,7 @@ void main() {
         SpellCastFailed() => 'spell_failed',
         DoorUnlocked() => 'door',
         PlayerMoved() => 'moved',
+        RemotePlayerMoved() => 'remote-moved',
         TerminalOpened() => 'terminal_open',
         TerminalClosed() => 'terminal_close',
         AvatarSelected() => 'avatar',

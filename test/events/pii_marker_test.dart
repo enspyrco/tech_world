@@ -58,12 +58,13 @@ void main() {
     // asserts on a known concrete type.
     void check(AppEvent event, PiiPolicy expected) {
       final declared = switch (event) {
-        // PII subtypes (28)
+        // PII subtypes (29)
         SpellCastFailed() => PiiPolicy.pii,
         RoomJoined() => PiiPolicy.pii,
         UserSignedIn() => PiiPolicy.pii,
         ProfileUpdated() => PiiPolicy.pii,
         PlayerEnteredProximity() => PiiPolicy.pii,
+        RemotePlayerMoved() => PiiPolicy.pii,
         PlayerLeftProximity() => PiiPolicy.pii,
         BubblesMerged() => PiiPolicy.pii,
         BubblesUnmerged() => PiiPolicy.pii,
@@ -142,6 +143,7 @@ void main() {
         UserSignedIn(userId: 'u', displayName: 'Alice'),
         ProfileUpdated(displayName: 'Alice'),
         PlayerEnteredProximity(playerId: 'p'),
+        RemotePlayerMoved(playerId: 'p', destX: 0, destY: 0),
         BubblesMerged(participantIds: const ['p1', 'p2']),
         BubblesUnmerged(participantIds: const ['p1', 'p2']),
         PlayerLeftProximity(playerId: 'p'),
@@ -250,8 +252,8 @@ void main() {
       // Cardinality cross-check: keeps this list and the switch above
       // honest against the same expected subtype count. Bump together
       // when adding a new subtype.
-      expect(events.length, 47);
-      expect(piiEvents.length, 28);
+      expect(events.length, 48);
+      expect(piiEvents.length, 29);
       expect(nonPiiEvents.length, 19);
 
       for (final event in piiEvents) {
@@ -409,6 +411,16 @@ void main() {
 
     test('PlayerMoved is not PII', () {
       expect(PlayerMoved(destX: 1, destY: 2).piiPolicy, PiiPolicy.none);
+    });
+
+    // The pair is the point: the same fact about the same grid is non-PII for
+    // the local player and PII for a named peer. What makes it PII is the
+    // playerId, not the position.
+    test('RemotePlayerMoved IS PII — it names a participant', () {
+      expect(
+        RemotePlayerMoved(playerId: 'p1', destX: 1, destY: 2).piiPolicy,
+        PiiPolicy.pii,
+      );
     });
 
     test('TerminalOpened is not PII', () {
