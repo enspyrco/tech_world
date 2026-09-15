@@ -149,13 +149,26 @@ if [ "${NO_LOCAL_TOKEN_SERVER:-0}" != "1" ]; then
     echo "    $SECRETS readable to fix." >&2
   fi
 
-  if lsof -iTCP:"$RTS_PORT" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
-    echo "    realm-token-server already listening on $RTS_PORT"
-  else
-    echo "==> Starting local realm-token-server on $RTS_PORT"
-    (cd "$RTS_DIR" && PORT="$RTS_PORT" nohup ./scripts/dev.sh \
-      >"$RUN_DIR/realm-token-server.log" 2>&1 &)
+  # Always restart, never reuse. A process already listening on this port was
+  # started with SOME environment, and nothing it serves reveals which LiveKit
+  # key it mints with -- the credential only shows up as the JWT issuer, inside
+  # a token that needs a real sign-in to obtain. Reusing it once cost a full
+  # two-client run: the mint held `devkey`, every hop went green (/exchange 200,
+  # /livekit-token 200, CORS correct), and the SFU refused the token one hop
+  # later with "invalid API key: devkey". Port-is-occupied is a cheap proxy for
+  # "the mint is configured right", and it is not one. The port is ours.
+  RTS_PID=$(lsof -tiTCP:"$RTS_PORT" -sTCP:LISTEN 2>/dev/null | head -1)
+  if [ -n "$RTS_PID" ]; then
+    echo "    Replacing realm-token-server on $RTS_PORT (pid $RTS_PID)"
+    kill "$RTS_PID" 2>/dev/null || true
+    for _ in $(seq 1 10); do
+      lsof -tiTCP:"$RTS_PORT" -sTCP:LISTEN >/dev/null 2>&1 || break
+      sleep 1
+    done
   fi
+  echo "==> Starting local realm-token-server on $RTS_PORT"
+  (cd "$RTS_DIR" && PORT="$RTS_PORT" nohup ./scripts/dev.sh \
+    >"$RUN_DIR/realm-token-server.log" 2>&1 &)
 
   # Wait for the mint itself, not for the terminator in front of it: a 502 from
   # the terminator and a mint that has not finished booting look identical to
@@ -171,15 +184,22 @@ if [ "${NO_LOCAL_TOKEN_SERVER:-0}" != "1" ]; then
     exit 1
   fi
 
-  if lsof -iTCP:"$TLS_PORT" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
-    echo "    TLS terminator already listening on $TLS_PORT"
-  else
-    echo "==> Starting TLS terminator on $TLS_PORT"
-    REALM_UPSTREAM="http://127.0.0.1:$RTS_PORT" PROXY_CERT_DIR="$RUN_DIR" \
-      nohup node "$ROOT/tool/dev_tls_terminator.js" "$TLS_PORT" \
-      >"$RUN_DIR/tls-terminator.log" 2>&1 &
-    disown $! 2>/dev/null || true
+  # Same reasoning as the mint above: the terminator caches its upstream URL at
+  # start, so a survivor from an earlier run can be pointed somewhere else.
+  TLS_PID=$(lsof -tiTCP:"$TLS_PORT" -sTCP:LISTEN 2>/dev/null | head -1)
+  if [ -n "$TLS_PID" ]; then
+    echo "    Replacing TLS terminator on $TLS_PORT (pid $TLS_PID)"
+    kill "$TLS_PID" 2>/dev/null || true
+    for _ in $(seq 1 10); do
+      lsof -tiTCP:"$TLS_PORT" -sTCP:LISTEN >/dev/null 2>&1 || break
+      sleep 1
+    done
   fi
+  echo "==> Starting TLS terminator on $TLS_PORT"
+  REALM_UPSTREAM="http://127.0.0.1:$RTS_PORT" PROXY_CERT_DIR="$RUN_DIR" \
+    nohup node "$ROOT/tool/dev_tls_terminator.js" "$TLS_PORT" \
+    >"$RUN_DIR/tls-terminator.log" 2>&1 &
+  disown $! 2>/dev/null || true
 
   CHROME_TLS_FLAGS=(
     --web-browser-flag="--ignore-certificate-errors-spki-list=$SPKI"
