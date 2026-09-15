@@ -44,7 +44,7 @@ When you arrive in this codebase: sweep `lib/` for `String` fields whose values 
 - `CodeChallengeId` (the 23 code-editor challenges — `lib/editor/challenge.dart`).
 - `ChallengeRef` (sealed) with `CodeRef(CodeChallengeId)` and `PromptRef(PromptChallengeId)` variants — `lib/events/types.dart`. Replaces stringly-typed `challengeId` in event payloads; parse from wire via `ChallengeRef.parse(String wire)`.
 - `BotStatus` (`absent` / `idle` / `thinking` — `lib/flame/components/bot_status.dart`). Owned by `ChatService._botStatus`, exposed as `ValueListenable<BotStatus>`.
-- `LiveKitTopic` (26 data-channel topics — `lib/livekit/livekit_topic.dart`).
+- `LiveKitTopic` (every data-channel topic — `lib/livekit/livekit_topic.dart`).
 - `SpeakerRole` (2 speech transcript roles — `lib/flame/shared/speaker_role.dart`).
 
 Examples still pending: `AvatarId`, `MapId`, `TilesetId`, `RoomType`. Don't refactor speculatively — refactor when you're already touching the code for another reason.
@@ -96,7 +96,7 @@ Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthSer
 ### Key Classes
 
 - **`TechWorldGame`** — extends `FlameGame`, wraps `TechWorld` world component
-- **`TechWorld`** — extends `World`, owns the player + remote-player + bot + map components, delegates LiveKit subscriptions to `LiveKitGameBridge`, door state to `DoorManager`, and bubble lifecycle to `BubbleManager`. Shrunk from 1570 → ~1300 lines after PR #438's extraction sweep
+- **`TechWorld`** — extends `World`, owns the player + remote-player + bot + map components, delegates LiveKit subscriptions to `LiveKitGameBridge`, door state to `DoorManager`, and bubble lifecycle to `BubbleManager`. PR #438's extraction sweep took it 1570 → ~1300 lines; **it is 1726 as at 2026-09-15**, i.e. the sweep's gain is gone and then some
 - **`LiveKitGameBridge`** (`lib/flame/livekit_game_bridge.dart`) — owns the 14 stream subscriptions and `InfraHealthService` lifecycle that previously lived on TechWorld. Constructed when `connectToLiveKit` is called, disposed on `disconnectFromLiveKit`
 - **`DoorManager`** (`lib/flame/door_manager.dart`) — owns `unlockDoor`, `handleRemoteDoorUnlock` (with the three-check sender guard from PR #431), `recomputeNearbyLockedDoor`, `doorsForChallenge`, `nearbyLockedDoor` notifier. TechWorld delegates via accessor methods
 - **`BubbleManager`** — plain Dart class (not a Component) owning all proximity bubble state: creation/removal, physics repulsion, metaball field, merged video, audio enable/disable, shader loading, Dreamfinder avatar bridge. Receives `addComponent` callback to add to the World. Reads `setHideVideoBubbles` and `setReduceMotion` from the user preference layer
@@ -105,7 +105,7 @@ Services registered with `Locator`, accessed via `locate<T>()`. Static: `AuthSer
 
 ### Event-Sink System
 
-Domain events (`lib/events/types.dart`) are dispatched via `dispatch()` (`lib/events/dispatch.dart`) and fanned to registered sinks. 34 sealed event types cover auth, room lifecycle, player movement, terminals, casting, chat, map editing, proximity, bot presence, and LiveKit state. The log bridge routes all `_log.*` calls through the same pipeline.
+Domain events (`lib/events/types.dart`) are dispatched via `dispatch()` (`lib/events/dispatch.dart`) and fanned to registered sinks. The sealed `AppEvent` hierarchy covers auth, room lifecycle, player movement (local *and* remote — see `RemotePlayerMoved`), terminals, casting, chat, map editing, proximity, bot presence, and LiveKit state. `test/events/pii_marker_test.dart` pins the subtype count, so the number lives where a change fails a test rather than here, where it silently rots. The log bridge routes all `_log.*` calls through the same pipeline.
 
 Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app documents). The full event catalogue is the sealed class hierarchy in `lib/events/types.dart`.
 
@@ -115,7 +115,7 @@ Sinks: `consoleSink` (dev, `debugPrint`), `fileSink` (native, JSONL to app docum
 
 ### Communication (All via LiveKit)
 
-All 26 data-channel topics are typed via `LiveKitTopic` enum (`lib/livekit/livekit_topic.dart`). Use `LiveKitTopic.<name>.wire` at every publish/subscribe site. Categories: position, avatar, map, doors/terminals, speech, chat/DM/help, bot/oracle, infrastructure, connectivity.
+Every data-channel topic is typed via the `LiveKitTopic` enum (`lib/livekit/livekit_topic.dart`). Use `LiveKitTopic.<name>.wire` at every publish/subscribe site. Categories: position, avatar, map, doors/terminals, speech, chat/DM/help, bot/oracle, infrastructure, connectivity.
 
 **Bot (Clawd)**: Runs on OCI as participant `bot-claude`. Source in `../tech_world_bot/`.
 
@@ -192,7 +192,7 @@ Surfaced from PR cage-matches and session trawls — concrete items with a known
 ### Refactor follow-ups (from PR #438 review)
 
 - **Lift `AvatarUpdate.tryParse` whitelist `Set` to a top-level `final`.** Currently builds the `predefinedAvatars` set on every parse (`livekit_service.dart`). For 3 avatars at low frequency this is fine, but if `predefinedAvatars` grows or this becomes hot-path, lift.
-- **Continue extracting `TechWorld`.** Shrunk from 1570 → ~1300 lines via the bridge + door-manager split, but terminal-interaction, speech-bubble lifecycle, and avatar-tracking still live there. Each is the same shape of extraction as `DoorManager` / `LiveKitGameBridge`.
+- **Continue extracting `TechWorld`.** The bridge + door-manager split took it 1570 → ~1300, and it has since grown to 1726 (2026-09-15) — past where it started. Terminal-interaction, speech-bubble lifecycle, and avatar-tracking still live there. Each is the same shape of extraction as `DoorManager` / `LiveKitGameBridge`.
 - **Add positive-case `predefinedAvatars` whitelist test.** Current coverage exhausts the negative cases (unknown / path-traversal / empty); a "valid sprite asset that's not in `predefinedAvatars`" test would tighten the gate against future avatar additions silently failing.
 
 ### Operations & deploy hygiene (from Robin's Phase 5 audit, 2026-05-15)

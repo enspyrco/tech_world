@@ -676,9 +676,11 @@ class _MyAppState extends State<MyApp> {
       _log.info('Autopilot: joining "${match.name}"');
       await _joinRoom(match);
 
-      // Started after the join rather than beside it: a move request issued
-      // before TechWorld has a path component is dropped on the floor by
-      // movePlayerToCell, so an early first step would simply be lost.
+      // `_currentRoom != null` says the JOIN finished, not that the world can
+      // move anyone — the path component arrives later, and a move issued
+      // before it does is discarded in silence. That gap is why the walker
+      // retries a refused waypoint instead of advancing past it; this check
+      // only catches the coarser failure where the join did not stick at all.
       if (_currentRoom == null) {
         _log.severe('Autopilot: join did not stick, not walking');
         return;

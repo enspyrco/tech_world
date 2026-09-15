@@ -1516,9 +1516,18 @@ class TechWorld extends World with TapCallbacks {
   /// handler ([onTapDown]) and keyboard movement ([moveInDirection]) both route
   /// through here, so a keyboard step pathfinds, collides, animates, and
   /// broadcasts identically to a tap. There is no separate keyboard wire path.
-  void movePlayerToCell(int miniGridX, int miniGridY) {
+  /// Returns whether the move was ACCEPTED. False means the world cannot move
+  /// anyone yet — no path component — and the request was discarded.
+  ///
+  /// The bool exists because the discard is otherwise perfectly silent: it
+  /// happens before the `PlayerMoved` dispatch, so a dropped move leaves no
+  /// trace in any log, on either side of the wire. An autopiloted client walked
+  /// a full route into that hole and the only symptom, four layers away, was a
+  /// peer that never appeared to move. A caller that cannot see a refusal
+  /// cannot retry one.
+  bool movePlayerToCell(int miniGridX, int miniGridY) {
     final pathComponent = _pathComponent;
-    if (pathComponent == null) return;
+    if (pathComponent == null) return false;
 
     pathComponent.calculatePath(
         start: _userPlayerComponent.miniGridTuple, end: (miniGridX, miniGridY));
@@ -1533,6 +1542,7 @@ class TechWorld extends World with TapCallbacks {
     );
 
     dispatch([PlayerMoved(destX: miniGridX, destY: miniGridY)]);
+    return true;
   }
 
   /// Move the local player one grid cell in [direction], reusing the shared

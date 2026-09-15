@@ -57,7 +57,7 @@ void main() {
       final moves = <Point<int>>[];
       final walker = AutopilotWalker(
         plan: AutopilotPlan.parse('room=F;route=1,1>2,2>3,3')!,
-        moveTo: (x, y) => moves.add(Point(x, y)),
+        moveTo: (x, y) { moves.add(Point(x, y)); return true; },
       );
 
       for (var i = 0; i < 4; i++) {
@@ -76,7 +76,7 @@ void main() {
       var moves = 0;
       final walker = AutopilotWalker(
         plan: AutopilotPlan.parse('room=F;route=5,5')!,
-        moveTo: (_, __) => moves++,
+        moveTo: (_, __) { moves++; return true; },
       );
       walker.start();
       expect(walker.isRunning, isFalse);
@@ -87,7 +87,7 @@ void main() {
     test('an empty route does not start', () {
       final walker = AutopilotWalker(
         plan: AutopilotPlan.parse('room=F')!,
-        moveTo: (_, __) => fail('should not move'),
+        moveTo: (_, __) { fail('should not move'); },
       );
       walker.start();
       expect(walker.isRunning, isFalse);
@@ -99,7 +99,7 @@ void main() {
       final moves = <Point<int>>[];
       final walker = AutopilotWalker(
         plan: AutopilotPlan.parse('room=F;route=7,7>8,8;dwell=60000')!,
-        moveTo: (x, y) => moves.add(Point(x, y)),
+        moveTo: (x, y) { moves.add(Point(x, y)); return true; },
       );
       walker.start();
       // Without the leading step this would be empty for a full minute — long
@@ -112,7 +112,7 @@ void main() {
       final moves = <Point<int>>[];
       final walker = AutopilotWalker(
         plan: AutopilotPlan.parse('room=F;route=1,1>2,2')!,
-        moveTo: (x, y) => moves.add(Point(x, y)),
+        moveTo: (x, y) { moves.add(Point(x, y)); return true; },
       );
       walker.start();
       walker.start();
@@ -120,11 +120,52 @@ void main() {
       walker.stop();
     });
 
+    test('a refused move is RETRIED, not skipped', () {
+      final attempts = <Point<int>>[];
+      var accept = false;
+      final walker = AutopilotWalker(
+        plan: AutopilotPlan.parse('room=F;route=1,1>2,2')!,
+        moveTo: (x, y) {
+          attempts.add(Point(x, y));
+          return accept;
+        },
+      );
+
+      // The world is not ready: three ticks, all refused, all the SAME cell.
+      walker.debugStep();
+      walker.debugStep();
+      walker.debugStep();
+      expect(attempts, [const Point(1, 1), const Point(1, 1), const Point(1, 1)]);
+      expect(walker.refusals, 3);
+
+      // Once it accepts, the route advances from where it was — waypoint 1 is
+      // not lost. Advancing on refusal is the bug this pins: it would walk the
+      // entire route into a world that discarded every step.
+      accept = true;
+      walker.debugStep();
+      walker.debugStep();
+      expect(attempts.sublist(3), [const Point(1, 1), const Point(2, 2)]);
+      expect(walker.refusals, 0);
+    });
+
+    test('refusals reset once a move lands', () {
+      var accept = false;
+      final walker = AutopilotWalker(
+        plan: AutopilotPlan.parse('room=F;route=3,3>4,4')!,
+        moveTo: (_, __) => accept,
+      );
+      walker.debugStep();
+      expect(walker.refusals, 1);
+      accept = true;
+      walker.debugStep();
+      expect(walker.refusals, 0);
+    });
+
     test('stop halts the timer', () async {
       final moves = <Point<int>>[];
       final walker = AutopilotWalker(
         plan: AutopilotPlan.parse('room=F;route=1,1>2,2;dwell=10')!,
-        moveTo: (x, y) => moves.add(Point(x, y)),
+        moveTo: (x, y) { moves.add(Point(x, y)); return true; },
       );
       walker.start();
       walker.stop();

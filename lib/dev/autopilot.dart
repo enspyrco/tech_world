@@ -138,18 +138,27 @@ final class AutopilotPlan {
 /// Takes the move function rather than reaching for `TechWorld`, so the walking
 /// RULE is testable without a game loop — the same split that makes
 /// `mergeTransitions` provable without a shader.
+///
+/// [moveTo] returns whether the world ACCEPTED the move. A refusal means the
+/// game is not ready to move anyone yet, which is the normal state for the
+/// first second or so after a room is entered — so a refused waypoint is
+/// retried rather than skipped. Advancing past it would silently walk the whole
+/// route into a world that discarded every step, which is exactly what happened
+/// before the return value existed: the client reported "walking 2 waypoints",
+/// its peer saw it stand still forever, and nothing anywhere logged a refusal.
 final class AutopilotWalker {
   AutopilotWalker({
     required AutopilotPlan plan,
-    required void Function(int x, int y) moveTo,
+    required bool Function(int x, int y) moveTo,
   })  : _plan = plan,
         _moveTo = moveTo;
 
   final AutopilotPlan _plan;
-  final void Function(int x, int y) _moveTo;
+  final bool Function(int x, int y) _moveTo;
 
   Timer? _timer;
   int _next = 0;
+  int _refusals = 0;
 
   bool get isRunning => _timer != null;
 
@@ -169,9 +178,28 @@ final class AutopilotWalker {
   @visibleForTesting
   void debugStep() => _step();
 
+  /// Number of consecutive refusals since the last accepted move. Exposed so a
+  /// test can assert the retry rather than infer it from a call count.
+  @visibleForTesting
+  int get refusals => _refusals;
+
   void _step() {
     final target = _plan.route[_next];
+    if (!_moveTo(target.x, target.y)) {
+      _refusals++;
+      // Once, not every tick: a world that is never going to be ready would
+      // otherwise fill the log at the dwell rate, burying the thing it is
+      // trying to report.
+      if (_refusals == 1) {
+        _log.warning('Autopilot: world refused a move to '
+            '(${target.x}, ${target.y}) — not ready yet, retrying');
+      }
+      return; // Retry the SAME waypoint next tick.
+    }
+    if (_refusals > 0) {
+      _log.info('Autopilot: world accepted a move after $_refusals refusal(s)');
+      _refusals = 0;
+    }
     _next = (_next + 1) % _plan.route.length;
-    _moveTo(target.x, target.y);
   }
 }
