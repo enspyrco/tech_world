@@ -161,10 +161,24 @@ class DreamfinderProximitySignal {
   /// — the exact lost signal the leave path was added to prevent, surviving in
   /// its own failure branch. (Tesla, PR #530 delta cage-match.)
   ///
-  /// [_inFlight] is deliberately NOT cleared: the outstanding publish still owns
-  /// the single in-flight slot until it settles. The generation counter
-  /// neutralises its result; freeing the slot early would allow two publishes to
-  /// be outstanding at once.
+  /// [_inFlight] is deliberately NOT cleared, and the reason is narrower than
+  /// "ordering" — the generation counter already neutralises the stale REPLY.
+  /// What it does not neutralise is the stale MESSAGE: freeing the slot lets a
+  /// second publish go out while the first is still unsent, and both carry a
+  /// value for the same topic. If they landed out of order the new agent would
+  /// end up holding the departed agent's value while [_confirmed] recorded the
+  /// new one — a divergence between us and the bot, which is worse than a
+  /// delay. LiveKit's reliable data channel does preserve per-publisher order,
+  /// so in practice the newer value lands last; correctness would then rest on
+  /// a transport property nothing in this file states or tests.
+  ///
+  /// THE COST, NAMED: while the old publish is outstanding, [_pump] returns
+  /// early, so a new Dreamfinder arriving in that window is not told until it
+  /// settles — typically milliseconds, but unbounded if the publish hangs.
+  /// (Tesla, PR #530 round 3, which argued for releasing the slot.) Traded
+  /// deliberately: a bounded delay over a divergence resting on an unstated
+  /// guarantee. If the hang case ever shows up in a log, the fix is a timeout
+  /// on the publish, not an early release.
   void recipientChanged() {
     _generation++;
     _desired = false;

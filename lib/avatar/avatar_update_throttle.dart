@@ -36,6 +36,12 @@ class AvatarUpdateThrottle {
   /// Minimum time between two applied updates for the same peer.
   final Duration interval;
 
+  /// How many consecutive `_apply` throws a single spec gets before it is
+  /// dropped. Three, not one: a transient failure (a decode that races a
+  /// disposal, a momentarily-missing asset) should survive, while a spec that
+  /// is simply un-appliable must not retry until the peer leaves.
+  static const int maxApplyFailures = 3;
+
   final Map<String, _PeerWindow> _windows = {};
 
   /// Offer an update for [playerId]. Applies now or schedules, per the class
@@ -88,6 +94,7 @@ class AvatarUpdateThrottle {
         window.timer = _startTimer(playerId);
         try {
           _apply(playerId, pending);
+          window.failures = 0;
           // Latch ONLY after the apply landed.
           //
           // Clearing `pending` and advancing `lastApplied` before the call
@@ -97,19 +104,51 @@ class AvatarUpdateThrottle {
           // `lastApplied` now equalled it, so a rebroadcast of the same spec
           // deduped away too. Peers rendered a stale avatar until some
           // DIFFERENT spec arrived.
-          window
-            ..pending = null
-            ..lastApplied = pending;
+          // Cleared only if it is STILL the spec we applied. `_apply` runs
+          // synchronously, so anything it re-entrantly submits for this peer
+          // lands in `pending` before this line — and a blind null would drop
+          // that newer spec on the floor, which is the same lost-update the
+          // latch-after-apply order exists to prevent, one step later.
+          if (identical(window.pending, pending)) window.pending = null;
+          window.lastApplied = pending;
         } catch (e) {
-          // Leave `pending` set: the window just scheduled will retry it.
-          _log.warning('avatar apply failed for $playerId — retrying next '
-              'window', e);
+          // BOUNDED. `pending` left set means the window just scheduled will
+          // retry — and for a spec that throws every time, that is a composite
+          // attempt plus a warning line every `interval`, forever, driven by a
+          // value a PEER chose. This class's own header calls itself the bound
+          // on peer-controlled compose work, so an unbounded retry inside it is
+          // the bound leaking. The sibling reconciler in
+          // dreamfinder_proximity_signal refuses this pattern by name ("loops
+          // with no air gap"); this one had it. (Tesla, PR #530 round 3.)
+          //
+          // On giving up the spec is QUARANTINED into `lastApplied` rather than
+          // merely dropped, so a rebroadcast of the same bad spec dedupes away
+          // instead of restarting the loop, while any DIFFERENT spec still
+          // applies normally.
+          window.failures++;
+          if (window.failures >= maxApplyFailures) {
+            if (identical(window.pending, pending)) window.pending = null;
+            window.lastApplied = pending;
+            window.failures = 0;
+            _log.severe(
+                'avatar apply failed $maxApplyFailures times for $playerId — '
+                'dropping this spec; a different spec will still apply',
+                e);
+          } else {
+            _log.warning(
+                'avatar apply failed for $playerId '
+                '(${window.failures}/$maxApplyFailures) — retrying next window',
+                e);
+          }
         }
       });
 }
 
 class _PeerWindow {
   Timer? timer;
+
+  /// Consecutive `_apply` throws for [pending]. Reset on any success.
+  int failures = 0;
   AvatarSpec? pending;
 
   /// The spec most recently handed to `apply` for this peer, so an unchanged

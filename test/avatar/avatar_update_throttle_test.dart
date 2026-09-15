@@ -173,6 +173,72 @@ void main() {
     // it, so a rebroadcast of the same spec deduped away too. Peers rendered a
     // stale avatar until some DIFFERENT spec arrived.
 
+    test('a spec that ALWAYS throws is dropped after maxApplyFailures, not '
+        'retried forever', () {
+      // Tesla, PR #530 round 3. `pending` left set on throw means the window
+      // just scheduled retries — and for a spec that throws every time that is
+      // a composite attempt plus a log line every interval, forever, driven by
+      // a value a PEER chose. This class's header calls itself the bound on
+      // peer-controlled compose work, so an unbounded retry inside it is the
+      // bound leaking.
+      fakeAsync((async) {
+        var attempts = 0;
+        final throttle = AvatarUpdateThrottle(
+          interval: window,
+          apply: (id, spec) {
+            if (spec == b) {
+              attempts++;
+              throw StateError('this spec can never compose');
+            }
+          },
+        );
+
+        throttle.submit('peer', a);
+        throttle.submit('peer', b);
+
+        // Far more windows than the bound allows.
+        for (var i = 0; i < 12; i++) {
+          async.elapse(window);
+        }
+
+        expect(attempts, AvatarUpdateThrottle.maxApplyFailures,
+            reason: 'the retry must stop, not run for the life of the room');
+      });
+    });
+
+    test('a NEWER spec submitted during a synchronous apply is not dropped',
+        () {
+      // Secondary strike, same finding: clearing `pending` blindly after
+      // _apply wipes anything _apply re-entrantly submitted for this peer —
+      // the same lost update the latch-after-apply order exists to prevent,
+      // one step later.
+      fakeAsync((async) {
+        final applied = <AvatarSpec>[];
+        late AvatarUpdateThrottle throttle;
+        var reentered = false;
+        throttle = AvatarUpdateThrottle(
+          interval: window,
+          apply: (id, spec) {
+            applied.add(spec);
+            if (spec == b && !reentered) {
+              reentered = true;
+              throttle.submit('peer', c); // lands in pending mid-apply
+            }
+          },
+        );
+
+        throttle.submit('peer', a);
+        throttle.submit('peer', b);
+        applied.clear();
+
+        async.elapse(window); // applies b, which submits c
+        async.elapse(window); // c must still be pending, and apply
+
+        expect(applied, contains(c),
+            reason: 'a spec that arrived during the apply must survive it');
+      });
+    });
+
     test('the trailing update is RETRIED when apply throws', () {
       fakeAsync((async) {
         final applied = <AvatarSpec>[];
