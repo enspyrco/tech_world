@@ -47,15 +47,24 @@ MACOS_PROC="tech_world.app/Contents/MacOS/tech_world"
 # swallows the next 180 lines and reports the error somewhere else entirely.
 AUTOPILOT_ROOM="${AUTOPILOT_ROOM:-}"
 [ -n "$AUTOPILOT_ROOM" ] || AUTOPILOT_ROOM="The Wizard's Tower"
-AUTOPILOT_ROUTE="${AUTOPILOT_ROUTE:-20,20>26,20}"
+# The guest paces ACROSS the macOS client's station, so the pair crosses the
+# 96px merge threshold in both directions on every cycle. Two connected clients
+# that never come near each other prove connectivity and nothing else: the first
+# autopiloted run left them 17 cells apart for its whole life.
+AUTOPILOT_ROUTE="${AUTOPILOT_ROUTE:-21,20>27,20}"
+# Two adjacent cells rather than one: a single-waypoint route is not a walk and
+# does not start, so this is how the macOS client takes up a KNOWN position
+# instead of wherever the map happened to spawn it.
+AUTOPILOT_MACOS_ROUTE="${AUTOPILOT_MACOS_ROUTE:-24,20>24,21}"
 AUTOPILOT_DWELL="${AUTOPILOT_DWELL:-2500}"
 MACOS_DEFINES=()
 GUEST_AUTOPILOT=()
 if [ "${NO_AUTOPILOT:-0}" != "1" ]; then
-  MACOS_DEFINES=(--dart-define=AUTOPILOT="room=$AUTOPILOT_ROOM")
+  MACOS_DEFINES=(--dart-define=AUTOPILOT="room=$AUTOPILOT_ROOM;route=$AUTOPILOT_MACOS_ROUTE;dwell=$AUTOPILOT_DWELL")
   GUEST_AUTOPILOT=(--dart-define=AUTOPILOT="room=$AUTOPILOT_ROOM;route=$AUTOPILOT_ROUTE;dwell=$AUTOPILOT_DWELL")
-  echo "==> Autopilot: room \"$AUTOPILOT_ROOM\", guest walks $AUTOPILOT_ROUTE every ${AUTOPILOT_DWELL}ms"
-  echo "    (macOS holds position; NO_AUTOPILOT=1 to drive by hand)"
+  echo "==> Autopilot: room \"$AUTOPILOT_ROOM\" every ${AUTOPILOT_DWELL}ms"
+  echo "    macOS station $AUTOPILOT_MACOS_ROUTE, guest paces $AUTOPILOT_ROUTE across it"
+  echo "    (NO_AUTOPILOT=1 to drive by hand)"
 fi
 
 # Taken here, before a client can join: the old instruction told the reader to
@@ -273,8 +282,8 @@ cat <<MSG
     Chrome log: $CHROME_LOG
 
 Both clients drive themselves from here (NO_AUTOPILOT=1 to opt out):
-  macOS  -> guest sign-in, enters "$AUTOPILOT_ROOM", holds position, camera on
-  Chrome -> guest sign-in, same room, walks $AUTOPILOT_ROUTE on a ${AUTOPILOT_DWELL}ms cycle
+  macOS  -> guest sign-in, enters "$AUTOPILOT_ROOM", takes station at $AUTOPILOT_MACOS_ROUTE, camera on
+  Chrome -> guest sign-in, same room, paces $AUTOPILOT_ROUTE across that station
 
 Give them ~30s to sign in, join and start publishing before reading the log.
 
