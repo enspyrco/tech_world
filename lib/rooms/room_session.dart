@@ -51,7 +51,6 @@ class RoomSession {
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
     List<Duration>? reconnectDelays,
-    Duration? heartbeatInterval,
     RealmTokenSource? realmTokenSource,
   })  : _firestore = firestore,
         _realmTokenSource = realmTokenSource,
@@ -59,9 +58,7 @@ class RoomSession {
         _onStateChanged = onStateChanged,
         _onReconnectWorld = onReconnectWorld,
         _onRoomDeleted = onRoomDeleted,
-        _reconnectDelays = reconnectDelays ?? _defaultReconnectDelays,
-        _heartbeatInterval =
-            heartbeatInterval ?? PresenceService.heartbeatInterval;
+        _reconnectDelays = reconnectDelays ?? _defaultReconnectDelays;
 
   // --- Final fields (set at construction) ---
 
@@ -153,7 +150,6 @@ class RoomSession {
     @visibleForTesting FirebaseFirestore? firestore,
     @visibleForTesting PresenceService? presenceService,
     @visibleForTesting List<Duration>? reconnectDelays,
-    @visibleForTesting Duration? heartbeatInterval,
   }) {
     // Build the realm-backed token path for the production LiveKitService: the
     // strangler-fig cutover from the retrieveLiveKitToken Cloud Function. A
@@ -213,7 +209,6 @@ class RoomSession {
       onReconnectWorld: onReconnectWorld,
       onRoomDeleted: onRoomDeleted,
       reconnectDelays: reconnectDelays,
-      heartbeatInterval: heartbeatInterval,
       realmTokenSource: realmTokenSource,
     );
   }
@@ -252,10 +247,6 @@ class RoomSession {
   /// delete and resurrect a ghost; the chain closes that window.
   Future<void>? _pendingEnter;
 
-  /// Re-stamps this user's presence document so the foyer's TTL filter keeps
-  /// believing it. Null until the first successful connect.
-  Timer? _presenceHeartbeat;
-
   /// Announce this user's presence in the room. Best-effort: a presence-write
   /// failure must never break the connection flow, so errors are logged and
   /// swallowed. The write STARTS synchronously (in flight immediately), and the
@@ -276,28 +267,6 @@ class RoomSession {
     final prior = _pendingEnter;
     _pendingEnter =
         prior == null ? enterFuture : Future.wait([prior, enterFuture]);
-
-    _startPresenceHeartbeat();
-  }
-
-  /// Keep re-stamping `lastSeen` while this session is alive.
-  ///
-  /// The foyer drops entries older than [PresenceService.presenceTtl], so
-  /// without this a player who stood still long enough would disappear from it
-  /// — trading a ghost for a vanishing. The TTL and the heartbeat are one
-  /// mechanism; neither is correct alone.
-  ///
-  /// Each beat goes through [_enterPresence], so it inherits that method's
-  /// `_disposed` guard AND its accumulation into [_pendingEnter]. That matters:
-  /// [leave] awaits every in-flight enter before deleting, so a beat can never
-  /// land after the delete and resurrect the ghost this whole change exists to
-  /// remove.
-  void _startPresenceHeartbeat() {
-    if (_presenceHeartbeat != null || _disposed) return;
-    _presenceHeartbeat = Timer.periodic(
-      _heartbeatInterval,
-      (_) => _enterPresence(),
-    );
   }
 
   /// Listen to the Firestore room document; fire [_onRoomDeleted] when the
@@ -416,10 +385,6 @@ class RoomSession {
 
   final List<Duration> _reconnectDelays;
 
-  /// How often presence is re-stamped. Injected by tests so the beat can be
-  /// observed without waiting a real minute.
-  final Duration _heartbeatInterval;
-
   Future<void> _handleConnectionLost(String? reason) async {
     _log.warning('LiveKit connection lost: $reason');
     if (_isReconnecting || _disposed) return;
@@ -520,13 +485,6 @@ class RoomSession {
   /// producers (ChatService → TimerService → LiveKitService).
   Future<void> leave() async {
     _disposed = true;
-
-    // Stop the heartbeat BEFORE anything awaits. `_enterPresence` already
-    // early-returns on `_disposed`, so a beat scheduled after this line is a
-    // no-op either way — but an uncancelled periodic timer outlives the session
-    // object and keeps firing for the lifetime of the isolate.
-    _presenceHeartbeat?.cancel();
-    _presenceHeartbeat = null;
 
     // Serialize the delete AFTER any in-flight enter() so a fast connect→leave
     // can't let the write land after the delete (which would resurrect a ghost).
