@@ -157,7 +157,11 @@ if [ "${NO_LOCAL_TOKEN_SERVER:-0}" != "1" ]; then
   # /livekit-token 200, CORS correct), and the SFU refused the token one hop
   # later with "invalid API key: devkey". Port-is-occupied is a cheap proxy for
   # "the mint is configured right", and it is not one. The port is ours.
-  RTS_PID=$(lsof -tiTCP:"$RTS_PORT" -sTCP:LISTEN 2>/dev/null | head -1)
+  # `|| true` is load-bearing under `set -o pipefail`: lsof exits non-zero when
+  # it finds nothing, which is the NORMAL case here, and the pipeline inherits
+  # that failure even though `head` succeeded. Without it the script dies on a
+  # free port -- the one condition this block exists to handle.
+  RTS_PID=$(lsof -tiTCP:"$RTS_PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)
   if [ -n "$RTS_PID" ]; then
     echo "    Replacing realm-token-server on $RTS_PORT (pid $RTS_PID)"
     kill "$RTS_PID" 2>/dev/null || true
@@ -186,7 +190,11 @@ if [ "${NO_LOCAL_TOKEN_SERVER:-0}" != "1" ]; then
 
   # Same reasoning as the mint above: the terminator caches its upstream URL at
   # start, so a survivor from an earlier run can be pointed somewhere else.
-  TLS_PID=$(lsof -tiTCP:"$TLS_PORT" -sTCP:LISTEN 2>/dev/null | head -1)
+  # `|| true` is load-bearing under `set -o pipefail`: lsof exits non-zero when
+  # it finds nothing, which is the NORMAL case here, and the pipeline inherits
+  # that failure even though `head` succeeded. Without it the script dies on a
+  # free port -- the one condition this block exists to handle.
+  TLS_PID=$(lsof -tiTCP:"$TLS_PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)
   if [ -n "$TLS_PID" ]; then
     echo "    Replacing TLS terminator on $TLS_PORT (pid $TLS_PID)"
     kill "$TLS_PID" 2>/dev/null || true
