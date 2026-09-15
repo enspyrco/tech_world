@@ -341,7 +341,11 @@ print(c.get("player_moved", 0), c.get("bubbles_merged", 0), len(humans), c.get("
   echo "    bubbles created: $BUBBLES    merges: $MERGES"
 
   [ "$LOCAL_MOVES" -gt 0 ] || echo "    !! macOS never moved - autopilot did not arm, or the join failed" >&2
-  [ "$PEERS" -gt 0 ] || echo "    !! no peer client moved - a backgrounded Chrome tab throttles its walk timer" >&2
+  [ "$PEERS" -gt 0 ] || {
+    echo "    !! no peer client moved. Two known causes, both silent:" >&2
+    echo "       - the guest never armed, or its join failed (grep Autopilot in the chrome log)" >&2
+    echo "       - a backgrounded Chrome tab throttles its walk timer" >&2
+  }
   if [ "$MERGES" -eq 0 ]; then
     echo "    !! no merge - the clients never came within 96px. Check the routes cross," >&2
     echo "       and that BOTH windows are visible (an occluded window stops ticking)." >&2
