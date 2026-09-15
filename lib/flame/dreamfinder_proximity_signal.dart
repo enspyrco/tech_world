@@ -168,9 +168,22 @@ class DreamfinderProximitySignal {
   /// value for the same topic. If they landed out of order the new agent would
   /// end up holding the departed agent's value while [_confirmed] recorded the
   /// new one — a divergence between us and the bot, which is worse than a
-  /// delay. LiveKit's reliable data channel does preserve per-publisher order,
-  /// so in practice the newer value lands last; correctness would then rest on
-  /// a transport property nothing in this file states or tests.
+  /// delay.
+  ///
+  /// THAT PREMISE IS NOW HALF-REFUTED, and the half that survives is not ours.
+  /// `livekit_client` 2.11.0 does not merely inherit ordering from the
+  /// transport, it enforces it explicitly: `Engine.sendDataPacket` stamps
+  /// `packet.sequence = _reliableDataSequence++` on every reliable packet, and
+  /// the receive path drops anything with `sequence <= lastReceived` for that
+  /// participant SID rather than delivering it late. A reordered publish is
+  /// DISCARDED, not applied out of order, so the divergence this trade was
+  /// bought to avoid cannot occur on a receiver that honours the sequence.
+  ///
+  /// The unverified half is whether the BOT honours it. It receives through the
+  /// Node `@livekit/agents` SDK, not this one, and that lives in another repo.
+  /// Until someone confirms the JS receive path dedupes on sequence, the trade
+  /// below stays — but it is now resting on ONE unchecked fact in a known
+  /// place, not on an unstated property of the transport. (claude-tasks#4464.)
   ///
   /// THE COST, NAMED: while the old publish is outstanding, [_pump] returns
   /// early, so a new Dreamfinder arriving in that window is not told until it
