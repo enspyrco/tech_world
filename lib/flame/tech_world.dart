@@ -1533,7 +1533,14 @@ class TechWorld extends World with TapCallbacks {
     _log.info('loadMap: resolved "${resolvedMap.name}" (id=${resolvedMap.id}), '
         'floorLayer=${resolvedMap.floorLayer != null}, tilesetIds=${resolvedMap.tilesetIds}');
 
-    if (resolvedMap.id == currentMap.value.id) return; // Already on this map.
+    // "Already on this map" is only true if the map actually LOADED. After a
+    // failed switch `currentMap` still names the previous map while
+    // `_removeMapComponents()` has already torn its components down — the value
+    // is a lie, and this early return then made the user's most natural
+    // recovery (go back to the map I was on) a silent no-op, wedging the world
+    // permanently. Same shape as the bug this whole change repairs: a guard
+    // correct on the happy path and wrong on the failing one.
+    if (resolvedMap.id == currentMap.value.id && gameReady.value) return;
 
     // If the game engine hasn't started yet (GameWidget not mounted), just
     // update currentMap so that onLoad() picks up the correct map when it
@@ -1597,7 +1604,7 @@ class TechWorld extends World with TapCallbacks {
           'Map load failed for "${resolvedMap.name}" (id=${resolvedMap.id}) '
           '— the world is left unready', e, st);
       mapLoadError.value = 'Could not load "${resolvedMap.name}". '
-          'Pick another map to recover.';
+          'Pick a map from the toolbar to retry.';
       rethrow;
     } finally {
       _isLoadingMap = false;

@@ -115,6 +115,58 @@ void main() {
   );
 
   testWithGame<TestGameWithMockImages>(
+    'RE-PICKING THE MAP IT WAS ALREADY ON recovers the world',
+    newGame,
+    (game) async {
+      await game.ready();
+      final world = game.world as TechWorld;
+      final onNow = world.currentMap.value;
+
+      world.debugMapLoadFault =
+          () => Future<void>.error(StateError('tileset gone'));
+      await expectLater(
+          world.loadMap(_map('broken')), throwsA(isA<StateError>()));
+
+      // `currentMap` still names `onNow` — but `_removeMapComponents()` ran, so
+      // that value is a LIE about what is on screen. The `resolvedMap.id ==
+      // currentMap.value.id` early return therefore used to fire and make this
+      // a silent no-op, wedging the world with no way back: the banner says
+      // "pick a map to retry", and the map the user is most likely to pick is
+      // the one they were just on.
+      expect(world.currentMap.value.id, onNow.id,
+          reason: 'precondition: the failed load did not advance currentMap');
+
+      world.debugMapLoadFault = null;
+      await world.loadMap(onNow);
+
+      expect(world.gameReady.value, isTrue,
+          reason: 'the same-map early return must not fire while the world is '
+              'unready — "already on this map" is only true if it LOADED');
+      expect(world.mapLoadError.value, isNull);
+    },
+  );
+
+  testWithGame<TestGameWithMockImages>(
+    'a redundant same-map load is still a no-op when the world IS ready',
+    newGame,
+    (game) async {
+      await game.ready();
+      final world = game.world as TechWorld;
+
+      // The other half of the guard: with gameReady true, re-selecting the
+      // current map must still short-circuit. Without this the fix above would
+      // have turned every redundant selection into a full teardown+reload.
+      world.debugMapLoadFault =
+          () => Future<void>.error(StateError('must not run'));
+      await world.loadMap(world.currentMap.value);
+
+      expect(world.gameReady.value, isTrue);
+      expect(world.mapLoadError.value, isNull,
+          reason: 'the fault was never reached, so the load never started');
+    },
+  );
+
+  testWithGame<TestGameWithMockImages>(
     'a failed load does not wedge the concurrency guard',
     newGame,
     (game) async {

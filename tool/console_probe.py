@@ -12,7 +12,13 @@ Two traps this is built to avoid, both observed in this repo:
     run reports TOTAL console lines alongside matching ones; total==0 is an
     instrument failure and is named as such, never reported as "app silent".
 """
-import json, re, subprocess, sys, time, urllib.request, shutil, tempfile
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
 import websocket  # websocket-client
 
 URL = sys.argv[1]

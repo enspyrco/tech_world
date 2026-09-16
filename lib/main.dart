@@ -1654,6 +1654,12 @@ class _MyAppState extends State<MyApp> {
                           return Positioned(
                             bottom: 16,
                             left: 16,
+                            // Same width bound as the map banner below it. This
+                            // one was already unbounded before that banner
+                            // existed; fixing only the new one would have left
+                            // the structurally identical sibling open, which is
+                            // the shape CLAUDE.md names.
+                            right: 16,
                             child: Material(
                               color: Colors.transparent,
                               child: Container(
@@ -1671,12 +1677,14 @@ class _MyAppState extends State<MyApp> {
                                     const Icon(Icons.wifi_off,
                                         color: Colors.white, size: 18),
                                     const SizedBox(width: 8),
-                                    Text(
-                                      message ??
-                                          'Video & chat unavailable — connection failed',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
+                                    Flexible(
+                                      child: Text(
+                                        message ??
+                                            'Video & chat unavailable — connection failed',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -1707,6 +1715,14 @@ class _MyAppState extends State<MyApp> {
                       return Positioned(
                         bottom: 72,
                         left: 16,
+                        // `right` as well as `left`, so the banner is WIDTH-
+                        // BOUNDED. Without it the Row is unconstrained and a
+                        // long name overflows off-screen — and the name here is
+                        // user-controlled (Firestore rooms are named by the
+                        // player who made them), so the recovery message could
+                        // be unreadable exactly when it is needed. Carnot,
+                        // cage-match PR #532.
+                        right: 16,
                         child: Material(
                           color: Colors.transparent,
                           child: Container(
@@ -1724,11 +1740,13 @@ class _MyAppState extends State<MyApp> {
                                 const Icon(Icons.map_outlined,
                                     color: Colors.white, size: 18),
                                 const SizedBox(width: 8),
-                                Text(
-                                  mapError,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
+                                Flexible(
+                                  child: Text(
+                                    mapError,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                    ),
                                   ),
                                 ),
                               ],
