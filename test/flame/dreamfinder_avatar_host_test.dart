@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:tech_world/native/frame_source.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:tech_world/flame/dreamfinder_avatar_host.dart';
@@ -47,6 +48,32 @@ class _FakeBridge implements DreamfinderAvatarBridge {
 }
 
 void main() {
+  group('notReadySeverityFor (claude-tasks#4500)', () {
+    // `kIsWeb` is a compile-time constant and `flutter test` only ever runs
+    // native, so the real call site cannot be observed from a test. Passing
+    // the flag in is the only level at which the web arm is checkable.
+
+    test('native does not warn — the stub is never ready BY DESIGN', () {
+      expect(notReadySeverityFor(web: false), Level.INFO,
+          reason: 'the native export is a no-op stub whose isReady is false '
+              'forever, so this branch is taken on every single run; a '
+              'WARNING that always fires trains readers to skip WARNING');
+    });
+
+    test('web warns — there a not-ready bridge is a real fault', () {
+      expect(notReadySeverityFor(web: true), Level.WARNING);
+    });
+
+    test('exactly one platform warns', () {
+      final warning = [true, false]
+          .where((w) => notReadySeverityFor(web: w) == Level.WARNING);
+      expect(warning, [true],
+          reason: 'allowlist: web is the only arm that earns the loud level, '
+              'so a future platform inherits INFO rather than the noise');
+    });
+  });
+
+
   // This lifecycle had no test at all: initDreamfinderBridge and
   // handleDreamfinderLeft have exactly one production caller each (TechWorld)
   // and were never driven from the suite.

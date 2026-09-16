@@ -196,6 +196,39 @@ class TechWorld extends World with TapCallbacks {
   /// [_loadMapComponents] completes during a runtime map switch.
   final ValueNotifier<bool> gameReady = ValueNotifier(false);
 
+  /// Why a failed map load left [gameReady] false, in words a player can read.
+  ///
+  /// [gameReady] going false on a failed load is HONEST — the world really is
+  /// half torn down, `_removeMapComponents()` having already run — so the bug
+  /// was never the value, it was that nothing said so (claude-tasks#4463).
+  /// Restoring `gameReady` in a `finally` would have made the state lie
+  /// instead of making it speak.
+  ///
+  /// Null when the last load succeeded. Set before the throw is rethrown, so
+  /// it is readable by callers that await AND by the ones that cannot: the
+  /// remote map-switch handler has no UI context of its own, and the toolbar's
+  /// `onSelected` is a synchronous callback.
+  final ValueNotifier<String?> mapLoadError = ValueNotifier(null);
+
+  /// Injects a fault into the middle of a map load, so the failure path can be
+  /// exercised at all.
+  ///
+  /// This exists because the load path cannot be made to fail from the
+  /// outside. Feeding `_loadMapInternal` a map naming a tileset that does not
+  /// exist, or a wall style that does not exist, was measured and both LOAD
+  /// CLEANLY — the custom-tileset download already catches per-tileset, and
+  /// unknown ids degrade to missing art rather than a throw. What is left that
+  /// can actually throw is image-codec and Firestore I/O reached through
+  /// `exitEditorMode`, none of it reachable from a unit test.
+  ///
+  /// So the choice was a seam or no coverage of the thing #4463 is about, on a
+  /// path that had no tests at all. Same reasoning as
+  /// `RoomSession.reconnectDelays`. Called after `_removeMapComponents()`,
+  /// because mid-teardown is the state that makes the bug user-visible: the
+  /// old world is already gone when the failure lands.
+  @visibleForTesting
+  Future<void> Function()? debugMapLoadFault;
+
   /// Pre-fetched tileset image bytes, keyed by tileset ID.
   ///
   /// Populated by [prefetchTilesetBytes] before the game engine mounts so
@@ -1103,7 +1136,13 @@ class TechWorld extends World with TapCallbacks {
           _log.warning('Ignoring map-switch: unknown map ID "$mapId"');
           return;
         }
-        _loadMapInternal(map);
+        // Fire-and-forget by necessity — this is a LiveKit callback with no
+        // caller to await it. The catch is not a swallow: `_loadMapInternal`
+        // has already logged at SEVERE and set `mapLoadError` by the time the
+        // future rejects, so all this does is keep the rejection out of the
+        // unhandled-async channel. A remote switch that fails is the worst of
+        // the three call sites — the player did nothing to blame it on.
+        unawaited(_loadMapInternal(map).catchError((_) {}));
       },
       onConnectionLost: disconnectFromLiveKit,
     );
@@ -1494,7 +1533,14 @@ class TechWorld extends World with TapCallbacks {
     _log.info('loadMap: resolved "${resolvedMap.name}" (id=${resolvedMap.id}), '
         'floorLayer=${resolvedMap.floorLayer != null}, tilesetIds=${resolvedMap.tilesetIds}');
 
-    if (resolvedMap.id == currentMap.value.id) return; // Already on this map.
+    // "Already on this map" is only true if the map actually LOADED. After a
+    // failed switch `currentMap` still names the previous map while
+    // `_removeMapComponents()` has already torn its components down — the value
+    // is a lie, and this early return then made the user's most natural
+    // recovery (go back to the map I was on) a silent no-op, wedging the world
+    // permanently. Same shape as the bug this whole change repairs: a guard
+    // correct on the happy path and wrong on the failing one.
+    if (resolvedMap.id == currentMap.value.id && gameReady.value) return;
 
     // If the game engine hasn't started yet (GameWidget not mounted), just
     // update currentMap so that onLoad() picks up the correct map when it
@@ -1513,6 +1559,7 @@ class TechWorld extends World with TapCallbacks {
 
     _isLoadingMap = true;
     gameReady.value = false;
+    mapLoadError.value = null;
     try {
       // Auto-exit editor mode if active.
       if (mapEditorActive.value) await exitEditorMode();
@@ -1521,6 +1568,7 @@ class TechWorld extends World with TapCallbacks {
       closeEditor();
 
       _removeMapComponents();
+      await debugMapLoadFault?.call();
       await _loadMapComponents(resolvedMap);
 
       // Reposition player to new map's spawn point.
@@ -1545,6 +1593,19 @@ class TechWorld extends World with TapCallbacks {
       }
 
       gameReady.value = true;
+    } catch (e, st) {
+      // Deliberately does NOT restore `gameReady`: the load failed partway
+      // through, `_removeMapComponents()` has already run, and the world is
+      // genuinely not ready. The defect this repairs was the silence, not the
+      // value — so say it at SEVERE (which the logger bridge fans to every
+      // sink, the browser console included) and leave a message the UI can
+      // render, then rethrow for the callers that await.
+      _log.severe(
+          'Map load failed for "${resolvedMap.name}" (id=${resolvedMap.id}) '
+          '— the world is left unready', e, st);
+      mapLoadError.value = 'Could not load "${resolvedMap.name}". '
+          'Pick a map from the toolbar to retry.';
+      rethrow;
     } finally {
       _isLoadingMap = false;
     }
@@ -1783,5 +1844,6 @@ class TechWorld extends World with TapCallbacks {
     _bubbleManager.dispose();
     playerGridPosition.dispose();
     gameReady.dispose();
+    mapLoadError.dispose();
   }
 }

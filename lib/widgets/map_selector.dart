@@ -118,15 +118,36 @@ class _MapSelectorState extends State<MapSelector> {
             widget.onPopupOpened?.call();
             if (widget.savedRooms == null) _loadRooms();
           },
-          onSelected: (action) {
-            switch (action) {
-              case _LoadPredefinedMap(:final map):
-                widget.techWorld.loadMap(map);
-              case _GenerateMap(:final algorithm):
-                final map = generateMap(algorithm: algorithm);
-                widget.techWorld.loadMap(map);
-              case _LoadSavedRoom(:final room):
-                widget.onLoadRoom?.call(room);
+          // `onSelected` is a synchronous callback, which is why both map
+          // loads used to be fire-and-forget: there was no `await` to put them
+          // behind, so a rejected load went to the unhandled-async channel and
+          // the user saw a half-torn-down world with nothing said
+          // (claude-tasks#4463). An async body gives the throw somewhere to go.
+          onSelected: (action) async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              switch (action) {
+                case _LoadPredefinedMap(:final map):
+                  await widget.techWorld.loadMap(map);
+                case _GenerateMap(:final algorithm):
+                  final map = generateMap(algorithm: algorithm);
+                  await widget.techWorld.loadMap(map);
+                case _LoadSavedRoom(:final room):
+                  widget.onLoadRoom?.call(room);
+              }
+            } catch (e) {
+              // `TechWorld` has already logged this at SEVERE and set
+              // `mapLoadError`; this is the half that reaches the person who
+              // clicked. The messenger was captured before the await so no
+              // BuildContext crosses the async gap.
+              _log.warning('Map load failed from the toolbar', e);
+              messenger.showSnackBar(
+                SnackBar(
+                  backgroundColor: Colors.orange.shade800,
+                  content: Text(widget.techWorld.mapLoadError.value ??
+                      'Could not load that map.'),
+                ),
+              );
             }
           },
           child: Container(
@@ -140,11 +161,25 @@ class _MapSelectorState extends State<MapSelector> {
               children: [
                 const Icon(Icons.map, color: Colors.white70, size: 18),
                 const SizedBox(width: 6),
-                Text(
-                  activeMap.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
+                // Bounded because `activeMap.name` is USER-CONTROLLED — a
+                // Firestore room is named by whoever created it — and this Row
+                // is `MainAxisSize.min` inside a floating toolbar, so a long
+                // name pushes the chip off a narrow screen. The saved-room
+                // menu items below already got this right with
+                // `Expanded` + ellipsis; the chip showing the same name did
+                // not. `ConstrainedBox` rather than `Expanded` because the
+                // chip must still shrink-wrap a short name.
+                // (Carnot, cage-match PR #532 round 2.)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 160),
+                  child: Text(
+                    activeMap.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 4),

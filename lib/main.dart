@@ -1641,53 +1641,69 @@ class _MyAppState extends State<MyApp> {
                 if (_session != null)
                   ScreenShareOverlay(
                       liveKitService: _session!.liveKitService),
-                // Connection failure banner — listens to both the failed
-                // flag and the message so reconnection text updates reactively.
-                if (_session != null)
-                  ValueListenableBuilder<bool>(
-                    valueListenable: _session!.connectionFailed,
-                    builder: (context, failed, _) {
-                      if (!failed) return const SizedBox.shrink();
-                      return ValueListenableBuilder<String?>(
-                        valueListenable: _session!.connectionMessage,
-                        builder: (context, message, _) {
-                          return Positioned(
-                            bottom: 16,
-                            left: 16,
-                            child: Material(
-                              color: Colors.transparent,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.shade800,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.wifi_off,
-                                        color: Colors.white, size: 18),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      message ??
-                                          'Video & chat unavailable — connection failed',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                // Bottom-left status banners, stacked in ONE Column.
+                //
+                // One Column rather than two independently positioned children
+                // separated by a hand-computed offset. Such an offset encodes
+                // the OTHER banner's height as a constant, and that assumption
+                // dies the moment a banner is allowed to wrap: a two-line
+                // message grows past the gap and collides with its neighbour.
+                // Widening the constant would keep the coupling; a Column
+                // cannot overlap itself whatever either height turns out to be.
+                // (Carnot, cage-match PR #532 round 2.)
+                //
+                // `left` AND `right` bound the width, because both messages can
+                // carry a user-controlled map or room name.
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 16,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Map-load failure. Exists for the REMOTE map switch
+                      // (claude-tasks#4463): the toolbar path shows a SnackBar
+                      // at the point of the click, but a switch published by
+                      // another player has no click to attach to and no caller
+                      // that can await it, so without a world-scoped surface
+                      // that failure is visible only in the log.
+                      if (_currentRoom != null)
+                        ValueListenableBuilder<String?>(
+                          valueListenable: locate<TechWorld>().mapLoadError,
+                          builder: (context, mapError, _) {
+                            if (mapError == null) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: _StatusBanner(
+                                icon: Icons.map_outlined,
+                                message: mapError,
                               ),
-                            ),
-                          );
-                        },
-                      );
-                    },
+                            );
+                          },
+                        ),
+                      // Connection failure — listens to both the failed flag
+                      // and the message so reconnection text updates reactively.
+                      if (_session != null)
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _session!.connectionFailed,
+                          builder: (context, failed, _) {
+                            if (!failed) return const SizedBox.shrink();
+                            return ValueListenableBuilder<String?>(
+                              valueListenable: _session!.connectionMessage,
+                              builder: (context, message, _) => _StatusBanner(
+                                icon: Icons.wifi_off,
+                                message: message ??
+                                    'Video & chat unavailable — connection failed',
+                              ),
+                            );
+                          },
+                        ),
+                    ],
                   ),
+                ),
               ],
             );
                 },
@@ -1792,6 +1808,48 @@ class _MapEditorButton extends StatelessWidget {
 ///
 /// Listens to [LiveKitService.localTrackPublished] to stay in sync when the
 /// share is stopped externally (e.g. browser's "Stop sharing" bar).
+/// A bottom-of-screen status banner: an icon and a wrapping message.
+///
+/// One widget for both the connection-failure and map-load-failure banners.
+/// They were near-identical trees, which is how the width bound came to be
+/// fixed on one and not the other — the duplicate was the reason the sibling
+/// was missed, so it is gone rather than kept in step by hand.
+///
+/// The message WRAPS (`Flexible`, no `maxLines`) because both messages can
+/// carry a user-controlled map or room name, and a truncated recovery
+/// instruction is worth less than a tall one.
+class _StatusBanner extends StatelessWidget {
+  const _StatusBanner({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade800,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  message,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
 class _ScreenShareButton extends StatefulWidget {
   const _ScreenShareButton({required this.liveKitService});
 
