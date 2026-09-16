@@ -118,15 +118,36 @@ class _MapSelectorState extends State<MapSelector> {
             widget.onPopupOpened?.call();
             if (widget.savedRooms == null) _loadRooms();
           },
-          onSelected: (action) {
-            switch (action) {
-              case _LoadPredefinedMap(:final map):
-                widget.techWorld.loadMap(map);
-              case _GenerateMap(:final algorithm):
-                final map = generateMap(algorithm: algorithm);
-                widget.techWorld.loadMap(map);
-              case _LoadSavedRoom(:final room):
-                widget.onLoadRoom?.call(room);
+          // `onSelected` is a synchronous callback, which is why both map
+          // loads used to be fire-and-forget: there was no `await` to put them
+          // behind, so a rejected load went to the unhandled-async channel and
+          // the user saw a half-torn-down world with nothing said
+          // (claude-tasks#4463). An async body gives the throw somewhere to go.
+          onSelected: (action) async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              switch (action) {
+                case _LoadPredefinedMap(:final map):
+                  await widget.techWorld.loadMap(map);
+                case _GenerateMap(:final algorithm):
+                  final map = generateMap(algorithm: algorithm);
+                  await widget.techWorld.loadMap(map);
+                case _LoadSavedRoom(:final room):
+                  widget.onLoadRoom?.call(room);
+              }
+            } catch (e) {
+              // `TechWorld` has already logged this at SEVERE and set
+              // `mapLoadError`; this is the half that reaches the person who
+              // clicked. The messenger was captured before the await so no
+              // BuildContext crosses the async gap.
+              _log.warning('Map load failed from the toolbar', e);
+              messenger.showSnackBar(
+                SnackBar(
+                  backgroundColor: Colors.orange.shade800,
+                  content: Text(widget.techWorld.mapLoadError.value ??
+                      'Could not load that map.'),
+                ),
+              );
             }
           },
           child: Container(

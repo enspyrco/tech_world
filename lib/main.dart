@@ -1688,6 +1688,56 @@ class _MyAppState extends State<MyApp> {
                       );
                     },
                   ),
+                // Map-load failure banner. Stacked ABOVE the connection banner
+                // rather than sharing its slot, because the two are
+                // independent: a map switch can fail on a perfectly healthy
+                // connection.
+                //
+                // This exists for the REMOTE map switch (claude-tasks#4463).
+                // The toolbar path shows a SnackBar at the point of the click,
+                // but a switch published by another player has no click to
+                // attach to and no caller that can await it, so without a
+                // world-scoped surface that failure is visible only in the
+                // log.
+                if (_currentRoom != null)
+                  ValueListenableBuilder<String?>(
+                    valueListenable: locate<TechWorld>().mapLoadError,
+                    builder: (context, mapError, _) {
+                      if (mapError == null) return const SizedBox.shrink();
+                      return Positioned(
+                        bottom: 72,
+                        left: 16,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade800,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.map_outlined,
+                                    color: Colors.white, size: 18),
+                                const SizedBox(width: 8),
+                                Text(
+                                  mapError,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
               ],
             );
                 },

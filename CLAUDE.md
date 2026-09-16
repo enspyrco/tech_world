@@ -95,12 +95,29 @@ every platform. Then either guard all of them or write down why a sibling does n
 
 **Siblings are not always branches.** When a method takes down more than one piece of
 state, each one needs the same restoration discipline — that pair is a sibling set too, and
-no branch-shaped search will find it. `_loadMapInternal` sets `_isLoadingMap = true` and
-`gameReady.value = false` together, restores the first in `finally` and the second as the
-last statement of the `try`, so any throw leaves `gameReady` false forever
-(claude-tasks#4463). Restoring both in `finally` would have been the wrong fix: after a
-failed load the world really is not ready, so the state was honest and the SILENCE was the
-bug. Ask what each variable means on the failing path before deciding where it belongs.
+no branch-shaped search will find it. `_loadMapInternal` set `_isLoadingMap = true` and
+`gameReady.value = false` together, restored the first in `finally` and the second as the
+last statement of the `try`, so any throw left `gameReady` false forever
+(claude-tasks#4463, FIXED). Restoring both in `finally` would have been the wrong fix:
+after a failed load the world really is not ready, so the state was honest and the SILENCE
+was the bug. Ask what each variable means on the failing path before deciding where it
+belongs.
+
+The fix is worth reading as a template, because the obvious repair was the wrong one.
+`gameReady` still goes false and STAYS false; what was added is a `mapLoadError`
+`ValueNotifier<String?>` set in the same catch, a SEVERE log, and a UI surface — the value
+was never the defect, the silence was. `test/flame/map_load_failure_test.dart` pins both
+halves and its deliberate-break run confirms the tempting fix (restore `gameReady` in
+`finally`) reddens it.
+
+Two things that only showed up by measuring. First, the call sites are a sibling set of
+their own: of five, three were fire-and-forget, and the ticket named only the two in
+`MapSelector` — the third is the REMOTE map-switch handler, which is the worst of them,
+since the player did nothing to blame the wedge on. Second, the failure list in the ticket
+was too generous: a map naming an unknown tileset or an unknown wall style was measured
+and BOTH load cleanly, because the custom-tileset download already catches per-tileset.
+That is why `debugMapLoadFault` exists — the path could not be made to fail from outside,
+and a test that cannot create the failure cannot clear it.
 
 Two structural preferences fall out, both already load-bearing here:
 

@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:logging/logging.dart';
 
 import 'package:tech_world/device/web_safe_mode.dart';
@@ -7,6 +7,29 @@ import 'package:tech_world/livekit/dreamfinder_avatar_bridge.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
 final _log = Logger('DreamfinderAvatarHost');
+
+/// Severity for "the bridge initialized but never became ready".
+///
+/// WARNING only on web, where a bridge that never readies is a genuine fault.
+/// On native the export resolves to a no-op stub whose `isReady` is false
+/// forever, so that branch is taken on EVERY run and the warning carried no
+/// information — it was one of only three lines above INFO in a whole macOS
+/// session, and the other two meant something (claude-tasks#4500).
+///
+/// A level that always fires is worse than a missing one: it teaches the
+/// reader to skip the level, which is where a real signal then hides. It also
+/// reads as a repair task when nothing is broken.
+///
+/// Stated as WARNING-only-if-web rather than INFO-if-native on purpose. An
+/// allowlist cannot silently acquire a hole when a platform is added; the
+/// denylist form would quietly hand a future platform the loud default.
+///
+/// Split from [kIsWeb] because that is a compile-time constant and
+/// `flutter test` only ever runs native — the branch this names is otherwise
+/// unobservable from a test. Same seam as `consoleSinkEnabledFor`.
+@visibleForTesting
+Level notReadySeverityFor({required bool web}) =>
+    web ? Level.WARNING : Level.INFO;
 
 /// Owns the lifecycle of the Dreamfinder 3D avatar bridge — the same-origin
 /// iframe running Three.js whose canvas is captured as Dreamfinder's video.
@@ -110,7 +133,9 @@ class DreamfinderAvatarHost {
         //
         // Disposed as well as cleared, matching [stop] — the bridge owns an
         // iframe, and dropping the reference without disposing leaks it.
-        _log.warning('Dreamfinder avatar bridge initialized but never became '
+        _log.log(
+            notReadySeverityFor(web: kIsWeb),
+            'Dreamfinder avatar bridge initialized but never became '
             'ready — releasing the slot');
         bridge.dispose();
         _bridge = null;
