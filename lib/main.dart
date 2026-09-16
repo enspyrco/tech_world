@@ -103,9 +103,10 @@ void main() async {
   });
 }
 
-/// Register event sinks before the app starts. Console sink runs in
-/// debug mode only; file sink and diagnostic sinks run on native
-/// platforms (not web).
+/// Register event sinks before the app starts. Console sink runs wherever
+/// [consoleSinkEnabledFor] says so — debug on any platform, and web in every
+/// mode, because web has no file sink to fall back on. File sink and
+/// diagnostic sinks run on native platforms (not web).
 ///
 /// Also constructs and registers [DiagnosticsService] — the single
 /// owner of runtime toggle state for AV diagnostics and error logging.
@@ -132,7 +133,13 @@ Future<void> _registerEventSinks() async {
 
   if (sinksRegistered) return;
 
-  if (kDebugMode) {
+  // Debug on any platform, and web in EVERY mode — see `consoleSinkEnabledFor`.
+  //
+  // The asymmetry is deliberate and mirrors the `!kIsWeb` branch below: native
+  // keeps its durable record in `events.jsonl`, web has no file sink to keep
+  // one in. Registering only under `kDebugMode` left the release web client
+  // with no sink at all (claude-tasks#4472).
+  if (consoleSinkEnabledFor(debug: kDebugMode, web: kIsWeb)) {
     registerSink(consoleSink);
   }
   if (!kIsWeb) {
