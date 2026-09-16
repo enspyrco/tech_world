@@ -132,7 +132,13 @@ Future<void> _registerEventSinks() async {
 
   if (sinksRegistered) return;
 
-  if (kDebugMode) {
+  // Debug on any platform, and web in EVERY mode — see `consoleSinkEnabledFor`.
+  //
+  // The asymmetry is deliberate and mirrors the `!kIsWeb` branch below: native
+  // keeps its durable record in `events.jsonl`, web has no file sink to keep
+  // one in. Registering only under `kDebugMode` left the release web client
+  // with no sink at all (claude-tasks#4472).
+  if (consoleSinkEnabledFor(debug: kDebugMode, web: kIsWeb)) {
     registerSink(consoleSink);
   }
   if (!kIsWeb) {
