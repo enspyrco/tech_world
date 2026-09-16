@@ -161,11 +161,25 @@ class _MapSelectorState extends State<MapSelector> {
               children: [
                 const Icon(Icons.map, color: Colors.white70, size: 18),
                 const SizedBox(width: 6),
-                Text(
-                  activeMap.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
+                // Bounded because `activeMap.name` is USER-CONTROLLED — a
+                // Firestore room is named by whoever created it — and this Row
+                // is `MainAxisSize.min` inside a floating toolbar, so a long
+                // name pushes the chip off a narrow screen. The saved-room
+                // menu items below already got this right with
+                // `Expanded` + ellipsis; the chip showing the same name did
+                // not. `ConstrainedBox` rather than `Expanded` because the
+                // chip must still shrink-wrap a short name.
+                // (Carnot, cage-match PR #532 round 2.)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 160),
+                  child: Text(
+                    activeMap.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 4),
