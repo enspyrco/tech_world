@@ -103,9 +103,10 @@ void main() async {
   });
 }
 
-/// Register event sinks before the app starts. Console sink runs in
-/// debug mode only; file sink and diagnostic sinks run on native
-/// platforms (not web).
+/// Register event sinks before the app starts. Console sink runs wherever
+/// [consoleSinkEnabledFor] says so — debug on any platform, and web in every
+/// mode, because web has no file sink to fall back on. File sink and
+/// diagnostic sinks run on native platforms (not web).
 ///
 /// Also constructs and registers [DiagnosticsService] — the single
 /// owner of runtime toggle state for AV diagnostics and error logging.

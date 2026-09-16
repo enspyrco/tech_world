@@ -37,8 +37,10 @@ void registerAsyncSink(AsyncSink sink) => _asyncSinks.add(sink);
 /// then a deliberate edit, not a silent default — Dart's analyzer
 /// surfaces every consumer the moment the policy grows.
 ///
-/// Local-only sinks (JSONL on disk, debug console) bypass this filter
-/// via [registerSink] — they're already inside the trust boundary.
+/// On-device sinks (JSONL on disk, and the console on ANY platform
+/// including release web) bypass this filter via [registerSink] — the
+/// boundary this gate defends is on-device vs off-device, not debug vs
+/// release.
 void registerRemoteSink(Sink sink) {
   registerSink((event) {
     if (_shouldDropForRemote(event.piiPolicy)) return;

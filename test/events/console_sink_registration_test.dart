@@ -29,15 +29,15 @@ void main() {
     });
 
     test('the matrix is total — all four combinations are pinned', () {
-      // Guards against a future edit that makes one arm depend on something
-      // not passed in: every input pair must still produce a decision here.
+      // Catches a future edit that reads a build flag directly instead of the
+      // parameter: `kDebugMode || web` is always true under `flutter test`, so
+      // all four arms would return true and this count would go to 4.
       final seen = <String, bool>{};
       for (final d in [true, false]) {
         for (final w in [true, false]) {
           seen['debug=$d,web=$w'] = consoleSinkEnabledFor(debug: d, web: w);
         }
       }
-      expect(seen, hasLength(4));
       expect(seen.values.where((v) => v).length, 3,
           reason: 'exactly one combination (release native) declines');
     });
