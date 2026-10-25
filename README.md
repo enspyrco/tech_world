@@ -42,7 +42,7 @@ An educational multiplayer 2D virtual world where players solve coding challenge
 ## Prerequisites
 
 - Flutter SDK ^3.6.0
-- Firebase project configured (Auth, Firestore, Storage, Cloud Functions)
+- Firebase project configured (Auth, Firestore, Storage — no Cloud Functions)
 
 ## Setup
 
@@ -148,7 +148,7 @@ These aren't bugs; they're design choices with sharp edges. Understanding them u
 
 **There is no game server.** Player positions, chat, door unlocks, map switches — all reconciled peer-to-peer over LiveKit data channels, with Firestore as the persistence boundary for rooms, maps, profiles, and DM history. This is unusual for a multiplayer game (most use authoritative servers for anti-cheat). It works for Tech World because cheating in an educational game doesn't have a payoff. The cost is that *every message must be defensively parsed* — if the wire format diverges between two clients running different versions, the receiver has to gracefully ignore what it doesn't recognise rather than crash. The `v:1` protocol-version header on every outgoing message and the `tryParse` pattern on every inbound type both exist for this reason.
 
-**The bot joins your room via a token.** LiveKit's automatic agent dispatch fires when a room is first created. Tech World rooms persist for five minutes after the last participant leaves — so the second time you join, the room already exists, and the automatic dispatch doesn't fire. Clawd never joins. The workaround is `RoomAgentDispatch` embedded in the join token itself: every token we hand out includes a "and please also dispatch the bot" instruction. The Cloud Function (`retrieveLiveKitToken`) does this; the architecture diagram in this README has the arrow.
+**The bot joins your room via a token.** LiveKit's automatic agent dispatch fires when a room is first created. Tech World rooms persist for five minutes after the last participant leaves — so the second time you join, the room already exists, and the automatic dispatch doesn't fire. Clawd never joins. The workaround is `RoomAgentDispatch` embedded in the join token itself: every token we hand out includes a "and please also dispatch the bot" instruction. [`realm-token-server`](https://github.com/enspyrco/realm-token-server) (OCI, next to LiveKit) does this; the architecture diagram in this README has the arrow.
 
 **Reliable vs unreliable delivery.** LiveKit data channels offer both. Player positions ship unreliably (UDP-style) for low latency — losing a position packet is fine, the next one arrives in 50ms. Chat messages, door unlocks, oracle responses ship reliably (ordered, retried). The catch is that *unreliable + no fallback = silent corruption*: a single dropped position packet leaves the remote player frozen at their last known position permanently. This was a real bug (DS-2 in the reliability audit) and the fix is the 2-second reliable position heartbeat that ships alongside the unreliable stream. Every unreliable channel in this codebase has a reliable companion. If you add a new one, add the companion.
 
@@ -219,13 +219,17 @@ flowchart LR
         Auth["Auth"]
         Firestore[("Firestore<br/>rooms · maps · profiles<br/>DMs · progress")]
         Storage[("Storage<br/>profile pictures")]
-        Functions["Cloud Functions<br/>retrieveLiveKitToken<br/>(+ RoomAgentDispatch)"]
+    end
+
+    subgraph TokenServer["realm-token-server<br/>(OCI, enspyrco/realm-token-server)"]
+        Exchange["/exchange<br/>Firebase ID token → Realm credential"]
+        Mint["/livekit-token<br/>Realm credential → LiveKit token<br/>(+ RoomAgentDispatch)"]
     end
 
     Client -->|join with token| LiveKit
     Client -->|sign in / read / write| Firebase
-    Client -->|"requestToken()"| Functions
-    Functions -->|RoomAgentDispatch<br/>embedded in token| LiveKit
+    Client -->|"RealmTokenSource.fetch()"| TokenServer
+    TokenServer -->|RoomAgentDispatch<br/>embedded in token| LiveKit
     LiveKit <-->|joins as bot-claude| Bot
     Bot --> Claude
 ```
@@ -282,7 +286,7 @@ For detailed architecture, component descriptions, and development notes, see [`
 | Project | Description |
 |---------|-------------|
 | `tech_world_bot/` | AI tutor (Clawd) — Node.js using `@livekit/agents` + Claude API |
-| `tech_world_firebase_functions/` | Firebase Cloud Functions for LiveKit token generation |
+| [`realm-token-server`](https://github.com/enspyrco/realm-token-server) | Credential exchange + LiveKit token mint (Node, OCI). Replaced the retired `tech_world_firebase_functions` |
 
 ## Demo / Screenshots
 
