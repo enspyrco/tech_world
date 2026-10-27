@@ -42,11 +42,9 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          # The one place tech_world's Flutter is pinned (deploy.yml repeats it).
-          # pubspec.lock only reproduces on the SDK that wrote it, and the next
-          # step refuses any other, so bump this with the lockfile, on the same
-          # Flutter you run locally.
-          flutter-version: '3.47.6'
+          # The version comes from pubspec.yaml's environment.flutter, the one
+          # pin Renovate bumps (with a regenerated lockfile in the same PR).
+          flutter-version-file: pubspec.yaml
       - name: Install dependencies
         run: flutter pub get --enforce-lockfile
       - name: Analyze code
