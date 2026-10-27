@@ -1,15 +1,9 @@
 name: tech_world
 
-# Realm engine extraction — migration step 2 (workspace scaffold).
-# Members are empty skeletons; no code has moved yet. See
-# packages/realm/DESIGN.md for the architectural pin and migration plan.
-# `worlds/tech_world/` is intentionally NOT a member yet — it would collide
-# with this root package's name and holds no code until the step-6
-# TechWorld-wrap PR, where the root-vs-world naming is resolved.
-workspace:
-  - packages/realm
-  - packages/realm_firebase
-  - examples/livekit-token-server
+# Not a pub workspace. The Realm engine and its plugins moved to
+# enspyrco/realm (2026-10-27) and arrive as the git dependencies below. Root
+# `flutter test` never runs a workspace member's tests, so CI refuses a
+# `workspace:` key here until a member-test loop exists (see test.yml).
 description: "A world of tech adventures."
 publish_to: "none"
 version: 0.0.0+1
@@ -20,14 +14,27 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # Realm engine + its Firebase plugin. The app consumes engine types
-  # (RealmCredential, LiveKitTokenEndpoint) and FirebaseAuthProvider to drive
-  # the token path via realm-token-server (enspyrco/realm-token-server, OCI).
-  # The retrieveLiveKitToken Cloud Function it replaced is retired.
-  realm:
-    path: packages/realm
+  # Realm engine core + its Firebase plugin, from enspyrco/realm. Both entries pin
+  # the SAME full commit SHA: realm_firebase reaches realm_core through a sibling
+  # `path:` dep that pub resolves to "this repo at the resolved commit", so a
+  # tag or branch ref fails to resolve and a half-bumped pair fails `pub get`.
+  # To bump: change both refs, `flutter pub get`, commit pubspec + lock. To
+  # co-develop against a local ../realm checkout, use a gitignored
+  # pubspec_overrides.yaml (realm's README shows one).
+  # The app consumes engine types (RealmCredential, LiveKitTokenEndpoint) and
+  # FirebaseAuthProvider to drive the token path via realm-token-server
+  # (enspyrco/realm-token-server, OCI). The retrieveLiveKitToken Cloud Function
+  # it replaced is retired.
+  realm_core:
+    git:
+      url: https://github.com/enspyrco/realm.git
+      ref: 3ada1c9eb85216496b5b7fb46d0384f6bd16542f
+      path: packages/realm_core
   realm_firebase:
-    path: packages/realm_firebase
+    git:
+      url: https://github.com/enspyrco/realm.git
+      ref: 3ada1c9eb85216496b5b7fb46d0384f6bd16542f
+      path: packages/realm_firebase
   livekit_client: ^2.5.1
   dart_webrtc: ^1.6.0 # MediaStreamTrackWeb typed access to jsTrack
   flutter_webrtc: ^1.2.0 # Required for controls.dart

@@ -10,9 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Flutter client for **Tech World** — a multiplayer game *World* built on top of the Realm engine (`packages/realm/`; Tech World is the first-party World that consumes it). It is a place players explore together where **magic is real and takes several forms** — Words of Power (the spellbook), prompting challenges, and coding challenges (in one room among several). Casting is a **public, witnessed act** — triggered by being in a place that listens to you, never a private UI button (see "The world is the listener" below). It is a **consumer game, not an educational platform**, and coding is one school of magic, not the whole premise. Uses Flame for the game world and LiveKit for video chat, player positions, and AI-tutor chat; all real-time communication goes through LiveKit — there is no separate game server.
+Flutter client for **Tech World** — a multiplayer game *World* built on top of the Realm engine ([`enspyrco/realm`](https://github.com/enspyrco/realm), a SHA-pinned git dependency — see "Realm engine" under Configuration; Tech World is the first-party World that consumes it). It is a place players explore together where **magic is real and takes several forms** — Words of Power (the spellbook), prompting challenges, and coding challenges (in one room among several). Casting is a **public, witnessed act** — triggered by being in a place that listens to you, never a private UI button (see "The world is the listener" below). It is a **consumer game, not an educational platform**, and coding is one school of magic, not the whole premise. Uses Flame for the game world and LiveKit for video chat, player positions, and AI-tutor chat; all real-time communication goes through LiveKit — there is no separate game server.
 
-**Two products, two tracks** (2026-08): the durable engineering investment is the **Realm engine** — a reusable substrate other people can build all kinds of games on. **Tech World** is the specific game submitted to Screen Australia's Games Production Fund (round closes 5pm AEST Thu 27 Aug 2026). For the grant, Tech World is presented as a self-contained *game*; the engine stays invisible plumbing (SA flags "scope evolved into an engine/middleware" as an eligibility risk). The submission did NOT depend on the engine migration, so the deadline-gated submission and the deadline-free engine work stayed independent tracks. Since then `lib/` has its first `package:realm` consumers (`RoomSession`, `RealmTokenSource` — the token path).
+**Two products, two tracks** (2026-08): the durable engineering investment is the **Realm engine** — a reusable substrate other people can build all kinds of games on, in its own repo since 2026-10-27. **Tech World** is the specific game. It was submitted to Screen Australia's Games Production Fund in August 2026, and while that application was open the engine was kept as invisible plumbing (SA flags "scope evolved into an engine/middleware" as an eligibility risk). That process is over, so the engine no longer needs hiding. `lib/`'s `package:realm` consumers so far: `RoomSession`, `RealmTokenSource` (the token path).
 
 ## Build & Run
 
@@ -214,7 +214,7 @@ There was a second implementation, `ProximityService`, holding the same preferen
 
 ## Testing
 
-**CI** (`.github/workflows/`): docs-skip → `flutter analyze` → `flutter test --coverage` (45% threshold).
+**CI** (`.github/workflows/`): docs-skip → `flutter analyze` → `flutter test --coverage` (45% threshold). A tripwire step fails if `pubspec.yaml` declares `workspace:` members, because root `flutter test` never runs a member's tests; it replaced the member-test loop when the engine moved to `enspyrco/realm`, whose own CI runs the engine's guards.
 
 **Excluded from coverage:** `video_frame_ffi.dart`, `video_frame_web_stub.dart`, `video_frame_web_v2_stub.dart`, `video_bubble_component.dart`, `auth_service.dart`, `predefined_tilesets.dart`.
 
@@ -223,6 +223,8 @@ There was a second implementation, `ProximityService`, holding the same preferen
 ## Configuration
 
 **Firebase**: `lib/firebase/firebase_config.dart` (don't commit secrets). Project `adventures-in-tech-world-0` — used for **Auth, Firestore, Storage, Crashlytics only**. There are no Cloud Functions; `firebase.json` deliberately has no `functions` block.
+
+**Realm engine**: `realm_core` + `realm_firebase` come from [`enspyrco/realm`](https://github.com/enspyrco/realm) as git dependencies pinned to ONE full commit SHA on both entries — a tag or branch ref does not resolve (`realm_firebase`'s sibling `path:` dep on `realm_core` resolves to "this repo at the resolved commit", which pub compares with our `ref:` literally), and a half-bumped pair fails `pub get`. Engine changes land in that repo first (its design note is `packages/realm_core/DESIGN.md` there), then a pin bump here: change both refs, `flutter pub get`, commit pubspec + lock. To co-develop, put a gitignored `pubspec_overrides.yaml` here with `path:` overrides to a local `../realm` checkout.
 
 **Tokens**: `RealmTokenSource` (`lib/livekit/realm_token_source.dart`) → [`enspyrco/realm-token-server`](https://github.com/enspyrco/realm-token-server) on OCI: `/exchange` (Firebase ID token → Realm credential) then `/livekit-token` (→ LiveKit token with `RoomAgentDispatch`). No fallback path: a `LiveKitService` without a token source fails with `tokenUnknownError`.
 

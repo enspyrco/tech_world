@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
-import 'package:realm/realm.dart' show BearerCredential, LiveKitTokenEndpoint;
+import 'package:realm_core/realm_core.dart' show BearerCredential, LiveKitTokenEndpoint;
 import 'package:tech_world/chat/chat_message_repository.dart';
 import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/config/realm_token_config.dart';
