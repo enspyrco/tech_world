@@ -13,11 +13,11 @@ PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>.
 
-Note on scope: this repository is the Tech World *game*. Reusable framework
-components (the Flutter/Flame/LiveKit multiplayer plumbing) are intended to be
-offered under the Apache License 2.0 as they are extracted into separate
-packages; see docs/licensing.html for the full rationale and the dual-licensing
-position (Enspyr Pty Ltd is the sole copyright holder).
+Note on scope: this repository is the Tech World *game*. The Realm engine it is
+built on is developed in https://github.com/enspyrco/realm, and that repository
+sets its own licensing terms. See docs/licensing.html for this repository's
+licensing history and the dual-licensing position (Enspyr Pty Ltd is the sole
+copyright holder).
 
 ========================================================================
 
