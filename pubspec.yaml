@@ -14,7 +14,7 @@ environment:
   # it and regenerates pubspec.lock on the new version in the same PR. Exact on
   # purpose: the lockfile only reproduces on the Flutter that wrote it, so
   # `flutter pub get` refuses any other. Upgrade your local Flutter to match.
-  flutter: 3.47.6
+  flutter: 3.47.8
 
 dependencies:
   flutter:
