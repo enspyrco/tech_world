@@ -4,7 +4,13 @@
 # 1. Secret scan against staged diff (incident motivation: PR #227 leaked
 #    DREAMFINDER_API_KEY by hardcoding it as String.fromEnvironment defaultValue
 #    on 2026-04-09; rotated 2026-05-09)
-# 2. Flutter analyzer with --fatal-infos
+#
+# Secret scan ONLY. CI runs `flutter analyze --fatal-infos`. The analyzer step
+# that used to sit here was removed 2026-10-28: it ran whatever `flutter` was on
+# PATH (not CI's pinned version), so each run could rewrite pubspec.lock against
+# that SDK, and from a git worktree it inherited the hook's absolute GIT_DIR,
+# which made Flutter misreport its own version and block the commit. The scan is
+# the one check CI cannot do: it stops a secret before it leaves this machine.
 
 set -e
 
@@ -88,15 +94,4 @@ if command -v gitleaks > /dev/null 2>&1; then
 fi
 
 echo "✅ Secret scan clean"
-
-# --- Flutter analyzer -----------------------------------------------------
-echo "Running Flutter analyzer..."
-if ! flutter analyze --fatal-infos; then
-    echo ""
-    echo "❌ Commit blocked: Flutter analyzer found issues."
-    echo "Fix the issues above before committing."
-    exit 1
-fi
-
-echo "✅ Analyzer passed"
 exit 0

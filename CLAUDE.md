@@ -26,7 +26,7 @@ flutter analyze --fatal-infos                   # static analysis (CI requiremen
 ## Git Hooks
 
 ```bash
-git config core.hooksPath .githooks   # pre-commit runs flutter analyze
+git config core.hooksPath .githooks   # pre-commit runs a secret scan; CI runs analyze
 ```
 
 ## Design Standards
