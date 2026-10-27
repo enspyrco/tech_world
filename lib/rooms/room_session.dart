@@ -51,6 +51,7 @@ class RoomSession {
     required Future<void> Function() onReconnectWorld,
     required void Function() onRoomDeleted,
     List<Duration>? reconnectDelays,
+    Duration? heartbeatInterval,
     RealmTokenSource? realmTokenSource,
   })  : _firestore = firestore,
         _realmTokenSource = realmTokenSource,
@@ -58,7 +59,9 @@ class RoomSession {
         _onStateChanged = onStateChanged,
         _onReconnectWorld = onReconnectWorld,
         _onRoomDeleted = onRoomDeleted,
-        _reconnectDelays = reconnectDelays ?? _defaultReconnectDelays;
+        _reconnectDelays = reconnectDelays ?? _defaultReconnectDelays,
+        _heartbeatInterval =
+            heartbeatInterval ?? PresenceService.heartbeatInterval;
 
   // --- Final fields (set at construction) ---
 
@@ -114,6 +117,12 @@ class RoomSession {
 
   bool _isReconnecting = false;
   StreamSubscription<String?>? _connectionLostSub;
+
+  /// Refreshes presence while connected. Running ⇔ this session counts as
+  /// present: started by every [_enterPresence], stopped on connection loss and
+  /// on [leave]. A stopped heartbeat lets the doc go stale, so readers hide it.
+  Timer? _heartbeat;
+  final Duration _heartbeatInterval;
   StreamSubscription<DocumentSnapshot>? _roomDeletionSub;
   OracleService? _oracleService;
 
@@ -150,6 +159,7 @@ class RoomSession {
     @visibleForTesting FirebaseFirestore? firestore,
     @visibleForTesting PresenceService? presenceService,
     @visibleForTesting List<Duration>? reconnectDelays,
+    @visibleForTesting Duration? heartbeatInterval,
   }) {
     // Build the realm-backed token path for the production LiveKitService: the
     // strangler-fig cutover from the (now deleted) retrieveLiveKitToken CF. A
@@ -209,6 +219,7 @@ class RoomSession {
       onReconnectWorld: onReconnectWorld,
       onRoomDeleted: onRoomDeleted,
       reconnectDelays: reconnectDelays,
+      heartbeatInterval: heartbeatInterval,
       realmTokenSource: realmTokenSource,
     );
   }
@@ -267,7 +278,32 @@ class RoomSession {
     final prior = _pendingEnter;
     _pendingEnter =
         prior == null ? enterFuture : Future.wait([prior, enterFuture]);
+    _startHeartbeat();
   }
+
+  /// (Re)start the presence heartbeat. Idempotent — an enter on reconnect
+  /// replaces the timer rather than stacking a second one.
+  void _startHeartbeat() {
+    if (_disposed) return;
+    _heartbeat?.cancel();
+    _heartbeat = Timer.periodic(_heartbeatInterval, (_) {
+      if (_disposed) return;
+      // Best-effort, like enter. heartbeat() is an `update`, so a tick racing
+      // leave()'s delete fails instead of resurrecting the doc.
+      _presenceService.heartbeat(userId).catchError((Object e) =>
+          _log.fine('Presence heartbeat failed for room ${room.id}: $e'));
+    });
+  }
+
+  void _stopHeartbeat() {
+    _heartbeat?.cancel();
+    _heartbeat = null;
+  }
+
+  /// Whether the presence heartbeat timer is live. Exposed so tests can see a
+  /// leaked timer, which the `_disposed` guard would otherwise make silent.
+  @visibleForTesting
+  bool get isHeartbeating => _heartbeat?.isActive ?? false;
 
   /// Listen to the Firestore room document; fire [_onRoomDeleted] when the
   /// document disappears (host deleted the room while the user is inside).
@@ -401,6 +437,9 @@ class RoomSession {
     _log.warning('LiveKit connection lost: $reason');
     if (_isReconnecting || _disposed) return;
     _isReconnecting = true;
+    // Disconnected is not present: let the doc go stale. A successful
+    // reconnect re-enters, which restarts the heartbeat.
+    _stopHeartbeat();
 
     // Show failure banner and reset bot status.
     connectionFailed.value = true;
@@ -497,6 +536,7 @@ class RoomSession {
   /// producers (ChatService → TimerService → LiveKitService).
   Future<void> leave() async {
     _disposed = true;
+    _stopHeartbeat();
 
     // Serialize the delete AFTER any in-flight enter() so a fast connect→leave
     // can't let the write land after the delete (which would resurrect a ghost).

@@ -23,17 +23,26 @@ service cloud.firestore {
       allow read: if request.auth != null;
       // Create/update: the doc key must be the caller's UID AND the userId
       // field must match — nobody can plant presence as someone else.
-      // lastSeen must be the server clock (request.time): any ghost reaper
-      // compares lastSeen against LiveKit's event time, so a client-chosen
-      // lastSeen could future-pin a ghost to dodge cleanup (or backdate to
-      // self-grief). Pin it server-side; the client writes
-      // FieldValue.serverTimestamp() which resolves here. (The reaper this was
-      // written for — the livekitWebhook Cloud Function — is gone; see
-      // PresenceEntry for the current state.)
+      // lastSeen must be the server clock (request.time): readers hide entries
+      // whose lastSeen is older than PresenceService.staleAfter, so a
+      // client-chosen lastSeen could future-pin a ghost to stay visible (or
+      // backdate to self-grief). Pin it server-side; the client writes
+      // FieldValue.serverTimestamp() which resolves here.
+      //
+      // expireAt drives the TTL policy (firestore.indexes.json) that deletes
+      // ghosts. It is client-stamped (rules cannot compute a future time), so
+      // bound it: strictly in the future and under 2h ahead — a client cannot
+      // pin a doc for days. Optional, so older app builds that predate it can
+      // still write presence (their docs are hidden by staleness, just not
+      // TTL-collected).
       allow create, update: if request.auth != null &&
         request.auth.uid == userId &&
         request.resource.data.userId == userId &&
-        request.resource.data.lastSeen == request.time;
+        request.resource.data.lastSeen == request.time &&
+        (!('expireAt' in request.resource.data) ||
+          (request.resource.data.expireAt is timestamp &&
+           request.resource.data.expireAt > request.time &&
+           request.resource.data.expireAt < request.time + duration.value(2, 'h')));
       // Delete: only your own doc (request.resource is null on delete, so the
       // field check above cannot apply here).
       allow delete: if request.auth != null && request.auth.uid == userId;
