@@ -285,6 +285,7 @@ For detailed architecture, component descriptions, and development notes, see [`
 
 | Project | Description |
 |---------|-------------|
+| [`realm`](https://github.com/enspyrco/realm) | The multiplayer worldbuilding engine Tech World is built on: engine interfaces + a Firebase plugin, consumed as a SHA-pinned git dependency |
 | `tech_world_bot/` | AI tutor (Clawd) — Node.js using `@livekit/agents` + Claude API |
 | [`realm-token-server`](https://github.com/enspyrco/realm-token-server) | Credential exchange + LiveKit token mint (Node, OCI). Replaced the retired `tech_world_firebase_functions` |
 

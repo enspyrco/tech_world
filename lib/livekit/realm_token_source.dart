@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:realm/realm.dart';
+import 'package:realm_core/realm_core.dart';
 import 'package:realm_firebase/realm_firebase.dart';
 import 'package:tech_world/livekit/livekit_service.dart'
     show ConnectionResult, TokenResult;

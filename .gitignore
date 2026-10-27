@@ -32,11 +32,10 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-# Workspace member build dirs — /build/ above is repo-root-anchored only, so
-# nested members (packages/*, examples/*) need their own patterns.
-packages/*/build/
-examples/*/build/
 pubspec.lock
+# Local co-development overrides (e.g. realm from a ../realm checkout). Never
+# commit one: a path override points CI at a directory that isn't there.
+pubspec_overrides.yaml
 
 # Symbolication related
 app.*.symbols
