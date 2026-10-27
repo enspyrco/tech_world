@@ -32,7 +32,6 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-pubspec.lock
 # Local co-development overrides (e.g. realm from a ../realm checkout). Never
 # commit one: a path override points CI at a directory that isn't there.
 pubspec_overrides.yaml

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "lockFileMaintenance": { "enabled": true },
+  "packageRules": [
+    {
+      "description": "The Dart SDK constraint follows from the Flutter pin (Flutter bundles Dart), so don't bump it separately.",
+      "matchManagers": ["pub"],
+      "matchDepNames": ["dart"],
+      "enabled": false
+    },
+    {
+      "description": "Flutter SDK releases: the pin in pubspec.yaml's environment.flutter. Renovate regenerates pubspec.lock on the new version in the same PR.",
+      "matchManagers": ["pub"],
+      "matchDepNames": ["flutter"],
+      "groupName": "Flutter SDK"
+    },
+    {
+      "description": "realm_core and realm_firebase are pinned to the SAME enspyrco/realm commit; a half-bumped pair fails pub get, so they only ever move together.",
+      "matchManagers": ["pub"],
+      "matchDepNames": ["realm_core", "realm_firebase"],
+      "groupName": "realm engine"
+    }
+  ]
+}

@@ -10,6 +10,11 @@ version: 0.0.0+1
 
 environment:
   sdk: ^3.6.0
+  # THE Flutter pin: CI and deploy read it (flutter-version-file), Renovate bumps
+  # it and regenerates pubspec.lock on the new version in the same PR. Exact on
+  # purpose: the lockfile only reproduces on the Flutter that wrote it, so
+  # `flutter pub get` refuses any other. Upgrade your local Flutter to match.
+  flutter: 3.47.6
 
 dependencies:
   flutter:
@@ -18,7 +23,8 @@ dependencies:
   # the SAME full commit SHA: realm_firebase reaches realm_core through a sibling
   # `path:` dep that pub resolves to "this repo at the resolved commit", so a
   # tag or branch ref fails to resolve and a half-bumped pair fails `pub get`.
-  # To bump: change both refs, `flutter pub get`, commit pubspec + lock. To
+  # Renovate groups the two refs into one PR (renovate.json); by hand: change
+  # both refs, `flutter pub get`, commit pubspec + lock. To
   # co-develop against a local ../realm checkout, use a gitignored
   # pubspec_overrides.yaml (realm's README shows one).
   # The app consumes engine types (RealmCredential, LiveKitTokenEndpoint) and
