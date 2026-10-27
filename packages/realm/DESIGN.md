@@ -17,11 +17,21 @@ This document is the architectural pin. It must be cage-matched before any extra
 - **Step 2 (workspace scaffold): done.** Merged as PR #520 — root became a Dart/Flutter
   pub workspace with three empty members (`packages/realm`, `packages/realm_firebase`,
   `examples/livekit-token-server`).
-- **Step 3 (engine interfaces): in review.** The five interfaces + `World` + the two
-  registries now live in `packages/realm/lib/src/`, exported from `realm.dart`.
-  Declarations and value types only — **no implementations, and zero consumers wired**,
-  so the "CI green, no behaviour change" promise is literal rather than nominal. CI now
+- **Step 3 (engine interfaces): done.** Merged as PR #521 — the five interfaces + `World`
+  + the two registries live in `packages/realm/lib/src/`, exported from `realm.dart`. CI
   iterates workspace members (root `flutter test` does not descend into them).
+- **Step 4 (Firebase provider plugin): done.** PRs #523, #524, #527 —
+  `FirestoreRoomConfigStore`, `FirebaseStorageProvider`, `FirebaseAuthProvider` in
+  `packages/realm_firebase/`, plus the Realm-credential JWT. The token endpoint was
+  deployed as its own service, `enspyrco/realm-token-server` (OCI), not in-repo.
+- **Step 5 (consumer migration): in progress.** First consumer landed: the LiveKit token
+  path (`RoomSession` → `RealmTokenSource` → realm-token-server). The
+  `retrieveLiveKitToken` Cloud Function fallback was removed and the deployed functions retired
+  (2026-10-25/27, zero production callers across the 30-day log window). Still on direct Firebase:
+  `AuthService` callers, Firestore room reads, `firebase_storage` calls.
+- **Next structural move:** split `packages/realm*` out to `enspyrco/realm` (the Phase 2
+  repo structure below, brought forward), leaving `enspyrco/tech_world` as a World that
+  depends on it.
 
 ### Migration reality — what a code reconcile found the interfaces will meet (2026-07-26)
 
@@ -31,8 +41,9 @@ where the *consumer migration* (steps 5–7) will meet resistance the design did
 Recorded here so a later hand does not rediscover them the hard way:
 
 - **`AuthProvider.getCredential` + `LiveKitTokenEndpoint`/`BearerCredential` is greenfield,
-  not a refactor.** The client holds no token today: `retrieveLiveKitToken` is a Firebase
-  *callable* (`livekit_service.dart`), auth attached transparently by the SDK. There is no
+  not a refactor.** *(Resolved: built in step 4 — `RealmTokenSource`.)* At reconcile time
+  the client held no token: `retrieveLiveKitToken` was a Firebase *callable*
+  (`livekit_service.dart`), auth attached transparently by the SDK. There is no
   `getIdToken` anywhere on `AuthService`. Wiring the bearer/HTTP model is a build, and the
   per-provider exchange server (`examples/<provider>-exchange/`) is unstarted.
 - **`PresenceService` is a name collision with a different concept.** A class of that name

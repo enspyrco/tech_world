@@ -16,7 +16,7 @@ import 'package:tech_world/livekit/data_topic.dart';
 ///
 /// **Maintenance:** if a wire string changes here, that's a wire-format
 /// version bump — it must be coordinated with all external consumers
-/// (tech_world_bot at `/Users/nick/git/orgs/enspyrco/adventures-in/tech_world_bot`).
+/// (tech_world_bot at `/Users/nick/git/orgs/enspyrco/tech_world_bot`).
 void main() {
   group('DataTopic wire-format fixture', () {
     test('every enum value maps to its exact wire string', () {

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flame/components.dart' hide Timer;
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
@@ -124,9 +123,8 @@ class LiveKitService {
   /// Production token source, injected by [RoomSession]. When set, it fully
   /// owns token retrieval (Firebase login → RealmCredential → LiveKit token via
   /// the realm-token-server) and its classified [TokenResult] is used directly.
-  /// When `null`, [_retrieveToken] falls back to the legacy `retrieveLiveKitToken`
-  /// Cloud Function — the one-line rollback for the strangler-fig cutover. Also
-  /// the seam through which tests inject a canned token.
+  /// When `null`, [_retrieveToken] fails with `tokenUnknownError` (no network
+  /// call). Also the seam through which tests inject a canned token.
   final Future<TokenResult> Function()? _tokenSource;
 
   /// Effect invoked to silence a participant's audio (server-side disable).
@@ -377,8 +375,7 @@ class LiveKitService {
     _log.info('Connecting to LiveKit...');
 
     try {
-      // Get token: realm-token-server via the injected token source, or the
-      // legacy retrieveLiveKitToken Cloud Function when no source is set.
+      // Get token: realm-token-server via the injected token source.
       final String token;
       switch (await _retrieveToken()) {
         case TokenFailure(:final connectionResult):
@@ -1080,33 +1077,12 @@ class LiveKitService {
         return const TokenResult.failure(ConnectionResult.tokenUnknownError);
       }
     }
-    // Legacy fallback (rollback path): the retrieveLiveKitToken Cloud Function.
-    // Retained until the realm-token-server cutover is proven live — see
-    // tech_world/CLAUDE.md and claude-tasks #13.
-    try {
-      _log.info('Retrieving token for room "$roomName"');
-      final result = await FirebaseFunctions.instance
-          .httpsCallable('retrieveLiveKitToken')
-          .call({'roomName': roomName});
-      final token = result.data as String?;
-      // Empty like null: an empty token would otherwise "succeed" and fail
-      // later as roomFailed, mislabelling a mint bug (the realm path already
-      // rejects empty via _parseToken; keep the CF path symmetric).
-      return (token != null && token.isNotEmpty)
-          ? TokenResult.success(token)
-          : const TokenResult.failure(ConnectionResult.tokenUnknownError);
-    } on FirebaseFunctionsException catch (e) {
-      _log.warning('Token retrieval failed', e);
-      if (e.code == 'unauthenticated' || e.code == 'permission-denied') {
-        return const TokenResult.failure(ConnectionResult.tokenAuthError);
-      }
-      return const TokenResult.failure(ConnectionResult.tokenNetworkError);
-    } catch (e) {
-      // Generic catch handles timeouts, network errors, and other transient
-      // failures not covered by FirebaseFunctionsException above.
-      _log.warning('Token retrieval failed', e);
-      return const TokenResult.failure(ConnectionResult.tokenNetworkError);
-    }
+    // No source wired. The retrieveLiveKitToken Cloud Function fallback was
+    // retired once the realm-token-server cutover was proven live (zero
+    // production callers across the 30-day log retention window, 2026-10-25);
+    // a null source is now a wiring bug, never a silent route to a second mint.
+    _log.warning('No token source wired for room "$roomName"');
+    return const TokenResult.failure(ConnectionResult.tokenUnknownError);
   }
 
   void _setupListeners() {

@@ -29,7 +29,7 @@ This document maps every component involved.
 │                                                                              │
 │  RoomSession.connect()                                                       │
 │    └── LiveKitService.connect()                                              │
-│          └── Firebase httpsCallable('retrieveLiveKitToken')                  │
+│          └── RealmTokenSource → realm-token-server (/exchange, /livekit-token)│
 │                └── Room(adaptiveStream: false)  ◄── CRITICAL: Flame needs    │
 │                                                     raw frames, not widget   │
 │                                                                              │

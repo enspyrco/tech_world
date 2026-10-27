@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Flutter client for **Tech World** — a multiplayer game *World* built on top of the Realm engine (`packages/realm/`; Tech World is the first-party World that consumes it). It is a place players explore together where **magic is real and takes several forms** — Words of Power (the spellbook), prompting challenges, and coding challenges (in one room among several). Casting is a **public, witnessed act** — triggered by being in a place that listens to you, never a private UI button (see "The world is the listener" below). It is a **consumer game, not an educational platform**, and coding is one school of magic, not the whole premise. Uses Flame for the game world and LiveKit for video chat, player positions, and AI-tutor chat; all real-time communication goes through LiveKit — there is no separate game server.
 
-**Two products, two tracks** (2026-08): the durable engineering investment is the **Realm engine** — a reusable substrate other people can build all kinds of games on. **Tech World** is the specific game submitted to Screen Australia's Games Production Fund (round closes 5pm AEST Thu 27 Aug 2026). For the grant, Tech World is presented as a self-contained *game*; the engine stays invisible plumbing (SA flags "scope evolved into an engine/middleware" as an eligibility risk). The submission does NOT depend on the engine migration — the game runs today on its original `lib/` code (zero `package:realm` consumers yet), so the deadline-gated submission and the deadline-free engine work are independent tracks.
+**Two products, two tracks** (2026-08): the durable engineering investment is the **Realm engine** — a reusable substrate other people can build all kinds of games on. **Tech World** is the specific game submitted to Screen Australia's Games Production Fund (round closes 5pm AEST Thu 27 Aug 2026). For the grant, Tech World is presented as a self-contained *game*; the engine stays invisible plumbing (SA flags "scope evolved into an engine/middleware" as an eligibility risk). The submission did NOT depend on the engine migration, so the deadline-gated submission and the deadline-free engine work stayed independent tracks. Since then `lib/` has its first `package:realm` consumers (`RoomSession`, `RealmTokenSource` — the token path).
 
 ## Build & Run
 
@@ -222,9 +222,11 @@ There was a second implementation, `ProximityService`, holding the same preferen
 
 ## Configuration
 
-**Firebase**: `lib/firebase/firebase_config.dart` (don't commit secrets)
+**Firebase**: `lib/firebase/firebase_config.dart` (don't commit secrets). Project `adventures-in-tech-world-0` — used for **Auth, Firestore, Storage, Crashlytics only**. There are no Cloud Functions; `firebase.json` deliberately has no `functions` block.
 
-**LiveKit**: `wss://livekit.imagineering.cc` — self-hosted v1.11.0 on OCI VPS (ARM64). Caddy TLS, Redis for dispatch. Config at `/home/nick/apps/livekit/livekit.yaml`.
+**Tokens**: `RealmTokenSource` (`lib/livekit/realm_token_source.dart`) → [`enspyrco/realm-token-server`](https://github.com/enspyrco/realm-token-server) on OCI: `/exchange` (Firebase ID token → Realm credential) then `/livekit-token` (→ LiveKit token with `RoomAgentDispatch`). No fallback path: a `LiveKitService` without a token source fails with `tokenUnknownError`.
+
+**LiveKit**: `wss://livekit.imagineering.cc` — self-hosted v1.11.0 on OCI VPS (ARM64). Caddy TLS, Redis for dispatch. Config in `enspyrco/infra` at `livekit/livekit.yaml` (no `webhook:` block — nothing receives LiveKit webhooks).
 
 **Testing multi-participant video:**
 ```bash

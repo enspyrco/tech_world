@@ -114,11 +114,11 @@ Browser (Flutter web)
 
 ## Agent Dispatch
 
-The bot runs as a Docker container (`tw-clawd`) on OCI VPS (`149.118.69.221`) and uses the `@livekit/agents` SDK to register as a worker with the self-hosted LiveKit server. LiveKit dispatches the bot to rooms via **token-based dispatch**: the Firebase Cloud Function (`retrieveLiveKitToken`) embeds a `RoomAgentDispatch` in every user's access token.
+The bot runs as a Docker container (`tw-clawd`) on OCI VPS (`149.118.69.221`) and uses the `@livekit/agents` SDK to register as a worker with the self-hosted LiveKit server. LiveKit dispatches the bot to rooms via **token-based dispatch**: `realm-token-server`'s `/livekit-token` endpoint (OCI, `enspyrco/realm-token-server`) embeds a `RoomAgentDispatch` in every user's access token. (The `retrieveLiveKitToken` Cloud Function that used to do this was retired 2026-10-25.)
 
 **Why token-based dispatch?** LiveKit's automatic dispatch only fires for *new* rooms. Rooms (named by Firestore doc ID) have a 5-minute `empty_timeout`, so if users sign out and back in quickly, the room persists and automatic dispatch never triggers.
 
-**Deployment**: bots ship via `~/git/orgs/imagineering/imagineering-infra/scripts/deploy-to.sh 149.118.69.221 tech-world-bots`. Source lives in the sibling repo `tech_world_bot/`. Cloud Run was tried briefly and abandoned — ignore any stale references to `gcloud` / Cloud Run anywhere in the codebase.
+**Deployment**: bots ship via `~/git/orgs/enspyrco/infra/scripts/deploy-to.sh 149.118.69.221 tech-world-bots`. Source lives in the sibling repo `tech_world_bot/`. Cloud Run was tried briefly and abandoned — ignore any stale references to `gcloud` / Cloud Run anywhere in the codebase.
 
 **If the bot disappears:** Check these in order:
 1. `ssh nick@149.118.69.221 docker logs --tail 100 tw-clawd` — Is the worker registered? Look for `"registered worker"`.

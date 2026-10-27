@@ -152,7 +152,7 @@ class RoomSession {
     @visibleForTesting List<Duration>? reconnectDelays,
   }) {
     // Build the realm-backed token path for the production LiveKitService: the
-    // strangler-fig cutover from the retrieveLiveKitToken Cloud Function. A
+    // strangler-fig cutover from the (now deleted) retrieveLiveKitToken CF. A
     // test-injected [liveKitService] brings its own token seam, so skip it.
     // The source builds its Firebase auth provider lazily at first fetch, so
     // this stays Firebase-free at construction (tests build create() without

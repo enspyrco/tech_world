@@ -23,11 +23,13 @@ service cloud.firestore {
       allow read: if request.auth != null;
       // Create/update: the doc key must be the caller's UID AND the userId
       // field must match — nobody can plant presence as someone else.
-      // lastSeen must be the server clock (request.time): the livekitWebhook
-      // freshness watermark reaps ghosts by comparing lastSeen against the
-      // LiveKit event time, so a client-chosen lastSeen could future-pin a
-      // ghost to dodge cleanup (or backdate to self-grief). Pin it server-side;
-      // the client writes FieldValue.serverTimestamp() which resolves here.
+      // lastSeen must be the server clock (request.time): any ghost reaper
+      // compares lastSeen against LiveKit's event time, so a client-chosen
+      // lastSeen could future-pin a ghost to dodge cleanup (or backdate to
+      // self-grief). Pin it server-side; the client writes
+      // FieldValue.serverTimestamp() which resolves here. (The reaper this was
+      // written for — the livekitWebhook Cloud Function — is gone; see
+      // PresenceEntry for the current state.)
       allow create, update: if request.auth != null &&
         request.auth.uid == userId &&
         request.resource.data.userId == userId &&
