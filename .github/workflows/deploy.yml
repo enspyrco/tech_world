@@ -51,9 +51,9 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.7'
+          flutter-version: '3.47.6'
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
       - name: Analyze code
         run: flutter analyze --fatal-infos
       - name: Run tests with coverage
@@ -125,9 +125,9 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.7'
+          flutter-version: '3.47.6'
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
       - name: Capture build SHA
         id: build_sha
         run: echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
