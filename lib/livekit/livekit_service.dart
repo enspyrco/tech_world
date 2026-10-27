@@ -1079,8 +1079,8 @@ class LiveKitService {
     }
     // No source wired. The retrieveLiveKitToken Cloud Function fallback was
     // retired once the realm-token-server cutover was proven live (zero
-    // production callers over 60 days, 2026-10-25); a null source is now a
-    // wiring bug, never a silent route to a second mint.
+    // production callers across the 30-day log retention window, 2026-10-25);
+    // a null source is now a wiring bug, never a silent route to a second mint.
     _log.warning('No token source wired for room "$roomName"');
     return const TokenResult.failure(ConnectionResult.tokenUnknownError);
   }

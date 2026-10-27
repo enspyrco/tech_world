@@ -9,10 +9,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 ///
 /// NOTE on staleness: an ungraceful disconnect (tab close, crash, network
 /// drop) leaves a ghost document behind, because Firestore — unlike Realtime
-/// Database — has no `onDisconnect` hook. The authoritative cure is a LiveKit
-/// `participant_left` webhook driving a Cloud Function cleanup (LiveKit is the
-/// real source of truth for connection state). Until that lands, [lastSeen] is
-/// stored so a future heartbeat/TTL sweep can reap ghosts.
+/// Database — has no `onDisconnect` hook. **Nothing reaps ghosts today.** The
+/// `livekitWebhook` Cloud Function did (LiveKit `participant_left` →
+/// delete), but LiveKit's webhook block was removed ~2026-09-07 (it also
+/// shipped other products' room events to this project) and the function was
+/// deleted 2026-10-27. LiveKit is still the right source of truth; the natural
+/// new home is realm-token-server, which already runs beside it on OCI.
+/// [lastSeen] is server-pinned so whichever reaper lands can trust it.
 class PresenceEntry {
   const PresenceEntry({
     required this.userId,

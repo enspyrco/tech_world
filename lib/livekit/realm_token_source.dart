@@ -8,7 +8,8 @@ import 'package:tech_world/livekit/livekit_service.dart'
     show ConnectionResult, TokenResult;
 
 /// The realm-backed LiveKit token source — the client half of the
-/// strangler-fig cutover away from the `retrieveLiveKitToken` Cloud Function.
+/// strangler-fig cutover away from the `retrieveLiveKitToken` Cloud Function
+/// (since deleted, 2026-10-27).
 ///
 /// Two HTTP hops, both through engine types:
 ///   1. [AuthProvider.getCredential] exchanges the provider-native token (a

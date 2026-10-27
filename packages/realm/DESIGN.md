@@ -27,7 +27,7 @@ This document is the architectural pin. It must be cage-matched before any extra
 - **Step 5 (consumer migration): in progress.** First consumer landed: the LiveKit token
   path (`RoomSession` → `RealmTokenSource` → realm-token-server). The
   `retrieveLiveKitToken` Cloud Function fallback was removed and the deployed functions retired
-  (2026-10-25, zero production callers over 60 days). Still on direct Firebase:
+  (2026-10-25/27, zero production callers across the 30-day log window). Still on direct Firebase:
   `AuthService` callers, Firestore room reads, `firebase_storage` calls.
 - **Next structural move:** split `packages/realm*` out to `enspyrco/realm` (the Phase 2
   repo structure below, brought forward), leaving `enspyrco/tech_world` as a World that

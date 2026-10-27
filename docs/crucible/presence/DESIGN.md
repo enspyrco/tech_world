@@ -38,6 +38,8 @@ argument about ownership rather than about implementation quality.
 
 ### (a) Eviction signal — LiveKit `participant_left` webhook → Cloud Function deletes the doc
 
+> **Status 2026-10-27:** the substrate this option assumed is gone — LiveKit's webhook block was removed ~2026-09-07 and `tech_world_firebase_functions` (incl. `livekitWebhook`) was deleted and archived. If revived, the receiver belongs in realm-token-server (OCI, beside LiveKit), not a Cloud Function.
+
 Keeps the collection and the read path. Adds the one thing the mirror lacks: a reliable
 signal that someone is gone.
 
