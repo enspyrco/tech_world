@@ -38,8 +38,12 @@
   <h1>Tech World &mdash; Licensing Decision</h1>
   <p class="sub">
     <span class="status" style="background:#e3f5ea;color:#1d7a46;border-color:#a8e0bf">Decided &middot; AGPL v3</span>
-    &nbsp; Last updated 2026-06-26 &nbsp;&middot;&nbsp; Owner: Nick / Enspyr Pty Ltd
+    &nbsp; Last updated 2026-10-27 &nbsp;&middot;&nbsp; Owner: Nick / Enspyr Pty Ltd
   </p>
+
+  <div class="tldr" style="border-left-color:var(--warn);background:#fffbef">
+    <p><strong>Superseded in part (2026-10-27).</strong> The game's licence still stands: this repository is AGPL v3 (<code>LICENSE</code> at the root). The <em>framework</em> half of this page does not. Apache 2.0 for extracted packages was replaced on 2026-07-25 by AGPL v3 plus a linking exception (claude-tasks#1059). On 2026-10-27 the engine moved to <a href="https://github.com/enspyrco/realm"><code>enspyrco/realm</code></a>, which ships no licence yet while MPL-2.0 for its client packages, with AGPL-3.0 for server components, goes to legal review. Read the Apache recommendations below as the June reasoning, not the current plan. The Screen Australia sections are kept for the record; that process is over.</p>
+  </div>
 
   <div class="tldr">
     <p><strong>Decision (2026-06-26).</strong> The repository is now licensed under the <strong>GNU AGPL v3.0</strong> (<code>LICENSE</code> at the repo root) &mdash; this repo <em>is</em> the game. The <em>framework</em> half of the split (Apache 2.0) applies to reusable components <strong>as they are extracted into separate packages</strong>; the current single-app structure has no framework subtree to license separately yet. <code>pubspec.yaml</code> carries no <code>license:</code> field by design (the app is <code>publish_to: "none"</code>, so the field is non-standard).</p>
