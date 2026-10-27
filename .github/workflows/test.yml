@@ -42,9 +42,13 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.7'
+          # The one place tech_world's Flutter is pinned (deploy.yml repeats it).
+          # pubspec.lock only reproduces on the SDK that wrote it, and the next
+          # step refuses any other, so bump this with the lockfile, on the same
+          # Flutter you run locally.
+          flutter-version: '3.47.6'
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
       - name: Analyze code
         run: flutter analyze --fatal-infos
       - name: Run tests with coverage
