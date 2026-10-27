@@ -33,6 +33,7 @@ class _SpyPresence extends PresenceService {
   final List<String> enteredRooms = [];
   final List<String> enteredAvatars = [];
   final List<String> leftUsers = [];
+  int heartbeats = 0;
 
   /// Ordered log of completed operations: `enter:<room>` / `leave:<user>`.
   final List<String> order = [];
@@ -55,6 +56,9 @@ class _SpyPresence extends PresenceService {
     leftUsers.add(userId);
     order.add('leave:$userId');
   }
+
+  @override
+  Future<void> heartbeat(String userId) async => heartbeats++;
 }
 
 /// Stub the LiveKitService surface that ChatService and RoomSession touch
@@ -339,6 +343,82 @@ void main() {
 
       expect(spy.order, ['enter:test-room', 'leave:user-1'],
           reason: 'delete must land after the enter write');
+    });
+
+    RoomSession heartbeatSession(_FakeLiveKit liveKit, _SpyPresence spy) =>
+        RoomSession.create(
+          room: _testRoom,
+          userId: 'user-1',
+          displayName: 'User 1',
+          avatarId: 'npc12',
+          onStateChanged: () {},
+          onReconnectWorld: () async {},
+          onRoomDeleted: () {},
+          chatMessageRepository:
+              ChatMessageRepository(firestore: FakeFirebaseFirestore()),
+          liveKitService: liveKit,
+          firestore: FakeFirebaseFirestore(),
+          presenceService: spy,
+          reconnectDelays: const [Duration.zero],
+          heartbeatInterval: const Duration(milliseconds: 10),
+        );
+
+    test('heartbeats while connected and stops for good on leave', () async {
+      final liveKit = _FakeLiveKit();
+      _stubLiveKit(liveKit);
+      when(liveKit.connect).thenAnswer((_) async => ConnectionResult.connected);
+      final spy = _SpyPresence();
+      final session = heartbeatSession(liveKit, spy);
+
+      await session.connect();
+      await Future<void>.delayed(const Duration(milliseconds: 55));
+      expect(spy.heartbeats, greaterThanOrEqualTo(3));
+
+      await session.leave();
+      final atLeave = spy.heartbeats;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(spy.heartbeats, atLeave,
+          reason: 'no heartbeat after leave — the doc must be allowed to die');
+      expect(session.isHeartbeating, isFalse, reason: 'timer cancelled, not leaked');
+    });
+
+    test('connection loss stops the heartbeat; a successful reconnect restarts '
+        'it', () async {
+      final liveKit = _FakeLiveKit();
+      final stubs = _stubLiveKit(liveKit);
+      final reconnect = Completer<ConnectionResult>();
+      var calls = 0;
+      when(liveKit.connect).thenAnswer((_) {
+        calls++;
+        return calls == 1
+            ? Future.value(ConnectionResult.connected)
+            : reconnect.future;
+      });
+      final spy = _SpyPresence();
+      final session = heartbeatSession(liveKit, spy);
+
+      await session.connect();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(spy.heartbeats, greaterThan(0));
+
+      stubs.connectionLost.add('peer-disconnected');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      final atLoss = spy.heartbeats;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(spy.heartbeats, atLoss,
+          reason: 'disconnected is not present — no heartbeat while '
+              'reconnecting');
+      expect(session.isHeartbeating, isFalse);
+
+      reconnect.complete(ConnectionResult.connected);
+      await Future<void>.delayed(const Duration(milliseconds: 55));
+      expect(spy.heartbeats, greaterThan(atLoss),
+          reason: 'reconnect re-enters, which restarts the heartbeat');
+      expect(session.isHeartbeating, isTrue);
+      expect(spy.enteredRooms.length, 2, reason: 'connect + reconnect');
+
+      await session.leave();
+      await stubs.connectionLost.close();
     });
 
     test('a failed connect does not write presence', () async {
