@@ -16,10 +16,24 @@
       "groupName": "Flutter SDK"
     },
     {
-      "description": "realm_core and realm_firebase are pinned to the SAME enspyrco/realm commit; a half-bumped pair fails pub get, so they only ever move together.",
+      "description": "realm_core and realm_firebase are git deps pinned to ONE full enspyrco/realm commit SHA, and Renovate can't track that: pub's `ref:` holds the SHA as its only value, so Renovate reads it as a version, finds it invalid and skips it (there is no branch recorded to follow). Disabled to say so here. Bump by hand: set both refs to the same full SHA, flutter pub get, commit pubspec.yaml and pubspec.lock together.",
       "matchManagers": ["pub"],
       "matchDepNames": ["realm_core", "realm_firebase"],
-      "groupName": "realm engine"
+      "enabled": false
+    },
+    {
+      "description": "FlutterFire majors can't land here on their own: realm_firebase (from the realm git dep above, which Renovate doesn't bump) constrains firebase_auth, cloud_firestore and firebase_storage to the current majors, every FlutterFire plugin needs a matching firebase_core, and fake_cloud_firestore tracks cloud_firestore. Raise realm_firebase's constraints in enspyrco/realm first, then re-pin realm here with these bumps in the same commit. Held on the Dependency Dashboard so they stay visible without opening PRs that can't resolve.",
+      "matchManagers": ["pub"],
+      "matchPackageNames": ["firebase_*", "cloud_firestore", "fake_cloud_firestore"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "FlutterFire majors",
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "The Flutter Gradle plugin loader ships inside the Flutter SDK, not on any Maven repository, so every lookup fails and leaves a standing warning on the Dependency Dashboard. It moves with the Flutter pin.",
+      "matchManagers": ["gradle"],
+      "matchDepNames": ["dev.flutter.flutter-plugin-loader"],
+      "enabled": false
     }
   ]
 }
