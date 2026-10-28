@@ -107,24 +107,24 @@ class UnresolvedTileset {
 // TSX support
 // ---------------------------------------------------------------------------
 
-/// In-memory [TsxProvider] that wraps a TSX XML string.
+/// In-memory [tiled.ParserProvider] that wraps one TSX XML string.
 ///
 /// Used when TSX files are extracted from a zip bundle rather than read from
-/// the filesystem.
-class InMemoryTsxProvider extends tiled.TsxProvider {
+/// the filesystem. [filename] must match the tileset's `source` attribute in
+/// the TMX, which tiled passes to [canProvide] exactly as written there.
+class InMemoryTsxProvider extends tiled.ParserProvider {
   InMemoryTsxProvider(this.filename, this._xml);
 
   final String _xml;
 
-  @override
   final String filename;
+
+  @override
+  bool canProvide(String path) => path == filename;
 
   @override
   tiled.Parser getSource(String _) =>
       tiled.XmlParser(XmlDocument.parse(_xml).rootElement);
-
-  @override
-  tiled.Parser? getCachedSource() => getSource(filename);
 }
 
 /// Fatal error during TMX import.
@@ -164,11 +164,11 @@ class TmxImporter {
   /// user which PNGs are missing from their zip bundle.
   static TmxAnalysis analyze(
     String tmxXml, {
-    List<tiled.TsxProvider>? tsxProviders,
+    List<tiled.ParserProvider>? tsxProviders,
   }) {
     final tiled.TiledMap tiledMap;
     try {
-      tiledMap = tiled.TileMapParser.parseTmx(tmxXml, tsxList: tsxProviders);
+      tiledMap = tiled.TiledMap.parseTmx(tmxXml, providers: tsxProviders ?? const []);
     } catch (e) {
       throw TmxImportException('Failed to parse TMX XML: $e');
     }
@@ -228,7 +228,7 @@ class TmxImporter {
   static TmxImportResultWithCustomTilesets importWithCustomTilesets(
     String tmxXml, {
     Map<String, Uint8List> customImages = const {},
-    List<tiled.TsxProvider>? tsxProviders,
+    List<tiled.ParserProvider>? tsxProviders,
     String? mapId,
     String? mapName,
   }) {
@@ -239,7 +239,7 @@ class TmxImporter {
     // 1. Parse XML (with TSX providers).
     final tiled.TiledMap tiledMap;
     try {
-      tiledMap = tiled.TileMapParser.parseTmx(tmxXml, tsxList: tsxProviders);
+      tiledMap = tiled.TiledMap.parseTmx(tmxXml, providers: tsxProviders ?? const []);
     } catch (e) {
       throw TmxImportException('Failed to parse TMX XML: $e');
     }
@@ -307,7 +307,7 @@ class TmxImporter {
     // 1. Parse XML.
     final tiled.TiledMap tiledMap;
     try {
-      tiledMap = tiled.TileMapParser.parseTmx(tmxXml);
+      tiledMap = tiled.TiledMap.parseTmx(tmxXml);
     } catch (e) {
       throw TmxImportException('Failed to parse TMX XML: $e');
     }
