@@ -30,6 +30,12 @@
       "dependencyDashboardApproval": true
     },
     {
+      "description": "tiled depends on xml and tech_world pins xml directly too, so a tiled release that needs a newer xml can only resolve when both move in one PR (tiled 0.12 needed xml 7; queued apart, each failed alone).",
+      "matchManagers": ["pub"],
+      "matchPackageNames": ["tiled", "xml"],
+      "groupName": "tiled + xml"
+    },
+    {
       "description": "The Flutter Gradle plugin loader ships inside the Flutter SDK, not on any Maven repository, so every lookup fails and leaves a standing warning on the Dependency Dashboard. It moves with the Flutter pin.",
       "matchManagers": ["gradle"],
       "matchDepNames": ["dev.flutter.flutter-plugin-loader"],

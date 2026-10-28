@@ -664,7 +664,7 @@ class MapEditorState extends ChangeNotifier {
   TmxImportResultWithCustomTilesets loadFromTmxWithCustomTilesets(
     String tmxXml, {
     Map<String, Uint8List> customImages = const {},
-    List<tiled.TsxProvider>? tsxProviders,
+    List<tiled.ParserProvider>? tsxProviders,
     String? mapId,
     String? mapName,
   }) {
