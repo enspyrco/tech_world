@@ -77,7 +77,7 @@ jobs:
             '*/flame/tiles/predefined_tilesets.dart' \
             -o coverage/lcov.info
       - name: Report coverage on PR
-        uses: zgosalvez/github-actions-report-lcov@v4
+        uses: zgosalvez/github-actions-report-lcov@v7
         with:
           coverage-files: coverage/lcov.info
           minimum-coverage: 50
