@@ -10,7 +10,7 @@ jobs:
       docs_only: ${{ steps.filter.outputs.docs_only }}
       skip_tests: ${{ steps.filter.outputs.skip_tests }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
       - name: Check if docs-only change
@@ -47,7 +47,7 @@ jobs:
     if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.skip_tests != 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -99,7 +99,7 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
