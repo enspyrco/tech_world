@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:tech_world/chat/bubble_footer.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/chat/composer_field.dart';

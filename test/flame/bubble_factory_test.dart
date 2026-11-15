@@ -1,6 +1,6 @@
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
-import 'package:flutter/material.dart' show Color, Colors;
+import 'package:material_ui/material_ui.dart' show Color, Colors;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:mocktail/mocktail.dart';

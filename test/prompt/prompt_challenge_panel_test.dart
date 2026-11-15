@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/prompt/cast_result.dart';
 import 'package:tech_world/prompt/predefined_prompt_challenges.dart';

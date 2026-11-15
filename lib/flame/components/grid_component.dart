@@ -1,7 +1,7 @@
 import 'dart:ui';
 
 import 'package:flame/components.dart';
-import 'package:flutter/material.dart' show TextStyle;
+import 'package:material_ui/material_ui.dart' show TextStyle;
 import 'package:tech_world/flame/shared/constants.dart';
 
 /// The [GridComponent] draws grid lines and axis labels on the canvas.

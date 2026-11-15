@@ -1,5 +1,5 @@
 import 'package:flame/components.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A Flame component that renders a circular bubble with a player's initial.
 /// This is rendered in the game world so it moves correctly with the camera.

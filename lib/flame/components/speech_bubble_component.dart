@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A Flame component that renders speech text below a character with a
 /// per-letter fade-in effect (typewriter style).

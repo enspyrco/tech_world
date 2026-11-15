@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A loading screen that displays during app initialization.
 /// Matches the web loading screen design with dark theme and progress indicator.
