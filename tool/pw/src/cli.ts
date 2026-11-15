@@ -20,7 +20,10 @@ import { closeBrowser } from './browser.js';
 
 // Load .env from the tool/pw directory
 const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: resolve(__dirname, '..', '.env') });
+// dotenv 18 prints an "injected env" line to stdout by default; quiet:true
+// keeps it from polluting commands whose stdout is parsed by callers (e.g.
+// `screenshot`'s path, `eval`'s result).
+config({ path: resolve(__dirname, '..', '.env'), quiet: true });
 
 const program = new Command();
 
