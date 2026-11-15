@@ -241,10 +241,6 @@ lk room join --identity video-test-user --publish-demo l_room
 
 Surfaced from PR cage-matches and session trawls — concrete items with a known shape, waiting for someone to pick them up. Design-question tasks (world-builder split, attempt-vs-persistence semantics) live in session TaskList instead.
 
-### Cleanup
-
-- **Unify `DataTopic` and `LiveKitTopic` enums.** Two parallel topic enums coexist in `lib/livekit/` since #438 — wire strings match (verified by both contract tests) but having two types is debt. Pick one, kill the other.
-
 ### Event-sink hardening (from PR #436 cage-match concerns)
 
 - **`events.log` rotation / size cap on `file_sink.dart`.** Currently writes append-only with no rotation; OS-managed storage is not a retention policy. Decide between size-based (e.g. 10MB × 3 files), time-based (daily), or build-mode gating (release builds get no file sink). The platform-vs-content question — does retention belong to the platform or each world? — should be answered first.

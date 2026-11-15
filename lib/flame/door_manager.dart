@@ -10,8 +10,8 @@ import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/maps/door_data.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
-import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/progress/progress_service.dart';
 import 'package:tech_world/prompt/prompt_challenge.dart';
 
@@ -83,11 +83,11 @@ class DoorManager {
 
     _getLiveKit()?.publishJson(
       {
-        'type': DataTopic.doorUnlock.wireName,
+        'type': LiveKitTopic.doorUnlock.wire,
         'doorX': door.position.x,
         'doorY': door.position.y,
       },
-      topic: DataTopic.doorUnlock.wireName,
+      topic: LiveKitTopic.doorUnlock.wire,
     );
 
     _log.info('Door unlocked at (${door.position.x}, ${door.position.y})');

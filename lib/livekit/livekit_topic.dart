@@ -96,7 +96,19 @@ enum LiveKitTopic {
   ///
   /// Wire string follows the kebab-case convention used by every other
   /// LiveKit topic in this enum (matches bot-side `AGENT_HELLO`).
-  agentHello('agent-hello');
+  agentHello('agent-hello'),
+
+  // ── Dreamfinder avatar bridge ─────────────────────────────────────────────
+  /// Raw PCM16 audio bytes from the Dreamfinder bot, forwarded to the web
+  /// avatar bridge's iframe as base64 for lip-sync playback. Published only
+  /// by a sender whose identity passes `isDreamfinderIdentity` — see
+  /// `lib/livekit/dreamfinder_avatar_bridge_web.dart`.
+  dreamfinderAudio('dreamfinder-audio'),
+
+  /// Mood/interrupt signal from the Dreamfinder bot, forwarded to the web
+  /// avatar bridge's iframe to drive expression state or cut off playback.
+  /// Same sender-identity restriction as [dreamfinderAudio].
+  dreamfinderMood('dreamfinder-mood');
 
   const LiveKitTopic(this.wire);
 

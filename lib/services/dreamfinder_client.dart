@@ -4,7 +4,7 @@ import 'dart:io'; // SocketException — native only; web uses http.ClientExcept
 
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
-import 'package:tech_world/livekit/data_topic.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
 
 final _log = Logger('DreamfinderClient');
 
@@ -17,13 +17,13 @@ final _log = Logger('DreamfinderClient');
 ///
 /// These match the LiveKit data channel topics used throughout the game.
 abstract final class GameEventTopic {
-  static String get chat => DataTopic.chat.wireName;
-  static String get helpRequest => DataTopic.helpRequest.wireName;
+  static String get chat => LiveKitTopic.chat.wire;
+  static String get helpRequest => LiveKitTopic.helpRequest.wire;
 
   /// HTTP event type strings forwarded to Dreamfinder's REST API.
   ///
   /// These are **not** LiveKit data-channel topics and are therefore
-  /// deliberately absent from [DataTopic]. Player join/leave events are
+  /// deliberately absent from [LiveKitTopic]. Player join/leave events are
   /// signalled by the LiveKit room itself and forwarded to Dreamfinder over
   /// HTTP, so there is no corresponding wire name on the data channel.
   static const playerJoin = 'player-join';

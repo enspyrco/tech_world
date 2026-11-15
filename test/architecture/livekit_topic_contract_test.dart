@@ -98,6 +98,18 @@ void main() {
       // Flutter-only shared countdown timer; no bot mirror.
       expect(LiveKitTopic.roomTimer.wire, 'room-timer');
     });
+
+    test('dreamfinderAudio wire is "dreamfinder-audio"', () {
+      // Merged in from the retired DataTopic enum; wire contract pairs with
+      // the Dreamfinder bot's own audio-forwarding topic.
+      expect(LiveKitTopic.dreamfinderAudio.wire, 'dreamfinder-audio');
+    });
+
+    test('dreamfinderMood wire is "dreamfinder-mood"', () {
+      // Merged in from the retired DataTopic enum; wire contract pairs with
+      // the Dreamfinder bot's own mood-signal topic.
+      expect(LiveKitTopic.dreamfinderMood.wire, 'dreamfinder-mood');
+    });
   });
 
   // ── Exhaustiveness guard ─────────────────────────────────────────────────

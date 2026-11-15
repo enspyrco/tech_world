@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/avatar/parts/avatar_part.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
-import 'package:tech_world/livekit/data_topic.dart';
+import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
 void main() {
@@ -40,7 +40,7 @@ void main() {
     test('parses valid avatar message from DataChannelMessage', () {
       final message = DataChannelMessage(
         senderId: 'user-456',
-        topic: DataTopic.avatar.wireName,
+        topic: LiveKitTopic.avatar.wire,
         data: utf8.encode(jsonEncode({
           'playerId': 'user-456',
           'avatarId': 'npc13',
@@ -48,7 +48,7 @@ void main() {
         })),
       );
 
-      expect(message.topic, equals(DataTopic.avatar.wireName));
+      expect(message.topic, equals(LiveKitTopic.avatar.wire));
       final json = message.json!;
       expect(json['playerId'], equals('user-456'));
       expect(json['avatarId'], equals('npc13'));
@@ -58,7 +58,7 @@ void main() {
     test('ignores malformed message (missing fields)', () {
       final message = DataChannelMessage(
         senderId: 'user-789',
-        topic: DataTopic.avatar.wireName,
+        topic: LiveKitTopic.avatar.wire,
         data: utf8.encode(jsonEncode({'playerId': 'user-789'})),
       );
 
