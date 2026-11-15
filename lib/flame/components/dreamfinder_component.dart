@@ -43,7 +43,9 @@ class DreamfinderComponent
     required this.displayName,
     required PathComponent pathComponent,
     this.territory,
-  }) : _pathComponent = pathComponent;
+    Random? random,
+  })  : _pathComponent = pathComponent,
+        _random = random ?? Random();
 
   /// Dreamfinder's square. When set, the fallback (bot-offline) wander stays
   /// inside it, matching the bot's authoritative bound. Null in tests that
@@ -60,7 +62,7 @@ class DreamfinderComponent
   String displayName;
 
   final PathComponent _pathComponent;
-  final Random _random = Random();
+  final Random _random;
 
   bool _hasNoticedPlayer = false;
   bool _isWandering = false;
