@@ -10,6 +10,7 @@ import 'package:tech_world/flame/components/barriers_component.dart';
 import 'package:tech_world/flame/components/path_component.dart';
 import 'package:tech_world/flame/maps/door_data.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/livekit/data_channel.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/progress/progress_service.dart';

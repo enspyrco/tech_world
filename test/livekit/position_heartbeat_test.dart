@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/game_topics.dart';
 
 void main() {
   // PositionHeartbeat ships in the audit/position-heartbeat branch as the

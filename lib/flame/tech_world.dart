@@ -25,7 +25,6 @@ import 'package:tech_world/flame/components/countdown_clock_component.dart';
 import 'package:tech_world/flame/components/mention_arc_component.dart';
 import 'package:tech_world/flame/mention/mention_pulse_controller.dart';
 import 'package:tech_world/flame/mention/mention_world_controller.dart';
-import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/flame/components/door_component.dart';
 import 'package:tech_world/flame/door_manager.dart';
 import 'package:tech_world/flame/maps/barrier_occlusion.dart';
@@ -65,6 +64,8 @@ import 'package:tech_world/flame/tech_world_game.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
+import 'package:tech_world/livekit/data_channel.dart';
+import 'package:tech_world/livekit/game_topics.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/timer/timer_service.dart';
 import 'package:tech_world/progress/progress_service.dart';
@@ -295,7 +296,7 @@ class TechWorld extends World with TapCallbacks {
   void closeEditor() {
     // Only publish if we were actually in the editor.
     if (activeChallenge.value != null) {
-      _liveKitService?.publishTerminalActivity(action: 'close');
+      _liveKitService?.publishTerminalActivity(action: TerminalAction.close);
       dispatch([TerminalClosed()]);
     }
     activeChallenge.value = null;
@@ -1079,13 +1080,9 @@ class TechWorld extends World with TapCallbacks {
       addToWorld: add,
       displayNameLookup: _displayNameForUid,
       publishAck: (messageId) {
-        _liveKitService?.publishJson(
-          {
-            'type': LiveKitTopic.mentionAck.wire,
-            'messageId': messageId,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
-          topic: LiveKitTopic.mentionAck.wire,
+        _liveKitService?.send(
+          mentionAckTopic,
+          (messageId: messageId, at: DateTime.now()),
         );
       },
       reduceMotion: _bubbleManager.reduceMotion,
@@ -1693,7 +1690,7 @@ class TechWorld extends World with TapCallbacks {
       // Notify the bot that we opened a terminal editor. The LiveKit
       // metadata payload is wire-format, so convert at the boundary.
       _liveKitService?.publishTerminalActivity(
-        action: 'open',
+        action: TerminalAction.open,
         challengeId: challenge.id.wireName,
         challengeTitle: challenge.title,
         challengeDescription: challenge.description,

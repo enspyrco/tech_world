@@ -10,6 +10,8 @@ import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
+import 'package:tech_world/livekit/data_channel.dart';
+import 'package:tech_world/livekit/game_topics.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/timer/room_timer_message.dart';
@@ -609,7 +611,7 @@ class FakeLiveKitService implements LiveKitService {
 
   @override
   Future<void> publishTerminalActivity({
-    required String action,
+    required TerminalAction action,
     String? challengeId,
     String? challengeTitle,
     String? challengeDescription,

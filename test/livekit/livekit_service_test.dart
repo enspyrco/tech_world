@@ -2,9 +2,32 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tech_world/livekit/data_channel.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
+/// An encoder that always throws, standing in for e.g. `jsonEncode` on NaN.
+final class _ThrowingEncoder implements TopicEncoder<int> {
+  const _ThrowingEncoder();
+  @override
+  String get wireName => 't';
+  @override
+  bool get reliable => true;
+  @override
+  List<int> encode(int value) => throw StateError('encode failed');
+}
+
 void main() {
+  // Fire-and-forget callers (e.g. TechWorld's publishPosition before its
+  // PlayerMoved dispatch) rely on a publish never throwing at the call site.
+  test('send reports an encoder throw as a failed Future, not at the call site',
+      () async {
+    final service = LiveKitService(userId: 'u', displayName: 'U');
+    late Future<void> sent;
+    expect(() => sent = service.send(const _ThrowingEncoder(), 1),
+        returnsNormally);
+    await expectLater(sent, throwsStateError);
+  });
+
   group('LiveKitService', () {
     group('constructor', () {
       test('creates service with required parameters', () {

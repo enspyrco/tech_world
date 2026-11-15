@@ -23,6 +23,7 @@ import 'package:web/web.dart' as web;
 
 import '../bots/bot_config.dart';
 import '../native/canvas_capture_web.dart';
+import 'data_channel.dart';
 import 'livekit_topic.dart';
 import 'livekit_service.dart';
 

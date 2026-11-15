@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/avatar/parts/avatar_part.dart';
-import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/game_topics.dart';
 
 /// The gate on peer-supplied appearance.
 ///

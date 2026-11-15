@@ -10,6 +10,7 @@ import 'package:tech_world/chat/chat_service.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/livekit/data_channel.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/rooms/presence_service.dart';
 import 'package:tech_world/rooms/room_data.dart';
