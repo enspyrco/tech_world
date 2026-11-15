@@ -225,7 +225,13 @@ class LiveKitService {
       );
 
   /// Publish [value] on [topic], optionally only [to] the given identities.
-  Future<void> send<T>(TopicEncoder<T> topic, T value, {List<String>? to}) =>
+  ///
+  /// `async` on purpose: it turns an encoder throw into a failed Future, as
+  /// the `async` publish methods this replaced did. Without it the throw
+  /// escapes at the call site and skips whatever a fire-and-forget caller does
+  /// next.
+  Future<void> send<T>(TopicEncoder<T> topic, T value,
+          {List<String>? to}) async =>
       publishData(
         topic.encode(value),
         reliable: topic.reliable,
@@ -252,8 +258,9 @@ class LiveKitService {
   /// Map-switch notifications from other human players.
   ///
   /// Fires when another player switches maps, carrying the map ID so this
-  /// client can load the same map. Own messages (matching [userId]) and
-  /// messages from bots are excluded.
+  /// client can load the same map. Messages whose payload `senderId` matches
+  /// [userId] are excluded. That field is self-reported, so a peer can forge
+  /// it, and nothing here excludes bots.
   Stream<String> get mapSwitchReceived => receive(mapSwitchTopic)
       .where((s) => s.senderId != userId)
       .map((s) => s.mapId);
@@ -859,7 +866,7 @@ class LiveKitService {
   /// editor so the bot can track who is working on challenges and proactively
   /// offer help.
   Future<void> publishTerminalActivity({
-    required String action,
+    required TerminalAction action,
     String? challengeId,
     String? challengeTitle,
     String? challengeDescription,

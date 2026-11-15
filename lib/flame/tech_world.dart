@@ -296,7 +296,7 @@ class TechWorld extends World with TapCallbacks {
   void closeEditor() {
     // Only publish if we were actually in the editor.
     if (activeChallenge.value != null) {
-      _liveKitService?.publishTerminalActivity(action: 'close');
+      _liveKitService?.publishTerminalActivity(action: TerminalAction.close);
       dispatch([TerminalClosed()]);
     }
     activeChallenge.value = null;
@@ -1690,7 +1690,7 @@ class TechWorld extends World with TapCallbacks {
       // Notify the bot that we opened a terminal editor. The LiveKit
       // metadata payload is wire-format, so convert at the boundary.
       _liveKitService?.publishTerminalActivity(
-        action: 'open',
+        action: TerminalAction.open,
         challengeId: challenge.id.wireName,
         challengeTitle: challenge.title,
         challengeDescription: challenge.description,

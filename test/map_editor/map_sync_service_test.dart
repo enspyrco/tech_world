@@ -611,7 +611,7 @@ class FakeLiveKitService implements LiveKitService {
 
   @override
   Future<void> publishTerminalActivity({
-    required String action,
+    required TerminalAction action,
     String? challengeId,
     String? challengeTitle,
     String? challengeDescription,

@@ -82,9 +82,12 @@ mixin JsonEncoding<T> implements TopicEncoder<T> {
 
 /// Messages in [source] on [topic], decoded; rejected messages are dropped.
 ///
-/// A decoder that throws is caught per message and reported to [onError]: an
-/// error escaping into the stream would tear it down for the rest of the
-/// session, so one malformed packet from one peer must not silence the topic.
+/// A decoder that throws is caught per message and reported to [onError].
+/// Without the catch a `listen` subscription would survive (it only cancels on
+/// error when asked to; an `await for` loop would end), but every malformed
+/// packet would reach the zone as an uncaught error, so one hostile peer could flood the crash reporter, and the
+/// report would not say which topic. [TopicDecoder] is an open interface, so
+/// this is the one place a decoder we didn't write is contained.
 Stream<T> decodeTopic<T>(
   Stream<DataChannelMessage> source,
   TopicDecoder<T> topic, {

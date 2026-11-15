@@ -1,5 +1,4 @@
 import 'package:flame/components.dart' show Vector2;
-import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar_spec.dart';
 import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
@@ -11,8 +10,6 @@ import 'package:tech_world/livekit/agent_hello.dart';
 import 'package:tech_world/livekit/data_channel.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/timer/room_timer_message.dart';
-
-final _log = Logger('GameTopics');
 
 /// A parsed avatar update from the `avatar` data channel topic.
 class AvatarUpdate {
@@ -103,9 +100,18 @@ typedef OutgoingMentionAck = ({String messageId, DateTime at});
 /// The local player entering or leaving Dreamfinder's range.
 typedef DfProximity = ({String playerId, bool near});
 
+/// What the local player did at a terminal.
+enum TerminalAction {
+  open,
+  close;
+
+  /// Single-token values, so [name] is the wire form.
+  String get wireName => name;
+}
+
 /// The local player opening or closing the code editor.
 typedef TerminalActivity = ({
-  String action,
+  TerminalAction action,
   String playerId,
   String playerName,
   DateTime at,
@@ -135,28 +141,34 @@ final class PositionTopic
         'directions': path.directions.map((d) => d.name).toList(),
       };
 
+  /// Total: every malformed shape is a non-match, never a throw, so this
+  /// decoder needs no catch of its own (decodeTopic's is for decoders we don't
+  /// write). One malformed point drops the whole path, as the cast-based
+  /// parser it replaced did.
   @override
   PlayerPath? fromJson(Map<String, dynamic> json, DataChannelMessage message) {
-    try {
-      final playerId = json['playerId'] as String?;
-      final pointsJson = json['points'] as List<dynamic>?;
-      final directionsJson = json['directions'] as List<dynamic>?;
-
-      if (playerId == null || pointsJson == null || directionsJson == null) {
-        return null;
-      }
-
+    if (json
+        case {
+          'playerId': String playerId,
+          'points': List<dynamic> pointsJson,
+          'directions': List<dynamic> directionsJson,
+        }) {
       // Clamp at parse boundary — a malformed or hostile peer could
       // otherwise push huge coordinates into Flame movement/rendering.
       // 2× world bounds: path interpolation can briefly overshoot.
       // Units: world-space pixels.
       final maxCoord = (gridSize * gridSquareSize * 2).toDouble();
-      final points = pointsJson
-          .map((p) => Vector2(
-                (p['x'] as num).toDouble().clamp(-maxCoord, maxCoord),
-                (p['y'] as num).toDouble().clamp(-maxCoord, maxCoord),
-              ))
-          .toList();
+      final points = <Vector2>[];
+      for (final p in pointsJson) {
+        if (p case {'x': num x, 'y': num y}) {
+          points.add(Vector2(
+            x.toDouble().clamp(-maxCoord, maxCoord),
+            y.toDouble().clamp(-maxCoord, maxCoord),
+          ));
+        } else {
+          return null;
+        }
+      }
 
       final directions = directionsJson
           .map((d) => Direction.values.asNameMap()[d] ?? Direction.none)
@@ -167,10 +179,8 @@ final class PositionTopic
         largeGridPoints: points,
         directions: directions,
       );
-    } catch (e) {
-      _log.warning('Failed to parse player path', e);
-      return null;
     }
+    return null;
   }
 }
 
@@ -399,7 +409,7 @@ final class TerminalActivityTopic
   @override
   Map<String, dynamic> toJson(TerminalActivity a) => {
         'type': 'terminal-activity',
-        'action': a.action,
+        'action': a.action.wireName,
         'playerId': a.playerId,
         'playerName': a.playerName,
         'timestamp': a.at.toIso8601String(),

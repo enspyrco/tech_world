@@ -1,14 +1,19 @@
 import 'dart:convert';
 
+import 'dart:math' show Point;
+
 import 'package:flame/components.dart' show Vector2;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/avatar/avatar_spec.dart';
+import 'package:tech_world/flame/maps/game_map.dart';
+import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/data_channel.dart';
 import 'package:tech_world/livekit/game_topics.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
+import 'package:tech_world/timer/room_timer_message.dart';
 
 Map<String, dynamic> _wire(List<int> bytes) =>
     jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
@@ -87,7 +92,7 @@ void main() {
 
     test('terminal activity omits absent optional fields', () {
       final base = (
-        action: 'open',
+        action: TerminalAction.open,
         playerId: 'p1',
         playerName: 'Pat',
         at: at,
@@ -106,7 +111,7 @@ void main() {
         'timestamp': at.toIso8601String(),
       });
       final full = (
-        action: 'open',
+        action: TerminalAction.open,
         playerId: 'p1',
         playerName: 'Pat',
         at: at,
@@ -129,6 +134,52 @@ void main() {
         'terminalX': 5,
         'terminalY': 6,
       });
+    });
+
+    test('map info', () {
+      const map = GameMap(
+        id: 'm1',
+        name: 'M',
+        barriers: [Point(1, 2)],
+        terminals: [Point(3, 4)],
+        spawnPoint: Point(5, 6),
+      );
+      expect(_wire(mapInfoTopic.encode(map)), {
+        'v': 1,
+        'mapId': 'm1',
+        'barriers': [
+          [1, 2]
+        ],
+        'terminals': [
+          [3, 4]
+        ],
+        'spawnPoint': [5, 6],
+        'gridSize': gridSize,
+        'cellSize': gridSquareSize,
+        'dreamfinderTerritory':
+            map.resolveDreamfinderTerritory(gridSize).toWire(),
+      });
+      expect(mapInfoTopic.reliable, isTrue);
+    });
+
+    test('room timer start and cancel', () {
+      expect(
+        _wire(roomTimerTopic.encode(RoomTimerMessage.start(
+            remainingSeconds: 60, generation: 2, startedBy: 'p1'))),
+        {
+          'v': 1,
+          'action': 'start',
+          'remainingSeconds': 60,
+          'generation': 2,
+          'startedBy': 'p1',
+        },
+      );
+      expect(
+        _wire(roomTimerTopic.encode(
+            RoomTimerMessage.cancel(generation: 3, startedBy: 'p1'))),
+        {'v': 1, 'action': 'cancel', 'generation': 3, 'startedBy': 'p1'},
+      );
+      expect(roomTimerTopic.reliable, isTrue);
     });
 
     test('agent hello is NOT version-stamped', () {
@@ -202,6 +253,38 @@ void main() {
       expect(path.largeGridPoints.single.x, lessThan(1e12));
       expect(path.largeGridPoints.single.y, greaterThan(-1e12));
     });
+
+    // The position decoder is total: these used to throw inside a cast and
+    // be caught; now they are non-matches, so no input can throw.
+    for (final (label, payload) in [
+      ('non-string playerId', {'playerId': 7, 'points': [], 'directions': []}),
+      ('points not a list', {'playerId': 'p1', 'points': 'x', 'directions': []}),
+      (
+        'one point not a map',
+        {
+          'playerId': 'p1',
+          'points': [
+            {'x': 1, 'y': 2},
+            'oops'
+          ],
+          'directions': []
+        }
+      ),
+      (
+        'one point with a string coordinate',
+        {
+          'playerId': 'p1',
+          'points': [
+            {'x': '1', 'y': 2}
+          ],
+          'directions': []
+        }
+      ),
+    ]) {
+      test('position drops $label without throwing', () {
+        expect(positionTopic.decode(_msg('position', payload)), isNull);
+      });
+    }
 
     test('map switch needs both fields', () {
       expect(mapSwitchTopic.decode(_msg('map-switch', {'mapId': 'm1'})), isNull);
