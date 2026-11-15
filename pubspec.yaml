@@ -51,7 +51,7 @@ dependencies:
   cloud_firestore: ^6.0.2
   firebase_crashlytics: ^5.0.6
   firebase_auth: ^6.1.0
-  sign_in_with_apple: ^7.0.1
+  sign_in_with_apple: ^8.0.0
   crypto: ^3.0.6
   google_sign_in: ^7.2.0
   # Web-only: direct dependency so we can import web_only.dart's renderButton()
