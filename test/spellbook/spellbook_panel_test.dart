@@ -1,5 +1,5 @@
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/prompt/spell_school.dart';
 import 'package:tech_world/spellbook/spellbook_panel.dart';

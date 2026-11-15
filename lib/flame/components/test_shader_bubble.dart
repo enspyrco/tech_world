@@ -2,7 +2,7 @@ import 'dart:math' show sin;
 import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A test component to verify shader effects work without needing LiveKit.
 ///

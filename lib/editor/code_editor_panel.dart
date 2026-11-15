@@ -1,5 +1,5 @@
 import 'package:code_forge_web/code_forge_web.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:re_highlight/languages/dart.dart';
 import 'package:tech_world/editor/challenge.dart';
 import 'package:tech_world/editor/lsp_config.dart';

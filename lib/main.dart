@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/foundation.dart' show ValueListenable, debugPrint, kDebugMode, kIsWeb;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart'
     show LocalTrackPublication, lkPlatformIsDesktop;

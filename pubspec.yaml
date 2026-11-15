@@ -72,7 +72,7 @@ dependencies:
   meta: ^1.16.0
   path_provider: ^2.1.5
   url_launcher: ^6.3.2
-
+  material_ui: ^1.11.0
 
 dev_dependencies:
   flutter_test:

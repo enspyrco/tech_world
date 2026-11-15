@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:meta/meta.dart' show useResult;
-import 'package:flutter/material.dart' show Color, Colors, FontWeight, TextStyle;
+import 'package:material_ui/material_ui.dart' show Color, Colors, FontWeight, TextStyle;
 import 'package:logging/logging.dart';
 
 import 'package:flame/components.dart';

@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:tech_world/widgets/wire_states.dart';
 
 /// Animated circuit-board visualization showing room-join progress.

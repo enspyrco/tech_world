@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:logging/logging.dart';
 import 'package:tech_world/auth/profile_picture_service.dart';

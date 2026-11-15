@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:tech_world/prompt/spell_school.dart';
 import 'package:tech_world/spellbook/predefined_words.dart';
 import 'package:tech_world/spellbook/spellbook_service.dart';

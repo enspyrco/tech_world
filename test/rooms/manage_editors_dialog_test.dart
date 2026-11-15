@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/auth/user_profile_service.dart';
 import 'package:tech_world/flame/maps/game_map.dart';

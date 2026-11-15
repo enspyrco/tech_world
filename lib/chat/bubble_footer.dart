@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:tech_world/chat/chat_time.dart';
 
 /// The metadata row under every chat bubble: timestamp + Reply affordance.
