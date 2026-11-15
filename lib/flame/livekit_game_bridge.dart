@@ -14,7 +14,6 @@ import 'package:tech_world/flame/bubble_manager.dart';
 import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/infra/infra_health_service.dart';
-import 'package:tech_world/livekit/data_topic.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -229,11 +228,11 @@ class LiveKitGameBridge {
 
     // ── Data channels ────────────────────────────────────────────────────
     _speechTranscriptSub = _liveKitService.dataReceived
-        .where((msg) => msg.topic == DataTopic.speechTranscript.wireName)
+        .where((msg) => msg.topic == LiveKitTopic.speechTranscript.wire)
         .listen(_onSpeechTranscript);
 
     _doorUnlockSub = _liveKitService.dataReceived
-        .where((msg) => msg.topic == DataTopic.doorUnlock.wireName)
+        .where((msg) => msg.topic == LiveKitTopic.doorUnlock.wire)
         .listen(_onDoorUnlock);
 
     // ── @mention ack ─────────────────────────────────────────────────────

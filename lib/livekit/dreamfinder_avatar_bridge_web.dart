@@ -23,7 +23,7 @@ import 'package:web/web.dart' as web;
 
 import '../bots/bot_config.dart';
 import '../native/canvas_capture_web.dart';
-import 'data_topic.dart';
+import 'livekit_topic.dart';
 import 'livekit_service.dart';
 
 final _log = Logger('DreamfinderAvatarBridge');
@@ -227,7 +227,7 @@ class DreamfinderAvatarBridge {
     // Audio: raw PCM16 bytes → base64-encode → __onAudioChunk(base64)
     _audioSubscription = _liveKitService.dataReceived
         .where((msg) =>
-            msg.topic == DataTopic.dreamfinderAudio.wireName &&
+            msg.topic == LiveKitTopic.dreamfinderAudio.wire &&
             msg.senderId != null &&
             isDreamfinderIdentity(msg.senderId!))
         .listen(_forwardAudio);
@@ -235,7 +235,7 @@ class DreamfinderAvatarBridge {
     // Mood: JSON → __setMood(mood) or __interruptPlayback()
     _moodSubscription = _liveKitService.dataReceived
         .where((msg) =>
-            msg.topic == DataTopic.dreamfinderMood.wireName &&
+            msg.topic == LiveKitTopic.dreamfinderMood.wire &&
             msg.senderId != null &&
             isDreamfinderIdentity(msg.senderId!))
         .listen(_forwardMood);
