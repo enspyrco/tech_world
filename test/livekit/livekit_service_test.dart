@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tech_world/livekit/data_channel.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
 void main() {

@@ -12,6 +12,7 @@ import 'package:tech_world/editor/challenge.dart' show CodeChallengeId;
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
+import 'package:tech_world/livekit/data_channel.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/services/dreamfinder_client.dart';

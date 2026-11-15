@@ -8,6 +8,7 @@ import 'package:tech_world/flame/maps/barrier_occlusion.dart'
     show buildWallTilesForRegion;
 import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/tiles/tile_ref.dart';
+import 'package:tech_world/livekit/data_channel.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/map_editor/crdt/cell_version_map.dart';

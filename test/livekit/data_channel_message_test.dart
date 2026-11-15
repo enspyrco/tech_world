@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/data_channel.dart';
 
 void main() {
   group('DataChannelMessage', () {

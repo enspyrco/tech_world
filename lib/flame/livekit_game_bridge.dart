@@ -7,13 +7,14 @@ import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart' hide ChatMessage;
 import 'package:logging/logging.dart';
 import 'package:tech_world/avatar/avatar_spec.dart';
-import 'package:tech_world/chat/chat_message.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/bubble_manager.dart';
 import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/infra/infra_health_service.dart';
+import 'package:tech_world/livekit/data_channel.dart';
+import 'package:tech_world/livekit/game_topics.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 import 'package:tech_world/utils/locator.dart';
@@ -118,8 +119,8 @@ class LiveKitGameBridge {
   StreamSubscription<String>? _mapSwitchSub;
   StreamSubscription<DataChannelMessage>? _speechTranscriptSub;
   StreamSubscription<DataChannelMessage>? _doorUnlockSub;
-  StreamSubscription<DataChannelMessage>? _mentionAckSub;
-  StreamSubscription<DataChannelMessage>? _emoteSub;
+  StreamSubscription<MentionAck>? _mentionAckSub;
+  StreamSubscription<RemoteEmote>? _emoteSub;
 
   InfraHealthService? _infraHealthService;
 
@@ -242,34 +243,16 @@ class LiveKitGameBridge {
     // loop their publishData back. Only the ack is a pure wire signal handled
     // here. The acker UID is the TRANSPORT sender — a peer can only
     // ack its own mention, never silence someone else's pulse.
-    _mentionAckSub = _liveKitService.dataReceived
-        .where((msg) => msg.topic == LiveKitTopic.mentionAck.wire)
-        .listen((msg) {
-      final json = msg.json;
-      if (json == null) return;
-      final messageId = ChatMessage.asStringOrNull(json['messageId']);
-      if (messageId == null) return;
-      _onMentionAck(msg.senderId ?? 'unknown', messageId);
-    });
+    _mentionAckSub = _liveKitService
+        .receive(mentionAckTopic)
+        .listen((ack) => _onMentionAck(ack.ackerId, ack.messageId));
 
     // ── Emotes ───────────────────────────────────────────────────────────
     // The emoting player is the TRANSPORT sender, never the payload — a peer
-    // can only wave its own avatar, never puppet someone else's. An unknown
-    // `kind` is dropped rather than defaulted: a future emote arriving from a
-    // newer client must render as nothing, not as the wrong animation.
-    _emoteSub = _liveKitService.dataReceived
-        .where((msg) => msg.topic == LiveKitTopic.emote.wire)
-        .listen((msg) {
-      final json = msg.json;
-      if (json == null) return;
-      final kind = json['kind'];
-      if (kind is! String) return;
-      final emote = EmoteId.parse(kind);
-      if (emote == null) return;
-      final senderId = msg.senderId;
-      if (senderId == null) return;
-      _onRemoteEmote(senderId, emote);
-    });
+    // can only wave its own avatar, never puppet someone else's.
+    _emoteSub = _liveKitService
+        .receive(emoteTopic)
+        .listen((e) => _onRemoteEmote(e.senderId, e.emote));
 
     // ── Infrastructure health ────────────────────────────────────────────
     _infraHealthService = InfraHealthService(

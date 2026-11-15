@@ -9,6 +9,7 @@ import 'package:tech_world/chat/conversation.dart';
 import 'package:tech_world/chat/dm_thread_view.dart';
 import 'package:tech_world/chat/reply_widgets.dart';
 import 'package:tech_world/flame/components/bot_status.dart';
+import 'package:tech_world/livekit/data_channel.dart';
 import 'package:tech_world/livekit/livekit_service.dart';
 
 /// Minimal LiveKitService fake for driving [DmThreadView] under test.

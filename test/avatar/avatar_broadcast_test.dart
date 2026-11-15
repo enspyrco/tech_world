@@ -4,8 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/avatar/parts/avatar_part.dart';
 import 'package:tech_world/avatar/avatar.dart';
 import 'package:tech_world/avatar/predefined_avatars.dart';
+import 'package:tech_world/livekit/data_channel.dart';
+import 'package:tech_world/livekit/game_topics.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
-import 'package:tech_world/livekit/livekit_service.dart';
 
 void main() {
   group('Avatar data channel message format', () {

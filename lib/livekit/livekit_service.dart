@@ -11,19 +11,16 @@ import 'package:tech_world/bots/bot_config.dart';
 import 'package:tech_world/events/dispatch.dart';
 import 'package:tech_world/events/types.dart';
 import 'package:tech_world/flame/maps/game_map.dart';
-import 'package:tech_world/flame/shared/constants.dart';
 import 'package:tech_world/flame/shared/direction.dart';
 import 'package:tech_world/flame/shared/emote.dart';
 import 'package:tech_world/flame/shared/player_path.dart';
 import 'package:tech_world/livekit/agent_hello.dart';
+import 'package:tech_world/livekit/data_channel.dart';
+import 'package:tech_world/livekit/game_topics.dart';
 import 'package:tech_world/livekit/livekit_topic.dart';
 import 'package:tech_world/timer/room_timer_message.dart';
 import 'package:tech_world/livekit/platform_info.dart';
 import 'package:tech_world/livekit/set_track_volume.dart';
-
-/// Protocol version stamped on every outgoing LiveKit data-channel message.
-/// Bump when a wire-format change requires receivers to upgrade.
-const kProtocolVersion = 1;
 
 /// Whether this client requests adaptive streaming from the SFU.
 ///
@@ -219,134 +216,63 @@ class LiveKitService {
   /// trigger cleanup. This does NOT fire on intentional [disconnect] calls.
   Stream<String?> get connectionLost => _connectionLostController.stream;
 
-  /// Stream of player position updates received from other participants.
-  ///
-  /// Filters dataReceived for 'position' topic and parses into PlayerPath.
-  Stream<PlayerPath> get positionReceived => dataReceived
-      .where((msg) => msg.topic == LiveKitTopic.position.wire)
-      .map((msg) {
-        final json = msg.json;
-        if (json == null) return null;
-        return _parsePlayerPath(json);
-      })
-      .where((path) => path != null)
-      .cast<PlayerPath>();
+  /// Messages on [topic], decoded. See [decodeTopic].
+  Stream<T> receive<T>(TopicDecoder<T> topic) => decodeTopic(
+        dataReceived,
+        topic,
+        onError: (e, st) => _log.warning(
+            'Dropped undecodable ${topic.wireName} message', e, st),
+      );
 
-  /// Stream of position heartbeat messages from other participants.
+  /// Publish [value] on [topic], optionally only [to] the given identities.
+  Future<void> send<T>(TopicEncoder<T> topic, T value, {List<String>? to}) =>
+      publishData(
+        topic.encode(value),
+        reliable: topic.reliable,
+        destinationIdentities: to,
+        topic: topic.wireName,
+      );
+
+  /// Player position updates received from other participants.
+  Stream<PlayerPath> get positionReceived => receive(positionTopic);
+
+  /// Position heartbeats from other participants.
   ///
   /// Heartbeats carry a single grid position with reliable delivery,
   /// correcting stale positions caused by dropped unreliable path updates.
-  Stream<PositionHeartbeat> get positionHeartbeatReceived => dataReceived
-      .where((msg) => msg.topic == LiveKitTopic.positionHeartbeat.wire)
-      .map((msg) {
-        final json = msg.json;
-        if (json == null) return null;
-        return PositionHeartbeat.tryParse(json);
-      })
-      .where((hb) => hb != null)
-      .cast<PositionHeartbeat>();
+  Stream<PositionHeartbeat> get positionHeartbeatReceived =>
+      receive(positionHeartbeatTopic);
 
-  /// Stream that fires when a bot requests map info.
+  /// Fires when a bot requests map info.
   ///
   /// Bots publish a `map-info-request` message when they connect and are
   /// ready to receive data. The client responds by sending the current map.
-  Stream<void> get mapInfoRequested =>
-      dataReceived.where((msg) => msg.topic == LiveKitTopic.mapInfoRequest.wire);
+  Stream<void> get mapInfoRequested => receive(mapInfoRequestTopic);
 
-  /// Stream of map-switch notifications from other human players.
+  /// Map-switch notifications from other human players.
   ///
   /// Fires when another player switches maps, carrying the map ID so this
   /// client can load the same map. Own messages (matching [userId]) and
   /// messages from bots are excluded.
-  Stream<String> get mapSwitchReceived => dataReceived
-      .where((msg) => msg.topic == LiveKitTopic.mapSwitch.wire)
-      .map((msg) {
-        if (msg.json case {'senderId': String senderId, 'mapId': String mapId}
-            when senderId != userId) {
-          return mapId;
-        }
-        return null;
-      })
-      .where((mapId) => mapId != null)
-      .cast<String>();
+  Stream<String> get mapSwitchReceived => receive(mapSwitchTopic)
+      .where((s) => s.senderId != userId)
+      .map((s) => s.mapId);
 
-  /// Stream of avatar updates received from other participants.
-  ///
-  /// Filters [dataReceived] for the `avatar` topic and parses into
-  /// [AvatarUpdate]. Own messages (matching [userId]) are excluded.
-  Stream<AvatarUpdate> get avatarReceived => dataReceived
-      .where((msg) => msg.topic == LiveKitTopic.avatar.wire)
-      .map((msg) {
-        final json = msg.json;
-        if (json == null) return null;
-        final update = AvatarUpdate.tryParse(json);
-        // Ignore our own avatar broadcasts
-        if (update != null && update.playerId == userId) return null;
-        return update;
-      })
-      .where((update) => update != null)
-      .cast<AvatarUpdate>();
+  /// Avatar updates received from other participants. Own messages (matching
+  /// [userId]) are excluded.
+  Stream<AvatarUpdate> get avatarReceived =>
+      receive(avatarTopic).where((u) => u.playerId != userId);
 
   /// Broadcast the local player's avatar to the room.
-  ///
-  /// Uses reliable delivery so late-joiners' catch-up works correctly.
-  Future<void> publishAvatar(AvatarSpec spec) async {
-    await publishJson(
-      {'playerId': userId, ...spec.toWire()},
-      topic: LiveKitTopic.avatar.wire,
-    );
-  }
+  Future<void> publishAvatar(AvatarSpec spec) =>
+      send(avatarTopic, AvatarUpdate(playerId: userId, spec: spec));
 
   /// Broadcast a one-shot emote from the local player.
   ///
   /// No `playerId` in the payload: receivers attribute the emote to the
   /// transport-verified `senderId`, so a peer can only ever wave its own
-  /// avatar. Unreliable — an emote is a momentary flourish, and dropping one is
-  /// better than replaying it after the moment has passed.
-  Future<void> publishEmote(EmoteId emote) async {
-    await publishJson(
-      {'kind': emote.wireName},
-      topic: LiveKitTopic.emote.wire,
-      reliable: false,
-    );
-  }
-
-  PlayerPath? _parsePlayerPath(Map<String, dynamic> json) {
-    try {
-      final playerId = json['playerId'] as String?;
-      final pointsJson = json['points'] as List<dynamic>?;
-      final directionsJson = json['directions'] as List<dynamic>?;
-
-      if (playerId == null || pointsJson == null || directionsJson == null) {
-        return null;
-      }
-
-      // Clamp at parse boundary — a malformed or hostile peer could
-      // otherwise push huge coordinates into Flame movement/rendering.
-      // 2× world bounds: path interpolation can briefly overshoot.
-      // Units: world-space pixels.
-      final maxCoord = (gridSize * gridSquareSize * 2).toDouble();
-      final points = pointsJson
-          .map((p) => Vector2(
-                (p['x'] as num).toDouble().clamp(-maxCoord, maxCoord),
-                (p['y'] as num).toDouble().clamp(-maxCoord, maxCoord),
-              ))
-          .toList();
-
-      final directions = directionsJson
-          .map((d) => Direction.values.asNameMap()[d] ?? Direction.none)
-          .toList();
-
-      return PlayerPath(
-        playerId: playerId,
-        largeGridPoints: points,
-        directions: directions,
-      );
-    } catch (e) {
-      _log.warning('Failed to parse player path', e);
-      return null;
-    }
-  }
+  /// avatar.
+  Future<void> publishEmote(EmoteId emote) => send(emoteTopic, emote);
 
   /// Current room instance
   Room? get room => _room;
@@ -790,12 +716,7 @@ class LiveKitService {
         platform: agentHelloPlatform(),
         userAgent: agentHelloUserAgent(),
       );
-      final bytes = encodeAgentHelloPayload(payload);
-      await publishData(
-        bytes,
-        reliable: true,
-        topic: LiveKitTopic.agentHello.wire,
-      );
+      await send(agentHelloTopic, payload);
       _log.fine('Published agent_hello');
     } catch (e, st) {
       // Diagnostic — don't propagate. Log and move on.
@@ -852,98 +773,50 @@ class LiveKitService {
   ///
   /// Sent when the bot joins the room and whenever the map is switched, so the
   /// bot knows about barriers, terminal locations, and the spawn point.
-  Future<void> publishMapInfo(GameMap map) async {
-    final message = {
-      'mapId': map.id,
-      'barriers': map.barriers.map((p) => [p.x, p.y]).toList(),
-      'terminals': map.terminals.map((p) => [p.x, p.y]).toList(),
-      'spawnPoint': [map.spawnPoint.x, map.spawnPoint.y],
-      'gridSize': gridSize,
-      'cellSize': gridSquareSize,
-      // Dreamfinder's square, resolved to a concrete cell rect [minX,minY,maxX,
-      // maxY]. Resolved once here so the bot's wander bound + audio gate read
-      // the same box the client draws.
-      'dreamfinderTerritory':
-          map.resolveDreamfinderTerritory(gridSize).toWire(),
-    };
-    await publishJson(
-      message,
-      topic: LiveKitTopic.mapInfo.wire,
-      destinationIdentities: allBotIdentities.toList(),
-    );
-  }
+  Future<void> publishMapInfo(GameMap map) =>
+      send(mapInfoTopic, map, to: allBotIdentities.toList());
 
   /// Broadcast a map switch to other human players in the room.
   ///
-  /// Includes [userId] so receivers can ignore their own echoes. Uses reliable
-  /// delivery because a missed map-switch leaves players on different worlds.
-  Future<void> publishMapSwitch(String mapId) async {
-    final message = {
-      'senderId': userId,
-      'mapId': mapId,
-    };
-    await publishJson(message, topic: LiveKitTopic.mapSwitch.wire);
-  }
+  /// Includes [userId] so receivers can ignore their own echoes.
+  Future<void> publishMapSwitch(String mapId) =>
+      send(mapSwitchTopic, (senderId: userId, mapId: mapId));
 
   /// Publish the local player's position to other participants.
-  ///
-  /// Uses unreliable delivery for lower latency since positions update frequently.
   Future<void> publishPosition({
     required List<Vector2> points,
     required List<Direction> directions,
-  }) async {
-    final message = {
-      'playerId': userId,
-      'points': points.map((p) => {'x': p.x, 'y': p.y}).toList(),
-      'directions': directions.map((d) => d.name).toList(),
-    };
-
-    await publishJson(
-      message,
-      topic: LiveKitTopic.position.wire,
-      reliable: false, // Positions can use unreliable for lower latency
-    );
-  }
+  }) =>
+      send(
+        positionTopic,
+        PlayerPath(
+          playerId: userId,
+          largeGridPoints: points,
+          directions: directions,
+        ),
+      );
 
   /// Tell Dreamfinder whether the local player is within its range.
   ///
-  /// Published on enter/exit transitions only (not every frame). Reliable,
-  /// because a missed enter would leave DF unable to hear a nearby player and a
-  /// missed exit would leave DF listening to someone who walked away. The bot
-  /// gates whose speech it responds to on this signal (near OR named).
-  Future<void> publishDfProximity({required bool near}) async {
-    await publishJson(
-      {'playerId': userId, 'near': near},
-      topic: LiveKitTopic.dfProximity.wire,
-      reliable: true,
-    );
-  }
+  /// Published on enter/exit transitions only (not every frame). The bot gates
+  /// whose speech it responds to on this signal (near OR named).
+  Future<void> publishDfProximity({required bool near}) =>
+      send(dfProximityTopic, (playerId: userId, near: near));
 
   /// Broadcast a shared-timer start or cancel to every participant.
   ///
-  /// Reliable: a missed start or cancel desyncs the timer across clients. The
-  /// sender's own identity is stamped as `startedBy` so receivers (and the
+  /// The sender's own identity is stamped as `startedBy` so receivers (and the
   /// sender, via its own echo) know who triggered it.
-  Future<void> publishRoomTimer(RoomTimerMessage message) async {
-    await publishJson(
-      message.toJson(),
-      topic: LiveKitTopic.roomTimer.wire,
-      reliable: true,
-    );
-  }
+  Future<void> publishRoomTimer(RoomTimerMessage message) =>
+      send(roomTimerTopic, message);
 
-  /// Stream of shared-timer messages from the room.
+  /// Shared-timer messages from the room.
   ///
-  /// Filters [dataReceived] for the `room-timer` topic and parses into a typed
-  /// [RoomTimerMessage]. Unlike position/avatar streams this does NOT drop the
-  /// local sender's own messages: the starter needs to see its own countdown,
-  /// and a single authoritative path (everyone reacts to the broadcast) keeps
-  /// every client — including the one that pressed the button — in lock-step.
-  Stream<RoomTimerMessage> get roomTimerReceived => dataReceived
-      .where((msg) => msg.topic == LiveKitTopic.roomTimer.wire)
-      .map((msg) => RoomTimerMessage.tryParse(msg.json))
-      .where((m) => m != null)
-      .cast<RoomTimerMessage>();
+  /// Unlike position/avatar streams this does NOT drop the local sender's own
+  /// messages: the starter needs to see its own countdown, and a single
+  /// authoritative path (everyone reacts to the broadcast) keeps every client —
+  /// including the one that pressed the button — in lock-step.
+  Stream<RoomTimerMessage> get roomTimerReceived => receive(roomTimerTopic);
 
   Timer? _heartbeatTimer;
 
@@ -965,15 +838,9 @@ class LiveKitService {
         // Skip if position hasn't changed since last heartbeat.
         if (_lastHeartbeatPosition == pos) return;
         _lastHeartbeatPosition = pos;
-        publishJson(
-          {
-            'playerId': userId,
-            'x': pos.x,
-            'y': pos.y,
-            'type': 'heartbeat',
-          },
-          topic: LiveKitTopic.positionHeartbeat.wire,
-          reliable: true,
+        send(
+          positionHeartbeatTopic,
+          PositionHeartbeat(playerId: userId, x: pos.x, y: pos.y),
         );
       },
     );
@@ -998,28 +865,22 @@ class LiveKitService {
     String? challengeDescription,
     int? terminalX,
     int? terminalY,
-  }) async {
-    final message = <String, dynamic>{
-      'type': 'terminal-activity',
-      'action': action,
-      'playerId': userId,
-      'playerName': displayName,
-      'timestamp': DateTime.now().toIso8601String(),
-    };
-    if (challengeId != null) message['challengeId'] = challengeId;
-    if (challengeTitle != null) message['challengeTitle'] = challengeTitle;
-    if (challengeDescription != null) {
-      message['challengeDescription'] = challengeDescription;
-    }
-    if (terminalX != null) message['terminalX'] = terminalX;
-    if (terminalY != null) message['terminalY'] = terminalY;
-
-    await publishJson(
-      message,
-      topic: LiveKitTopic.terminalActivity.wire,
-      destinationIdentities: const ['bot-claude'],
-    );
-  }
+  }) =>
+      send(
+        terminalActivityTopic,
+        (
+          action: action,
+          playerId: userId,
+          playerName: displayName,
+          at: DateTime.now(),
+          challengeId: challengeId,
+          challengeTitle: challengeTitle,
+          challengeDescription: challengeDescription,
+          terminalX: terminalX,
+          terminalY: terminalY,
+        ),
+        to: const ['bot-claude'],
+      );
 
   /// Send a ping message to the bot and wait for pong response.
   ///
@@ -1277,114 +1138,4 @@ class TokenFailure extends TokenResult {
 
   @override
   final ConnectionResult connectionResult;
-}
-
-/// A message received via LiveKit data channel.
-class DataChannelMessage {
-  DataChannelMessage({
-    required this.senderId,
-    required this.topic,
-    required this.data,
-  });
-
-  /// Identity of the sender, or null if sent from server API.
-  final String? senderId;
-
-  /// Optional topic categorizing the message.
-  final String? topic;
-
-  /// Raw bytes of the message payload.
-  final List<int> data;
-
-  /// Decode data as UTF-8 JSON.
-  Map<String, dynamic>? get json {
-    try {
-      return jsonDecode(utf8.decode(data)) as Map<String, dynamic>;
-    } catch (e) {
-      final preview = utf8.decode(data, allowMalformed: true);
-      debugPrint(
-        'DataChannelMessage: JSON parse failed '
-        '(topic: $topic, error: $e, '
-        'data: ${preview.length > 200 ? preview.substring(0, 200) : preview})',
-      );
-      return null;
-    }
-  }
-
-  /// Decode data as UTF-8 string.
-  String get text => utf8.decode(data);
-
-  @override
-  String toString() =>
-      'DataChannelMessage(senderId: $senderId, topic: $topic, data: ${data.length} bytes)';
-}
-
-/// A parsed avatar update from the `avatar` data channel topic.
-class AvatarUpdate {
-  const AvatarUpdate({required this.playerId, required this.spec});
-
-  final String playerId;
-
-  /// What to render. Always valid — see [AvatarSpec.parse].
-  final AvatarSpec spec;
-
-  /// Try to parse an [AvatarUpdate]. Returns null **only** when the message
-  /// can't be attributed to a player.
-  ///
-  /// The split matters: [AvatarSpec.parse] is total, because a malformed
-  /// appearance should render as the default rather than kill the stream. But
-  /// an update with no usable `playerId` isn't a bad avatar — it's a message
-  /// about nobody, and applying it would mean picking a victim. So attribution
-  /// failure drops the whole message, and everything else falls back to a
-  /// bundled asset.
-  ///
-  /// This replaced a `spriteAsset` whitelist. The whitelist was doing real
-  /// work — it stopped path traversal and cache-miss crashes reaching the
-  /// renderer — and closed enums do the same job structurally: a peer can only
-  /// name ids that exist in our own enums, and an unknown one degrades or
-  /// falls back. No filename ever crosses the wire now.
-  static AvatarUpdate? tryParse(Map<String, dynamic>? json) {
-    if (json case {'playerId': String playerId} when playerId.isNotEmpty) {
-      return AvatarUpdate(playerId: playerId, spec: AvatarSpec.parse(json));
-    }
-    return null;
-  }
-}
-
-/// A reliable position heartbeat from another participant.
-///
-/// Carries a single grid position with reliable delivery to correct stale
-/// positions caused by dropped unreliable path updates.
-class PositionHeartbeat {
-  const PositionHeartbeat({
-    required this.playerId,
-    required this.x,
-    required this.y,
-  });
-
-  final String playerId;
-  final int x;
-  final int y;
-
-  /// Try to parse a [PositionHeartbeat] from a JSON map. Returns null if
-  /// required fields are missing or have wrong types.
-  ///
-  /// Uses `is` checks rather than `as` casts so a malformed packet from
-  /// any participant returns null rather than throwing — a thrown error
-  /// inside the stream's `.map` would propagate and tear down the
-  /// heartbeat-reception stream for the rest of the session.
-  static PositionHeartbeat? tryParse(Map<String, dynamic>? json) {
-    if (json == null) return null;
-    final playerId = json['playerId'];
-    final x = json['x'];
-    final y = json['y'];
-    if (playerId is! String || x is! int || y is! int) return null;
-    // 2× grid bounds: negative coords valid for off-origin maps. Units: grid cells.
-    const maxCoord = gridSize * 2;
-    return PositionHeartbeat(
-      playerId: playerId,
-      x: x.clamp(-maxCoord, maxCoord),
-      y: y.clamp(-maxCoord, maxCoord),
-    );
-  }
 }
