@@ -243,20 +243,16 @@ class _ImportDialogState extends State<ImportDialog>
   }
 
   Future<void> _pickTmxFile() async {
-    final result = await FilePicker.platform.pickFiles(
+    final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: ['tmx'],
-      withData: true,
     );
 
-    if (result == null || result.files.isEmpty) return;
-
-    final file = result.files.first;
-    if (file.bytes == null) return;
+    if (file == null) return;
 
     final String content;
     try {
-      content = utf8.decode(file.bytes!);
+      content = utf8.decode(await file.readAsBytes());
     } on FormatException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -287,16 +283,14 @@ class _ImportDialogState extends State<ImportDialog>
   }
 
   Future<void> _pickMultipleFiles() async {
-    final result = await FilePicker.platform.pickFiles(
+    final files = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['tmx', 'tsx', 'png', 'jpg', 'jpeg'],
-      allowMultiple: true,
-      withData: true,
     );
 
-    if (result == null || result.files.isEmpty) return;
+    if (files.isEmpty) return;
 
-    final extracted = classifyFiles(result.files);
+    final extracted = await classifyFiles(files);
 
     if (extracted.tmxXml == null) {
       if (!mounted) return;
@@ -315,8 +309,7 @@ class _ImportDialogState extends State<ImportDialog>
       _bundleTmxXml = extracted.tmxXml;
       _bundleTsxProviders = extracted.tsxProviders;
       _bundleImageBytes = extracted.imageBytes;
-      _bundleFileNames =
-          result.files.map((f) => f.name).join(', ');
+      _bundleFileNames = files.map((f) => f.name).join(', ');
       // Show TMX XML in the text field for visibility.
       _tmxController.text = extracted.tmxXml!;
       _pickedFileName = null; // Clear single-file pick.
@@ -324,7 +317,7 @@ class _ImportDialogState extends State<ImportDialog>
 
     // Auto-populate map name from TMX filename if empty.
     if (_nameController.text.trim().isEmpty) {
-      final tmxFile = result.files.firstWhere(
+      final tmxFile = files.firstWhere(
         (f) => f.name.toLowerCase().endsWith('.tmx'),
       );
       final baseName = tmxFile.name.replaceAll(
@@ -449,26 +442,24 @@ class ClassifiedFiles {
 /// Returns a [ClassifiedFiles] with `tmxXml` set to `null` if no `.tmx` file
 /// is present — callers should check and show an appropriate error.
 @visibleForTesting
-ClassifiedFiles classifyFiles(List<PlatformFile> files) {
+Future<ClassifiedFiles> classifyFiles(List<PlatformFile> files) async {
   String? tmxXml;
   final tsxProviders = <InMemoryTsxProvider>[];
   final imageBytes = <String, Uint8List>{};
 
   for (final file in files) {
-    if (file.bytes == null) continue;
-
     final name = file.name;
     final lowerName = name.toLowerCase();
+    final bytes = await file.readAsBytes();
 
     if (lowerName.endsWith('.tmx')) {
-      tmxXml = utf8.decode(file.bytes!);
+      tmxXml = utf8.decode(bytes);
     } else if (lowerName.endsWith('.tsx')) {
-      final xml = utf8.decode(file.bytes!);
-      tsxProviders.add(InMemoryTsxProvider(name, xml));
+      tsxProviders.add(InMemoryTsxProvider(name, utf8.decode(bytes)));
     } else if (lowerName.endsWith('.png') ||
         lowerName.endsWith('.jpg') ||
         lowerName.endsWith('.jpeg')) {
-      imageBytes[name] = file.bytes!;
+      imageBytes[name] = bytes;
     }
   }
 

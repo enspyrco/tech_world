@@ -1,19 +1,48 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tech_world/map_editor/import_dialog.dart';
 import 'package:tech_world/map_editor/map_editor_state.dart';
 
+/// A [PlatformFile] fake holding its content in memory, for tests.
+///
+/// file_picker 13 made [PlatformFile] an abstract class with no public
+/// constructor — content is read via [readAsBytes]/[readAsByteStream], not a
+/// `bytes` field — so tests provide their own implementation, following the
+/// pattern in file_picker_platform_interface's own test suite.
+base class _MemoryPlatformFile extends PlatformFile {
+  _MemoryPlatformFile(this.name, Uint8List bytes) : _bytes = bytes;
+
+  @override
+  final String name;
+  final Uint8List _bytes;
+
+  @override
+  Uri get uri => Uri.file(name);
+
+  @override
+  XFile get xFile => XFile.fromData(_bytes, name: name);
+
+  @override
+  int? lengthSync() => _bytes.length;
+
+  @override
+  Future<int?> length() async => _bytes.length;
+
+  @override
+  Future<Uint8List> readAsBytes() async => _bytes;
+
+  @override
+  Stream<Uint8List> readAsByteStream() => Stream.value(_bytes);
+}
+
 /// Create a [PlatformFile] with the given name and byte content.
 PlatformFile platformFile(String name, List<int> bytes) {
-  return PlatformFile(
-    name: name,
-    size: bytes.length,
-    bytes: Uint8List.fromList(bytes),
-  );
+  return _MemoryPlatformFile(name, Uint8List.fromList(bytes));
 }
 
 /// Minimal valid TMX XML with a predefined tileset.
@@ -122,19 +151,19 @@ void main() {
   });
 
   group('classifyFiles', () {
-    test('extracts TMX from file list', () {
+    test('extracts TMX from file list', () async {
       final files = [
         platformFile('my_map.tmx', utf8.encode(_validTmx)),
       ];
 
-      final result = classifyFiles(files);
+      final result = await classifyFiles(files);
 
       expect(result.tmxXml, _validTmx);
       expect(result.tsxProviders, isEmpty);
       expect(result.imageBytes, isEmpty);
     });
 
-    test('extracts TSX providers from file list', () {
+    test('extracts TSX providers from file list', () async {
       const tsxXml = '<?xml version="1.0" encoding="UTF-8"?>'
           '<tileset version="1.10" name="Desert" tilewidth="32" tileheight="32" '
           'tilecount="64" columns="8">'
@@ -146,14 +175,14 @@ void main() {
         platformFile('desert.tsx', utf8.encode(tsxXml)),
       ];
 
-      final result = classifyFiles(files);
+      final result = await classifyFiles(files);
 
       expect(result.tmxXml, _validTmx);
       expect(result.tsxProviders, hasLength(1));
       expect(result.tsxProviders.first.filename, 'desert.tsx');
     });
 
-    test('extracts PNG image bytes from file list', () {
+    test('extracts PNG image bytes from file list', () async {
       final pngBytes = Uint8List.fromList(List.filled(32, 0xAB));
 
       final files = [
@@ -161,22 +190,22 @@ void main() {
         platformFile('desert.png', pngBytes),
       ];
 
-      final result = classifyFiles(files);
+      final result = await classifyFiles(files);
 
       expect(result.imageBytes['desert.png'], pngBytes);
     });
 
-    test('returns null tmxXml when no TMX found', () {
+    test('returns null tmxXml when no TMX found', () async {
       final files = [
         platformFile('tileset.png', [0xFF, 0x00]),
       ];
 
-      final result = classifyFiles(files);
+      final result = await classifyFiles(files);
 
       expect(result.tmxXml, isNull);
     });
 
-    test('handles multiple TSX and image files', () {
+    test('handles multiple TSX and image files', () async {
       final pngBytes = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47]);
 
       final files = [
@@ -194,7 +223,7 @@ void main() {
         platformFile('terrain.png', pngBytes),
       ];
 
-      final result = classifyFiles(files);
+      final result = await classifyFiles(files);
 
       expect(result.tmxXml, _validTmx);
       expect(result.tsxProviders, hasLength(1));
@@ -202,7 +231,7 @@ void main() {
       expect(result.imageBytes.containsKey('terrain.png'), isTrue);
     });
 
-    test('supports JPG and JPEG image files', () {
+    test('supports JPG and JPEG image files', () async {
       final jpgBytes = Uint8List.fromList([0xFF, 0xD8, 0xFF]);
 
       final files = [
@@ -211,22 +240,11 @@ void main() {
         platformFile('background.jpeg', jpgBytes),
       ];
 
-      final result = classifyFiles(files);
+      final result = await classifyFiles(files);
 
       expect(result.imageBytes, hasLength(2));
       expect(result.imageBytes.containsKey('photo.jpg'), isTrue);
       expect(result.imageBytes.containsKey('background.jpeg'), isTrue);
-    });
-
-    test('skips files with null bytes', () {
-      final files = [
-        PlatformFile(name: 'no_data.tmx', size: 100, bytes: null),
-        platformFile('real.tmx', utf8.encode(_validTmx)),
-      ];
-
-      final result = classifyFiles(files);
-
-      expect(result.tmxXml, _validTmx);
     });
   });
 }
