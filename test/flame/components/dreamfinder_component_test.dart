@@ -183,11 +183,15 @@ void main() {
       'starts wandering after initial cooldown',
       TestGameWithDreamfinder.new,
       (game) async {
+        // Seed 242 walks out, then picks home and walks back before t=10s, so
+        // an end-state check reads "never moved" — the observation must track
+        // the whole run.
         final df = DreamfinderComponent(
           position: Vector2(256, 160),
           id: 'bot-dreamfinder',
           displayName: 'Dreamfinder',
           pathComponent: pathComponent,
+          random: Random(242),
         );
 
         await game.world.add(pathComponent);
@@ -196,13 +200,16 @@ void main() {
 
         final initialPos = df.position.clone();
 
+        var everWandered = false;
         for (var i = 0; i < 100; i++) {
           game.update(0.1);
+          if (df.position != initialPos ||
+              df.current?.name.startsWith('walk') == true) {
+            everWandered = true;
+          }
         }
 
-        final moved = df.position != initialPos;
-        final walking = df.current?.name.startsWith('walk') == true;
-        expect(moved || walking, isTrue,
+        expect(everWandered, isTrue,
             reason: 'Dreamfinder should wander after cooldown');
       },
     );
