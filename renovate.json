@@ -40,6 +40,18 @@
       "matchManagers": ["gradle"],
       "matchDepNames": ["dev.flutter.flutter-plugin-loader"],
       "enabled": false
+    },
+    {
+      "description": "AGP and the Gradle wrapper only work in matching pairs: AGP 9 refuses Gradle below 9.6, and AGP 8 breaks on Gradle 9.6+ (it uses a Gradle internal API removed there). Both directions were confirmed with local debug APK builds on 2026-11-15 (#654, #655). Apart, either PR passes CI, because CI never builds Android, and then breaks the Android build on main. Grouped so they arrive and merge as one.",
+      "matchManagers": ["gradle", "gradle-wrapper"],
+      "matchDepNames": ["com.android.application", "gradle"],
+      "groupName": "Android Gradle Plugin + Gradle"
+    },
+    {
+      "description": "cross_file is a direct dev dependency only because the PlatformFile fake in test/map_editor/import_dialog_test.dart implements xFile (file_picker doesn't re-export XFile). Its real ceiling comes from image_picker_platform_interface and file_picker_platform_interface, both on cross_file ^0.3 as of 2026-11-15, so a newer cross_file can't resolve until they move (#665 failed version solving on every run). Held on the Dependency Dashboard so it stays visible without opening PRs that can't resolve.",
+      "matchManagers": ["pub"],
+      "matchPackageNames": ["cross_file"],
+      "dependencyDashboardApproval": true
     }
   ]
 }
