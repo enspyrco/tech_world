@@ -1200,8 +1200,8 @@ packages:
     dependency: "direct main"
     description:
       path: "packages/realm_core"
-      ref: "3ada1c9eb85216496b5b7fb46d0384f6bd16542f"
-      resolved-ref: "3ada1c9eb85216496b5b7fb46d0384f6bd16542f"
+      ref: "90492c5a909d78d4d7f7c6a869e3a11f178d2736"
+      resolved-ref: "90492c5a909d78d4d7f7c6a869e3a11f178d2736"
       url: "https://github.com/enspyrco/realm.git"
     source: git
     version: "0.0.1"
@@ -1209,8 +1209,8 @@ packages:
     dependency: "direct main"
     description:
       path: "packages/realm_firebase"
-      ref: "3ada1c9eb85216496b5b7fb46d0384f6bd16542f"
-      resolved-ref: "3ada1c9eb85216496b5b7fb46d0384f6bd16542f"
+      ref: "90492c5a909d78d4d7f7c6a869e3a11f178d2736"
+      resolved-ref: "90492c5a909d78d4d7f7c6a869e3a11f178d2736"
       url: "https://github.com/enspyrco/realm.git"
     source: git
     version: "0.0.1"
