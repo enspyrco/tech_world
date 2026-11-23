@@ -36,7 +36,7 @@ const String kAppVersion = '0.0.0+1';
 /// the published version line). One line to update on SDK bump — the
 /// alternative (reading lock at build time) is a lot of plumbing for a
 /// diagnostic field.
-const String kLiveKitSdkVersion = '2.7.0';
+const String kLiveKitSdkVersion = '2.11.0';
 
 final _log = Logger('LiveKitService');
 

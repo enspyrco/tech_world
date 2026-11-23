@@ -141,9 +141,8 @@ class LiveKitTransport {
   /// Emits the disconnect reason when the room connection is lost unexpectedly.
   ///
   /// Consumers (e.g. `main.dart`) can listen to show a reconnection banner or
-  /// trigger cleanup. Meant not to fire on an intentional [disconnect], but it
-  /// does: the SDK emits `RoomDisconnectedEvent(clientInitiated)` while
-  /// [disconnect] still has the listener attached.
+  /// trigger cleanup. Does not fire on an intentional [disconnect], which
+  /// detaches the listener before tearing the room down.
   Stream<String?> get connectionLost => _connectionLostController.stream;
 
   /// Messages on [topic], decoded. See [decodeTopic].
@@ -195,6 +194,7 @@ class LiveKitTransport {
     _connectionState = _ConnectionState.connecting;
     _log.info('Connecting to LiveKit...');
 
+    Room? room;
     try {
       // Get token: realm-token-server via the injected token source.
       final String token;
@@ -212,7 +212,7 @@ class LiveKitTransport {
       }
 
       // Create room with options
-      _room = Room(
+      room = Room(
         roomOptions: const RoomOptions(
           // Adaptive streaming requires LiveKit's VideoTrackRenderer widget
           // to signal "I'm rendering this track." We render via Flame canvas,
@@ -234,14 +234,15 @@ class LiveKitTransport {
           ),
         ),
       );
+      _room = room;
 
       // Set up event listener
-      _listener = _room!.createListener();
+      _listener = room.createListener();
       _setupListeners();
 
       // Connect to room — explicit RTCConfiguration ensures TURN relay
       // candidates are tried alongside direct UDP.
-      await _room!.connect(
+      await room.connect(
         _serverUrl,
         token,
         connectOptions: const ConnectOptions(
@@ -255,18 +256,27 @@ class LiveKitTransport {
         ),
       );
 
+      // A disconnect() during the join took this room and tore it down; this
+      // attempt owns nothing now and must not announce a connection.
+      if (!identical(_room, room)) return ConnectionResult.roomFailed;
+
       _connectionState = _ConnectionState.connected;
       _log.info('Connected to LiveKit room "$roomName"');
       onConnected();
 
       // Notify about existing participants
-      for (final participant in _room!.remoteParticipants.values) {
+      for (final participant in room.remoteParticipants.values) {
         _participantJoinedController.add(participant);
       }
 
       return ConnectionResult.connected;
     } catch (e) {
       _log.severe('Connection failed', e);
+      // Same as above: if disconnect() took the room, it owns the teardown and
+      // the fields may already belong to a newer attempt.
+      if (room != null && !identical(_room, room)) {
+        return ConnectionResult.roomFailed;
+      }
       // Clean up dangling _room and _listener created before the failure.
       // Each cleanup is wrapped individually so one failure doesn't prevent
       // the other from running.
@@ -283,6 +293,13 @@ class LiveKitTransport {
       _connectionState = _ConnectionState.disconnected;
       return ConnectionResult.roomFailed;
     }
+  }
+
+  /// Nothing is published without a room; keeps the mute toolbar honest across
+  /// a reconnect (enableMedia re-flips these true on rejoin).
+  void _resetPublishedMedia() {
+    cameraEnabled.value = false;
+    micEnabled.value = false;
   }
 
   /// Tear a [Room] down completely: disconnect, then **dispose**.
@@ -329,15 +346,24 @@ class LiveKitTransport {
 
     _log.info('Disconnecting from LiveKit...');
 
-    await _disposeRoom(_room);
-    await _listener?.dispose();
+    // Detach and take ownership before any await: the SDK emits
+    // RoomDisconnectedEvent during its own teardown, and with the listener
+    // still attached a deliberate leave would read as a lost connection. No
+    // field is written after the await, so a connect() that starts meanwhile
+    // keeps its own room.
+    final listener = _listener;
+    final room = _room;
     _listener = null;
     _room = null;
     _connectionState = _ConnectionState.disconnected;
-    // Nothing is published while disconnected; keep the mute toolbar honest
-    // across a reconnect (enableMedia re-flips these true on rejoin).
-    cameraEnabled.value = false;
-    micEnabled.value = false;
+    _resetPublishedMedia();
+
+    try {
+      await listener?.dispose();
+    } catch (e) {
+      _log.warning('Listener cleanup failed', e);
+    }
+    await _disposeRoom(room);
 
     _log.info('Disconnected');
   }
@@ -636,6 +662,7 @@ class LiveKitTransport {
       ..on<RoomDisconnectedEvent>((event) {
         _log.warning('Room disconnected: ${event.reason}');
         _connectionState = _ConnectionState.disconnected;
+        _resetPublishedMedia();
         // Clean up resources left dangling by the unexpected disconnect.
         // Note: _listener.dispose() is intentionally not awaited here — this
         // is a synchronous event callback and the dispose is fire-and-forget.
