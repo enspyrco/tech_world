@@ -67,7 +67,7 @@ void main() {
           home: Scaffold(
             body: Stack(
               children: [
-                ScreenShareOverlay(liveKitService: fakeLiveKit),
+                ScreenShareOverlay(transport: fakeLiveKit),
               ],
             ),
           ),
@@ -84,7 +84,7 @@ void main() {
           home: Scaffold(
             body: Stack(
               children: [
-                ScreenShareOverlay(liveKitService: fakeLiveKit),
+                ScreenShareOverlay(transport: fakeLiveKit),
               ],
             ),
           ),
@@ -101,7 +101,7 @@ void main() {
           home: Scaffold(
             body: Stack(
               children: [
-                ScreenShareOverlay(liveKitService: fakeLiveKit),
+                ScreenShareOverlay(transport: fakeLiveKit),
               ],
             ),
           ),
@@ -116,13 +116,13 @@ void main() {
       expect(fakeLiveKit.hasUnsubscribedListeners, isFalse);
     });
 
-    testWidgets('resubscribes when liveKitService changes', (tester) async {
+    testWidgets('resubscribes when the transport changes', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: Stack(
               children: [
-                ScreenShareOverlay(liveKitService: fakeLiveKit),
+                ScreenShareOverlay(transport: fakeLiveKit),
               ],
             ),
           ),
@@ -140,7 +140,7 @@ void main() {
           home: Scaffold(
             body: Stack(
               children: [
-                ScreenShareOverlay(liveKitService: newService),
+                ScreenShareOverlay(transport: newService),
               ],
             ),
           ),

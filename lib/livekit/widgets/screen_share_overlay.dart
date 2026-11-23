@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:livekit_client/livekit_client.dart';
-import 'package:tech_world/livekit/livekit_service.dart';
+import 'package:tech_world/livekit/livekit_transport.dart';
 import 'package:tech_world/livekit/widgets/screen_share_panel.dart';
 
 /// Entry tracking a single screen share panel.
@@ -23,16 +23,16 @@ class _ScreenShareEntry {
 /// Manages floating [ScreenSharePanel]s for all active screen shares in the
 /// LiveKit room.
 ///
-/// Subscribes to [LiveKitService.trackSubscribed] and
-/// [LiveKitService.trackUnsubscribed], filtered by
+/// Subscribes to [LiveKitTransport.trackSubscribed] and
+/// [LiveKitTransport.trackUnsubscribed], filtered by
 /// [TrackSource.screenShareVideo], and creates/removes panels accordingly.
 class ScreenShareOverlay extends StatefulWidget {
   const ScreenShareOverlay({
-    required this.liveKitService,
+    required this.transport,
     super.key,
   });
 
-  final LiveKitService liveKitService;
+  final LiveKitTransport transport;
 
   @override
   State<ScreenShareOverlay> createState() => _ScreenShareOverlayState();
@@ -54,7 +54,7 @@ class _ScreenShareOverlayState extends State<ScreenShareOverlay> {
   @override
   void didUpdateWidget(ScreenShareOverlay old) {
     super.didUpdateWidget(old);
-    if (old.liveKitService != widget.liveKitService) {
+    if (old.transport != widget.transport) {
       _unsubscribe();
       _entries.clear();
       _subscribe();
@@ -63,9 +63,9 @@ class _ScreenShareOverlayState extends State<ScreenShareOverlay> {
 
   void _subscribe() {
     _subscribedSub =
-        widget.liveKitService.trackSubscribed.listen(_onTrackSubscribed);
+        widget.transport.trackSubscribed.listen(_onTrackSubscribed);
     _unsubscribedSub =
-        widget.liveKitService.trackUnsubscribed.listen(_onTrackUnsubscribed);
+        widget.transport.trackUnsubscribed.listen(_onTrackUnsubscribed);
   }
 
   void _unsubscribe() {

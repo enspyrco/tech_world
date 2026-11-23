@@ -1640,7 +1640,7 @@ class _MyAppState extends State<MyApp> {
                 // Screen share floating panels
                 if (_session != null)
                   ScreenShareOverlay(
-                      liveKitService: _session!.liveKitService),
+                      transport: _session!.liveKitService),
                 // Bottom-left status banners, stacked in ONE Column.
                 //
                 // One Column rather than two independently positioned children
