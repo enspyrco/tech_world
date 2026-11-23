@@ -34,12 +34,12 @@ dependencies:
   realm_core:
     git:
       url: https://github.com/enspyrco/realm.git
-      ref: 3ada1c9eb85216496b5b7fb46d0384f6bd16542f
+      ref: 90492c5a909d78d4d7f7c6a869e3a11f178d2736
       path: packages/realm_core
   realm_firebase:
     git:
       url: https://github.com/enspyrco/realm.git
-      ref: 3ada1c9eb85216496b5b7fb46d0384f6bd16542f
+      ref: 90492c5a909d78d4d7f7c6a869e3a11f178d2736
       path: packages/realm_firebase
   livekit_client: ^2.5.1
   dart_webrtc: ^1.6.0 # MediaStreamTrackWeb typed access to jsTrack
